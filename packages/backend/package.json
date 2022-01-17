@@ -1,0 +1,12 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "dependencies": {
+    "apollo-server": "^3.6.1",
+    "graphql": "^16.2.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.4.0",
+    "ts-node-dev": "^1.1.8"
+  }
+}
