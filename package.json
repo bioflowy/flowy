@@ -1,0 +1,12 @@
+{
+  "name": "flowy",
+  "version": "1.0.0",
+  "description": "",
+  "workspaces": [
+    "packages/server",
+    "packages/cwl-ts-auto"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

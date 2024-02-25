@@ -1,0 +1,1089 @@
+2023/12/02 17:01:53 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:01:53 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:01:55 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:01:55 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:01:57 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:01:57 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:01:59 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:01:59 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:01 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:01 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:01 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:01 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:03 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:03 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:03 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:03 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:05 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:05 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:05 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:05 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:07 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:07 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:09 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:09 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:09 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:09 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:11 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:11 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:11 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:11 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:13 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:13 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:15 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:15 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:17 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:17 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:17 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:17 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:19 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:19 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:19 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:19 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:21 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:21 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:21 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:21 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:23 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:23 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:25 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:25 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:27 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:27 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:27 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:27 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:29 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:29 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:29 
+HTTP/1.1 200 OK
+Content-Length: 6102
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:29 GMT
+Keep-Alive: timeout=72
+
+[{"id":"a276ae78-10fe-4e9d-a2fb-8e4ef77f07c5","staging":[],"commands":["docker","run","-i","--mount=type=bind,source=/tmp/e6dc125c-2740-44b4-9cca-fc6a052e3de0,target=/XKI8GT","--mount=type=bind,source=/tmp/cee50d95-0dfc-4818-bb24-8201e4bd751e,target=/tmp","--mount=type=bind,source=/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed/tests/hello.txt,target=/var/lib/cwl/stg0aa91581-aaed-438c-814d-775497adcd6e/hello.txt,readonly","--mount=type=bind,source=/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed/tests/args.py,target=/var/lib/cwl/stg29dcb77f-0186-4e38-9ee6-48c93129b96c/args.py,readonly","--workdir=/XKI8GT","--read-only=true","--net=none","--user=1000:1000","--rm","--cidfile=/tmp/a3cdd5d6-7317-4d3d-866d-0bb8e3e22a36/20231202170228-991.cid","--env=TMPDIR=/tmp","--env=HOME=/XKI8GT","docker.io/python:3-slim","python","/var/lib/cwl/stg29dcb77f-0186-4e38-9ee6-48c93129b96c/args.py","cat","/var/lib/cwl/stg0aa91581-aaed-438c-814d-775497adcd6e/hello.txt"],"env":{"SHELL":"/bin/bash","COLORTERM":"truecolor","TERM_PROGRAM_VERSION":"1.84.2","WSL_DISTRO_NAME":"Ubuntu","NODENV_DIR":"/home/uehara/flowy-cwl3/bin","NODENV_VERSION":"18.17.0","NAME":"DESKTOP-3OSFP54","PWD":"/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed","LOGNAME":"uehara","VSCODE_GIT_ASKPASS_NODE":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/node","MOTD_SHOWN":"update-motd","NODENV_SHELL":"bash","HOME":"/home/uehara","NODENV_ORIG_PATH":"/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin","LANG":"C.UTF-8","WSL_INTEROP":"/run/WSL/26134_interop","LS_COLORS":"rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:","NODENV_ROOT":"/home/uehara/.nodenv","WAYLAND_DISPLAY":"wayland-0","GIT_ASKPASS":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/extensions/git/dist/askpass.sh","NODENV_HOOK_PATH":"/home/uehara/.nodenv/nodenv.d:/usr/local/etc/nodenv.d:/etc/nodenv.d:/usr/lib/nodenv/hooks","VSCODE_GIT_ASKPASS_EXTRA_ARGS":"","LESSCLOSE":"/usr/bin/lesspipe %s %s","TERM":"xterm-256color","LESSOPEN":"| /usr/bin/lesspipe %s","USER":"uehara","VSCODE_GIT_IPC_HANDLE":"/mnt/wslg/runtime-dir/vscode-git-5c1d56184c.sock","DISPLAY":":0","SHLVL":"1","XDG_RUNTIME_DIR":"/mnt/wslg/runtime-dir","WSLENV":"VSCODE_WSL_EXT_LOCATION/up:VSCODE_SERVER_TAR/up","VSCODE_GIT_ASKPASS_MAIN":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/extensions/git/dist/askpass-main.js","XDG_DATA_DIRS":"/usr/local/share:/usr/share:/var/lib/snapd/desktop","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin","HOSTTYPE":"x86_64","PULSE_SERVER":"/mnt/wslg/PulseServer","OLDPWD":"/home/uehara/flowy-cwl3/bin","TERM_PROGRAM":"vscode","VSCODE_IPC_HOOK_CLI":"/mnt/wslg/runtime-dir/vscode-ipc-09b6391d-048a-48af-a919-090057350077.sock"},"cwd":"/tmp/e6dc125c-2740-44b4-9cca-fc6a052e3de0","builderOutdir":"/XKI8GT","outputBindings":[],"vols":[],"inplace_update":false}]
+2023/12/02 17:02:30 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 352
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"a276ae78-10fe-4e9d-a2fb-8e4ef77f07c5","results":{"cwl.output.json":[{"basename":"cwl.output.json","checksum":"sha1$6e83ef0e68cf73919f6e018f76d4d9bc6abb0319","class":"File","location":"/tmp/e6dc125c-2740-44b4-9cca-fc6a052e3de0/cwl.output.json","nameext":".json","nameroot":"cwl.output","path":"/XKI8GT/cwl.output.json","size":30}]}}
+
+2023/12/02 17:02:30 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:02:30 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:30 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:02:32 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:32 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:34 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:34 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:34 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:34 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:36 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:36 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:36 
+HTTP/1.1 200 OK
+Content-Length: 6107
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:36 GMT
+Keep-Alive: timeout=72
+
+[{"id":"698725e0-58d2-4bc2-832a-73b6d54a2940","staging":[],"commands":["docker","run","-i","--mount=type=bind,source=/tmp/b5b98b2e-835a-48ef-ad9a-a870674e18bd,target=/193RCC","--mount=type=bind,source=/tmp/0475a4df-c444-41b8-9789-c97fb3c38b57,target=/tmp","--mount=type=bind,source=/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed/tests/hello.txt,target=/var/lib/cwl/stge8f63ebf-f39e-4e1a-8001-db9439e57df1/hello.txt,readonly","--mount=type=bind,source=/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed/tests/args.py,target=/var/lib/cwl/stg51eb6696-7739-43e5-8e57-c99b136c0c78/args.py,readonly","--workdir=/193RCC","--read-only=true","--net=none","--user=1000:1000","--rm","--cidfile=/tmp/b178fdea-5bb6-408a-bf9d-822e86002fb5/20231202170236-042.cid","--env=TMPDIR=/tmp","--env=HOME=/193RCC","docker.io/python:3-slim","python","/var/lib/cwl/stg51eb6696-7739-43e5-8e57-c99b136c0c78/args.py","cat","-n","/var/lib/cwl/stge8f63ebf-f39e-4e1a-8001-db9439e57df1/hello.txt"],"env":{"SHELL":"/bin/bash","COLORTERM":"truecolor","TERM_PROGRAM_VERSION":"1.84.2","WSL_DISTRO_NAME":"Ubuntu","NODENV_DIR":"/home/uehara/flowy-cwl3/bin","NODENV_VERSION":"18.17.0","NAME":"DESKTOP-3OSFP54","PWD":"/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed","LOGNAME":"uehara","VSCODE_GIT_ASKPASS_NODE":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/node","MOTD_SHOWN":"update-motd","NODENV_SHELL":"bash","HOME":"/home/uehara","NODENV_ORIG_PATH":"/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin","LANG":"C.UTF-8","WSL_INTEROP":"/run/WSL/26134_interop","LS_COLORS":"rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:","NODENV_ROOT":"/home/uehara/.nodenv","WAYLAND_DISPLAY":"wayland-0","GIT_ASKPASS":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/extensions/git/dist/askpass.sh","NODENV_HOOK_PATH":"/home/uehara/.nodenv/nodenv.d:/usr/local/etc/nodenv.d:/etc/nodenv.d:/usr/lib/nodenv/hooks","VSCODE_GIT_ASKPASS_EXTRA_ARGS":"","LESSCLOSE":"/usr/bin/lesspipe %s %s","TERM":"xterm-256color","LESSOPEN":"| /usr/bin/lesspipe %s","USER":"uehara","VSCODE_GIT_IPC_HANDLE":"/mnt/wslg/runtime-dir/vscode-git-5c1d56184c.sock","DISPLAY":":0","SHLVL":"1","XDG_RUNTIME_DIR":"/mnt/wslg/runtime-dir","WSLENV":"VSCODE_WSL_EXT_LOCATION/up:VSCODE_SERVER_TAR/up","VSCODE_GIT_ASKPASS_MAIN":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/extensions/git/dist/askpass-main.js","XDG_DATA_DIRS":"/usr/local/share:/usr/share:/var/lib/snapd/desktop","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin","HOSTTYPE":"x86_64","PULSE_SERVER":"/mnt/wslg/PulseServer","OLDPWD":"/home/uehara/flowy-cwl3/bin","TERM_PROGRAM":"vscode","VSCODE_IPC_HOOK_CLI":"/mnt/wslg/runtime-dir/vscode-ipc-09b6391d-048a-48af-a919-090057350077.sock"},"cwd":"/tmp/b5b98b2e-835a-48ef-ad9a-a870674e18bd","builderOutdir":"/193RCC","outputBindings":[],"vols":[],"inplace_update":false}]
+2023/12/02 17:02:37 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 352
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"698725e0-58d2-4bc2-832a-73b6d54a2940","results":{"cwl.output.json":[{"basename":"cwl.output.json","checksum":"sha1$8620a3c71fbc8e701443fd25c31319353ad43085","class":"File","location":"/tmp/b5b98b2e-835a-48ef-ad9a-a870674e18bd/cwl.output.json","nameext":".json","nameroot":"cwl.output","path":"/193RCC/cwl.output.json","size":36}]}}
+
+2023/12/02 17:02:37 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:02:37 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:37 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:02:39 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:39 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:41 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:41 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:41 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:41 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:43 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:43 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:43 
+HTTP/1.1 200 OK
+Content-Length: 6008
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:43 GMT
+Keep-Alive: timeout=72
+
+[{"id":"b9ddfe2e-05fc-4ac7-a308-28f5e58835e2","staging":[],"commands":["docker","run","-i","--mount=type=bind,source=/tmp/ba04e680-462f-4247-b567-a9dd047c0789,target=/2RVKYM","--mount=type=bind,source=/tmp/1351f4bb-6cad-48e1-95c7-2aacb47e4991,target=/tmp","--mount=type=bind,source=/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed/tests/hello.txt,target=/var/lib/cwl/stg93dc4f6f-aad7-4ca9-b152-3d5c0dd25a7e/hello.txt,readonly","--workdir=/2RVKYM","--read-only=true","--net=none","--user=1000:1000","--rm","--cidfile=/tmp/0ee00b03-1464-4768-adad-84dc4fddc917/20231202170243-371.cid","--env=TMPDIR=/tmp","--env=HOME=/2RVKYM","docker.io/debian:stable-slim","cat","foo.txt"],"env":{"SHELL":"/bin/bash","COLORTERM":"truecolor","TERM_PROGRAM_VERSION":"1.84.2","WSL_DISTRO_NAME":"Ubuntu","NODENV_DIR":"/home/uehara/flowy-cwl3/bin","NODENV_VERSION":"18.17.0","NAME":"DESKTOP-3OSFP54","PWD":"/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed","LOGNAME":"uehara","VSCODE_GIT_ASKPASS_NODE":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/node","MOTD_SHOWN":"update-motd","NODENV_SHELL":"bash","HOME":"/home/uehara","NODENV_ORIG_PATH":"/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin","LANG":"C.UTF-8","WSL_INTEROP":"/run/WSL/26134_interop","LS_COLORS":"rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:","NODENV_ROOT":"/home/uehara/.nodenv","WAYLAND_DISPLAY":"wayland-0","GIT_ASKPASS":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/extensions/git/dist/askpass.sh","NODENV_HOOK_PATH":"/home/uehara/.nodenv/nodenv.d:/usr/local/etc/nodenv.d:/etc/nodenv.d:/usr/lib/nodenv/hooks","VSCODE_GIT_ASKPASS_EXTRA_ARGS":"","LESSCLOSE":"/usr/bin/lesspipe %s %s","TERM":"xterm-256color","LESSOPEN":"| /usr/bin/lesspipe %s","USER":"uehara","VSCODE_GIT_IPC_HANDLE":"/mnt/wslg/runtime-dir/vscode-git-5c1d56184c.sock","DISPLAY":":0","SHLVL":"1","XDG_RUNTIME_DIR":"/mnt/wslg/runtime-dir","WSLENV":"VSCODE_WSL_EXT_LOCATION/up:VSCODE_SERVER_TAR/up","VSCODE_GIT_ASKPASS_MAIN":"/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/extensions/git/dist/askpass-main.js","XDG_DATA_DIRS":"/usr/local/share:/usr/share:/var/lib/snapd/desktop","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin","HOSTTYPE":"x86_64","PULSE_SERVER":"/mnt/wslg/PulseServer","OLDPWD":"/home/uehara/flowy-cwl3/bin","TERM_PROGRAM":"vscode","VSCODE_IPC_HOOK_CLI":"/mnt/wslg/runtime-dir/vscode-ipc-09b6391d-048a-48af-a919-090057350077.sock"},"cwd":"/tmp/ba04e680-462f-4247-b567-a9dd047c0789","builderOutdir":"/2RVKYM","outputBindings":[{"name":"foo","glob":["foo.txt"],"secondaryFiles":[],"loadContents":false}],"vols":[{"resolved":"/tmp/ba04e680-462f-4247-b567-a9dd047c0789/foo.txt","target":"/2RVKYM/foo.txt","type":"CreateFile","staged":true}],"inplace_update":false}]
+2023/12/02 17:02:44 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 308
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"b9ddfe2e-05fc-4ac7-a308-28f5e58835e2","results":{"foo":[{"basename":"foo.txt","checksum":"sha1$63da67422622fbf9251a046d7a34b7ea0fd4fead","class":"File","location":"/tmp/ba04e680-462f-4247-b567-a9dd047c0789/foo.txt","nameext":".txt","nameroot":"foo","path":"/2RVKYM/foo.txt","size":22}]}}
+
+2023/12/02 17:02:44 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:02:44 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:44 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:02:46 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:46 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:48 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:48 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:48 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:48 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:50 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:50 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:50 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:50 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:52 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:52 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:54 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:54 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:54 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:54 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:56 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:56 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:56 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:56 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:02:58 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:02:58 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:02:58 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:02:58 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:03:00 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:00 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:02 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:02 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:02 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:02 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:03:04 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:04 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:04 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:04 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:03:06 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:06 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:06 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:06 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:03:08 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:08 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:10 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:10 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:10 
+HTTP/1.1 200 OK
+Content-Length: 1525
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:10 GMT
+Keep-Alive: timeout=72
+
+[{"id":"c7f07cc5-426a-427e-bbf2-296b9139590d","staging":[],"commands":["/bin/sh","-c","echo foo 1>&2"],"stderr_path":"/tmp/705a4148-2a73-4efd-aa7e-90f81d92f7a7/error.txt","env":{"HOME":"/tmp/705a4148-2a73-4efd-aa7e-90f81d92f7a7","TMPDIR":"/tmp/e9b2e703-1a47-45dc-97f9-721fb7e2f563","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin"},"cwd":"/tmp/705a4148-2a73-4efd-aa7e-90f81d92f7a7","builderOutdir":"/tmp/705a4148-2a73-4efd-aa7e-90f81d92f7a7","outputBindings":[{"name":"output_file","glob":["error.txt"],"secondaryFiles":[],"loadContents":false}],"vols":[],"inplace_update":false}]
+2023/12/02 17:03:10 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 357
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"c7f07cc5-426a-427e-bbf2-296b9139590d","results":{"output_file":[{"basename":"error.txt","checksum":"sha1$f1d2d2f924e986ac86fdf7b36c94bcdf32beec15","class":"File","location":"/tmp/705a4148-2a73-4efd-aa7e-90f81d92f7a7/error.txt","nameext":".txt","nameroot":"error","path":"/tmp/705a4148-2a73-4efd-aa7e-90f81d92f7a7/error.txt","size":4}]}}
+
+2023/12/02 17:03:10 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:03:10 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:10 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:03:12 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:12 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:14 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:14 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:14 
+HTTP/1.1 200 OK
+Content-Length: 1587
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:14 GMT
+Keep-Alive: timeout=72
+
+[{"id":"c33d23f6-5cf3-48ee-808f-6c0c6660e1a7","staging":[],"commands":["/bin/sh","-c","echo foo 1>&2"],"stderr_path":"/tmp/f0899cbe-7c47-4a0f-be8f-dcde0e1904b9/5bb31e3edfd3c724d78ed208afdd9fd30c1ad489","env":{"HOME":"/tmp/f0899cbe-7c47-4a0f-be8f-dcde0e1904b9","TMPDIR":"/tmp/54fcd720-62dd-42b0-a297-d20a63194697","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin"},"cwd":"/tmp/f0899cbe-7c47-4a0f-be8f-dcde0e1904b9","builderOutdir":"/tmp/f0899cbe-7c47-4a0f-be8f-dcde0e1904b9","outputBindings":[{"name":"output_file","glob":["5bb31e3edfd3c724d78ed208afdd9fd30c1ad489"],"secondaryFiles":[],"loadContents":false}],"vols":[],"inplace_update":false}]
+2023/12/02 17:03:14 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 481
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"c33d23f6-5cf3-48ee-808f-6c0c6660e1a7","results":{"output_file":[{"basename":"5bb31e3edfd3c724d78ed208afdd9fd30c1ad489","checksum":"sha1$f1d2d2f924e986ac86fdf7b36c94bcdf32beec15","class":"File","location":"/tmp/f0899cbe-7c47-4a0f-be8f-dcde0e1904b9/5bb31e3edfd3c724d78ed208afdd9fd30c1ad489","nameext":"","nameroot":"5bb31e3edfd3c724d78ed208afdd9fd30c1ad489","path":"/tmp/f0899cbe-7c47-4a0f-be8f-dcde0e1904b9/5bb31e3edfd3c724d78ed208afdd9fd30c1ad489","size":4}]}}
+
+2023/12/02 17:03:14 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:03:14 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:14 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:03:16 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:16 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:18 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:18 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:18 
+HTTP/1.1 200 OK
+Content-Length: 1521
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:18 GMT
+Keep-Alive: timeout=72
+
+[{"id":"0efefe76-6d3c-4229-86b6-c3f6b361e97e","staging":[],"commands":["/bin/sh","-c","echo foo 1>&2"],"stderr_path":"/tmp/a60225a5-5fd9-4bdf-9c57-f30607ad007d/std.err","env":{"HOME":"/tmp/a60225a5-5fd9-4bdf-9c57-f30607ad007d","TMPDIR":"/tmp/760572e1-55a7-496f-8351-c3d5dd6494af","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin"},"cwd":"/tmp/a60225a5-5fd9-4bdf-9c57-f30607ad007d","builderOutdir":"/tmp/a60225a5-5fd9-4bdf-9c57-f30607ad007d","outputBindings":[{"name":"output_file","glob":["std.err"],"secondaryFiles":[],"loadContents":false}],"vols":[],"inplace_update":false}]
+2023/12/02 17:03:18 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 349
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"0efefe76-6d3c-4229-86b6-c3f6b361e97e","results":{"output_file":[{"basename":"std.err","checksum":"sha1$f1d2d2f924e986ac86fdf7b36c94bcdf32beec15","class":"File","location":"/tmp/a60225a5-5fd9-4bdf-9c57-f30607ad007d/std.err","nameext":".err","nameroot":"std","path":"/tmp/a60225a5-5fd9-4bdf-9c57-f30607ad007d/std.err","size":4}]}}
+
+2023/12/02 17:03:18 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:03:18 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:18 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:03:20 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:20 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:22 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:22 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:22 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:22 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:03:24 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:24 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:24 
+HTTP/1.1 200 OK
+Content-Length: 2
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:03:24 GMT
+Keep-Alive: timeout=72
+
+[]
+2023/12/02 17:03:26 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:26 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:28 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:28 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:30 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:30 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:32 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:32 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:34 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:34 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:36 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:36 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:38 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:38 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:40 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:40 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:42 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:42 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:44 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:44 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:46 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:46 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:48 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:48 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:50 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:50 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:52 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:52 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:54 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:54 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:56 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:56 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:03:58 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:03:58 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:00 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:00 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:02 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:02 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:04 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:04 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:06 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:06 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:08 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:08 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:10 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:10 Request URL: http://localhost:3000/v1/api/getExectableJob
+2023/12/02 17:04:10 
+HTTP/1.1 200 OK
+Content-Length: 1972
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:04:10 GMT
+Keep-Alive: timeout=72
+
+[{"id":"4b2d0ad6-f4f9-40cc-bf15-2f303de37034","staging":[{"command":"mkdir","resolved":"/tmp/563cee27-7158-484b-b865-2fead422f523/stg0380cd5d-5d4e-4ca2-bb7f-fb329c9f650b","recursive":true},{"command":"symlink","resolved":"/home/uehara/flowy-cwl3/work/cwl-v1.2-1.2.1_proposed/tests/hello.txt","target":"/tmp/563cee27-7158-484b-b865-2fead422f523/stg0380cd5d-5d4e-4ca2-bb7f-fb329c9f650b/hello.txt"}],"commands":["wc","/tmp/563cee27-7158-484b-b865-2fead422f523/stg0380cd5d-5d4e-4ca2-bb7f-fb329c9f650b/hello.txt"],"stdout_path":"/tmp/0d3c1b84-7275-4920-a4c0-c66567b1ac95/output.txt","env":{"HOME":"/tmp/0d3c1b84-7275-4920-a4c0-c66567b1ac95","TMPDIR":"/tmp/7aefcbbf-6868-4a14-8625-d41164605840","PATH":"/home/uehara/.nodenv/versions/18.17.0/bin:/home/uehara/.nodenv/libexec:/home/uehara/.nodenv/plugins/node-build/bin:/home/uehara/go/bin:/home/uehara/.vscode-server/bin/1a5daa3a0231a0fbba4f14db7ec463cf99d7768e/bin/remote-cli:/home/uehara/.nodenv/shims:/home/uehara/go/bin:/home/uehara/.nodenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/Program Files/Amazon Corretto/jdk1.8.0_282/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Amazon/AWSCLI/bin/:/mnt/c/Program Files/Amazon/SessionManagerPlugin/bin/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/ProgramData/DockerDesktop/version-bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Users/Keizou/AppData/Local/Microsoft/WindowsApps:/snap/bin"},"cwd":"/tmp/0d3c1b84-7275-4920-a4c0-c66567b1ac95","builderOutdir":"/tmp/0d3c1b84-7275-4920-a4c0-c66567b1ac95","outputBindings":[{"name":"output","glob":["output.txt"],"secondaryFiles":[],"outputEval":"$(parseInt(self[0].contents))","loadContents":true}],"vols":[],"inplace_update":false}]
+2023/12/02 17:04:10 
+POST /v1/api/jobFinished HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 474
+Accept: application/json
+Content-Type: application/json
+Accept-Encoding: gzip
+
+{"exitCode":0,"id":"4b2d0ad6-f4f9-40cc-bf15-2f303de37034","results":{"output":[{"basename":"output.txt","checksum":"sha1$22b079e227c41219ee7ccfd5b4a11edcc9483250","class":"File","contents":" 1  2 13 /tmp/563cee27-7158-484b-b865-2fead422f523/stg0380cd5d-5d4e-4ca2-bb7f-fb329c9f650b/hello.txt\n","location":"/tmp/0d3c1b84-7275-4920-a4c0-c66567b1ac95/output.txt","nameext":".txt","nameroot":"output","path":"/tmp/0d3c1b84-7275-4920-a4c0-c66567b1ac95/output.txt","size":101}]}}
+
+2023/12/02 17:04:10 Request URL: http://localhost:3000/v1/api/jobFinished
+2023/12/02 17:04:10 
+HTTP/1.1 200 OK
+Content-Length: 16
+Connection: keep-alive
+Content-Type: application/json; charset=utf-8
+Date: Sat, 02 Dec 2023 08:04:10 GMT
+Keep-Alive: timeout=72
+
+{"message":"OK"}
+2023/12/02 17:04:12 
+POST /v1/api/getExectableJob HTTP/1.1
+Host: localhost:3000
+User-Agent: OpenAPI-Generator/1.0.0/go
+Content-Length: 0
+Accept: application/json
+Accept-Encoding: gzip
+
+
+2023/12/02 17:04:12 Request URL: http://localhost:3000/v1/api/getExectableJob

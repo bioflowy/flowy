@@ -1,0 +1,37 @@
+{
+  "name": "@flowy/server",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.515.0",
+    "@flowy/cwl-ts-auto": "^0.1.4",
+    "@hono/node-server": "^1.7.0",
+    "@hono/swagger-ui": "^0.2.1",
+    "@hono/zod-openapi": "^0.9.6",
+    "@hono/zod-validator": "^0.1.11",
+    "fs-extra": "^11.2.0",
+    "glob": "^10.3.10",
+    "hono": "^4.0.2",
+    "isolated-vm": "^4.7.2",
+    "js-yaml": "^4.1.0",
+    "lodash-es": "^4.17.21",
+    "rdflib": "^2.2.34-1",
+    "swagger-ui-dist": "^5.11.4",
+    "typescript": "^5.3.3",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@hono/vite-dev-server": "^0.5.1",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.11.17",
+    "@types/swagger-ui-dist": "^3.30.4",
+    "tsc": "^2.0.4",
+    "tsx": "^3.12.2",
+    "vite": "^5.1.2"
+  }
+}
