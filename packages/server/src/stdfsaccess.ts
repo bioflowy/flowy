@@ -1,4 +1,3 @@
-import { createWriteStream } from 'node:fs';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
@@ -150,7 +149,7 @@ export class StdFsAccess {
           fs.mkdirSync(dirpath, { recursive: true });
         }
         const stream = data.Body as Readable;
-        const writeStream = createWriteStream(downloadPath);
+        const writeStream = fs.createWriteStream(downloadPath);
         stream.pipe(writeStream);
         return await new Promise((resolve, reject) => {
           writeStream.on('finish', resolve);

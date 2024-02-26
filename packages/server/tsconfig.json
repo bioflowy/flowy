@@ -10,5 +10,10 @@
     "types": [
       "node"
     ],
-  }
+  },
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "tests/"
+  ]
 }

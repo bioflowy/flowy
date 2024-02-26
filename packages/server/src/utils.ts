@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import * as child_process from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -99,7 +99,7 @@ export type StepType = CWLObjectType;
 export type LoadListingType = 'no_listing' | 'shallow_listing' | 'deep_listing';
 export async function which(cmd: string): Promise<string | null> {
   return new Promise((resolve) => {
-    exec(`which ${cmd}`, (error, stdout) => {
+    child_process.exec(`which ${cmd}`, (error, stdout) => {
       if (error) {
         resolve(null);
         return;
@@ -148,7 +148,7 @@ export function copyTree(src: string, dest: string): void {
 }
 export async function checkOutput(commands: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    exec(commands.join(' '), (error, stdout, stderr) => {
+    child_process.exec(commands.join(' '), (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`Command failed: ${stderr || error.message}`));
         return;

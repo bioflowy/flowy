@@ -1,5 +1,5 @@
 import { LoadingOptions, Dictionary, TypeGuards } from './Internal.js'
-import * as URI from './uri-js.js'
+import * as URI from 'uri-js'
 import path from 'path'
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class

@@ -6,10 +6,11 @@ import { getManager } from "./manager.js";
 
 extendZodWithOpenApi(z);
 const DoEvalRequestSchema = z.object({
-    id: z.string(),
-    ex: z.string(),
-    context: z.any(),
-  });
+  id: z.string(),
+  ex: z.string(),
+  exitCode: z.number().int().optional(),
+  context: z.any(),
+});
 export type DoEvalRequest = z.infer<typeof DoEvalRequestSchema>;
   
   
@@ -49,7 +50,7 @@ export const DoEvalPath: RouteConfig = {
   export const JobEvalHandler =  createFactory().createHandlers(
     zValidator('json',DoEvalRequestSchema), async (c) => {
       const jsonData = await c.req.valid('json')
-      getManager().evaluate(jsonData.id, jsonData.ex, jsonData.context);
+      const result = await getManager().evaluate(jsonData.id, jsonData.ex, jsonData.context,jsonData.exitCode);
       
-      return c.json('OK')
+      return c.json(result)
   })

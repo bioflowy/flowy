@@ -48,6 +48,7 @@ export const executeJobPath: RouteConfig = {
   }
   export const executeJobHandler =  createFactory().createHandlers(
     zValidator('json',ExecuteJobInputSchema), async (c) => {
+      try{
       const input = await c.req.valid('json')
       console.log(input)
       const manager = getManager()
@@ -69,4 +70,13 @@ export const executeJobPath: RouteConfig = {
       }
       const [result, status] = await exec(runtimeContext, input.tool_path, input.job_path);
       return c.json({result, status});
+    }catch(e){
+      _logger.error(e)
+      if(e instanceof Error){
+        _logger.error(e.message, e.stack)
+        return c.json({result: e.message, status: 'exception'})
+      }else{
+        return c.json({result: e.toString(), status: 'exception'})
+      }
+    }
   })

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
-import { Readable } from 'node:stream';
-import { fileURLToPath } from 'node:url';
-import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import * as stream from 'node:stream';
+import * as url from 'node:url';
+import { GetObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import * as cwlTsAuto from '@flowy/cwl-ts-auto';
 import {
   ArrayType,
@@ -45,7 +45,7 @@ export const INPUT_OBJ_VOCAB: { [key: string]: string } = {
   File: 'https://w3id.org/cwl/cwl#File',
   Directory: 'https://w3id.org/cwl/cwl#Directory',
 };
-const streamToString = async (stream: Readable): Promise<string> => {
+const streamToString = async (stream: stream.Readable): Promise<string> => {
   return new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
     stream.on('data', (chunk) => chunks.push(chunk));
@@ -87,7 +87,7 @@ const headCommand = new HeadObjectCommand({
   });
 
   const { Body } = await s3.send(command);
-  if (Body instanceof Readable) {
+  if (Body instanceof stream.Readable) {
     return streamToString(Body);
   }
   throw new Error('Invalid object body type.');
@@ -99,7 +99,7 @@ export async function contentLimitRespectedReadBytes(filePath: string, nolimit =
   }
   return new Promise((resolve, reject) => {
     const buffer = Buffer.alloc(CONTENT_LIMIT + 1);
-    const fd = fs.openSync(fileURLToPath(filePath), 'r');
+    const fd = fs.openSync(url.fileURLToPath(filePath), 'r');
     fs.read(fd, buffer, 0, CONTENT_LIMIT + 1, null, (err, bytesRead, buffer) => {
       fs.closeSync(fd);
       if (err) {

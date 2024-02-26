@@ -1,6 +1,6 @@
 import { ValidationException } from './Internal.js'
 import * as fs from 'fs'
-import * as URI from './uri-js.js'
+import * as URI from 'uri-js'
 
 // Code implemented after https://github.com/common-workflow-language/schema_salad/blob/main/schema_salad/fetcher.py
 export abstract class Fetcher {

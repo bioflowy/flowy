@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import * as url from 'node:url';
 import * as cwlTsAuto from '@flowy/cwl-ts-auto';
 import type { LoadingContext } from './context.js';
 import { ValidationException } from './errors.js';
@@ -26,7 +26,7 @@ export async function loadDocument(
     tool_file_path = tool_file_path.split('#')[0];
   }
   if (tool_file_path.startsWith('file://')) {
-    tool_file_path = fileURLToPath(tool_file_path);
+    tool_file_path = url.fileURLToPath(tool_file_path);
   }
   const doc = await cwlTsAuto.loadDocument(tool_file_path, loadingContext.baseuri, loadingContext.loadingOptions);
   if (doc instanceof Array) {
