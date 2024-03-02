@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import * as url from 'node:url';
 import * as rdf from 'rdflib';
 import { getFileContentFromS3 } from './builder.js';
 import { filePathToURI } from './utils.js';
@@ -23,7 +23,7 @@ export class FormatGraph {
     if (ontologyPath) {
       this.ontologyPaths.push(ontologyPath);
     } else {
-      const dirname = path.dirname(fileURLToPath(import.meta.url));
+      const dirname = path.dirname(url.fileURLToPath(import.meta.url));
       this.ontologyPaths.push(path.join(dirname, '../resources/EDAM_1.25.owl'));
     }
   }
@@ -47,7 +47,7 @@ export class FormatGraph {
       const config = getManager().getServerConfig();
       owlData = await getFileContentFromS3(config.sharedFileSystem, ontologyPath, true);
     } else {
-      owlData = (await readFile(ontologyPath)).toString('utf-8');
+      owlData = (await fs.readFile(ontologyPath)).toString('utf-8');
     }
     return new Promise((resolve, reject) => {
       rdf.parse(owlData, store, filePathToURI(ontologyPath), guessContentType(ontologyPath), (error, _graph) => {

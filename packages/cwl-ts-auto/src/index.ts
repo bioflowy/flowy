@@ -91,6 +91,7 @@ export {
   LabeledProperties,
   LinkMergeMethod,
   LoadContentsProperties,
+  LoadingOptions,
   LoadListingEnum,
   LoadListingRequirement,
   LoadListingRequirementProperties,

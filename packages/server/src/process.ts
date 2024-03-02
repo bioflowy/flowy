@@ -345,7 +345,9 @@ export async function relocateOutputs(
   );
 
   function _check_adjust(a_file: File | Directory): void {
+    const oldLocation = a_file.location;
     a_file.location = fileUri(pm.mapper(a_file.location)?.target ?? '');
+    console.log(`oldLocation: ${oldLocation}, newLocation: ${a_file.location}`)
     if (a_file.path === '') {
       a_file.path = undefined;
     }

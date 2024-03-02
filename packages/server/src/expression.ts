@@ -1,8 +1,8 @@
-import type { InlineJavascriptRequirement } from '@flowy/cwl-ts-auto';
-import * as IsolatedVM from 'isolated-vm';
+import * as cwlTsAuto from '@flowy/cwl-ts-auto';
 import { JavascriptException, SubstitutionError, WorkflowException } from './errors.js';
 import { _logger } from './loghandler.js';
 import { josonStringifyLikePython, type CWLObjectType, type CWLOutputType } from './utils.js';
+import { JSEngine, get_js_engine } from './sandbox.js';
 
 const segmentRe = /(\.\w+|\['([^']|\\')+'\]|\["([^"]|\\")+"\]|\[[0-9]+\])/u;
 const paramRe = /\((\w+)(\.\w+|\['([^']|\\')+'\]|\["([^"]|\\")+"\]|\[[0-9]+\])*\)$/u;
@@ -96,41 +96,6 @@ function scanner(scan: string): [number, number] | null {
 
   return null;
 }
-interface JSEngine {
-  eval(scan: string, jslib: string, rootvars: { [key: string]: unknown }): Promise<CWLOutputType>;
-}
-class JSEngine1 implements JSEngine {
-  code_fragment_to_js(jscript: string, jslib = ''): string {
-    let inner_js = '';
-    if (jscript.length > 1 && jscript[0] == '{') {
-      inner_js = jscript;
-    } else {
-      inner_js = `{return ${jscript};}`;
-    }
-
-    return `"use strict";\n${jslib}\nJSON.stringify((function()${inner_js})())`;
-  }
-
-  async eval(expr: string, jslib: string, rootvars: { [key: string]: unknown }): Promise<CWLOutputType> {
-    const isolate = new IsolatedVM.Isolate({ memoryLimit: 128 });
-
-    // 新しいContextを作成する
-    const context = isolate.createContextSync();
-
-    // Contextに基本的なconsole.log関数を注入する
-    for (const key of Object.keys(rootvars)) {
-      context.global.setSync(key, new IsolatedVM.ExternalCopy(rootvars[key]).copyInto());
-    }
-    const jail = context.global;
-    jail.setSync('global', jail.derefInto());
-    // Contextにスクリプトを実行する
-    const scr = this.code_fragment_to_js(expr, jslib);
-    const script = isolate.compileScriptSync(scr);
-    const rslt_str = await script.run(context);
-    const rslt = JSON.parse(rslt_str);
-    return rslt;
-  }
-}
 export function regex_eval(
   parsed_string: string,
   remaining_string: string,
@@ -203,9 +168,6 @@ export function regex_eval(
   } else {
     return current_value;
   }
-}
-export function get_js_engine() {
-  return new JSEngine1();
 }
 export async function evaluator(
   js_engine: JSEngine,
@@ -347,7 +309,7 @@ export function needs_parsing(snippet: unknown): boolean {
 export async function do_eval(
   ex: CWLOutputType | null,
   jobinput: CWLObjectType,
-  requirements: InlineJavascriptRequirement | undefined,
+  requirements: cwlTsAuto.InlineJavascriptRequirement | undefined,
   outdir: string | null,
   tmpdir: string | null,
   resources: { [key: string]: number },

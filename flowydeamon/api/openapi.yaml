@@ -261,8 +261,17 @@ components:
         inplace_update: true
         stderr_path: stderr_path
         cwd: cwd
+        fileitems:
+        - staged: true
+          type: type
+          resolved: resolved
+          target: target
+        - staged: true
+          type: type
+          resolved: resolved
+          target: target
         stdin_path: stdin_path
-        vols:
+        generatedlist:
         - staged: true
           type: type
           resolved: resolved
@@ -350,7 +359,11 @@ components:
           items:
             $ref: '#/components/schemas/OutputBinding'
           type: array
-        vols:
+        fileitems:
+          items:
+            $ref: '#/components/schemas/MapperEnt'
+          type: array
+        generatedlist:
           items:
             $ref: '#/components/schemas/MapperEnt'
           type: array
@@ -361,11 +374,12 @@ components:
       - commands
       - cwd
       - env
+      - fileitems
+      - generatedlist
       - id
       - inplace_update
       - outputBindings
       - staging
-      - vols
       type: object
     _api_jobFailed_post_request:
       properties:
@@ -383,6 +397,8 @@ components:
           type: string
         ex:
           type: string
+        exitCode:
+          type: integer
         context:
           nullable: true
       required:

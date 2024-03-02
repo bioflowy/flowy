@@ -1,12 +1,12 @@
 import { LoadingOptions, documentLoadByUrl, TypeGuards, ValidationException } from '../Internal.js'
-import * as URI from '../uri-js.js'
+import * as URI from 'uri-js'
 
 export interface Loader {
   load: (doc: any, baseuri: string, loadingOptions: LoadingOptions, docRoot?: string) => Promise<any>
 }
 
 export async function loadField (val: any, fieldType: Loader, baseuri: string, loadingOptions: LoadingOptions): Promise<any> {
-  if (TypeGuards.isDictionary(val)) {
+   if (TypeGuards.isDictionary(val)) {
     if ('$import' in val) {
       if (loadingOptions.fileUri == null) {
         throw Error('Cannot load $import without fileuri')

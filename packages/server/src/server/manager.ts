@@ -35,10 +35,10 @@ export class Manager {
     });
     return promise;
   }
-  async evaluate(id: string, ex: string, context: File | Directory): Promise<CWLOutputType|undefined> {
+  async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
     const builder = this.builders.get(id);
-    if (!builder) {
-      return undefined;
+    if (exitCode != undefined) {
+      builder.resources['exitCode'] = exitCode;
     }
     return builder.do_eval(ex, context, false);
   }

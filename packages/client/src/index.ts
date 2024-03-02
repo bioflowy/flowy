@@ -1,7 +1,7 @@
 import yargs from 'yargs';
 import { hc } from 'hono/client'
 import { hideBin } from 'yargs/helpers';
-import { ExecuteJobRoute } from '@flowy/server/dist/app.js';
+import { ExecuteJobRoute } from '@flowy/server';
 
 export interface Args {
   tool_path?: string;
@@ -19,9 +19,6 @@ export async function main(args: Args): Promise<number> {
     clientWorkDir: process.cwd(),
     basedir: args.basedir,
   }});
-  console.log('url='+res.url);
-  console.log('status='+res.status);
-  console.log('statusText='+res.statusText);
   const {result,status } = await res.json()
   if (status === 'success') {
     process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -30,6 +27,9 @@ export async function main(args: Args): Promise<number> {
         resolve(0);
       });
     });
+  } else if(status === 'exception') {
+    process.stderr.write(result+"\n");
+    return 1;
   } else {
     return 1;
   }

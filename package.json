@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "workspaces": [
-    "packages/server",
-    "packages/cwl-ts-auto"
+    "packages/*"
   ],
   "keywords": [],
   "author": "",

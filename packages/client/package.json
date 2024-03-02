@@ -12,11 +12,11 @@
   "license": "ISC",
   "dependencies": {
     "@flowy/server": "*",
-    "@types/yargs": "^17.0.32",
     "hono": "^4.0.2",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@types/yargs": "^17.0.32",
     "ts-node": "^10.9.2"
   }
 }

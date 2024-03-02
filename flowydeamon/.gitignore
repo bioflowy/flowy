@@ -2,7 +2,7 @@
 *.o
 *.a
 *.so
-__debug_*
+
 # Folders
 _obj
 _test
@@ -16,9 +16,9 @@ _test
 _cgo_defun.c
 _cgo_gotypes.go
 _cgo_export.*
-
+__debug_*
 _testmain.go
-
+flowydeamon
 *.exe
 *.test
 *.prof

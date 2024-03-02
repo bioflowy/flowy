@@ -1,9 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { S3 } from '@aws-sdk/client-s3';
+import * as url from 'node:url';
 import * as cwlTsAuto from '@flowy/cwl-ts-auto';
-import { LoadingOptions } from '@flowy/cwl-ts-auto/dist/util/LoadingOptions.js';
 import * as yaml from 'js-yaml';
 import { getFileContentFromS3 } from './builder.js';
 import { LoadingContext, RuntimeContext } from './context.js';
@@ -63,7 +61,7 @@ function convertToAbsPath(filePath: string, inputBaseUrl: URL): URL {
     return new URL(`${inputBaseUrl.toString()}${filePath}`);
   }
   if (!filePath.startsWith('file:/') || filePath.startsWith('s3:/')) {
-    filePath = pathToFileURL(filePath).toString();
+    filePath = url.pathToFileURL(filePath).toString();
   }
   return new URL(filePathToURI(filePath));
 }
@@ -228,7 +226,7 @@ export async function exec(
   _logger.info(`tool_path=${tool_path}`);
   _logger.info(`job_path=${job_path}`);
   loadingContext.baseuri = path.dirname(tool_path);
-  const loadingOptions = new LoadingOptions({});
+  const loadingOptions = new cwlTsAuto.LoadingOptions({});
   loadingOptions.fetcher = new S3Fetcher();
   loadingContext.loadingOptions = loadingOptions;
   const [tool] = await loadDocument(tool_path, loadingContext);
