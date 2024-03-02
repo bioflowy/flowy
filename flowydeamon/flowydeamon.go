@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/bioflowy/flowy-cwl3/flowydeamon/api"
 )
 
 type FileSystemEntity interface {
@@ -48,15 +49,15 @@ func (lrt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	return lrt.Proxied.RoundTrip(r)
 }
 func collect_secondary_files(
-	c *APIClient,
-	config *SharedFileSystemConfig,
+	c *api.APIClient,
+	config *api.SharedFileSystemConfig,
 	id string,
-	schema OutputBinding,
+	schema api.OutputBinding,
 	result FileOrDirectory,
 	outdir string,
 	builderOutDir string,
 	computeCheckSum bool,
-	fileitems []MapperEnt,
+	fileitems []api.MapperEnt,
 ) error {
 	if !result.IsFile() {
 		return nil
@@ -171,20 +172,28 @@ func abspath(src string, basedir string) (string, error) {
 
 	return abpath, nil
 }
-func reportFailed(c *APIClient, jobId string, err error) {
+func reportFailed(c *api.APIClient, jobId string, err error) {
 	ctx := context.Background()
-	r := c.DefaultAPI.ApiJobFailedPost(ctx)
-	r.apiJobFailedPostRequest = &ApiJobFailedPostRequest{
+	r := c.DefaultAPI.ApiJobFailedPost(ctx).ApiJobFailedPostRequest(api.ApiJobFailedPostRequest{
 		Id:       jobId,
 		ErrorMsg: err.Error(),
-	}
+	})
 	r.Execute()
 }
-func relinkInitialWorkDir(config *SharedFileSystemConfig, vols []MapperEnt, hostOutDir, containerOutDir string, inplaceUpdate bool, downloadPaths map[string]string) error {
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+func relinkInitialWorkDir(config *api.SharedFileSystemConfig, vols []api.MapperEnt, hostOutDir, containerOutDir string, inplaceUpdate bool, downloadPaths map[string]string) error {
 	for _, vol := range vols {
 		if !vol.Staged {
 			continue
 		}
+
 		if contains([]string{"File", "Directory"}, vol.Type) ||
 			(inplaceUpdate && contains([]string{"WritableFile", "WritableDirectory"}, vol.Type)) {
 			if !strings.HasPrefix(vol.Target, containerOutDir) {
@@ -236,7 +245,7 @@ func loadCwlOutputJson(jsonPath string) (map[string]interface{}, error) {
 	err = decoder.Decode(&data)
 	return data, err
 }
-func GetAndExecuteJob(c *APIClient, config *SharedFileSystemConfig) {
+func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 	ctx := context.Background()
 	res, httpres, err := c.DefaultAPI.ApiGetExectableJobPost(ctx).Execute()
 
@@ -281,13 +290,12 @@ func GetAndExecuteJob(c *APIClient, config *SharedFileSystemConfig) {
 					reportFailed(c, job.Id, err)
 					return
 				}
-				r := c.DefaultAPI.ApiJobFinishedPost(ctx)
-				r.jobFinishedRequest = &JobFinishedRequest{
+				r := c.DefaultAPI.ApiJobFinishedPost(ctx).JobFinishedRequest(api.JobFinishedRequest{
 					Id:          job.Id,
 					IsCwlOutput: true,
 					ExitCode:    int32(exitCode),
 					Results:     results,
-				}
+				})
 				log.Default().Printf("job Finished exitCone = %d", exitCode)
 				log.Default().Printf("job Finished results = %+v", results)
 
@@ -340,13 +348,12 @@ func GetAndExecuteJob(c *APIClient, config *SharedFileSystemConfig) {
 					return
 				}
 				uploadOutputs(config, results, downloadPaths, job.InplaceUpdate)
-				r := c.DefaultAPI.ApiJobFinishedPost(ctx)
-				r.jobFinishedRequest = &JobFinishedRequest{
+				r := c.DefaultAPI.ApiJobFinishedPost(ctx).JobFinishedRequest(api.JobFinishedRequest{
 					Id:          job.Id,
 					IsCwlOutput: false,
 					ExitCode:    int32(exitCode),
 					Results:     results,
-				}
+				})
 				log.Default().Printf("job Finished exitCone = %d", exitCode)
 				log.Default().Printf("job Finished results = %+v", results)
 
@@ -361,7 +368,7 @@ func GetAndExecuteJob(c *APIClient, config *SharedFileSystemConfig) {
 		}
 	}
 }
-func uploadOutputs(config *SharedFileSystemConfig, results map[string]interface{}, downloadPaths map[string]string, inplaceUpdate bool) error {
+func uploadOutputs(config *api.SharedFileSystemConfig, results map[string]interface{}, downloadPaths map[string]string, inplaceUpdate bool) error {
 	err := VisitFileOrDirectory(results, func(f_or_d FileOrDirectory) error {
 		if f_or_d.IsFile() {
 			file := f_or_d.(File)
@@ -433,7 +440,7 @@ func uploadOutputs(config *SharedFileSystemConfig, results map[string]interface{
 	})
 	return err
 }
-func uploadToS3(config *SharedFileSystemConfig, filePath string, s3url *string) (string, error) {
+func uploadToS3(config *api.SharedFileSystemConfig, filePath string, s3url *string) (string, error) {
 	if strings.HasPrefix(filePath, "s3://") {
 		return filePath, nil
 	}
@@ -462,7 +469,7 @@ func uploadToS3(config *SharedFileSystemConfig, filePath string, s3url *string) 
 		return uploadFile(uploader, *config, filePath, s3url)
 	}
 }
-func uploadFile(uploader *s3manager.Uploader, config SharedFileSystemConfig, filePath string, s3url *string) (string, error) {
+func uploadFile(uploader *s3manager.Uploader, config api.SharedFileSystemConfig, filePath string, s3url *string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", err
@@ -496,7 +503,7 @@ func uploadFile(uploader *s3manager.Uploader, config SharedFileSystemConfig, fil
 	}
 	return "s3://" + u.Host + "/" + key, nil
 }
-func uploadDirectory(uploader *s3manager.Uploader, config SharedFileSystemConfig, directoryPath string, s3url *string) (string, error) {
+func uploadDirectory(uploader *s3manager.Uploader, config api.SharedFileSystemConfig, directoryPath string, s3url *string) (string, error) {
 	u, err := url.Parse(config.RootUrl)
 	if err != nil {
 		return "", err
@@ -554,7 +561,7 @@ func uploadDirectory(uploader *s3manager.Uploader, config SharedFileSystemConfig
 	}
 
 }
-func reportWorkerStarted(c *APIClient) (*SharedFileSystemConfig, error) {
+func reportWorkerStarted(c *api.APIClient) (*api.SharedFileSystemConfig, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, err
@@ -564,27 +571,26 @@ func reportWorkerStarted(c *APIClient) (*SharedFileSystemConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	req := c.DefaultAPI.ApiWorkerStartedPost(context.Background())
-	req.apiWorkerStartedPostRequest = &ApiWorkerStartedPostRequest{
+	req := c.DefaultAPI.ApiWorkerStartedPost(context.Background()).ApiWorkerStartedPostRequest(api.ApiWorkerStartedPostRequest{
 		Hostname: hostname,
 		Cpu:      int32(runtime.NumCPU()),
 		Memory:   int32(sysinfo.Totalram / 1024 / 1024),
-	}
+	})
 	res, _, err := req.Execute()
 	return res, err
 }
 
 func main() {
-	cfg := NewConfiguration()
+	cfg := api.NewConfiguration()
 	cfg.Scheme = "http"
 	cfg.Host = "127.0.0.1:5173"
 	// cfg.HTTPClient = &http.Client{
 	// 	Transport: &LoggingRoundTripper{Proxied: http.DefaultTransport},
 	// }
 	// cfg.Debug = true
-	c := NewAPIClient(cfg)
+	c := api.NewAPIClient(cfg)
 	var err error = nil
-	var config *SharedFileSystemConfig = nil
+	var config *api.SharedFileSystemConfig = nil
 	for {
 		config, err = reportWorkerStarted(c)
 		if err != nil {
@@ -600,14 +606,13 @@ func main() {
 		time.Sleep(1 * time.Second)
 	}
 }
-func do_eval(c *APIClient, id string, expression string, primary interface{}, exitCode *int32) (interface{}, error) {
-	req := c.DefaultAPI.ApiDoEvalPost(context.Background())
-	req.apiDoEvalPostRequest = &ApiDoEvalPostRequest{
+func do_eval(c *api.APIClient, id string, expression string, primary interface{}, exitCode *int32) (interface{}, error) {
+	req := c.DefaultAPI.ApiDoEvalPost(context.Background()).ApiDoEvalPostRequest(api.ApiDoEvalPostRequest{
 		Id:       id,
 		Ex:       expression,
 		Context:  &primary,
 		ExitCode: exitCode,
-	}
+	})
 	res, httpres, err := req.Execute()
 	if httpres != nil && httpres.StatusCode != 200 {
 		return nil, errors.New("do_eval api returning http code " + httpres.Status)
@@ -626,7 +631,7 @@ func aslist(val interface{}) []interface{} {
 	}
 	return val.([]interface{})
 }
-func isFile(config *SharedFileSystemConfig, dir string, filepath string) bool {
+func isFile(config *api.SharedFileSystemConfig, dir string, filepath string) bool {
 	if config != nil && strings.HasPrefix(filepath, "s3://") {
 		h, err := headS3Object(config, filepath)
 		if err != nil {
@@ -642,7 +647,7 @@ func isFile(config *SharedFileSystemConfig, dir string, filepath string) bool {
 	fileInfo, err := os.Stat(path)
 	return err == nil && !fileInfo.IsDir()
 }
-func isS3Dir(config *SharedFileSystemConfig, s3url string) (bool, error) {
+func isS3Dir(config *api.SharedFileSystemConfig, s3url string) (bool, error) {
 	u, err := url.Parse(s3url)
 	if err != nil {
 		return false, err
@@ -681,7 +686,7 @@ func isS3Dir(config *SharedFileSystemConfig, s3url string) (bool, error) {
 	// Check if any objects are returned
 	return len(resp.Contents) > 0, nil
 }
-func isDir(config *SharedFileSystemConfig, dir string, filepath string) bool {
+func isDir(config *api.SharedFileSystemConfig, dir string, filepath string) bool {
 	if config != nil && strings.HasPrefix(filepath, "s3://") {
 		h, err := isS3Dir(config, filepath)
 		if err != nil {
@@ -810,7 +815,7 @@ func ensureWritable(targetPath string, includeRoot bool) error {
 }
 
 // CopyFile copies a single file from src to dst
-func CopyFile(config *SharedFileSystemConfig, src, dst string) error {
+func CopyFile(config *api.SharedFileSystemConfig, src, dst string) error {
 	if strings.HasPrefix(src, "s3://") {
 		_, err := downloadS3FileToTemp(config, src, &dst)
 		return err
@@ -841,7 +846,7 @@ func CopyFile(config *SharedFileSystemConfig, src, dst string) error {
 }
 
 // CopyDir recursively copies a directory tree, attempting to preserve permissions.
-func CopyDir(config *SharedFileSystemConfig, src string, dst string) error {
+func CopyDir(config *api.SharedFileSystemConfig, src string, dst string) error {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
 
@@ -884,7 +889,7 @@ func CopyDir(config *SharedFileSystemConfig, src string, dst string) error {
 
 	return err
 }
-func CopyFileOrDir(config *SharedFileSystemConfig, src, dst string) error {
+func CopyFileOrDir(config *api.SharedFileSystemConfig, src, dst string) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -912,7 +917,7 @@ func removeIgnorePermissionError(filePath string) error {
 	return nil
 }
 
-func prepareStagingDir(config *SharedFileSystemConfig, commands []StagingCommand) (map[string]string, error) {
+func prepareStagingDir(config *api.SharedFileSystemConfig, commands []api.StagingCommand) (map[string]string, error) {
 	var downloadPaths = map[string]string{}
 	for _, command := range commands {
 		switch command.Command {
@@ -1086,7 +1091,7 @@ func FileUrlJoin(baseurl string, path string) string {
 
 	}
 }
-func RevmapFile(builderOutdir, outdir string, f FileOrDirectory, fileitems []MapperEnt) error {
+func RevmapFile(builderOutdir, outdir string, f FileOrDirectory, fileitems []api.MapperEnt) error {
 	if strings.HasPrefix(outdir, "/") {
 		outdir, _ = fileUri(outdir, false)
 	}
@@ -1242,7 +1247,7 @@ func get_listing(outdir string, dir Directory, recursive bool) error {
 	dir.SetListing(listing)
 	return nil
 }
-func globOutput(builderOutdir string, binding OutputBinding, outdir string, computeChecksum bool) ([]FileOrDirectory, error) {
+func globOutput(builderOutdir string, binding api.OutputBinding, outdir string, computeChecksum bool) ([]FileOrDirectory, error) {
 	var results []FileOrDirectory
 	// Example of globbing in Go
 	for _, glob := range binding.Glob {
@@ -1275,8 +1280,8 @@ func globOutput(builderOutdir string, binding OutputBinding, outdir string, comp
 				}
 				results = append(results, file)
 			} else if f.IsDirectory() {
-				if binding.LoadListing != nil && *binding.LoadListing != NO_LISTING {
-					get_listing(outdir, f.(Directory), *binding.LoadListing == DEEP_LISTING)
+				if binding.LoadListing != nil && *binding.LoadListing != api.NO_LISTING {
+					get_listing(outdir, f.(Directory), *binding.LoadListing == api.DEEP_LISTING)
 				}
 				results = append(results, f)
 			} else if err != nil {
@@ -1374,7 +1379,7 @@ func DownloadDirectory(svc *s3.S3, bucket, prefix, localDir string) error {
 
 	return nil
 }
-func headS3Object(config *SharedFileSystemConfig, s3URL string) (string, error) {
+func headS3Object(config *api.SharedFileSystemConfig, s3URL string) (string, error) {
 	// URLを解析してバケットとキーを取得
 	u, err := url.Parse(s3URL)
 	if err != nil {
@@ -1417,7 +1422,7 @@ func headS3Object(config *SharedFileSystemConfig, s3URL string) (string, error) 
 	}
 	return "", err
 }
-func downloadS3FileToTemp(config *SharedFileSystemConfig, s3URL string, dstPath *string) (string, error) {
+func downloadS3FileToTemp(config *api.SharedFileSystemConfig, s3URL string, dstPath *string) (string, error) {
 	// URLを解析してバケットとキーを取得
 	u, err := url.Parse(s3URL)
 	if err != nil {
@@ -1507,7 +1512,7 @@ func getTarget(mounts []string) *string {
 	}
 	return nil
 }
-func prepareForDocker(config *SharedFileSystemConfig, commands []string, hostOutdir string, containerCwd string) ([]string, error) {
+func prepareForDocker(config *api.SharedFileSystemConfig, commands []string, hostOutdir string, containerCwd string) ([]string, error) {
 	var dockerCommands []string
 OuterLoop:
 	for _, cmd := range commands {
@@ -1534,7 +1539,7 @@ OuterLoop:
 					targetPath := getTarget(mounts)
 					if targetPath != nil && strings.HasPrefix(*targetPath, containerCwd) {
 						// if targetPath is in containerCwd, download into hostOutdir
-						targetPath = PtrString(strings.Replace(*targetPath, containerCwd, hostOutdir, 1))
+						targetPath = api.PtrString(strings.Replace(*targetPath, containerCwd, hostOutdir, 1))
 					} else {
 						targetPath = nil
 					}
@@ -1563,7 +1568,7 @@ OuterLoop:
 	}
 	return dockerCommands, nil
 }
-func executeJob(config *SharedFileSystemConfig, commands []string, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
+func executeJob(config *api.SharedFileSystemConfig, commands []string, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
 	var err error = nil
 	if commands[0] == "docker" {
 		commands, err = prepareForDocker(config, commands, cwd, containerOutDir)
