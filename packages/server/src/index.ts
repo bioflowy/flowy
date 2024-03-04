@@ -1,10 +1,11 @@
 import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
-import app from './app.js'
+import app from './app'
 
-export {type ExecuteJobRoute} from './app.js'
+const port = 3001
+
+console.log(`Server is running on port ${port}`)
 
 serve({
-    fetch: app.fetch,
-    port: 5173,
-  })
+  fetch: app.fetch,
+  port
+})

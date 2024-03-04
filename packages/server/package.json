@@ -7,7 +7,8 @@
     "convert": "ts-node --esm  convertTextToTs.ts resources/cwlNodeEngine.js src/cwlNodeEngine.ts ",
     "dev": "tsx watch src/index.ts",
     "build": "rimraf ./dist && vite build && tsc  --emitDeclarationOnly",
-    "test": "vitest"
+    "test": "vitest",
+    "conformance_test_s3": "npm run build && node dist/index.js --config config_s3.yaml"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.515.0",

@@ -11,6 +11,8 @@
       "node"
     ],
   },
+  "include": [
+    "src/**/*.ts"],
   "exclude": [
     "**/*.test.ts",
     "**/*.spec.ts",

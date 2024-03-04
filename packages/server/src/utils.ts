@@ -18,7 +18,7 @@ let __random_outdir: string | null = null;
 
 export const CONTENT_LIMIT = 64 * 1024;
 
-export const DEFAULT_TMP_PREFIX = os.tmpdir() + path.sep;
+export const DEFAULT_TMP_PREFIX = '/tmp/';
 
 export type MutableSequence<T> = T[];
 export type MutableMapping<T> = {

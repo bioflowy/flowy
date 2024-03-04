@@ -29,21 +29,5 @@ const route = app.post(WorkerStartedPath.path,...WorkerStartedHandler)
                   .post(JobFinishedPath.path, ...JobFinishedHandler)
                   .post(JobFailedPath.path,...JobFailedHandler)
                   .post(DoEvalPath.path,...JobEvalHandler)
-showRoutes(route)
-const executeJobRoute = app.post(executeJobPath.path, ...executeJobHandler)
-app.get('/doc', (c) => {
-  const generator = new OpenApiGeneratorV3(registry.definitions);
-  const doc = generator.generateDocument({
-    openapi: '3.0.0',
-    info: {
-      version: '1.0.0',
-      title: 'My API',
-      description: 'This is the API',
-    },
-    servers: [{ url: '' }],
-  });
-  return c.json(doc)
-})
-app.get('/ui', swaggerUI({ url: '/doc' }))
-export type ExecuteJobRoute = typeof executeJobRoute
+                  .post(executeJobPath.path, ...executeJobHandler)
 export default app

@@ -1,10 +1,11 @@
+import { builtinModules } from "module";
 import { defineConfig } from 'vite'
 import devServer from '@hono/vite-dev-server'
-import { builtinModules } from 'module';
 
 export default defineConfig({
     build: {
-        minify: true,
+        target: "esnext",
+        minify: false,
         emptyOutDir: false,
         copyPublicDir: false,
         rollupOptions: {
@@ -12,8 +13,16 @@ export default defineConfig({
             output: {
                 entryFileNames: 'index.js',
               },
-            format: 'esm',
-            external: [...builtinModules],
+              external: [
+                'node:path',
+                "node:stream",
+                "node:fs/promises",
+                'node:fs',
+                'node:os',
+                'node:crypto',
+                'node:child_process',
+                'node:url',
+                ...builtinModules],
         },
         
       },
@@ -22,4 +31,4 @@ export default defineConfig({
           entry: "./src/app.ts",
         })
       ],
-    });
+});
