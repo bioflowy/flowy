@@ -11,9 +11,11 @@ export default defineConfig({
         rollupOptions: {
             input: ['./src/index.ts'],
             output: {
+              format: 'es',
                 entryFileNames: 'index.js',
               },
               external: [
+                'uuid',
                 'node:path',
                 "node:stream",
                 "node:fs/promises",
@@ -24,7 +26,9 @@ export default defineConfig({
                 'node:url',
                 ...builtinModules],
         },
-        
+      },
+      resolve: {
+        mainFields: ['module']
       },
       plugins: [
         devServer({
