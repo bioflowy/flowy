@@ -17,7 +17,7 @@ export async function main(args: Args): Promise<number> {
     tool_path: args.tool_path,
     job_path: args.job_path,
     clientWorkDir: process.cwd(),
-    basedir: args.basedir,
+    basedir: args.basedir??process.cwd(),
   }});
   const {result,status } = await res.json()
   if (status === 'success') {

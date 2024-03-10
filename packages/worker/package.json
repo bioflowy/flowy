@@ -1,0 +1,12 @@
+{
+  "name": "@flowy/worker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "go test",
+    "build": "go build -o ./dist/worker ."
+  },
+  "author": "",
+  "license": "ISC"
+}

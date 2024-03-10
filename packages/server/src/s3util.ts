@@ -1,6 +1,4 @@
-import { log } from 'node:console';
 import { DefaultFetcher, Fetcher } from '@flowy/cwl-ts-auto/dist/util/Fetcher.js';
-import { fetcher } from 'rdflib';
 import { getFileContentFromS3 } from './builder.js';
 import { getManager } from './server/manager.js';
 

@@ -1,10 +1,12 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as url from 'node:url';
-import * as rdf from 'rdflib';
+import * as n3 from 'n3';
+import {RdfXmlParser} from "rdfxml-streaming-parser";
 import { getFileContentFromS3 } from './builder.js';
 import { filePathToURI } from './utils.js';
 import { getManager } from './server/manager.js';
+import { _logger } from './loghandler.js';
 
 function guessContentType(path: string): string {
   const vals = path.split('.');
@@ -18,7 +20,7 @@ function guessContentType(path: string): string {
 }
 export class FormatGraph {
   ontologyPaths: string[] = [];
-  store: rdf.Store = rdf.graph();
+  store: n3.Store = new n3.Store();
   constructor(ontologyPath?: string) {
     if (ontologyPath) {
       this.ontologyPaths.push(ontologyPath);
@@ -30,7 +32,8 @@ export class FormatGraph {
   async loads(): Promise<void> {
     for (const ontologyPath of this.ontologyPaths) {
       const store = await this.load(ontologyPath);
-      this.store.addAll(store.statements);
+      const all = store.getQuads(null,null,null,null)
+      this.store.addQuads(all)
     }
     this.ontologyPaths.length = 0;
   }
@@ -40,8 +43,44 @@ export class FormatGraph {
   addOntology(ontologyPath) {
     this.ontologyPaths.push(ontologyPath);
   }
-  async load(ontologyPath: string): Promise<rdf.Store> {
-    const store = rdf.graph();
+  async loadByN3(owlString:string):Promise<n3.Store> {
+    const store = new n3.Store();
+    return new Promise((resolve, reject) => {
+      const parser = new n3.Parser()
+      parser.parse(owlString,(err,quad,prefixes)=>{
+        if(prefixes){
+          _logger.info(`prefixes=${JSON.stringify(prefixes)}`)
+        }
+        if(err){
+          reject(err)
+        }else if(quad == null){
+          resolve(store)
+        }else{
+          store.addQuad(quad)
+        }
+      })
+    });
+  }
+  async loadRDFXMLStreamParser(owlString:string):Promise<n3.Store> {
+    const store = new n3.Store();
+    return new Promise((resolve, reject) => {
+      const myParser = new RdfXmlParser();
+
+      myParser.on('data',(e)=>{
+        store.addQuad(e)
+      })
+      myParser.on('error',(e)=>{
+        reject(e)
+      })
+      myParser.on('end',()=>{
+        resolve(store)
+      })
+      myParser.write(owlString)
+      myParser.end()
+    });
+  }
+  async load(ontologyPath: string): Promise<n3.Store> {
+    const store = new n3.Store();
     let owlData = '';
     if (ontologyPath.startsWith('s3:/')) {
       const config = getManager().getServerConfig();
@@ -49,18 +88,15 @@ export class FormatGraph {
     } else {
       owlData = (await fs.readFile(ontologyPath)).toString('utf-8');
     }
-    return new Promise((resolve, reject) => {
-      rdf.parse(owlData, store, filePathToURI(ontologyPath), guessContentType(ontologyPath), (error, _graph) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(store);
-        }
-      });
-    });
+    try{
+      return await this.loadByN3(owlData)
+    }catch(e){
+      return await this.loadRDFXMLStreamParser(owlData)
+    }
   }
-  subClassOfPredicate = rdf.sym('http://www.w3.org/2000/01/rdf-schema#subClassOf');
-  equivalentClassPredicate = rdf.sym('http://www.w3.org/2002/07/owl#equivalentClass');
+  
+  subClassOfPredicate = new n3.NamedNode('http://www.w3.org/2000/01/rdf-schema#subClassOf');
+  equivalentClassPredicate = new n3.NamedNode('http://www.w3.org/2002/07/owl#equivalentClass');
   isSubClassOf(child: string, parent: string): boolean {
     if (child === parent) {
       return true;
@@ -68,20 +104,20 @@ export class FormatGraph {
     if (!(child.startsWith('http:') && parent.startsWith('http:'))) {
       return false;
     }
-    const childTerm = rdf.sym(child);
-    const parentTerm = rdf.sym(parent);
-    for (const result of this.store.each(childTerm, this.subClassOfPredicate)) {
-      if (this.isSubClassOf(result.value, parent)) {
+    const childTerm = new n3.NamedNode(child);
+    const parentTerm = new n3.NamedNode(parent);
+    for (const result of this.store.match(childTerm, this.subClassOfPredicate)) {
+      if (this.isSubClassOf(result.object.value, parent)) {
         return true;
       }
     }
-    for (const result of this.store.each(childTerm, this.equivalentClassPredicate)) {
-      if (this.isSubClassOf(result.value, parent)) {
+    for (const result of this.store.match(childTerm, this.equivalentClassPredicate)) {
+      if (this.isSubClassOf(result.object.value, parent)) {
         return true;
       }
     }
-    for (const result of this.store.each(parentTerm, this.equivalentClassPredicate)) {
-      if (this.isSubClassOf(child, result.value)) {
+    for (const result of this.store.match(parentTerm, this.equivalentClassPredicate)) {
+      if (this.isSubClassOf(child, result.object.value)) {
         return true;
       }
     }

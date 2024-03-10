@@ -6,6 +6,7 @@ import { Directory, File } from '../cwltypes.js';
 import { WorkflowException } from '../errors.js';
 import { CWLOutputType } from '../utils.js';
 import { ServerConfig, ServerConfigSchema } from './config.js';
+import { _logger } from '../loghandler.js';
 
 export class Manager {
   private config: ServerConfig;
@@ -78,6 +79,7 @@ export function getManager(): Manager {
   return manager;
 }
 export function initManager(configPath: string = 'config.yml'): Manager {
+  _logger.info(`initManager by ${configPath}`);
   manager = new Manager(configPath);
   return manager;
 }

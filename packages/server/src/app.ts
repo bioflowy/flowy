@@ -22,28 +22,12 @@ registry.registerPath(GetExecutableJobPath)
 registry.registerPath(JobFinishedPath)
 registry.registerPath(JobFailedPath)
 registry.registerPath(DoEvalPath)
-const factory = createFactory()
 const app = new Hono()
-const route = app.post(WorkerStartedPath.path,...WorkerStartedHandler)
+app.post(WorkerStartedPath.path,...WorkerStartedHandler)
                   .post(GetExecutableJobPath.path,...GetExecutableJobHandler)
                   .post(JobFinishedPath.path, ...JobFinishedHandler)
                   .post(JobFailedPath.path,...JobFailedHandler)
                   .post(DoEvalPath.path,...JobEvalHandler)
-showRoutes(route)
 const executeJobRoute = app.post(executeJobPath.path, ...executeJobHandler)
-app.get('/doc', (c) => {
-  const generator = new OpenApiGeneratorV3(registry.definitions);
-  const doc = generator.generateDocument({
-    openapi: '3.0.0',
-    info: {
-      version: '1.0.0',
-      title: 'My API',
-      description: 'This is the API',
-    },
-    servers: [{ url: '' }],
-  });
-  return c.json(doc)
-})
-app.get('/ui', swaggerUI({ url: '/doc' }))
 export type ExecuteJobRoute = typeof executeJobRoute
 export default app

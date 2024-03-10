@@ -5,6 +5,9 @@
   "workspaces": [
     "packages/*"
   ],
+  "scripts": {
+    "build": "npm run build --workspace=packages/cwl-ts-auto;npm run build --workspace=packages/server;npm run build --workspace=packages/client;npm run build --workspace=packages/worker"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC"
