@@ -35,6 +35,7 @@ type ApiGetExectableJobPost200ResponseInner struct {
 	Fileitems []MapperEnt `json:"fileitems"`
 	Generatedlist []MapperEnt `json:"generatedlist"`
 	InplaceUpdate bool `json:"inplace_update"`
+	OutputBaseDir *string `json:"outputBaseDir,omitempty"`
 }
 
 type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseInner
@@ -434,6 +435,38 @@ func (o *ApiGetExectableJobPost200ResponseInner) SetInplaceUpdate(v bool) {
 	o.InplaceUpdate = v
 }
 
+// GetOutputBaseDir returns the OutputBaseDir field value if set, zero value otherwise.
+func (o *ApiGetExectableJobPost200ResponseInner) GetOutputBaseDir() string {
+	if o == nil || IsNil(o.OutputBaseDir) {
+		var ret string
+		return ret
+	}
+	return *o.OutputBaseDir
+}
+
+// GetOutputBaseDirOk returns a tuple with the OutputBaseDir field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetOutputBaseDirOk() (*string, bool) {
+	if o == nil || IsNil(o.OutputBaseDir) {
+		return nil, false
+	}
+	return o.OutputBaseDir, true
+}
+
+// HasOutputBaseDir returns a boolean if a field has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) HasOutputBaseDir() bool {
+	if o != nil && !IsNil(o.OutputBaseDir) {
+		return true
+	}
+
+	return false
+}
+
+// SetOutputBaseDir gets a reference to the given string and assigns it to the OutputBaseDir field.
+func (o *ApiGetExectableJobPost200ResponseInner) SetOutputBaseDir(v string) {
+	o.OutputBaseDir = &v
+}
+
 func (o ApiGetExectableJobPost200ResponseInner) MarshalJSON() ([]byte, error) {
 	toSerialize,err := o.ToMap()
 	if err != nil {
@@ -466,6 +499,9 @@ func (o ApiGetExectableJobPost200ResponseInner) ToMap() (map[string]interface{},
 	toSerialize["fileitems"] = o.Fileitems
 	toSerialize["generatedlist"] = o.Generatedlist
 	toSerialize["inplace_update"] = o.InplaceUpdate
+	if !IsNil(o.OutputBaseDir) {
+		toSerialize["outputBaseDir"] = o.OutputBaseDir
+	}
 	return toSerialize, nil
 }
 

@@ -258,6 +258,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 			log.Default().Printf("job command = %+v", job.Commands)
 			log.Default().Printf("job Staging = %+v", job.Staging)
 			os.MkdirAll(job.Cwd, 0770)
+
 			downloadPaths, err = prepareStagingDir(config, job.Staging)
 			if err != nil {
 				reportFailed(c, job.Id, err)
@@ -285,7 +286,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 					return
 				}
 
-				err = uploadOutputs(config, results, downloadPaths, job.InplaceUpdate)
+				err = uploadOutputs(config, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
 				if err != nil {
 					reportFailed(c, job.Id, err)
 					return
@@ -300,7 +301,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 				log.Default().Printf("job Finished results = %+v", results)
 
 				r.Execute()
-				os.RemoveAll(job.Cwd)
+				// os.RemoveAll(job.Cwd)
 				for _, localPath := range downloadPaths {
 					os.RemoveAll(localPath)
 				}
@@ -347,7 +348,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 					reportFailed(c, job.Id, err)
 					return
 				}
-				uploadOutputs(config, results, downloadPaths, job.InplaceUpdate)
+				uploadOutputs(config, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
 				r := c.DefaultAPI.ApiJobFinishedPost(ctx).JobFinishedRequest(api.JobFinishedRequest{
 					Id:          job.Id,
 					IsCwlOutput: false,
@@ -358,7 +359,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 				log.Default().Printf("job Finished results = %+v", results)
 
 				r.Execute()
-				os.RemoveAll(job.Cwd)
+				// os.RemoveAll(job.Cwd)
 				for _, localPath := range downloadPaths {
 					os.RemoveAll(localPath)
 				}
@@ -368,7 +369,10 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 		}
 	}
 }
-func uploadOutputs(config *api.SharedFileSystemConfig, results map[string]interface{}, downloadPaths map[string]string, inplaceUpdate bool) error {
+func uploadOutputs(config *api.SharedFileSystemConfig, outputBaseDir string, results map[string]interface{}, downloadPaths map[string]string, inplaceUpdate bool) error {
+	if !strings.HasPrefix(outputBaseDir, "s3://") {
+		return nil
+	}
 	err := VisitFileOrDirectory(results, func(f_or_d FileOrDirectory) error {
 		if f_or_d.IsFile() {
 			file := f_or_d.(File)
@@ -584,10 +588,10 @@ func main() {
 	cfg := api.NewConfiguration()
 	cfg.Scheme = "http"
 	cfg.Host = "127.0.0.1:5173"
-	// cfg.HTTPClient = &http.Client{
-	// 	Transport: &LoggingRoundTripper{Proxied: http.DefaultTransport},
-	// }
-	// cfg.Debug = true
+	cfg.HTTPClient = &http.Client{
+		Transport: &LoggingRoundTripper{Proxied: http.DefaultTransport},
+	}
+	cfg.Debug = true
 	c := api.NewAPIClient(cfg)
 	var err error = nil
 	var config *api.SharedFileSystemConfig = nil
@@ -598,8 +602,6 @@ func main() {
 		} else {
 			break
 		}
-		var endpoint = "http://127.0.0.1:9000"
-		config.Endpoint = &endpoint
 	}
 	for {
 		GetAndExecuteJob(c, config)

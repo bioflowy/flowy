@@ -66,5 +66,6 @@ export const JobExecSchema = z.object({
   fileitems: z.array(MapperEntSchema),
   generatedlist: z.array(MapperEntSchema),
   inplace_update: z.boolean(),
+  outputBaseDir: z.string().optional(),
 });
 export type JobExec = z.infer<typeof JobExecSchema>;

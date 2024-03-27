@@ -60,6 +60,7 @@ function relink_initialworkdir_lazy(
 }
 
 export async function _job_popen(
+  outputBaseDir: string,
   staging: LazyStaging,
   commands: string[],
   stdin_path: string | undefined,
@@ -79,6 +80,7 @@ export async function _job_popen(
   const server = getManager();
   server.addBuilder(id, builder);
   return server.execute(id, {
+    outputBaseDir,
     id,
     staging: staging.commands,
     commands,
@@ -303,8 +305,10 @@ export abstract class JobBase {
           throw new ValueError(`'listing' in self.generatefiles but no generatemapper was setup.`);
         }
       }
+      
       const outputBindings = await createOutputBinding(this.tool.outputs, this.builder);
       const [rcode, isCwlOutput, fileMap] = await _job_popen(
+        runtimeContext.basedir,
         this.staging,
         commands,
         stdin_path,

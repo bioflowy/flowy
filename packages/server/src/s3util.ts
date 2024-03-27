@@ -25,3 +25,17 @@ export class S3Fetcher extends Fetcher {
   }
   static override schemes = ['s3'];
 }
+export class DefaultFetcher2 extends Fetcher {
+  fetcher: DefaultFetcher = new DefaultFetcher();
+  async fetchText(url: string, _?: string[]): Promise<string> {
+    const content = await this.fetcher.fetchText(url);
+    return content;
+  }
+  checkExists(urlString: string): boolean {
+    return this.fetcher.checkExists(urlString);
+  }
+  urljoin(baseUrlString: string, urlString: string): string {
+    const url = this.fetcher.urljoin(baseUrlString, urlString)
+    return url;
+  }
+}

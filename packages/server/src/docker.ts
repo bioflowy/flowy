@@ -153,12 +153,12 @@ export class DockerCommandLineJob extends ContainerCommandLineJob {
         if (!fs.existsSync(path.dirname(hostOutdirTgt))) {
           fs.mkdirSync(path.dirname(hostOutdirTgt), { recursive: true });
         }
-        if (volume.resolved.startsWith('file://')) {
-          fs.copyFileSync(volume.resolved, hostOutdirTgt);
-        } else if (volume.resolved.startsWith('s3://')) {
+        if (volume.resolved.startsWith('s3://')) {
           // if resolved is s3://, add volume
           this.append_volume(runtime, volume.resolved, volume.target, true);
           return;
+        }else {
+          fs.copyFileSync(volume.resolved, hostOutdirTgt);
         }
       } else {
         const tmpdir = createTmpDir(tmpdirPrefix);

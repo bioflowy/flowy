@@ -10,7 +10,7 @@ import { SingleJobExecutor } from './executors.js';
 import { loadDocument } from './loader.js';
 import { _logger } from './loghandler.js';
 import { shortname, type Process, add_sizes } from './process.js';
-import { S3Fetcher, dirnames3 } from './s3util.js';
+import { DefaultFetcher2, S3Fetcher, dirnames3 } from './s3util.js';
 import {
   type CWLObjectType,
   normalizeFilesDirs,
@@ -34,6 +34,9 @@ async function parseFile(filePath: string): Promise<object | null> {
     const serverConfig = getManager().getServerConfig();
     content = await getFileContentFromS3(serverConfig.sharedFileSystem, filePath);
   } else {
+    if(filePath.startsWith('file://')) {
+      filePath= filePath.replace("file://",'')
+    }
     if (!fs.existsSync(filePath)) {
       throw new Error('File does not exist.');
     }
@@ -83,6 +86,8 @@ async function load_job_order(job_order_file: string): Promise<[CWLObjectType | 
     input_basedir = process.cwd();
   } else if (job_order_file != null) {
     if (job_order_file.startsWith('s3:/')) {
+      input_basedir = dirnames3(job_order_file);
+    }else  if (job_order_file.startsWith('file:/')) {
       input_basedir = dirnames3(job_order_file);
     } else {
       input_basedir = path.resolve(path.dirname(job_order_file));
@@ -227,7 +232,11 @@ export async function exec(
   _logger.info(`job_path=${job_path}`);
   loadingContext.baseuri = path.dirname(tool_path);
   const loadingOptions = new cwlTsAuto.LoadingOptions({});
-  loadingOptions.fetcher = new S3Fetcher();
+  if(tool_path.startsWith("s3://")){
+    loadingOptions.fetcher = new S3Fetcher();
+  }else{
+    loadingOptions.fetcher = new DefaultFetcher2();
+  }
   loadingContext.loadingOptions = loadingOptions;
   const [tool] = await loadDocument(tool_path, loadingContext);
   const jo = await load_job_order(job_path);

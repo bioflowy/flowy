@@ -627,8 +627,12 @@ function reversed<T>(arrays: T[]): T[] {
   return [...arrays].reverse();
 }
 export function pathJoin(base: string, name: string) {
-  if (base.startsWith('s3://')) {
-    return `${base}${name}`;
+  if (base.startsWith('s3://') || base.startsWith("file://")) {
+    if(base.endsWith('/')){
+      return `${base}${name}`;
+    }else{
+      return `${base}/${name}`;
+    }
   } else {
     return path.join(base, name);
   }

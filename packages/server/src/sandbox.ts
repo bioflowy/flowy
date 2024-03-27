@@ -40,7 +40,6 @@ function execProcess(cmd: string,args:string[],cwd:string | undefined,stdin:stri
         let stderrData = "";
   
         proc.stdout.on("data", (data: Buffer) => {
-          console.log(`data len=${data.length}`)
             stdoutData += data.toString();
         });
   

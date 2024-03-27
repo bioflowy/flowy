@@ -86,6 +86,9 @@ export class FormatGraph {
       const config = getManager().getServerConfig();
       owlData = await getFileContentFromS3(config.sharedFileSystem, ontologyPath, true);
     } else {
+      if(ontologyPath.startsWith("file://")){
+        ontologyPath = ontologyPath.replace('file://','')
+      }
       owlData = (await fs.readFile(ontologyPath)).toString('utf-8');
     }
     try{

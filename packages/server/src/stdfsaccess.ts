@@ -11,9 +11,9 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 
-import * as fsExtra from 'fs-extra';
 import * as glob from 'glob';
 import { SharedFileSystem } from './server/config.js';
+import { copyRecursively } from './fileutils.js';
 export function abspath(src: string, basedir: string): string {
   let abpath: string;
   if (src.startsWith('file://')) {
@@ -142,7 +142,7 @@ export class StdFsAccess {
         const dirpath = path.dirname(downloadPath);
         if (fs.existsSync(dirpath)) {
           if (!fs.lstatSync(dirpath).isDirectory()) {
-            await fsExtra.remove(dirpath);
+            fs.rmSync(dirpath);
             fs.mkdirSync(dirpath);
           }
         } else {
@@ -171,7 +171,7 @@ export class StdFsAccess {
       await this.downloadS3Object(src, dst);
     } else {
       console.log(`filecopy ${src} to ${dst}`);
-      fsExtra.copySync(src, dst, { preserveTimestamps: true, overwrite: true });
+      await copyRecursively(src,dst)
     }
     return 0;
   }

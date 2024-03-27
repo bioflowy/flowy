@@ -9,7 +9,6 @@ import {
   enum_d9cba076fca539106791a4f46d198c7fcfbdb779 as RecordTypeEnum,
 } from '@flowy/cwl-ts-auto';
 import * as cwlTsAuto from '@flowy/cwl-ts-auto';
-import fsExtra from 'fs-extra';
 import { cloneDeep } from 'lodash-es';
 import { v4 } from 'uuid';
 import { Builder } from './builder.js';
@@ -30,7 +29,7 @@ import {
 import { ValidationException, WorkflowException } from './errors.js';
 
 import { needs_parsing } from './expression.js';
-import { isdir, isfile, removeIgnorePermissionError, removeSyncIgnorePermissionError } from './fileutils.js';
+import { copyRecursively, isdir, isfile, removeIgnorePermissionError } from './fileutils.js';
 import { FormatGraph } from './formatgraph.js';
 import { _logger } from './loghandler.js';
 
@@ -134,13 +133,13 @@ export async function stage_files_for_outputs(
     } else if (entry.type === 'Directory' && !fs.existsSync(entry.target) && entry.resolved.startsWith('_:')) {
       fs.mkdirSync(entry.target, { recursive: true });
     } else if (entry.type === 'WritableFile' && !ignore_writable) {
-      fs.copyFileSync(entry.resolved, entry.target);
+      await copyRecursively(entry.resolved, entry.target);
       ensureWritable(entry.target);
     } else if (entry.type === 'WritableDirectory' && !ignore_writable) {
       if (entry.resolved.startsWith('_:')) {
         fs.mkdirSync(entry.target, { recursive: true });
       } else {
-        fsExtra.copySync(entry.resolved, entry.target);
+        await copyRecursively(entry.resolved, entry.target);
         ensureWritable(entry.target, true);
       }
     } else if (entry.type === 'CreateFile' || entry.type === 'CreateWritableFile') {
@@ -283,14 +282,15 @@ async function _relocate(
         await _relocate(fs_access, source_directories, action, dir_entry.path, fs_access.join(dst, dir_entry.name));
       }
     } else {
-      fsExtra.moveSync(src, dst, { overwrite: true });
+      await copyRecursively(src, dst);
+      await removeIgnorePermissionError(src)
     }
   } else if (_action === 'copy') {
     _logger.debug(`Copying ${src} to ${dst}`);
     const isDir = await fs_access.isdir(src);
     if (isDir) {
       if (isdir(dst)) {
-        removeSyncIgnorePermissionError(dst);
+        await removeIgnorePermissionError(dst);
       } else if (isfile(dst)) {
         fs.unlinkSync(dst);
       }
