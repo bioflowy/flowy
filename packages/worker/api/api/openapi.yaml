@@ -149,6 +149,10 @@ components:
       required:
       - command
       type: object
+    CommandString:
+      items:
+        $ref: '#/components/schemas/CommandString_inner'
+      type: array
     LoadListingEnum:
       enum:
       - no_listing
@@ -254,9 +258,11 @@ components:
     _api_getExectableJob_post_200_response_inner:
       example:
         stdout_path: stdout_path
+        dockerImage: dockerImage
         builderOutdir: builderOutdir
         env:
           key: env
+        outputBaseDir: outputBaseDir
         timelimit: 6
         inplace_update: true
         stderr_path: stderr_path
@@ -296,9 +302,10 @@ components:
           recursive: true
           target: target
           resolved: resolved
+        dockerExec: dockerExec
         commands:
-        - commands
-        - commands
+        - null
+        - null
         outputBindings:
         - loadContents: true
           loadListing: null
@@ -337,7 +344,7 @@ components:
           type: array
         commands:
           items:
-            type: string
+            $ref: '#/components/schemas/CommandString'
           type: array
         stdin_path:
           type: string
@@ -369,6 +376,12 @@ components:
           type: array
         inplace_update:
           type: boolean
+        outputBaseDir:
+          type: string
+        dockerExec:
+          type: string
+        dockerImage:
+          type: string
       required:
       - builderOutdir
       - commands
@@ -404,6 +417,19 @@ components:
       required:
       - ex
       - id
+      type: object
+    CommandString_inner:
+      properties:
+        type:
+          enum:
+          - Literal
+          - Key
+          type: string
+        value:
+          type: string
+      required:
+      - type
+      - value
       type: object
     OutputBinding_secondaryFiles_inner:
       example:

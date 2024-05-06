@@ -23,7 +23,7 @@ var _ MappedNullable = &ApiGetExectableJobPost200ResponseInner{}
 type ApiGetExectableJobPost200ResponseInner struct {
 	Id string `json:"id"`
 	Staging []StagingCommand `json:"staging"`
-	Commands []string `json:"commands"`
+	Commands [][]CommandStringInner `json:"commands"`
 	StdinPath *string `json:"stdin_path,omitempty"`
 	StdoutPath *string `json:"stdout_path,omitempty"`
 	StderrPath *string `json:"stderr_path,omitempty"`
@@ -36,6 +36,8 @@ type ApiGetExectableJobPost200ResponseInner struct {
 	Generatedlist []MapperEnt `json:"generatedlist"`
 	InplaceUpdate bool `json:"inplace_update"`
 	OutputBaseDir *string `json:"outputBaseDir,omitempty"`
+	DockerExec *string `json:"dockerExec,omitempty"`
+	DockerImage *string `json:"dockerImage,omitempty"`
 }
 
 type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseInner
@@ -44,7 +46,7 @@ type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseIn
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewApiGetExectableJobPost200ResponseInner(id string, staging []StagingCommand, commands []string, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool) *ApiGetExectableJobPost200ResponseInner {
+func NewApiGetExectableJobPost200ResponseInner(id string, staging []StagingCommand, commands [][]CommandStringInner, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool) *ApiGetExectableJobPost200ResponseInner {
 	this := ApiGetExectableJobPost200ResponseInner{}
 	this.Id = id
 	this.Staging = staging
@@ -116,9 +118,9 @@ func (o *ApiGetExectableJobPost200ResponseInner) SetStaging(v []StagingCommand) 
 }
 
 // GetCommands returns the Commands field value
-func (o *ApiGetExectableJobPost200ResponseInner) GetCommands() []string {
+func (o *ApiGetExectableJobPost200ResponseInner) GetCommands() [][]CommandStringInner {
 	if o == nil {
-		var ret []string
+		var ret [][]CommandStringInner
 		return ret
 	}
 
@@ -127,7 +129,7 @@ func (o *ApiGetExectableJobPost200ResponseInner) GetCommands() []string {
 
 // GetCommandsOk returns a tuple with the Commands field value
 // and a boolean to check if the value has been set.
-func (o *ApiGetExectableJobPost200ResponseInner) GetCommandsOk() ([]string, bool) {
+func (o *ApiGetExectableJobPost200ResponseInner) GetCommandsOk() ([][]CommandStringInner, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -135,7 +137,7 @@ func (o *ApiGetExectableJobPost200ResponseInner) GetCommandsOk() ([]string, bool
 }
 
 // SetCommands sets field value
-func (o *ApiGetExectableJobPost200ResponseInner) SetCommands(v []string) {
+func (o *ApiGetExectableJobPost200ResponseInner) SetCommands(v [][]CommandStringInner) {
 	o.Commands = v
 }
 
@@ -467,6 +469,70 @@ func (o *ApiGetExectableJobPost200ResponseInner) SetOutputBaseDir(v string) {
 	o.OutputBaseDir = &v
 }
 
+// GetDockerExec returns the DockerExec field value if set, zero value otherwise.
+func (o *ApiGetExectableJobPost200ResponseInner) GetDockerExec() string {
+	if o == nil || IsNil(o.DockerExec) {
+		var ret string
+		return ret
+	}
+	return *o.DockerExec
+}
+
+// GetDockerExecOk returns a tuple with the DockerExec field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetDockerExecOk() (*string, bool) {
+	if o == nil || IsNil(o.DockerExec) {
+		return nil, false
+	}
+	return o.DockerExec, true
+}
+
+// HasDockerExec returns a boolean if a field has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) HasDockerExec() bool {
+	if o != nil && !IsNil(o.DockerExec) {
+		return true
+	}
+
+	return false
+}
+
+// SetDockerExec gets a reference to the given string and assigns it to the DockerExec field.
+func (o *ApiGetExectableJobPost200ResponseInner) SetDockerExec(v string) {
+	o.DockerExec = &v
+}
+
+// GetDockerImage returns the DockerImage field value if set, zero value otherwise.
+func (o *ApiGetExectableJobPost200ResponseInner) GetDockerImage() string {
+	if o == nil || IsNil(o.DockerImage) {
+		var ret string
+		return ret
+	}
+	return *o.DockerImage
+}
+
+// GetDockerImageOk returns a tuple with the DockerImage field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetDockerImageOk() (*string, bool) {
+	if o == nil || IsNil(o.DockerImage) {
+		return nil, false
+	}
+	return o.DockerImage, true
+}
+
+// HasDockerImage returns a boolean if a field has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) HasDockerImage() bool {
+	if o != nil && !IsNil(o.DockerImage) {
+		return true
+	}
+
+	return false
+}
+
+// SetDockerImage gets a reference to the given string and assigns it to the DockerImage field.
+func (o *ApiGetExectableJobPost200ResponseInner) SetDockerImage(v string) {
+	o.DockerImage = &v
+}
+
 func (o ApiGetExectableJobPost200ResponseInner) MarshalJSON() ([]byte, error) {
 	toSerialize,err := o.ToMap()
 	if err != nil {
@@ -501,6 +567,12 @@ func (o ApiGetExectableJobPost200ResponseInner) ToMap() (map[string]interface{},
 	toSerialize["inplace_update"] = o.InplaceUpdate
 	if !IsNil(o.OutputBaseDir) {
 		toSerialize["outputBaseDir"] = o.OutputBaseDir
+	}
+	if !IsNil(o.DockerExec) {
+		toSerialize["dockerExec"] = o.DockerExec
+	}
+	if !IsNil(o.DockerImage) {
+		toSerialize["dockerImage"] = o.DockerImage
 	}
 	return toSerialize, nil
 }

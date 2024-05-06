@@ -13,6 +13,7 @@ import { CommandLineJob, JobBase } from './job.js';
 import { StdFsAccess } from './stdfsaccess.js';
 import type { ToolRequirement } from './types.js';
 import type { WorkflowJob } from './workflow_job.js';
+import { CommandString } from './commandstring.js';
 
 let __random_outdir: string | null = null;
 

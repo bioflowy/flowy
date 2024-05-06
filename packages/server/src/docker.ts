@@ -24,19 +24,27 @@ const _IMAGES: Set<string> = new Set();
 
 export class DockerCommandLineJob extends ContainerCommandLineJob {
   docker_exec = 'docker';
+  dockerImage:string|undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-useless-constructor
   constructor(builder: Builder, joborder: CWLObjectType, make_path_mapper: MakePathMapper, tool: Tool, name: string) {
     super(builder, joborder, make_path_mapper, tool, name);
     // this.inplace_update = true;
   }
-
+  _get_dockerExec(){
+    return this.docker_exec
+  }
+  _get_dockerImage(){
+    return this.dockerImage
+  }
   async get_image(docker_requirement: DockerRequirement, pull_image: boolean, force_pull: boolean): Promise<boolean> {
     let found = false;
 
-    if (!docker_requirement.dockerImageId && docker_requirement.dockerPull)
+    if (!docker_requirement.dockerImageId && docker_requirement.dockerPull){
       docker_requirement.dockerImageId = docker_requirement.dockerPull;
-
+     this.dockerImage =  docker_requirement.dockerImageId
+    }
+ 
     // synchronized (_IMAGES_LOCK, () => {
     if (docker_requirement.dockerImageId in _IMAGES) return true;
     // });
@@ -58,6 +66,7 @@ export class DockerCommandLineJob extends ContainerCommandLineJob {
         }
 
         if (match && ((split[0] == match[1] && split[1] == match[2]) || docker_requirement.dockerImageId == match[3])) {
+          this.dockerImage = docker_requirement.dockerImageId
           found = true;
           break;
         }

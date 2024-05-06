@@ -33,6 +33,7 @@ import {
   isFileOrDirectory,
   isFile,
 } from './utils.js';
+import { CommandString, CommandStringToString, quoteCommand, toCommandStringArray } from './commandstring.js';
 
 interface Dirent {
   entryname?: string;
@@ -629,22 +630,21 @@ export class CommandLineTool extends Process {
   async setup_command_line(builder: Builder, j: JobBase) {
     const [shellcmd, _] = getRequirement(this.tool, cwl.ShellCommandRequirement);
     if (shellcmd !== undefined) {
-      let cmd: string[] = []; // type: List[str]
+      let cmd: CommandString[] = []; // type: List[str]
       for (const b of builder.bindings) {
         let arg = await builder.generate_arg(b);
         if (!(b.shellQuote === false)) {
-          arg = aslist(arg).map((a) => quote(a));
+          arg = aslist(arg).map((a) => quoteCommand(a));
         }
         cmd = [...cmd, ...aslist(arg)];
       }
-      j.command_line = ['/bin/sh', '-c', cmd.join(' ')];
+      j.command_line = toCommandStringArray(['/bin/sh', '-c', cmd.map(CommandStringToString).join(" ")]);
     } else {
-      const cmd: string[] = [];
+      const cmd: CommandString[] = [];
       for (let index = 0; index < builder.bindings.length; index++) {
         const element = builder.bindings[index];
         const a = await builder.generate_arg(element);
-        const b = a.flat();
-        cmd.push(...b);
+        cmd.push(...a);
       }
       j.command_line = cmd;
     }

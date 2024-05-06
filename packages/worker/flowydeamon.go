@@ -264,7 +264,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 				reportFailed(c, job.Id, err)
 				return
 			}
-			exitCode, err := executeJob(config, job.Commands, job.StdinPath, job.StdoutPath, job.StderrPath, job.Env, job.Cwd, job.BuilderOutdir, job.Timelimit)
+			exitCode, err := executeJob(config, &job, job.Commands, job.StdinPath, job.StdoutPath, job.StderrPath, job.Env, job.Cwd, job.BuilderOutdir, job.Timelimit)
 			if err != nil {
 				reportFailed(c, job.Id, err)
 				return
@@ -1514,69 +1514,57 @@ func getTarget(mounts []string) *string {
 	}
 	return nil
 }
-func prepareForDocker(config *api.SharedFileSystemConfig, commands []string, hostOutdir string, containerCwd string) ([]string, error) {
-	var dockerCommands []string
-OuterLoop:
-	for _, cmd := range commands {
-		var command string = cmd
-		if strings.HasPrefix(cmd, "--mount=") {
-			mounts := strings.Split(cmd, ",")
-			var isUpdated = false
-			for indx, mnt := range mounts {
-				if strings.HasPrefix(mnt, "target="+containerCwd) {
-					relpath := strings.Replace(mnt, "target="+containerCwd, "", 1)
-					dirpath := filepath.Dir(filepath.Join(hostOutdir, relpath))
-					_, err := os.Stat(dirpath)
-					if os.IsNotExist(err) {
-						os.MkdirAll(dirpath, 0775)
-					}
-				} else if strings.HasPrefix(mnt, "target=/tmp") {
-					for _, source := range mounts {
-						if strings.HasPrefix(source, "source=/") {
-							os.MkdirAll(strings.TrimPrefix(source, "source="), 0755)
-						}
-					}
-				}
-				if strings.HasPrefix(mnt, "source=s3://") {
-					targetPath := getTarget(mounts)
-					if targetPath != nil && strings.HasPrefix(*targetPath, containerCwd) {
-						// if targetPath is in containerCwd, download into hostOutdir
-						targetPath = api.PtrString(strings.Replace(*targetPath, containerCwd, hostOutdir, 1))
-					} else {
-						targetPath = nil
-					}
-					tmpfile, err := downloadS3FileToTemp(config,
-						mnt[len("source="):], targetPath)
-					if err != nil {
-						return nil, err
-					}
-					if targetPath != nil {
-						// if targetPath is specified, volume mount is not needed
-						continue OuterLoop
-					}
-					isUpdated = true
-					mounts[indx] = "source=" + tmpfile
-				}
-			}
-			if isUpdated {
-				command = strings.Join(mounts, ",")
-			}
-		} else if strings.HasPrefix(cmd, "--cidfile=/") {
-			ciddir := filepath.Dir(strings.TrimPrefix(cmd, "--cidfile="))
-			os.MkdirAll(ciddir, 0755)
-
+func toString(commandStr []api.CommandStringInner) string {
+	var str = ""
+	for _, p := range commandStr {
+		if p.Type != "Literal" {
+			str = str + p.Value
+		} else if p.Type != "Key" {
+			// TODO
+			str = str + p.Value
 		}
-		dockerCommands = append(dockerCommands, command)
 	}
+	return str
+}
+func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobPost200ResponseInner,
+	commands [][]api.CommandStringInner, hostOutdir string, containerCwd string) ([]string, error) {
+	var dockerCommands []string
+	dockerCommands = append(dockerCommands, *job.DockerExec)
+	dockerCommands = append(dockerCommands, "run", "-i")
+	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+hostOutdir+",target="+containerCwd)
+	tmpDir, err := os.MkdirTemp("", "example")
+	if err != nil {
+		return nil, err
+	}
+	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+tmpDir+",target=/tmp")
+	for _, item := range job.Fileitems {
+		if item.Staged {
+			dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+		}
+	}
+	dockerCommands = append(dockerCommands, "--workdir="+containerCwd)
+	dockerCommands = append(dockerCommands, "--read-only=true")
+	if job.StdoutPath != nil {
+		dockerCommands = append(dockerCommands, "--log-driver=none")
+	}
+	dockerCommands = append(dockerCommands, "--rm")
+	dockerCommands = append(dockerCommands, "--user=1001:1001")
+	dockerCommands = append(dockerCommands, "--env=HOME="+containerCwd)
+	dockerCommands = append(dockerCommands, "--env=TMPDIR=/tmp")
+	dockerCommands = append(dockerCommands, *job.DockerImage)
 	return dockerCommands, nil
 }
-func executeJob(config *api.SharedFileSystemConfig, commands []string, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
+func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobPost200ResponseInner, commands [][]api.CommandStringInner, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
 	var err error = nil
-	if commands[0] == "docker" {
-		commands, err = prepareForDocker(config, commands, cwd, containerOutDir)
+	var commands2 []string
+	if job.DockerExec != nil {
+		commands2, err = prepareForDocker(config, job, commands, cwd, containerOutDir)
 		if err != nil {
 			return -1, err
 		}
+	}
+	for _, c := range commands {
+		commands2 = append(commands2, toString(c))
 	}
 	var stdin io.Reader = os.Stdin
 	var stdout, stderr io.Writer = os.Stdout, os.Stderr
@@ -1610,8 +1598,8 @@ func executeJob(config *api.SharedFileSystemConfig, commands []string, stdinPath
 		}
 		defer stderr.(*os.File).Close()
 	}
-	fmt.Println("start commands " + commands[0])
-	cmd := exec.Command(commands[0], commands[1:]...)
+	fmt.Println("start commands " + commands2[0])
+	cmd := exec.Command(commands2[0], commands2[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.Dir = cwd
 	cmd.Env = os.Environ()

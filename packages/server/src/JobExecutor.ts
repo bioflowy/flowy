@@ -4,6 +4,7 @@ import { MapperEntSchema } from './pathmapper.js';
 import { StagingCommandSchema } from './staging.js';
 
 import { CWLOutputType } from './utils.js';
+import { CommandStringSchema } from './commandstring.js';
 extendZodWithOpenApi(z);
 
 export async function fastifyEvaluator(
@@ -54,7 +55,7 @@ export type OutputSecondaryFile = z.infer<typeof SecondaryFileSchema>;
 export const JobExecSchema = z.object({
   id: z.string(),
   staging: z.array(StagingCommandSchema),
-  commands: z.array(z.string()),
+  commands: z.array(CommandStringSchema),
   stdin_path: z.string().optional(),
   stdout_path: z.string().optional(),
   stderr_path: z.string().optional(),
@@ -67,5 +68,7 @@ export const JobExecSchema = z.object({
   generatedlist: z.array(MapperEntSchema),
   inplace_update: z.boolean(),
   outputBaseDir: z.string().optional(),
+  dockerExec: z.string().optional(),
+  dockerImage: z.string().optional(),
 });
 export type JobExec = z.infer<typeof JobExecSchema>;

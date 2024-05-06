@@ -56,6 +56,21 @@ components:
           type: boolean
       required:
         - command
+    CommandString:
+      type: array
+      items:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - Literal
+              - Key
+          value:
+            type: string
+        required:
+          - type
+          - value
     LoadListingEnum:
       type: string
       enum:
@@ -179,7 +194,7 @@ paths:
                     commands:
                       type: array
                       items:
-                        type: string
+                        $ref: '#/components/schemas/CommandString'
                     stdin_path:
                       type: string
                     stdout_path:
@@ -211,6 +226,10 @@ paths:
                     inplace_update:
                       type: boolean
                     outputBaseDir:
+                      type: string
+                    dockerExec:
+                      type: string
+                    dockerImage:
                       type: string
                   required:
                     - id

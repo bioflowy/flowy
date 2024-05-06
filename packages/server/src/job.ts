@@ -34,6 +34,7 @@ import {
   isStringOrStringArray,
 } from './utils.js';
 import { getManager } from './server/manager.js';
+import { CommandString, CommandStringToString } from './commandstring.js';
 
 function relink_initialworkdir_lazy(
   staging: LazyStaging,
@@ -62,7 +63,7 @@ function relink_initialworkdir_lazy(
 export async function _job_popen(
   outputBaseDir: string,
   staging: LazyStaging,
-  commands: string[],
+  commands: CommandString[],
   stdin_path: string | undefined,
   stdout_path: string | undefined,
   stderr_path: string | undefined,
@@ -75,6 +76,8 @@ export async function _job_popen(
   make_job_dir: () => string,
   inplace_update: boolean,
   timelimit: number | undefined = undefined,
+  dockerExec: string | undefined,
+  dockerImage: string | undefined,
 ): Promise<[number, boolean, OutputPortsType]> {
   const id = uuidv4();
   const server = getManager();
@@ -95,6 +98,8 @@ export async function _job_popen(
     generatedlist,
     timelimit,
     inplace_update,
+    dockerExec,
+    dockerImage
   });
 }
 type CollectOutputsType = (
@@ -117,7 +122,7 @@ export abstract class JobBase {
   successCodes: number[];
   temporaryFailCodes: number[];
   permanentFailCodes: number[];
-  command_line: string[];
+  command_line: CommandString[];
   pathmapper: PathMapper;
   generatemapper?: PathMapper;
   collect_outputs?: CollectOutputsType;
@@ -179,7 +184,12 @@ export abstract class JobBase {
     return `CommandLineJob(${this.name})`;
   }
   abstract run(runtimeContext: RuntimeContext): void;
-
+  _get_dockerExec():string | undefined{
+    return undefined
+  }
+  _get_dockerImage():string | undefined{
+    return undefined
+  }
   _setup(runtimeContext: RuntimeContext): void {
     // cuda not supported now
     // let cuda_req;
@@ -247,7 +257,7 @@ export abstract class JobBase {
     //   menv.set_env_vars(env);
     // }
     const command_line = runtime
-      .concat(this.command_line)
+      .concat(this.command_line.map(CommandStringToString))
       .map((arg) => (shouldquote ? quote(arg.toString()) : arg.toString())) // TODO
       .join(' \\\n');
     const tmp2 = [
@@ -286,9 +296,10 @@ export abstract class JobBase {
 
       const stderr_path = stderr_stdout_log_path(this.base_path_logs, this.stderr);
       const stdout_path = stderr_stdout_log_path(this.base_path_logs, this.stdout);
-      let commands = runtime.concat(this.command_line).map((x) => x.toString());
+      // let commands = runtime.concat(this.command_line).map((x) => x.toString());
       if (runtimeContext.secret_store !== undefined) {
-        commands = runtimeContext.secret_store.retrieve(commands as any) as string[];
+        // TODO 
+        // commands = runtimeContext.secret_store.retrieve(commands as any) as string[];
         env = runtimeContext.secret_store.retrieve(env as any) as { [id: string]: string };
       }
       const fileitems: MapperEnt[] = [];
@@ -310,7 +321,7 @@ export abstract class JobBase {
       const [rcode, isCwlOutput, fileMap] = await _job_popen(
         runtimeContext.basedir,
         this.staging,
-        commands,
+        this.command_line,
         stdin_path,
         stdout_path,
         stderr_path,
@@ -323,6 +334,8 @@ export abstract class JobBase {
         () => runtimeContext.createOutdir(),
         this.inplace_update,
         this.timelimit,
+        this._get_dockerExec(),
+        this._get_dockerImage(),
       );
       if (this.successCodes.includes(rcode)) {
         processStatus = 'success';
