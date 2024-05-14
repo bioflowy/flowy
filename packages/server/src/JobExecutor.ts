@@ -1,7 +1,6 @@
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { MapperEntSchema } from './pathmapper.js';
-import { StagingCommandSchema } from './staging.js';
 
 import { CWLOutputType } from './utils.js';
 import { CommandStringSchema } from './commandstring.js';
@@ -57,7 +56,6 @@ export const RuntimeSchema =  z.object({
 // JobExec Schema
 export const JobExecSchema = z.object({
   id: z.string(),
-  staging: z.array(StagingCommandSchema),
   commands: z.array(CommandStringSchema),
   stdin_path: z.string().optional(),
   stdout_path: z.string().optional(),

@@ -22,7 +22,6 @@ var _ MappedNullable = &ApiGetExectableJobPost200ResponseInner{}
 // ApiGetExectableJobPost200ResponseInner struct for ApiGetExectableJobPost200ResponseInner
 type ApiGetExectableJobPost200ResponseInner struct {
 	Id string `json:"id"`
-	Staging []StagingCommand `json:"staging"`
 	Commands [][]CommandStringInner `json:"commands"`
 	StdinPath *string `json:"stdin_path,omitempty"`
 	StdoutPath *string `json:"stdout_path,omitempty"`
@@ -48,10 +47,9 @@ type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseIn
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewApiGetExectableJobPost200ResponseInner(id string, staging []StagingCommand, commands [][]CommandStringInner, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool, networkaccess bool, runtime Runtime) *ApiGetExectableJobPost200ResponseInner {
+func NewApiGetExectableJobPost200ResponseInner(id string, commands [][]CommandStringInner, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool, networkaccess bool, runtime Runtime) *ApiGetExectableJobPost200ResponseInner {
 	this := ApiGetExectableJobPost200ResponseInner{}
 	this.Id = id
-	this.Staging = staging
 	this.Commands = commands
 	this.Env = env
 	this.Cwd = cwd
@@ -95,30 +93,6 @@ func (o *ApiGetExectableJobPost200ResponseInner) GetIdOk() (*string, bool) {
 // SetId sets field value
 func (o *ApiGetExectableJobPost200ResponseInner) SetId(v string) {
 	o.Id = v
-}
-
-// GetStaging returns the Staging field value
-func (o *ApiGetExectableJobPost200ResponseInner) GetStaging() []StagingCommand {
-	if o == nil {
-		var ret []StagingCommand
-		return ret
-	}
-
-	return o.Staging
-}
-
-// GetStagingOk returns a tuple with the Staging field value
-// and a boolean to check if the value has been set.
-func (o *ApiGetExectableJobPost200ResponseInner) GetStagingOk() ([]StagingCommand, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return o.Staging, true
-}
-
-// SetStaging sets field value
-func (o *ApiGetExectableJobPost200ResponseInner) SetStaging(v []StagingCommand) {
-	o.Staging = v
 }
 
 // GetCommands returns the Commands field value
@@ -596,7 +570,6 @@ func (o ApiGetExectableJobPost200ResponseInner) MarshalJSON() ([]byte, error) {
 func (o ApiGetExectableJobPost200ResponseInner) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
 	toSerialize["id"] = o.Id
-	toSerialize["staging"] = o.Staging
 	toSerialize["commands"] = o.Commands
 	if !IsNil(o.StdinPath) {
 		toSerialize["stdin_path"] = o.StdinPath
@@ -637,7 +610,6 @@ func (o *ApiGetExectableJobPost200ResponseInner) UnmarshalJSON(data []byte) (err
 	// that every required field exists as a key in the generic map.
 	requiredProperties := []string{
 		"id",
-		"staging",
 		"commands",
 		"env",
 		"cwd",

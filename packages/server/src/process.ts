@@ -36,7 +36,6 @@ import { _logger } from './loghandler.js';
 import { convertDictToFileDirectory } from './main.js';
 import { MapperEnt, PathMapper } from './pathmapper.js';
 import { SecretStore } from './secrets.js';
-import { LazyStaging } from './staging.js';
 import { StdFsAccess } from './stdfsaccess.js';
 
 import { compareInputBinding, CommandLineBinded, type ToolRequirement } from './types.js';
@@ -154,9 +153,6 @@ export async function stage_files_for_outputs(
 }
 
 export function stage_files(
-  host_outdir: string,
-  container_outdir: string,
-  staging: LazyStaging,
   pathmapper: PathMapper,
   stage_func?: (src: string, dest: string) => void,
   { ignore_writable = false, symlink = true, fix_conflicts = false }: StageFilesOptions = {},

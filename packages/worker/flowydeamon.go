@@ -256,7 +256,6 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 	if httpres.StatusCode == 200 {
 		for _, job := range res {
 			log.Default().Printf("job command = %+v", job.Commands)
-			log.Default().Printf("job Staging = %+v", job.Staging)
 			os.MkdirAll(job.Cwd, 0770)
 
 			// downloadPaths, err = prepareStagingDir(config, job.Staging)
@@ -1608,10 +1607,20 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 			if !staging {
 				dockerCommands = append(dockerCommands, "--mount=type=bind,source="+hostPath+",target="+item.Target)
 			}
-		} else {
-			if !contains(targets, item.Target) {
-				dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
-				targets = append(targets, item.Target)
+		} else if item.Type == "File" || item.Type == "Directory" {
+			if strings.HasPrefix(item.Resolved, "_:") {
+				if item.Type == "Directory" {
+					hostPath := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
+					err = os.Mkdir(hostPath, 0755)
+					if err != nil {
+						return nil, err
+					}
+				}
+			} else {
+				if !contains(targets, item.Target) {
+					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+					targets = append(targets, item.Target)
+				}
 			}
 		}
 	}
@@ -1663,7 +1672,7 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 						return -1, err
 					}
 				}
-			} else if item.Type == "CreateFile" {
+			} else if item.Type == "CreateFile" || item.Type == "CreateWritableFile" {
 				err = WriteToFile(item.Target, item.Resolved)
 				if err != nil {
 					return -1, err

@@ -7,7 +7,6 @@ import { Builder } from './builder.js';
 import { collect_output_ports } from './collect_outputs.js';
 import { LoadingContext, RuntimeContext, getDefault } from './context.js';
 import { CommandInputParameter, CommandOutputParameter, Directory, File, Tool } from './cwltypes.js';
-import { DockerCommandLineJob, PodmanCommandLineJob } from './docker.js';
 import { UnsupportedRequirement, WorkflowException } from './errors.js';
 import { pathJoin } from './fileutils.js';
 import { CommandLineJob, JobBase } from './job.js';
