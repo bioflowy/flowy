@@ -64,3 +64,16 @@
   id: initial_workdir_empty_writable_docker
   doc: Test empty writable dir with InitialWorkDirRequirement inside Docker
   tags: [ inline_javascript, initial_work_dir, command_line_tool ]
+
+- job: tests/dynresreq-dir-job.yaml
+  tool: tests/dynresreq-dir.cwl
+  id: dynamic_resreq_filesizes
+  doc: Test dynamic resource reqs referencing the size of Files inside a Directory
+  output:
+     output: {
+        "location": "cores.txt",
+        "size": 2,
+        "class": "File",
+        "checksum": "sha1$7448d8798a4380162d4b56f9b452e2f6f9e24e7a"
+     }
+  tags: [ resource, command_line_tool ]

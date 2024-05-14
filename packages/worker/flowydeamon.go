@@ -1656,6 +1656,8 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 				if err != nil {
 					return -1, err
 				}
+			} else if item.Type == "Directory" && strings.HasPrefix(item.Resolved, "_:") {
+				os.MkdirAll(item.Target, 0755)
 			} else {
 				err = symlink(item.Resolved, item.Target, false)
 				if err != nil {
