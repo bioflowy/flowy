@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DockerRequirement, ShellCommandRequirement } from '@flowy/cwl-ts-auto';
 import { v4 as uuidv4 } from 'uuid';
-import { OutputBinding, OutputSecondaryFile } from './JobExecutor.js';
+import { OutputBinding, OutputSecondaryFile, Runtime } from './JobExecutor.js';
 import { Builder } from './builder.js';
 import { OutputPortsType } from './collect_outputs.js';
 import { RuntimeContext } from './context.js';
@@ -32,6 +32,8 @@ import {
   quote,
   aslist,
   isStringOrStringArray,
+  which,
+  checkOutput,
 } from './utils.js';
 import { getManager } from './server/manager.js';
 import { CommandString, CommandStringToString } from './commandstring.js';
@@ -78,6 +80,9 @@ export async function _job_popen(
   timelimit: number | undefined = undefined,
   dockerExec: string | undefined,
   dockerImage: string | undefined,
+  networkaccess:boolean,
+  runtime: Runtime
+
 ): Promise<[number, boolean, OutputPortsType]> {
   const id = uuidv4();
   const server = getManager();
@@ -99,7 +104,9 @@ export async function _job_popen(
     timelimit,
     inplace_update,
     dockerExec,
-    dockerImage
+    dockerImage,
+    networkaccess,
+    runtime,
   });
 }
 type CollectOutputsType = (
@@ -191,14 +198,6 @@ export abstract class JobBase {
     return undefined
   }
   _setup(runtimeContext: RuntimeContext): void {
-    // cuda not supported now
-    // let cuda_req;
-    // [cuda_req, _] = this.builder.get_requirement("http://commonwl.org/cwltool#CUDARequirement");
-    // if (cuda_req) {
-    //     let count = cuda_check(cuda_req, Math.ceil(this.builder.resources["cudaDeviceCount"]));
-    //     if (count === 0) throw new WorkflowException("Could not satisfy CUDARequirement");
-    // }
-    if (!fs.existsSync(this.outdir)) fs.mkdirSync(this.outdir, { recursive: true });
 
     const is_streamable = (file: string): boolean => {
       if (!runtimeContext.streaming_allowed) return false;
@@ -225,7 +224,7 @@ export abstract class JobBase {
       runtimeContext.outdir = this.outdir;
       this.generatemapper = this.make_path_mapper(
         this.generatefiles.listing,
-        this.builder.outdir,
+        this.outdir,
         runtimeContext,
         false,
       );
@@ -284,12 +283,7 @@ export abstract class JobBase {
         stderr_or_stdout: string | undefined,
       ): string | undefined => {
         if (stderr_or_stdout !== undefined) {
-          const abserr = path.join(base_path_logs, stderr_or_stdout);
-          const dnerr = path.dirname(abserr);
-          if (dnerr && !fs.existsSync(dnerr)) {
-            fs.mkdirSync(dnerr, { recursive: true });
-          }
-          return abserr;
+          return path.join(base_path_logs, stderr_or_stdout);
         }
         return undefined;
       };
@@ -304,7 +298,7 @@ export abstract class JobBase {
       }
       const fileitems: MapperEnt[] = [];
       if (this.builder.pathmapper) {
-        for (const [_, item] of this.builder.pathmapper.items()) {
+        for (const [_, item] of this.builder.pathmapper.items_exclude_children()) {
           fileitems.push(item);
         }
       }
@@ -336,6 +330,10 @@ export abstract class JobBase {
         this.timelimit,
         this._get_dockerExec(),
         this._get_dockerImage(),
+        this.networkaccess,
+        {
+          custom_net: runtimeContext.custom_net
+        }
       );
       if (this.successCodes.includes(rcode)) {
         processStatus = 'success';
@@ -551,8 +549,95 @@ function convertSecondaryFiles(file: SecondaryFileSchema): OutputSecondaryFile {
     return { pattern: file.pattern };
   }
 }
+const _IMAGES: Set<string> = new Set();
 
 export class CommandLineJob extends JobBase {
+  docker_exec = 'docker';
+  dockerImage:string|undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(builder: Builder, joborder: CWLObjectType, make_path_mapper: MakePathMapper, tool: Tool, name: string) {
+    super(builder, joborder, make_path_mapper, tool, name);
+    // this.inplace_update = true;
+  }
+  _get_dockerExec(){
+    return this.docker_exec
+  }
+  _get_dockerImage(){
+    return this.dockerImage
+  }
+  async get_image(docker_requirement: DockerRequirement, pull_image: boolean, force_pull: boolean): Promise<boolean> {
+    let found = false;
+
+    if (!docker_requirement.dockerImageId && docker_requirement.dockerPull){
+      docker_requirement.dockerImageId = docker_requirement.dockerPull;
+     this.dockerImage =  docker_requirement.dockerImageId
+    }
+ 
+    // synchronized (_IMAGES_LOCK, () => {
+    if (docker_requirement.dockerImageId in _IMAGES) return true;
+    // });
+    const images = await checkOutput([this.docker_exec, 'images', '--no-trunc', '--all']);
+    for (const line of images.split('\n')) {
+      try {
+        const match = line.match('^([^ ]+)\\s+([^ ]+)\\s+([^ ]+)');
+        const split = docker_requirement.dockerImageId.split(':');
+        if (split.length == 1) split.push('latest');
+        else if (split.length == 2) {
+          if (!split[1].match('[\\w][\\w.-]{0,127}')) split[0] = `${split[0]}:${split[1]}`;
+          split[1] = 'latest';
+        } else if (split.length == 3) {
+          if (split[2].match('[\\w][\\w.-]{0,127}')) {
+            split[0] = `${split[0]}:${split[1]}`;
+            split[1] = split[2];
+            split.splice(2, 1);
+          }
+        }
+
+        if (match && ((split[0] == match[1] && split[1] == match[2]) || docker_requirement.dockerImageId == match[3])) {
+          this.dockerImage = docker_requirement.dockerImageId
+          found = true;
+          break;
+        }
+      } catch (error) {
+        _logger.warn(`Error parsing docker images output: ${error}`);
+        continue;
+      }
+    }
+
+    if ((force_pull || !found) && pull_image) {
+      let cmd: string[] = [];
+      if ('dockerPull' in docker_requirement) {
+        cmd = [this.docker_exec, 'pull', docker_requirement['dockerPull'].toString()];
+        _logger.info(cmd.toString());
+        await checkOutput(cmd);
+        found = true;
+      }
+    }
+    if (found) {
+      // synchronized (_IMAGES_LOCK, () => {
+      _IMAGES.add(docker_requirement['dockerImageId']);
+      // });
+    }
+
+    return found;
+  }
+  async get_from_requirements(
+    r: DockerRequirement,
+    pull_image: boolean,
+    force_pull: boolean,
+  ): Promise<string | undefined> {
+    const rslt = await which(this.docker_exec);
+    if (!rslt) {
+      throw new WorkflowException(`${this.docker_exec} executable is not available`);
+    }
+    await this.get_image(r, pull_image, force_pull);
+    if (r) {
+      return r['dockerImageId'];
+    }
+    throw new WorkflowException(`Docker image ${r['dockerImageId']} not found`);
+  }
+
   async run(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<void> {
     if (tmpdir_lock) {
       // assuming tmpdir_lock has a context equivalent
@@ -566,16 +651,63 @@ export class CommandLineJob extends JobBase {
         fs.mkdirSync(this.tmpdir, { recursive: true });
       }
     }
+    const [docker_req, docker_is_req] = getRequirement(this.tool, DockerRequirement);
+    let img_id: any = undefined;
+    const user_space_docker_cmd = runtimeContext.user_space_docker_cmd;
+    if (docker_req !== undefined && user_space_docker_cmd) {
+      if (docker_req.dockerImageId) {
+        img_id = docker_req.dockerImageId;
+      } else if (docker_req.dockerPull) {
+        img_id = String(docker_req.dockerPull);
+        const cmd = [user_space_docker_cmd, 'pull', img_id];
+        _logger.info(String(cmd));
+      } else {
+        throw new WorkflowException(
+          "Docker image must be specified as 'dockerImageId' or 'dockerPull' when using user space implementations of Docker",
+        );
+      }
+    } else {
+      try {
+        if (docker_req !== undefined && runtimeContext.use_container) {
+          img_id = await this.get_from_requirements(
+            docker_req,
+            runtimeContext.pull_image,
+            runtimeContext.force_docker_pull
+          );
+        }
+        if (docker_req !== undefined && img_id === undefined && runtimeContext.use_container) {
+          throw new Error('Docker image not available');
+        }
+        if (this.prov_obj !== undefined && img_id !== undefined && runtimeContext.process_run_id !== undefined) {
+          const container_agent = this.prov_obj.document.agent(uuidv4, {
+            'prov:type': 'SoftwareAgent',
+            'cwlprov:image': img_id,
+            'prov:label': `Container execution of image ${img_id}`,
+          });
+          this.prov_obj.document.wasAssociatedWith(runtimeContext.process_run_id, container_agent);
+        }
+      } catch (err) {
+        const container = runtimeContext.singularity ? 'Singularity' : 'Docker';
+        _logger.debug(`${container} error`, err);
+        if (docker_is_req) {
+          throw new UnsupportedRequirement(`${container} is required to run this tool: ${String(err)}`);
+        } else {
+          throw new WorkflowException(
+            `${container} is not available for this tool, try --no-container to disable ${container}, or install a user space Docker replacement like uDocker with --user-space-docker-cmd.: ${err}`,
+          );
+        }
+      }
+    }
 
     this._setup(runtimeContext);
 
-    stage_files(this.staging, this.pathmapper, null, {
+    stage_files(this.outdir,this.builder.outdir, this.staging, this.pathmapper, null, {
       ignore_writable: true,
       symlink: true,
       secret_store: runtimeContext.secret_store,
     });
     if (this.generatemapper) {
-      stage_files(this.staging, this.generatemapper, null, {
+      stage_files(this.outdir,this.builder.outdir, this.staging, this.generatemapper, null, {
         ignore_writable: this.inplace_update,
         symlink: true,
         secret_store: runtimeContext.secret_store,
@@ -732,14 +864,6 @@ export abstract class ContainerCommandLineJob extends JobBase {
         img_id = String(docker_req.dockerPull);
         const cmd = [user_space_docker_cmd, 'pull', img_id];
         _logger.info(String(cmd));
-        // TODO
-        // try {
-        //     process.check_call(cmd, sys.stderr)
-        // } catch (exc: any) {
-        //     throw new WorkflowException(
-        //         `Either Docker container ${img_id} is not available with  user space docker implementation ${user_space_docker_cmd}  or ${user_space_docker_cmd} is missing or broken.`
-        //     );
-        // }
       } else {
         throw new WorkflowException(
           "Docker image must be specified as 'dockerImageId' or 'dockerPull' when using user space implementations of Docker",
@@ -782,23 +906,23 @@ export abstract class ContainerCommandLineJob extends JobBase {
     this._setup(runtimeContext);
 
     const env = { ...process.env };
-    const [runtime, cidfile] = this.create_runtime(env as { [key: string]: string }, runtimeContext);
+    // const [runtime, cidfile] = this.create_runtime(env as { [key: string]: string }, runtimeContext);
 
-    runtime.push(String(img_id));
+    // runtime.push(String(img_id));
     let monitor_function: Function | null = null;
-    if (cidfile) {
-      monitor_function = (process: any) =>
-        this.docker_monitor(
-          cidfile,
-          runtimeContext.tmpdir_prefix,
-          !runtimeContext.cidfile_dir,
-          runtimeContext.podman ? 'podman' : 'docker',
-          process,
-        );
-    } else if (runtimeContext.user_space_docker_cmd) {
-      monitor_function = this.process_monitor;
-    }
-    await this._execute(runtime, env as { [key: string]: string }, runtimeContext, monitor_function as any);
+    // if (cidfile) {
+    //   monitor_function = (process: any) =>
+    //     this.docker_monitor(
+    //       cidfile,
+    //       runtimeContext.tmpdir_prefix,
+    //       !runtimeContext.cidfile_dir,
+    //       runtimeContext.podman ? 'podman' : 'docker',
+    //       process,
+    //     );
+    // } else if (runtimeContext.user_space_docker_cmd) {
+    //   monitor_function = this.process_monitor;
+    // }
+    await this._execute([], env as { [key: string]: string }, runtimeContext, monitor_function as any);
   }
   docker_monitor(
     cidfile: string,

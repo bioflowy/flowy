@@ -217,6 +217,13 @@ components:
       - target
       - type
       type: object
+    runtime:
+      example:
+        custom_net: custom_net
+      properties:
+        custom_net:
+          type: string
+      type: object
     JobFinishedRequest:
       example:
         isCwlOutput: true
@@ -259,10 +266,13 @@ components:
       example:
         stdout_path: stdout_path
         dockerImage: dockerImage
+        runtime:
+          custom_net: custom_net
         builderOutdir: builderOutdir
         env:
           key: env
         outputBaseDir: outputBaseDir
+        networkaccess: true
         timelimit: 6
         inplace_update: true
         stderr_path: stderr_path
@@ -376,12 +386,16 @@ components:
           type: array
         inplace_update:
           type: boolean
+        networkaccess:
+          type: boolean
         outputBaseDir:
           type: string
         dockerExec:
           type: string
         dockerImage:
           type: string
+        runtime:
+          $ref: '#/components/schemas/runtime'
       required:
       - builderOutdir
       - commands
@@ -391,7 +405,9 @@ components:
       - generatedlist
       - id
       - inplace_update
+      - networkaccess
       - outputBindings
+      - runtime
       - staging
       type: object
     _api_jobFailed_post_request:
@@ -422,8 +438,8 @@ components:
       properties:
         type:
           enum:
-          - Literal
           - Key
+          - Literal
           type: string
         value:
           type: string

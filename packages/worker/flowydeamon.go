@@ -259,11 +259,11 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 			log.Default().Printf("job Staging = %+v", job.Staging)
 			os.MkdirAll(job.Cwd, 0770)
 
-			downloadPaths, err = prepareStagingDir(config, job.Staging)
-			if err != nil {
-				reportFailed(c, job.Id, err)
-				return
-			}
+			// downloadPaths, err = prepareStagingDir(config, job.Staging)
+			// if err != nil {
+			// 	reportFailed(c, job.Id, err)
+			// 	return
+			// }
 			exitCode, err := executeJob(config, &job, job.Commands, job.StdinPath, job.StdoutPath, job.StderrPath, job.Env, job.Cwd, job.BuilderOutdir, job.Timelimit)
 			if err != nil {
 				reportFailed(c, job.Id, err)
@@ -1532,20 +1532,40 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 	dockerCommands = append(dockerCommands, *job.DockerExec)
 	dockerCommands = append(dockerCommands, "run", "-i")
 	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+hostOutdir+",target="+containerCwd)
-	tmpDir, err := os.MkdirTemp("", "example")
+	tmpDir, err := os.MkdirTemp("", "flowy-tmpdir")
 	if err != nil {
 		return nil, err
 	}
 	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+tmpDir+",target=/tmp")
-	for _, item := range job.Fileitems {
-		if item.Staged {
-			dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+	var targets []string
+	for _, item := range append(job.Fileitems, job.Generatedlist...) {
+		if item.Type == "WritableFile" {
+			target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
+			err = copy(item.Resolved, target)
+			if err != nil {
+				return nil, err
+			}
+		} else if item.Type == "CreateFile" {
+			target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
+			WriteToFile(target, item.Resolved)
+		} else {
+			if !contains(targets, item.Target) {
+				dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+			}
+			targets = append(targets, item.Target)
 		}
 	}
 	dockerCommands = append(dockerCommands, "--workdir="+containerCwd)
 	dockerCommands = append(dockerCommands, "--read-only=true")
 	if job.StdoutPath != nil {
 		dockerCommands = append(dockerCommands, "--log-driver=none")
+	}
+	if job.Networkaccess {
+		if job.Runtime.CustomNet != nil {
+			dockerCommands = append(dockerCommands, "--net="+*(job.Runtime.CustomNet))
+		}
+	} else {
+		dockerCommands = append(dockerCommands, "--net=none")
 	}
 	dockerCommands = append(dockerCommands, "--rm")
 	dockerCommands = append(dockerCommands, "--user=1001:1001")
@@ -1557,11 +1577,34 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobPost200ResponseInner, commands [][]api.CommandStringInner, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
 	var err error = nil
 	var commands2 []string
-	if job.DockerExec != nil {
+	if job.DockerImage != nil {
 		commands2, err = prepareForDocker(config, job, commands, cwd, containerOutDir)
 		if err != nil {
 			return -1, err
 		}
+	} else {
+		for _, item := range append(job.Fileitems, job.Generatedlist...) {
+			// if item.Type == "WritableFile" {
+			// 	target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
+			// 	err = copy(item.Resolved, target)
+			// 	if err != nil {
+			// 		return nil, err
+			// 	}
+			// } else
+			if item.Type == "CreateFile" {
+				err = WriteToFile(item.Target, item.Resolved)
+				if err != nil {
+					return -1, err
+				}
+			} else {
+				err = symlink(item.Resolved, item.Target, false)
+				if err != nil {
+					fmt.Println(err.Error())
+					return -1, err
+				}
+			}
+		}
+
 	}
 	for _, c := range commands {
 		commands2 = append(commands2, toString(c))
@@ -1591,12 +1634,15 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 		}
 		defer stdout.(*os.File).Close()
 	}
+	var stderrb bytes.Buffer
 	if stderrPath != nil {
 		stderr, err = os.Create(*stderrPath)
 		if err != nil {
 			return -1, err
 		}
 		defer stderr.(*os.File).Close()
+	} else {
+		stderr = &stderrb
 	}
 	fmt.Println("start commands " + commands2[0])
 	cmd := exec.Command(commands2[0], commands2[1:]...)
@@ -1622,6 +1668,7 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 	err = cmd.Wait()
 	if err != nil {
 		exitError, ok := err.(*exec.ExitError)
+		fmt.Println("Stderr:", stderrb.String())
 		if ok {
 			return exitError.ExitCode(), nil
 		}

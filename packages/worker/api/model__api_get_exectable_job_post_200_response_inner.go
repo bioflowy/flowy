@@ -35,9 +35,11 @@ type ApiGetExectableJobPost200ResponseInner struct {
 	Fileitems []MapperEnt `json:"fileitems"`
 	Generatedlist []MapperEnt `json:"generatedlist"`
 	InplaceUpdate bool `json:"inplace_update"`
+	Networkaccess bool `json:"networkaccess"`
 	OutputBaseDir *string `json:"outputBaseDir,omitempty"`
 	DockerExec *string `json:"dockerExec,omitempty"`
 	DockerImage *string `json:"dockerImage,omitempty"`
+	Runtime Runtime `json:"runtime"`
 }
 
 type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseInner
@@ -46,7 +48,7 @@ type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseIn
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewApiGetExectableJobPost200ResponseInner(id string, staging []StagingCommand, commands [][]CommandStringInner, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool) *ApiGetExectableJobPost200ResponseInner {
+func NewApiGetExectableJobPost200ResponseInner(id string, staging []StagingCommand, commands [][]CommandStringInner, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool, networkaccess bool, runtime Runtime) *ApiGetExectableJobPost200ResponseInner {
 	this := ApiGetExectableJobPost200ResponseInner{}
 	this.Id = id
 	this.Staging = staging
@@ -58,6 +60,8 @@ func NewApiGetExectableJobPost200ResponseInner(id string, staging []StagingComma
 	this.Fileitems = fileitems
 	this.Generatedlist = generatedlist
 	this.InplaceUpdate = inplaceUpdate
+	this.Networkaccess = networkaccess
+	this.Runtime = runtime
 	return &this
 }
 
@@ -437,6 +441,30 @@ func (o *ApiGetExectableJobPost200ResponseInner) SetInplaceUpdate(v bool) {
 	o.InplaceUpdate = v
 }
 
+// GetNetworkaccess returns the Networkaccess field value
+func (o *ApiGetExectableJobPost200ResponseInner) GetNetworkaccess() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.Networkaccess
+}
+
+// GetNetworkaccessOk returns a tuple with the Networkaccess field value
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetNetworkaccessOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Networkaccess, true
+}
+
+// SetNetworkaccess sets field value
+func (o *ApiGetExectableJobPost200ResponseInner) SetNetworkaccess(v bool) {
+	o.Networkaccess = v
+}
+
 // GetOutputBaseDir returns the OutputBaseDir field value if set, zero value otherwise.
 func (o *ApiGetExectableJobPost200ResponseInner) GetOutputBaseDir() string {
 	if o == nil || IsNil(o.OutputBaseDir) {
@@ -533,6 +561,30 @@ func (o *ApiGetExectableJobPost200ResponseInner) SetDockerImage(v string) {
 	o.DockerImage = &v
 }
 
+// GetRuntime returns the Runtime field value
+func (o *ApiGetExectableJobPost200ResponseInner) GetRuntime() Runtime {
+	if o == nil {
+		var ret Runtime
+		return ret
+	}
+
+	return o.Runtime
+}
+
+// GetRuntimeOk returns a tuple with the Runtime field value
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetRuntimeOk() (*Runtime, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Runtime, true
+}
+
+// SetRuntime sets field value
+func (o *ApiGetExectableJobPost200ResponseInner) SetRuntime(v Runtime) {
+	o.Runtime = v
+}
+
 func (o ApiGetExectableJobPost200ResponseInner) MarshalJSON() ([]byte, error) {
 	toSerialize,err := o.ToMap()
 	if err != nil {
@@ -565,6 +617,7 @@ func (o ApiGetExectableJobPost200ResponseInner) ToMap() (map[string]interface{},
 	toSerialize["fileitems"] = o.Fileitems
 	toSerialize["generatedlist"] = o.Generatedlist
 	toSerialize["inplace_update"] = o.InplaceUpdate
+	toSerialize["networkaccess"] = o.Networkaccess
 	if !IsNil(o.OutputBaseDir) {
 		toSerialize["outputBaseDir"] = o.OutputBaseDir
 	}
@@ -574,6 +627,7 @@ func (o ApiGetExectableJobPost200ResponseInner) ToMap() (map[string]interface{},
 	if !IsNil(o.DockerImage) {
 		toSerialize["dockerImage"] = o.DockerImage
 	}
+	toSerialize["runtime"] = o.Runtime
 	return toSerialize, nil
 }
 
@@ -592,6 +646,8 @@ func (o *ApiGetExectableJobPost200ResponseInner) UnmarshalJSON(data []byte) (err
 		"fileitems",
 		"generatedlist",
 		"inplace_update",
+		"networkaccess",
+		"runtime",
 	}
 
 	allProperties := make(map[string]interface{})

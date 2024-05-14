@@ -64,8 +64,8 @@ components:
           type:
             type: string
             enum:
-              - Literal
               - Key
+              - Literal
           value:
             type: string
         required:
@@ -124,6 +124,11 @@ components:
         - target
         - type
         - staged
+    runtime:
+      type: object
+      properties:
+        custom_net:
+          type: string
     JobFinishedRequest:
       type: object
       properties:
@@ -225,12 +230,16 @@ paths:
                         $ref: '#/components/schemas/MapperEnt'
                     inplace_update:
                       type: boolean
+                    networkaccess:
+                      type: boolean
                     outputBaseDir:
                       type: string
                     dockerExec:
                       type: string
                     dockerImage:
                       type: string
+                    runtime:
+                      $ref: '#/components/schemas/runtime'
                   required:
                     - id
                     - staging
@@ -242,6 +251,8 @@ paths:
                     - fileitems
                     - generatedlist
                     - inplace_update
+                    - networkaccess
+                    - runtime
   /api/jobFinished:
     post:
       description: report job finished

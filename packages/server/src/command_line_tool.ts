@@ -240,23 +240,23 @@ export class CommandLineTool extends Process {
         }
       }
     }
-    if (dockerReq && runtimeContext.use_container) {
-      // if(runtimeContext.singularity){
-      //     return SingularityCommandLineJob
-      // }else if(runtimeContext.user_space_docker_cmd){
-      //     return UDockerCommandLineJob
-      // }
-      if (runtimeContext.podman) {
-        return (builder, joborder, make_path_mapper, tool, name) =>
-          new PodmanCommandLineJob(builder, joborder, make_path_mapper, tool, name);
-      }
-      return (builder, joborder, make_path_mapper, tool, name) =>
-        new DockerCommandLineJob(builder, joborder, make_path_mapper, tool, name);
-    }
-    if (dockerRequired)
-      throw new UnsupportedRequirement(
-        '--no-container, but this CommandLineTool has ' + "cwl.DockerRequirement under 'requirements'.",
-      );
+    // if (dockerReq && runtimeContext.use_container) {
+    //   // if(runtimeContext.singularity){
+    //   //     return SingularityCommandLineJob
+    //   // }else if(runtimeContext.user_space_docker_cmd){
+    //   //     return UDockerCommandLineJob
+    //   // }
+    //   if (runtimeContext.podman) {
+    //     return (builder, joborder, make_path_mapper, tool, name) =>
+    //       new PodmanCommandLineJob(builder, joborder, make_path_mapper, tool, name);
+    //   }
+    //   return (builder, joborder, make_path_mapper, tool, name) =>
+    //     new DockerCommandLineJob(builder, joborder, make_path_mapper, tool, name);
+    // }
+    // if (dockerRequired)
+    //   throw new UnsupportedRequirement(
+    //     '--no-container, but this CommandLineTool has ' + "cwl.DockerRequirement under 'requirements'.",
+    //   );
     return (builder, joborder, make_path_mapper, tool, name) =>
       new CommandLineJob(builder, joborder, make_path_mapper, tool, name);
   }
@@ -269,12 +269,13 @@ export class CommandLineTool extends Process {
     if (fn.location) {
       const location = fn.location;
       if (pathmap.contains(location)) {
+        const old = pathmap.mapper(location)
         pathmap.update(
           location,
-          pathmap.mapper(location).resolved,
+          old.resolved,
           path.join(outdir, basename),
           `${fn['writable'] ? 'Writable' : ''}${fn['class']}`,
-          false,
+          old.staged,
         );
       }
     }

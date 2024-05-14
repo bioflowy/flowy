@@ -20,7 +20,6 @@ import {
   getRequirement,
 } from './utils.js';
 
-const _IMAGES: Set<string> = new Set();
 
 export class DockerCommandLineJob extends ContainerCommandLineJob {
   docker_exec = 'docker';
@@ -122,27 +121,27 @@ export class DockerCommandLineJob extends ContainerCommandLineJob {
     if (source.startsWith('file://') && !fs.existsSync(source)) {
       fs.mkdirSync(source);
     }
+    
   }
-
   add_file_or_directory_volume(runtime: string[], volume: MapperEnt, _host_outdir_tgt: string | null): void {
-    if (volume.resolved.startsWith('s3://')) {
-      if (volume.target.startsWith(this.builder.stagedir)) {
-        // If the path of the target is under stagedir, it can be directly downloaded to the target.
-        const targetDir = path.dirname(volume.target);
-        this.staging.mkdirSync(targetDir, true);
-        this.staging.symlinkSync(volume.resolved, volume.target);
-        this.append_volume(runtime, volume.target, volume.target);
-      } else {
-        // In other cases, download under stagedir and link it (like in the case of InitialWorkdir).
-        const stagedir = path.join(this.builder.stagedir, `stg${uuidv4()}`);
-        const stagefile = path.join(stagedir, path.basename(volume.target));
-        this.staging.mkdirSync(stagedir, true);
-        this.staging.symlinkSync(volume.resolved, stagefile);
-        this.append_volume(runtime, stagefile, volume.target);
-      }
-    } else if (!volume.resolved.startsWith('_:')) {
-      this.append_volume(runtime, volume.resolved, volume.target);
-    }
+    // if (volume.resolved.startsWith('s3://')) {
+    //   if (volume.target.startsWith(this.builder.stagedir)) {
+    //     // If the path of the target is under stagedir, it can be directly downloaded to the target.
+    //     const targetDir = path.dirname(volume.target);
+    //     this.staging.mkdirSync(targetDir, true);
+    //     this.staging.symlinkSync(volume.resolved, volume.target);
+    //     this.append_volume(runtime, volume.target, volume.target);
+    //   } else {
+    //     // In other cases, download under stagedir and link it (like in the case of InitialWorkdir).
+    //     const stagedir = path.join(this.builder.stagedir, `stg${uuidv4()}`);
+    //     const stagefile = path.join(stagedir, path.basename(volume.target));
+    //     this.staging.mkdirSync(stagedir, true);
+    //     this.staging.symlinkSync(volume.resolved, stagefile);
+    //     this.append_volume(runtime, stagefile, volume.target);
+    //   }
+    // } else if (!volume.resolved.startsWith('_:')) {
+    //   this.append_volume(runtime, volume.resolved, volume.target);
+    // }
   }
   add_writable_file_volume(
     runtime: string[],

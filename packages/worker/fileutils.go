@@ -1,11 +1,70 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
+}
+func WriteToFile(dest string, content string) error {
+	destdir := filepath.Dir(dest)
+	if !fileExists(destdir) {
+		err := os.MkdirAll(dest, 0755)
+		if err != nil {
+			return err
+		}
+	}
+	file, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.WriteString(file, content)
+	return err
+}
+func symlink(src string, dest string, error_if_exists bool) error {
+	destdir := filepath.Dir(dest)
+	if !fileExists(destdir) {
+		err := os.MkdirAll(dest, 0755)
+		if err != nil {
+			return err
+		}
+	}
+	if fileExists(dest) {
+		if error_if_exists {
+			return errors.New("File already exists")
+		} else {
+			return nil
+		}
+	}
+	err := os.Symlink(src, dest)
+	return err
+}
+
+func copy(src string, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// コピー先のファイルを作成
+	dstFile, err := os.Create(dest)
+	if err != nil {
+		panic(err)
+	}
+	defer dstFile.Close()
+
+	// データをコピー
+	_, err = io.Copy(dstFile, srcFile)
+	return err
+}
 func WalkWithSymlink(directoryPath string, walkFunc filepath.WalkFunc) error {
 	return walk(directoryPath, walkFunc, nil)
 }

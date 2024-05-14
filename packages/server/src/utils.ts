@@ -190,8 +190,6 @@ export function mkdtemp(prefix = '', dir?: string): string {
   }
   const uniqueName = prefix + uuidv4();
   const tempDirPath = path.join(dir, uniqueName);
-
-  fs.mkdirSync(tempDirPath);
   return tempDirPath;
 }
 export function versionstring(): string {

@@ -51,6 +51,9 @@ export type OutputBinding = z.infer<typeof OutputBindingSchema>;
 
 export type OutputSecondaryFile = z.infer<typeof SecondaryFileSchema>;
 
+export const RuntimeSchema =  z.object({
+  custom_net: z.string().optional()
+}).openapi("runtime")
 // JobExec Schema
 export const JobExecSchema = z.object({
   id: z.string(),
@@ -67,8 +70,11 @@ export const JobExecSchema = z.object({
   fileitems: z.array(MapperEntSchema),
   generatedlist: z.array(MapperEntSchema),
   inplace_update: z.boolean(),
+  networkaccess: z.boolean(),
   outputBaseDir: z.string().optional(),
   dockerExec: z.string().optional(),
   dockerImage: z.string().optional(),
+  runtime: RuntimeSchema,
 });
+export type Runtime = z.infer<typeof RuntimeSchema>;
 export type JobExec = z.infer<typeof JobExecSchema>;

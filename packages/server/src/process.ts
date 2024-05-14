@@ -154,6 +154,8 @@ export async function stage_files_for_outputs(
 }
 
 export function stage_files(
+  host_outdir: string,
+  container_outdir: string,
   staging: LazyStaging,
   pathmapper: PathMapper,
   stage_func?: (src: string, dest: string) => void,
@@ -190,30 +192,37 @@ export function stage_files(
   for (const [key, entry] of items) {
     if (!entry.staged) continue;
 
-    const targetDir = path.dirname(entry.target);
+    let host_outdir_tgt: string | undefined = undefined;
+    if (entry.target.startsWith(`${container_outdir}/`)) {
+      host_outdir_tgt = path.join(host_outdir, entry.target.slice(container_outdir.length + 1));
+    }else{
+      host_outdir_tgt = entry.target
+    }
+
+    const targetDir = path.dirname(host_outdir_tgt);
     staging.mkdirSync(targetDir, true);
     if (entry.type === 'File' || entry.type === 'Directory') {
       if (symlink) {
-        staging.symlinkSync(entry.resolved, entry.target);
+        staging.symlinkSync(entry.resolved, host_outdir_tgt);
       } else if (stage_func) {
-        stage_func(entry.resolved, entry.target);
+        stage_func(entry.resolved, host_outdir_tgt);
       }
     } else if (entry.type === 'Directory' && entry.resolved.startsWith('_:')) {
-      staging.mkdirSync(entry.target, true);
+      staging.mkdirSync(host_outdir_tgt, true);
     } else if (entry.type === 'WritableFile' && !ignore_writable) {
-      staging.copyFileSync(entry.resolved, entry.target, { ensureWritable: true });
+      staging.copyFileSync(entry.resolved, host_outdir_tgt, { ensureWritable: true });
     } else if (entry.type === 'WritableDirectory' && !ignore_writable) {
       if (entry.resolved.startsWith('_:')) {
-        staging.mkdirSync(entry.target, true);
+        staging.mkdirSync(host_outdir_tgt, true);
       } else {
         staging.copyFileSync(entry.resolved, entry.target, { ensureWritable: true });
       }
     } else if (entry.type === 'CreateFile' || entry.type === 'CreateWritableFile') {
       const content = entry.resolved;
-      staging.writeFileSync(entry.target, content, entry.type === 'CreateFile' ? 0o400 : 0o600, {
+      staging.writeFileSync(host_outdir_tgt, content, entry.type === 'CreateFile' ? 0o400 : 0o600, {
         ensureWritable: entry.type === 'CreateWritableFile',
       });
-      pathmapper.update(key, entry.target, entry.target, entry.type, entry.staged);
+      pathmapper.update(key, host_outdir_tgt, entry.target, entry.type, entry.staged);
     }
   }
 }
