@@ -88,3 +88,34 @@
   id: stdin_from_directory_literal_with_literal_file
   doc: Pipe to stdin from literal File via a Directory literal
   tags: [ command_line_tool, required ]
+
+- job: tests/empty.json
+  tool: tests/inp_update_wf.cwl
+  doc: inplace update has side effect on file content
+  tags: [ inplace_update, workflow ]
+  output:
+    a: 4
+    b: 4
+  id: modify_file_content
+
+- job: tests/empty.json
+  tool: tests/inpdir_update_wf.cwl
+  doc: inplace update has side effect on directory content
+  tags: [ inplace_update, workflow ]
+  output: {
+    a: [
+            {
+                "basename": "blurb",
+                "class": "File",
+                "location": "blurb"
+            }
+        ],
+    b: [
+            {
+                "basename": "blurb",
+                "class": "File",
+                "location": "blurb"
+            }
+        ]
+  }
+  id: modify_directory_content

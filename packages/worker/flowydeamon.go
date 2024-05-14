@@ -1540,10 +1540,17 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 	var targets []string
 	for _, item := range append(job.Fileitems, job.Generatedlist...) {
 		if item.Type == "WritableFile" {
-			target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-			err = copy(item.Resolved, target)
-			if err != nil {
-				return nil, err
+			if job.InplaceUpdate {
+				if !contains(targets, item.Target) {
+					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+					targets = append(targets, item.Target)
+				}
+			} else {
+				target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
+				err = copy(item.Resolved, target)
+				if err != nil {
+					return nil, err
+				}
 			}
 		} else if item.Type == "WritableDirectory" {
 			var hostOutdirTarget *string = nil
@@ -1604,8 +1611,8 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 		} else {
 			if !contains(targets, item.Target) {
 				dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+				targets = append(targets, item.Target)
 			}
-			targets = append(targets, item.Target)
 		}
 	}
 	dockerCommands = append(dockerCommands, "--workdir="+containerCwd)
@@ -1645,6 +1652,11 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 			} else if item.Type == "WritableDirectory" {
 				if strings.HasPrefix(item.Resolved, "_:") {
 					os.Mkdir(item.Target, 0755)
+				} else if job.InplaceUpdate {
+					err = symlink(item.Resolved, item.Target, false)
+					if err != nil {
+						return -1, err
+					}
 				} else {
 					err = copyDir(item.Resolved, item.Target)
 					if err != nil {

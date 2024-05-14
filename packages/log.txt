@@ -22,3 +22,9 @@ conformance test 194
 job.ts:JobBase._executeでstdinのパスをtargetからresolvedに逆変換しているが、
 stdinで指定したファイルが、Createされたファイルの場合、resolvedにはファイルの中身が入っている
 keyが_:で始まる場合Createされたファイルなので、逆変換を行わないように修正
+
+conformance test 237,238
+inplace_updateが有効な場合、WritableFile,WritableDirectoryはsymbolic linkにする
+
+fileitemsと、generatedlistsでおなじファイルが指定される場合がある。今はすでにファイルが存在していれば
+無視するようにしているが、できたら同じファイルが出てこないようにする。
