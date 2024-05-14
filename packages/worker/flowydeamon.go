@@ -1546,8 +1546,8 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 				return nil, err
 			}
 		} else if item.Type == "CreateFile" {
-			target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-			WriteToFile(target, item.Resolved)
+			WriteToFile(item.Target, item.Resolved)
+			dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Target+",target="+item.Target)
 		} else {
 			if !contains(targets, item.Target) {
 				dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)

@@ -15,7 +15,7 @@ func fileExists(filename string) bool {
 func WriteToFile(dest string, content string) error {
 	destdir := filepath.Dir(dest)
 	if !fileExists(destdir) {
-		err := os.MkdirAll(dest, 0755)
+		err := os.MkdirAll(destdir, 0755)
 		if err != nil {
 			return err
 		}

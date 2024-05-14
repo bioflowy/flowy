@@ -1,0 +1,11 @@
+Stagingの場合、Workdirとは別のディレクトリにファイルが作成される
+Stagingディレクトリは通常/var/lib/cwl以下
+InitialWorkdirが指定された場合、Workdirにファイルが作成される
+
+conformance test 93
+ Literalが指定されたファイルが入力で、Docker実行
+ InitialWorkdirが指定されていないので、Stagingが有効になり/var/lib/cwl以下に配置
+ただし、Dockerが有効になった場合、なぜかcreate_file_and_add_volumeで/var/lib/cwlでない場所に配置され、
+mountオプションで/var/lib/cwl以下にマウントされる。
+素直に/var/lib/cwl以下にして、Mountすればよいのではと思うがこのようになっている理由はわからない。
+とりあえず/var/lib/cwl以下に配置してマウントする方法を試す。
