@@ -12,6 +12,52 @@ func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
 }
+func copyDir(src string, dest string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(dest, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		} else {
+			return copyFile(path, destPath)
+		}
+	})
+}
+
+func copyFile(src, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, srcFile)
+	if err != nil {
+		return err
+	}
+
+	// コピー元のファイルモードをコピー先に適用
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dest, srcInfo.Mode())
+}
 func WriteToFile(dest string, content string) error {
 	destdir := filepath.Dir(dest)
 	if !fileExists(destdir) {
@@ -31,7 +77,7 @@ func WriteToFile(dest string, content string) error {
 func symlink(src string, dest string, error_if_exists bool) error {
 	destdir := filepath.Dir(dest)
 	if !fileExists(destdir) {
-		err := os.MkdirAll(dest, 0755)
+		err := os.MkdirAll(destdir, 0755)
 		if err != nil {
 			return err
 		}

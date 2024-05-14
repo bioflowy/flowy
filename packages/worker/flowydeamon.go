@@ -1595,14 +1595,17 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 		}
 	} else {
 		for _, item := range append(job.Fileitems, job.Generatedlist...) {
-			// if item.Type == "WritableFile" {
-			// 	target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-			// 	err = copy(item.Resolved, target)
-			// 	if err != nil {
-			// 		return nil, err
-			// 	}
-			// } else
-			if item.Type == "CreateFile" {
+			if item.Type == "WritableFile" {
+				err = copy(item.Resolved, item.Target)
+				if err != nil {
+					return -1, err
+				}
+			} else if item.Type == "WritableDirectory" {
+				err = copyDir(item.Resolved, item.Target)
+				if err != nil {
+					return -1, err
+				}
+			} else if item.Type == "CreateFile" {
 				err = WriteToFile(item.Target, item.Resolved)
 				if err != nil {
 					return -1, err
