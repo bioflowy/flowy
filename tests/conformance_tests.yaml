@@ -9,7 +9,7 @@
   id: input_file_literal
   doc: Test file literal as input
   tags: [ required, command_line_tool ]
-  
+
 - output:
     "foo": {
         "checksum": "sha1$63da67422622fbf9251a046d7a34b7ea0fd4fead",
@@ -22,3 +22,45 @@
   id: initworkdir_expreng_requirements
   doc: Test InitialWorkDirRequirement ExpressionEngineRequirement.engineConfig feature
   tags: [ initial_work_dir, inline_javascript, command_line_tool ]
+
+- job: tests/empty.json
+  output:
+    out: {
+        "basename": "emptyWritableDir",
+        "listing": [
+            {
+                "checksum": "sha1$da39a3ee5e6b4b0d3255bfef95601890afd80709",
+                "basename": "blurg",
+                "location": "blurg",
+                "class": "File",
+                "size": 0
+            }
+        ],
+        "location": "emptyWritableDir",
+        "class": "Directory"
+    }
+  tool: tests/writable-dir.cwl
+  id: initial_workdir_empty_writable
+  doc: Test empty writable dir with InitialWorkDirRequirement
+  tags: [ inline_javascript, initial_work_dir, command_line_tool ]
+
+- job: tests/empty.json
+  output:
+    out: {
+        "basename": "emptyWritableDir",
+        "listing": [
+            {
+                "checksum": "sha1$da39a3ee5e6b4b0d3255bfef95601890afd80709",
+                "basename": "blurg",
+                "location": "blurg",
+                "class": "File",
+                "size": 0
+            }
+        ],
+        "location": "emptyWritableDir",
+        "class": "Directory"
+    }
+  tool: tests/writable-dir-docker.cwl
+  id: initial_workdir_empty_writable_docker
+  doc: Test empty writable dir with InitialWorkDirRequirement inside Docker
+  tags: [ inline_javascript, initial_work_dir, command_line_tool ]

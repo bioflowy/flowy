@@ -1545,6 +1545,48 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 			if err != nil {
 				return nil, err
 			}
+		} else if item.Type == "WritableDirectory" {
+			var hostOutdirTarget *string = nil
+			if strings.HasPrefix(item.Target, job.BuilderOutdir) {
+				hostTarget := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
+				hostOutdirTarget = &hostTarget
+			}
+			if strings.HasPrefix(item.Resolved, "_:") {
+				if hostOutdirTarget != nil {
+					// create new directory in workdir
+					err := os.MkdirAll(*hostOutdirTarget, 0755)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					// create new directory in staging dir
+					err := os.MkdirAll(item.Target, 0755)
+					if err != nil {
+						return nil, err
+					}
+					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Target+",target="+item.Target)
+				}
+			} else {
+				if job.InplaceUpdate {
+					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+				} else {
+					if hostOutdirTarget != nil {
+						// copy directory to workdir
+						err = copyDir(item.Resolved, *hostOutdirTarget)
+						if err != nil {
+							return nil, err
+						}
+					} else {
+						// copy directory to staged dir
+						err = copyDir(item.Resolved, item.Target)
+						if err != nil {
+							return nil, err
+						}
+						// mount to container
+						dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Target+",target="+item.Target)
+					}
+				}
+			}
 		} else if item.Type == "CreateFile" {
 			staging := false
 			hostPath := item.Target
@@ -1601,9 +1643,13 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 					return -1, err
 				}
 			} else if item.Type == "WritableDirectory" {
-				err = copyDir(item.Resolved, item.Target)
-				if err != nil {
-					return -1, err
+				if strings.HasPrefix(item.Resolved, "_:") {
+					os.Mkdir(item.Target, 0755)
+				} else {
+					err = copyDir(item.Resolved, item.Target)
+					if err != nil {
+						return -1, err
+					}
 				}
 			} else if item.Type == "CreateFile" {
 				err = WriteToFile(item.Target, item.Resolved)
