@@ -17,3 +17,8 @@ Stagingが無効になっていたらホスト上のWorkdirにファイルを作
 Pathmapper.MapEntryのStagingプロパティはStagingが無効になっていてもTrueになるらしい。
 cwltoolでも同様なので、バグか意図的なものか不明。
 とりあえず、コンテナ上のWorkdirで始まるかどうかで判定するように修正。
+
+conformance test 194
+job.ts:JobBase._executeでstdinのパスをtargetからresolvedに逆変換しているが、
+stdinで指定したファイルが、Createされたファイルの場合、resolvedにはファイルの中身が入っている
+keyが_:で始まる場合Createされたファイルなので、逆変換を行わないように修正

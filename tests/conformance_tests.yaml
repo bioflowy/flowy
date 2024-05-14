@@ -77,3 +77,14 @@
         "checksum": "sha1$7448d8798a4380162d4b56f9b452e2f6f9e24e7a"
      }
   tags: [ resource, command_line_tool ]
+
+- tool: tests/cat-from-dir.cwl
+  job: tests/cat-from-dir-with-literal-file.yaml
+  output:
+    output:
+      checksum: sha1$ef88e689559565999700d6fea7cf7ba306d04360
+      class: File
+      size: 26
+  id: stdin_from_directory_literal_with_literal_file
+  doc: Pipe to stdin from literal File via a Directory literal
+  tags: [ command_line_tool, required ]

@@ -274,7 +274,11 @@ export abstract class JobBase {
         if (rmap === undefined) {
           throw new WorkflowException(`${this.stdin} missing from pathmapper`);
         } else {
-          stdin_path = rmap[1];
+          if(!rmap[0].startsWith("_:")){
+            stdin_path = rmap[1];
+          }else{
+            stdin_path = this.stdin
+          }
         }
       }
 
