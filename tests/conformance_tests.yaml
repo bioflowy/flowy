@@ -9,3 +9,16 @@
   id: input_file_literal
   doc: Test file literal as input
   tags: [ required, command_line_tool ]
+  
+- output:
+    "foo": {
+        "checksum": "sha1$63da67422622fbf9251a046d7a34b7ea0fd4fead",
+        "class": "File",
+        "location": "foo.txt",
+        "size": 22
+    }
+  job: tests/cat-job.json
+  tool: tests/template-tool.cwl
+  id: initworkdir_expreng_requirements
+  doc: Test InitialWorkDirRequirement ExpressionEngineRequirement.engineConfig feature
+  tags: [ initial_work_dir, inline_javascript, command_line_tool ]

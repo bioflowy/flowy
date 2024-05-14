@@ -9,3 +9,11 @@ conformance test 93
 mountオプションで/var/lib/cwl以下にマウントされる。
 素直に/var/lib/cwl以下にして、Mountすればよいのではと思うがこのようになっている理由はわからない。
 とりあえず/var/lib/cwl以下に配置してマウントする方法を試す。
+
+conformance test 6
+CreateFileでInitialWorkdirが指定されているので、Stagingが無効になりTargetがコンテナ上のWorkdirになる
+コンテナ上のWorkdirはルートディレクトリ直下なので権限がなく異常終了
+Stagingが無効になっていたらホスト上のWorkdirにファイルを作成してMountなしにしようとしたが、
+Pathmapper.MapEntryのStagingプロパティはStagingが無効になっていてもTrueになるらしい。
+cwltoolでも同様なので、バグか意図的なものか不明。
+とりあえず、コンテナ上のWorkdirで始まるかどうかで判定するように修正。
