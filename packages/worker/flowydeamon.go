@@ -245,7 +245,7 @@ func loadCwlOutputJson(jsonPath string) (map[string]interface{}, error) {
 	err = decoder.Decode(&data)
 	return data, err
 }
-func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
+func GetAndExecuteJob(c *api.APIClient, fileManager FileManager, config *api.SharedFileSystemConfig) {
 	ctx := context.Background()
 	res, httpres, err := c.DefaultAPI.ApiGetExectableJobPost(ctx).Execute()
 
@@ -258,12 +258,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 			log.Default().Printf("job command = %+v", job.Commands)
 			os.MkdirAll(job.Cwd, 0770)
 
-			// downloadPaths, err = prepareStagingDir(config, job.Staging)
-			// if err != nil {
-			// 	reportFailed(c, job.Id, err)
-			// 	return
-			// }
-			exitCode, err := executeJob(config, &job, job.Commands, job.StdinPath, job.StdoutPath, job.StderrPath, job.Env, job.Cwd, job.BuilderOutdir, job.Timelimit)
+			exitCode, err := executeJob(config, fileManager, &job, job.Commands, job.StdinPath, job.StdoutPath, job.StderrPath, job.Env, job.Cwd, job.BuilderOutdir, job.Timelimit)
 			if err != nil {
 				reportFailed(c, job.Id, err)
 				return
@@ -285,7 +280,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 					return
 				}
 
-				err = uploadOutputs(config, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
+				err = uploadOutputs(fileManager, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
 				if err != nil {
 					reportFailed(c, job.Id, err)
 					return
@@ -347,7 +342,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 					reportFailed(c, job.Id, err)
 					return
 				}
-				uploadOutputs(config, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
+				uploadOutputs(fileManager, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
 				r := c.DefaultAPI.ApiJobFinishedPost(ctx).JobFinishedRequest(api.JobFinishedRequest{
 					Id:          job.Id,
 					IsCwlOutput: false,
@@ -368,7 +363,7 @@ func GetAndExecuteJob(c *api.APIClient, config *api.SharedFileSystemConfig) {
 		}
 	}
 }
-func uploadOutputs(config *api.SharedFileSystemConfig, outputBaseDir string, results map[string]interface{}, downloadPaths map[string]string, inplaceUpdate bool) error {
+func uploadOutputs(fileManager FileManager, outputBaseDir string, results map[string]interface{}, downloadPaths map[string]string, inplaceUpdate bool) error {
 	if !strings.HasPrefix(outputBaseDir, "s3://") {
 		return nil
 	}
@@ -390,7 +385,7 @@ func uploadOutputs(config *api.SharedFileSystemConfig, outputBaseDir string, res
 					}
 				}
 			}
-			path, err := uploadToS3(config, file.GetLocation(), s3url)
+			path, err := uploadToS3(fileManager, file.GetLocation(), s3url)
 			if err != nil {
 				return err
 			}
@@ -432,7 +427,7 @@ func uploadOutputs(config *api.SharedFileSystemConfig, outputBaseDir string, res
 					}
 				}
 			}
-			path, err := uploadToS3(config, directory.GetLocation(), s3url)
+			path, err := uploadToS3(fileManager, directory.GetLocation(), s3url)
 			if err != nil {
 				return err
 			}
@@ -443,126 +438,27 @@ func uploadOutputs(config *api.SharedFileSystemConfig, outputBaseDir string, res
 	})
 	return err
 }
-func uploadToS3(config *api.SharedFileSystemConfig, filePath string, s3url *string) (string, error) {
+func uploadToS3(fileManager FileManager, filePath string, s3url *string) (string, error) {
 	if strings.HasPrefix(filePath, "s3://") {
 		return filePath, nil
 	}
-	if config.Type != "s3" {
+	if fileManager.GetType() != "s3" {
 		return "file:/" + filePath, nil
 	}
-	filePath = strings.TrimPrefix(filePath, "file://")
-	sess, err := session.NewSession(&aws.Config{
-		Credentials:      credentials.NewStaticCredentials(*config.AccessKey, *config.SecretKey, ""),
-		Region:           aws.String("ap-northeast-1"), // Set your AWS region
-		Endpoint:         config.Endpoint,
-		S3ForcePathStyle: aws.Bool(true),
-	})
-	if err != nil {
-		return "", err
+	if strings.HasPrefix(filePath, "file://") {
+		filePath = strings.TrimPrefix(filePath, "file:/")
 	}
-
-	uploader := s3manager.NewUploader(sess)
+	s3fileManager := fileManager.(*S3FileManafer)
+	uploader := s3manager.NewUploader(s3fileManager.session)
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		return "", err
 	}
 	if fileInfo.IsDir() {
-		return uploadDirectory(uploader, *config, filePath, s3url)
+		return uploadDirectory(uploader, s3fileManager, filePath, s3url)
 	} else {
-		return uploadFile(uploader, *config, filePath, s3url)
+		return uploadFile(uploader, s3fileManager, filePath, s3url)
 	}
-}
-func uploadFile(uploader *s3manager.Uploader, config api.SharedFileSystemConfig, filePath string, s3url *string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	u, err := url.Parse(config.RootUrl)
-	if err != nil {
-		return "", err
-	}
-	filePath = strings.TrimPrefix(filePath, "/")
-	var key = ""
-	if s3url != nil {
-		u, err := url.Parse(*s3url)
-		if err != nil {
-			return "", err
-		}
-
-		key = u.Path
-	} else {
-		key = strings.TrimPrefix(filepath.Join(u.Path, filePath), "/")
-	}
-
-	_, err = uploader.Upload(&s3manager.UploadInput{
-		Bucket: aws.String(u.Host), // Set your bucket name
-		Key:    aws.String(key),
-		Body:   file,
-	})
-	if err != nil {
-		return "", err
-	}
-	return "s3://" + u.Host + "/" + key, nil
-}
-func uploadDirectory(uploader *s3manager.Uploader, config api.SharedFileSystemConfig, directoryPath string, s3url *string) (string, error) {
-	u, err := url.Parse(config.RootUrl)
-	if err != nil {
-		return "", err
-	}
-
-	err = WalkWithSymlink(directoryPath, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			var s3urlp *string
-			if s3url != nil {
-				//もともとのs3
-				news3url := *s3url + strings.TrimPrefix(path, directoryPath)
-				s3urlp = &news3url
-			}
-			_, err := uploadFile(uploader, config, path, s3urlp)
-			if err != nil {
-				return err
-			}
-		} else {
-			emptyBuffer := bytes.NewBuffer([]byte{})
-			key := filepath.Join(u.Path, path)
-			if s3url != nil {
-				org, err := url.Parse(*s3url)
-				if err != nil {
-					return err
-				}
-				key = filepath.Join(org.Path, strings.TrimPrefix(path, directoryPath))
-			}
-			if !strings.HasSuffix(key, "/") {
-				key += "/"
-			}
-			ui := s3manager.UploadInput{
-				Bucket: aws.String(u.Host), // Set your bucket name
-				Key:    aws.String(key),
-				Body:   emptyBuffer,
-			}
-			_, err = uploader.Upload(&ui)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", err
-	}
-	if s3url != nil {
-		return *s3url, nil
-	} else {
-		directoryPath = strings.TrimPrefix(directoryPath, "/")
-		key := strings.TrimPrefix(filepath.Join(u.Path, directoryPath), "/")
-		// すべてのURLを結合して返す
-		return "s3://" + u.Host + "/" + key, nil
-	}
-
 }
 func reportWorkerStarted(c *api.APIClient) (*api.SharedFileSystemConfig, error) {
 	hostname, err := os.Hostname()
@@ -602,8 +498,12 @@ func main() {
 			break
 		}
 	}
+	fileNamager, err := NewFileManager(config)
+	if err != nil {
+		panic(err)
+	}
 	for {
-		GetAndExecuteJob(c, config)
+		GetAndExecuteJob(c, fileNamager, config)
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -918,108 +818,6 @@ func removeIgnorePermissionError(filePath string) error {
 	return nil
 }
 
-func prepareStagingDir(config *api.SharedFileSystemConfig, commands []api.StagingCommand) (map[string]string, error) {
-	var downloadPaths = map[string]string{}
-	for _, command := range commands {
-		switch command.Command {
-		case "writeFileContent":
-			if _, err := os.Stat(*command.Target); os.IsNotExist(err) {
-				err := os.WriteFile(*command.Target, []byte(*command.Content), fs.FileMode(*command.Mode))
-				log.Default().Printf("WriteFileContent to %s", *command.Target)
-				if err != nil {
-					return downloadPaths, err
-				}
-				if command.EnsureWritable != nil && *command.EnsureWritable {
-					err = ensureWritable(*command.Target, false)
-					if err != nil {
-						return downloadPaths, err
-					}
-				}
-			}
-
-		case "symlink":
-			if _, err := os.Stat(*command.Target); os.IsNotExist(err) {
-				sourcepath := *command.Resolved
-				if strings.HasPrefix(sourcepath, "s3://") {
-					downloadpath, err := downloadS3FileToTemp(config, sourcepath, nil)
-					if err != nil {
-						return downloadPaths, err
-					}
-					sourcepath = downloadpath
-					downloadPaths[*command.Resolved] = downloadpath
-				}
-				if _, err := os.Stat(sourcepath); err == nil {
-					log.Default().Printf("symlink from %s to %s", *command.Resolved, *command.Target)
-					err = os.Symlink(sourcepath, *command.Target)
-					if err != nil {
-						return downloadPaths, err
-					}
-				}
-			}
-
-		case "mkdir":
-			if _, err := os.Stat(*command.Resolved); os.IsNotExist(err) {
-				err := os.MkdirAll(*command.Resolved, 0755) // Go's MkdirAll is always recursive
-				if err != nil {
-					return downloadPaths, err
-				}
-			}
-
-		case "copy":
-			if _, err := os.Stat(*command.Target); os.IsNotExist(err) {
-				if strings.HasPrefix(*command.Resolved, "s3://") {
-					log.Default().Printf("download from %s to %s", *command.Resolved, *command.Target)
-					_, err = downloadS3FileToTemp(config, *command.Resolved, command.Target)
-				} else {
-					log.Default().Printf("copy from %s to %s", *command.Resolved, *command.Target)
-					err = CopyFileOrDir(config, *command.Resolved, *command.Target) // copyFile needs to be implemented
-				}
-				if err != nil {
-					return downloadPaths, err
-				}
-				if command.EnsureWritable != nil && *command.EnsureWritable {
-					err = ensureWritable(*command.Target, false) // ensureWritable needs to be implemented
-					if err != nil {
-						return downloadPaths, err
-					}
-				}
-			}
-
-		case "relink":
-			stat, err := os.Lstat(*command.Target)
-			if err == nil && (stat.Mode()&os.ModeSymlink != 0 || !stat.IsDir()) { // isSymlink needs to be implemented
-				err = os.Remove(*command.Target)
-				if err != nil && !errors.Is(err, os.ErrPermission) && !errors.Is(err, os.ErrNotExist) {
-					return downloadPaths, err
-				}
-			} else if err == nil && stat.IsDir() && !filepath.HasPrefix(*command.Resolved, "_:") {
-				err = removeIgnorePermissionError(*command.Target) // removeIgnorePermissionError needs to be implemented
-				if err != nil {
-					return downloadPaths, err
-				}
-			}
-			if !filepath.HasPrefix(*command.Resolved, "_:") {
-				src := *command.Resolved
-				if strings.HasPrefix(*command.Resolved, "s3://") {
-					src, err = downloadS3FileToTemp(config, *command.Resolved, nil)
-					if err != nil {
-						return downloadPaths, err
-					}
-					downloadPaths[*command.Resolved] = src
-				}
-				log.Default().Printf("relink %s to %s", *command.Resolved, *command.Target)
-				err = os.Symlink(src, *command.Target)
-				if err != nil && !errors.Is(err, os.ErrExist) {
-					return downloadPaths, err
-				}
-			}
-
-		default:
-			return downloadPaths, errors.New("unknown staging command: ")
-		}
-	}
-	return downloadPaths, nil
-}
 func uriFilePath(inputUrl string) (string, error) {
 	u, err := url.Parse(inputUrl)
 	if err != nil {
@@ -1525,7 +1323,7 @@ func toString(commandStr []api.CommandStringInner) string {
 	}
 	return str
 }
-func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobPost200ResponseInner,
+func prepareForDocker(fileManager FileManager, job *api.ApiGetExectableJobPost200ResponseInner,
 	commands [][]api.CommandStringInner, hostOutdir string, containerCwd string) ([]string, error) {
 	var dockerCommands []string
 	dockerCommands = append(dockerCommands, *job.DockerExec)
@@ -1618,7 +1416,11 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 				}
 			} else {
 				if !contains(targets, item.Target) {
-					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+					localFilePath, err := fileManager.GetLocalPath(item.Resolved, nil)
+					if err != nil {
+						return nil, err
+					}
+					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+localFilePath+",target="+item.Target)
 					targets = append(targets, item.Target)
 				}
 			}
@@ -1643,11 +1445,11 @@ func prepareForDocker(config *api.SharedFileSystemConfig, job *api.ApiGetExectab
 	dockerCommands = append(dockerCommands, *job.DockerImage)
 	return dockerCommands, nil
 }
-func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobPost200ResponseInner, commands [][]api.CommandStringInner, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
+func executeJob(config *api.SharedFileSystemConfig, fileManager FileManager, job *api.ApiGetExectableJobPost200ResponseInner, commands [][]api.CommandStringInner, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
 	var err error = nil
 	var commands2 []string
 	if job.DockerImage != nil {
-		commands2, err = prepareForDocker(config, job, commands, cwd, containerOutDir)
+		commands2, err = prepareForDocker(fileManager, job, commands, cwd, containerOutDir)
 		if err != nil {
 			return -1, err
 		}
@@ -1680,7 +1482,7 @@ func executeJob(config *api.SharedFileSystemConfig, job *api.ApiGetExectableJobP
 			} else if item.Type == "Directory" && strings.HasPrefix(item.Resolved, "_:") {
 				os.MkdirAll(item.Target, 0755)
 			} else {
-				err = symlink(item.Resolved, item.Target, false)
+				_, err = fileManager.GetLocalPath(item.Resolved, &item.Target)
 				if err != nil {
 					fmt.Println(err.Error())
 					return -1, err

@@ -90,6 +90,13 @@ components:
           type: string
         type:
           type: string
+          enum:
+            - File
+            - Directory
+            - CreateFile
+            - CreateWritableFile
+            - WritableFile
+            - WritableDirectory
         staged:
           type: boolean
       required:

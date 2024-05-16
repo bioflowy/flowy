@@ -164,7 +164,7 @@ components:
     MapperEnt:
       example:
         staged: true
-        type: type
+        type: File
         resolved: resolved
         target: target
       properties:
@@ -173,6 +173,13 @@ components:
         target:
           type: string
         type:
+          enum:
+          - File
+          - Directory
+          - CreateFile
+          - CreateWritableFile
+          - WritableFile
+          - WritableDirectory
           type: string
         staged:
           type: boolean
@@ -244,21 +251,21 @@ components:
         cwd: cwd
         fileitems:
         - staged: true
-          type: type
+          type: File
           resolved: resolved
           target: target
         - staged: true
-          type: type
+          type: File
           resolved: resolved
           target: target
         stdin_path: stdin_path
         generatedlist:
         - staged: true
-          type: type
+          type: File
           resolved: resolved
           target: target
         - staged: true
-          type: type
+          type: File
           resolved: resolved
           target: target
         id: id

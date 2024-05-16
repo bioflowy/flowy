@@ -74,14 +74,15 @@ func WriteToFile(dest string, content string) error {
 	_, err = io.WriteString(file, content)
 	return err
 }
-func symlink(src string, dest string, error_if_exists bool) error {
-	destdir := filepath.Dir(dest)
-	if !fileExists(destdir) {
-		err := os.MkdirAll(destdir, 0755)
-		if err != nil {
-			return err
-		}
+func ensureDirExists(path string) error {
+	destdir := filepath.Dir(path)
+	if fileExists(destdir) {
+		return nil
 	}
+	return os.MkdirAll(destdir, 0755)
+}
+func symlink(src string, dest string, error_if_exists bool) error {
+	ensureDirExists(dest)
 	if fileExists(dest) {
 		if error_if_exists {
 			return errors.New("File already exists")

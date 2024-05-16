@@ -7,7 +7,7 @@ extendZodWithOpenApi(z);
 
 // KeyPartのスキーマ
 const StringPartSchema = z.object({
-    type: z.literal('Key').or(z.literal('Literal')),
+    type: z.enum(['Key','Literal']),
     value: z.string(),
 });
 

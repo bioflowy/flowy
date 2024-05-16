@@ -9,16 +9,18 @@ import { abspath } from './stdfsaccess.js';
 import { uriFilePath, dedup, downloadHttpFile, isFile, isDirectory } from './utils.js';
 extendZodWithOpenApi(z);
 
+const EntTypeSchema = z.enum(['File','Directory','CreateFile','CreateWritableFile','WritableFile','WritableDirectory'])
 // MapperEnt Schema
 export const MapperEntSchema = z
   .object({
     resolved: z.string(),
     target: z.string(),
-    type: z.string(),
+    type: EntTypeSchema,
     staged: z.boolean(),
   })
   .openapi('MapperEnt');
 export type MapperEnt = z.infer<typeof MapperEntSchema>;
+export type EntTpe = z.infer<typeof EntTypeSchema>;
 
 export class PathMapper {
   /**
@@ -71,7 +73,7 @@ export class PathMapper {
       this.visit(ld, stagedir, basedir, (copy = ld.writable ?? copy), staged);
     }
   }
-  update(key: string, resolved: string, target: string, type: string, staged: boolean): MapperEnt {
+  update(key: string, resolved: string, target: string, type: EntTpe, staged: boolean): MapperEnt {
     // / Update an existine entry.
     const m: MapperEnt = {
       resolved,
