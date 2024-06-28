@@ -33,6 +33,7 @@ import {
   isStringOrStringArray,
   which,
   checkOutput,
+  JobStatus,
 } from './utils.js';
 import { getManager } from './server/manager.js';
 import { CommandString, CommandStringToString } from './commandstring.js';
@@ -238,7 +239,7 @@ export abstract class JobBase {
     ];
     _logger.info(`[job ${this.name}] %${this.outdir}$ ${command_line} ${tmp2[0]} ${tmp2[1]} ${tmp2[2]}`);
     let outputs: any = {};
-    let processStatus = '';
+    let processStatus:JobStatus = 'success';
     try {
       let stdin_path: string | undefined;
       if (this.stdin !== undefined) {

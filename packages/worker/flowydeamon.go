@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -81,9 +80,9 @@ func collect_secondary_files(
 			required_bool, ok := sf_required_eval.(bool)
 			if !ok {
 				return errors.New(
-					`Expressions in the field 'required' must evaluate to a Boolean (true or false) or None. Got ${str(
+					`expressions in the field 'required' must evaluate to a Boolean (true or false) or None. Got ${str(
 				  sf_required_eval,
-				)} for ${sf.requiredString}.`,
+				)} for ${sf.requiredString}`,
 				)
 			}
 			sf_required = required_bool
@@ -188,48 +187,6 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
-func relinkInitialWorkDir(config *api.SharedFileSystemConfig, vols []api.MapperEnt, hostOutDir, containerOutDir string, inplaceUpdate bool, downloadPaths map[string]string) error {
-	for _, vol := range vols {
-		if !vol.Staged {
-			continue
-		}
-
-		if contains([]string{"File", "Directory"}, vol.Type) ||
-			(inplaceUpdate && contains([]string{"WritableFile", "WritableDirectory"}, vol.Type)) {
-			if !strings.HasPrefix(vol.Target, containerOutDir) {
-				continue
-			}
-			hostOutDirTgt := filepath.Join(hostOutDir, vol.Target[len(containerOutDir)+1:])
-			stat, err := os.Lstat(hostOutDirTgt)
-
-			if err == nil {
-				if (stat.Mode()&os.ModeSymlink != 0) || !stat.IsDir() {
-					if err := os.Remove(hostOutDirTgt); err != nil && !errors.Is(err, os.ErrPermission) && !errors.Is(err, os.ErrNotExist) {
-						return err
-					}
-				} else if stat.IsDir() && !strings.HasPrefix(vol.Resolved, "_:") {
-					if err := removeIgnorePermissionError(hostOutDirTgt); err != nil {
-						return err
-					}
-				}
-			}
-
-			if !strings.HasPrefix(vol.Resolved, "_:") {
-				filePath := vol.Resolved
-				if strings.HasPrefix(filePath, "s3://") {
-					downloadPath, ok := downloadPaths[filePath]
-					if ok {
-						filePath = downloadPath
-					}
-				}
-				if err := os.Symlink(filePath, hostOutDirTgt); err != nil && !os.IsExist(err) {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
 func loadCwlOutputJson(jsonPath string) (map[string]interface{}, error) {
 	file, err := os.Open(jsonPath)
 	if err != nil {
@@ -252,7 +209,6 @@ func GetAndExecuteJob(c *api.APIClient, fileManager FileManager, config *api.Sha
 	if err != nil {
 		return
 	}
-	var downloadPaths = map[string]string{}
 	if httpres.StatusCode == 200 {
 		for _, job := range res {
 			log.Default().Printf("job command = %+v", job.Commands)
@@ -263,7 +219,7 @@ func GetAndExecuteJob(c *api.APIClient, fileManager FileManager, config *api.Sha
 				reportFailed(c, job.Id, err)
 				return
 			}
-			relinkInitialWorkDir(config, job.Generatedlist, job.Cwd, job.BuilderOutdir, job.InplaceUpdate, downloadPaths)
+			var downloadPaths = fileManager.GetDownloadFileMap()
 			cwlOutputPath := filepath.Join(job.Cwd, "cwl.output.json")
 			_, err = os.Stat(cwlOutputPath)
 			if !os.IsNotExist(err) {
@@ -448,7 +404,7 @@ func uploadToS3(fileManager FileManager, filePath string, s3url *string) (string
 	if strings.HasPrefix(filePath, "file://") {
 		filePath = strings.TrimPrefix(filePath, "file:/")
 	}
-	s3fileManager := fileManager.(*S3FileManafer)
+	s3fileManager := fileManager.(*S3FileManager)
 	uploader := s3manager.NewUploader(s3fileManager.session)
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
@@ -715,95 +671,6 @@ func ensureWritable(targetPath string, includeRoot bool) error {
 	return nil
 }
 
-// CopyFile copies a single file from src to dst
-func CopyFile(config *api.SharedFileSystemConfig, src, dst string) error {
-	if strings.HasPrefix(src, "s3://") {
-		_, err := downloadS3FileToTemp(config, src, &dst)
-		return err
-	}
-	source, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-
-	destination, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destination.Close()
-
-	_, err = io.Copy(destination, source)
-	if err != nil {
-		return err
-	}
-
-	sourceInfo, err := source.Stat()
-	if err != nil {
-		return err
-	}
-
-	return os.Chmod(dst, sourceInfo.Mode())
-}
-
-// CopyDir recursively copies a directory tree, attempting to preserve permissions.
-func CopyDir(config *api.SharedFileSystemConfig, src string, dst string) error {
-	src = filepath.Clean(src)
-	dst = filepath.Clean(dst)
-
-	// Get properties of source dir
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	// Create the destination directory
-	err = os.MkdirAll(dst, srcInfo.Mode())
-	if err != nil {
-		return err
-	}
-
-	// Copy each file/dir within the source directory
-	err = filepath.Walk(src, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Calculate proper destination path
-		destPath := filepath.Join(dst, path[len(src):])
-
-		// If it's a directory, create it
-		if info.IsDir() {
-			err = os.MkdirAll(destPath, info.Mode())
-			if err != nil {
-				return err
-			}
-		} else {
-			// It's a file, copy it
-			err = CopyFile(config, path, destPath)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
-	return err
-}
-func CopyFileOrDir(config *api.SharedFileSystemConfig, src, dst string) error {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	if srcInfo.IsDir() {
-		// If source is a directory, call CopyDir
-		return CopyDir(config, src, dst)
-	} else {
-		// If source is a file, call CopyFile
-		return CopyFile(config, src, dst)
-	}
-}
 func removeIgnorePermissionError(filePath string) error {
 	err := os.RemoveAll(filePath)
 	if err != nil {
@@ -1328,104 +1195,11 @@ func prepareForDocker(fileManager FileManager, job *api.ApiGetExectableJobPost20
 	var dockerCommands []string
 	dockerCommands = append(dockerCommands, *job.DockerExec)
 	dockerCommands = append(dockerCommands, "run", "-i")
-	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+hostOutdir+",target="+containerCwd)
-	tmpDir, err := os.MkdirTemp("", "flowy-tmpdir")
+	mountParams, err := stageForDocker(fileManager, job.Cwd, job.BuilderOutdir, append(job.Fileitems, job.Generatedlist...), job.InplaceUpdate)
 	if err != nil {
 		return nil, err
 	}
-	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+tmpDir+",target=/tmp")
-	var targets []string
-	for _, item := range append(job.Fileitems, job.Generatedlist...) {
-		if item.Type == "WritableFile" {
-			if job.InplaceUpdate {
-				if !contains(targets, item.Target) {
-					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
-					targets = append(targets, item.Target)
-				}
-			} else {
-				target := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-				err = copy(item.Resolved, target)
-				if err != nil {
-					return nil, err
-				}
-			}
-		} else if item.Type == "WritableDirectory" {
-			var hostOutdirTarget *string = nil
-			if strings.HasPrefix(item.Target, job.BuilderOutdir) {
-				hostTarget := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-				hostOutdirTarget = &hostTarget
-			}
-			if strings.HasPrefix(item.Resolved, "_:") {
-				if hostOutdirTarget != nil {
-					// create new directory in workdir
-					err := os.MkdirAll(*hostOutdirTarget, 0755)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					// create new directory in staging dir
-					err := os.MkdirAll(item.Target, 0755)
-					if err != nil {
-						return nil, err
-					}
-					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Target+",target="+item.Target)
-				}
-			} else {
-				if job.InplaceUpdate {
-					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
-				} else {
-					if hostOutdirTarget != nil {
-						// copy directory to workdir
-						err = copyDir(item.Resolved, *hostOutdirTarget)
-						if err != nil {
-							return nil, err
-						}
-					} else {
-						// copy directory to staged dir
-						err = copyDir(item.Resolved, item.Target)
-						if err != nil {
-							return nil, err
-						}
-						// mount to container
-						dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Target+",target="+item.Target)
-					}
-				}
-			}
-		} else if item.Type == "CreateFile" {
-			staging := false
-			hostPath := item.Target
-			if strings.HasPrefix(item.Target, job.BuilderOutdir) {
-				hostPath = strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-				staging = true
-			}
-			err = WriteToFile(hostPath, item.Resolved)
-			if err != nil {
-				return nil, err
-			}
-			if !staging {
-				dockerCommands = append(dockerCommands, "--mount=type=bind,source="+hostPath+",target="+item.Target)
-			}
-		} else if item.Type == "File" || item.Type == "Directory" {
-			if strings.HasPrefix(item.Resolved, "_:") {
-				if item.Type == "Directory" {
-					hostPath := strings.Replace(item.Target, job.BuilderOutdir, job.Cwd, 1)
-					err = os.Mkdir(hostPath, 0755)
-					if err != nil {
-						return nil, err
-					}
-				}
-			} else {
-				if !contains(targets, item.Target) {
-					localFilePath, err := fileManager.GetLocalPath(item.Resolved, nil)
-					if err != nil {
-						return nil, err
-					}
-					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+localFilePath+",target="+item.Target)
-					targets = append(targets, item.Target)
-				}
-			}
-		}
-	}
+	dockerCommands = append(dockerCommands, mountParams...)
 	dockerCommands = append(dockerCommands, "--workdir="+containerCwd)
 	dockerCommands = append(dockerCommands, "--read-only=true")
 	if job.StdoutPath != nil {
@@ -1454,42 +1228,10 @@ func executeJob(config *api.SharedFileSystemConfig, fileManager FileManager, job
 			return -1, err
 		}
 	} else {
-		for _, item := range append(job.Fileitems, job.Generatedlist...) {
-			if item.Type == "WritableFile" {
-				err = copy(item.Resolved, item.Target)
-				if err != nil {
-					return -1, err
-				}
-			} else if item.Type == "WritableDirectory" {
-				if strings.HasPrefix(item.Resolved, "_:") {
-					os.Mkdir(item.Target, 0755)
-				} else if job.InplaceUpdate {
-					err = symlink(item.Resolved, item.Target, false)
-					if err != nil {
-						return -1, err
-					}
-				} else {
-					err = copyDir(item.Resolved, item.Target)
-					if err != nil {
-						return -1, err
-					}
-				}
-			} else if item.Type == "CreateFile" || item.Type == "CreateWritableFile" {
-				err = WriteToFile(item.Target, item.Resolved)
-				if err != nil {
-					return -1, err
-				}
-			} else if item.Type == "Directory" && strings.HasPrefix(item.Resolved, "_:") {
-				os.MkdirAll(item.Target, 0755)
-			} else {
-				_, err = fileManager.GetLocalPath(item.Resolved, &item.Target)
-				if err != nil {
-					fmt.Println(err.Error())
-					return -1, err
-				}
-			}
+		err = stageForCommandLine(fileManager, append(job.Fileitems, job.Generatedlist...), job.InplaceUpdate)
+		if err != nil {
+			return -1, err
 		}
-
 	}
 	for _, c := range commands {
 		commands2 = append(commands2, toString(c))

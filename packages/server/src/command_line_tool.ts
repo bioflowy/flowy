@@ -274,7 +274,7 @@ export class CommandLineTool extends Process {
           old.resolved,
           path.join(outdir, basename),
           `${fn['writable'] ? 'Writable' : ''}${fn['class']}`,
-          old.staged,
+          false,
         );
       }
     }

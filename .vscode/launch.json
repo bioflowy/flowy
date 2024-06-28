@@ -13,6 +13,17 @@
             "program": "${workspaceFolder}/node_modules/vite/bin/vite.js",
             "args": ["--port", "5173"], // 必要に応じてポートを調整
             "console": "integratedTerminal"
+          },
+          {
+            "type": "node",
+            "request": "launch",
+            "name": "exec client",
+            "cwd": "${workspaceFolder}/packages/work/cwl-v1.2-1.2.1_proposed",
+            "skipFiles": ["<node_internals>/**"],
+            "program": "${workspaceFolder}/packages/client/dist/index.js",
+            "args": ["tests/bwa-mem-tool.cwl", "tests/bwa-mem-job.json"], // 必要に応じてポートを調整
+            "console": "integratedTerminal"
           }
+
     ]
 }

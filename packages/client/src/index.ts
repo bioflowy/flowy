@@ -10,7 +10,9 @@ export interface Args {
   basedir?: string;
   quiet?: boolean;
 }
-
+function wait(ms:number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 export async function main(args: Args): Promise<number> {
   const client = hc<ExecuteJobRoute>('http://localhost:5173/api/')
   const res = await client.executeJob.$post({json:{
@@ -19,19 +21,31 @@ export async function main(args: Args): Promise<number> {
     clientWorkDir: process.cwd(),
     basedir: args.basedir??'file://'+process.cwd(),
   }});
-  const {result,status } = await res.json()
-  if (status === 'success') {
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-    return new Promise((resolve) => {
-      process.stdout.end(() => {
-        resolve(0);
-      });
-    });
-  } else if(status === 'exception') {
-    process.stderr.write(result+"\n");
-    return 1;
-  } else {
-    return 1;
+  const rlst = await res.json()
+  while(true){
+    const res = await client.getJobInfo.$post({json:{jobId:rlst.jobId}})
+    if(res.status != 200){
+      console.log(res.statusText)
+      return 1;
+    }
+    const rslt = await res.json()
+    if(rslt.status === "finished"){
+      const result = rslt.result
+      const status  = rslt.resultStatus
+      if (status === 'success') {
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        return new Promise((resolve) => {
+          process.stdout.end(() => {
+            resolve(0);
+          });
+        });
+      } else {
+        process.stderr.write(result+"\n");
+        return 1;
+      }
+    }else{
+      await wait(1000)
+    }
   }
 }
 

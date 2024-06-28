@@ -26,6 +26,7 @@ import {
   type OutputCallbackType,
   aslist,
   CWLOutputType,
+  JobStatus,
 } from './utils.js';
 import { WorkflowJob } from './workflow_job.js';
 
@@ -246,7 +247,7 @@ export class WorkflowStep extends Process {
   // super.checkRequirements(rec, supported_process_requirements);
   // }
 
-  receive_output(output_callback: OutputCallbackType, jobout: CWLObjectType, processStatus: string): void {
+  receive_output(output_callback: OutputCallbackType, jobout: CWLObjectType, processStatus: JobStatus): void {
     const output: { [key: string]: CWLOutputType } = {};
     for (const i of this.tool.outputs) {
       const field = shortname(i['id']);
@@ -286,7 +287,7 @@ export class WorkflowStep extends Process {
     try {
       const jobiter = this.embedded_tool.job(
         step_input,
-        (output: CWLObjectType, processStatus: string) => this.receive_output(output_callbacks, output, processStatus),
+        (output: CWLObjectType, processStatus: JobStatus) => this.receive_output(output_callbacks, output, processStatus),
         runtimeContext,
       );
       for await (const item of jobiter) {

@@ -8,6 +8,47 @@ import (
 	"strings"
 )
 
+func fileUriToPath(uri string) string {
+	if strings.HasPrefix(uri, "file://") {
+		return strings.TrimPrefix(uri, "file:/")
+	}
+	return uri
+}
+func removeDirectoryRecursive(dir string) error {
+	// ディレクトリ内のファイルとサブディレクトリを取得
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	// ディレクトリ内の各エントリに対して処理を行う
+	for _, entry := range entries {
+		// エントリの絶対パスを取得
+		fullPath := filepath.Join(dir, entry.Name())
+
+		// エントリがディレクトリの場合は再帰的に削除
+		if entry.IsDir() {
+			err := removeDirectoryRecursive(fullPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			// エントリがファイルの場合は削除
+			err := os.Remove(fullPath)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// 最後に、空になったディレクトリを削除
+	err = os.Remove(dir)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
