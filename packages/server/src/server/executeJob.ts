@@ -15,6 +15,7 @@ export const ExecuteJobInputSchema = z.object({
     outdir: z.string().optional(),
     basedir: z.string().optional(),
     clientWorkDir: z.string(),
+    use_container: z.boolean().optional(),
     move_output: z.enum(['copy', 'leave', 'move']).optional(),
   });
 
@@ -55,8 +56,10 @@ export const executeJobPath: RouteConfig = {
         clientWorkDir: input.clientWorkDir,
         outdir: input.outdir ? input.outdir : input.clientWorkDir,
         move_output: input.move_output,
+        use_container: input.use_container,
         sharedFilesystemConfig: manager.getServerConfig().sharedFileSystem,
       });
+      runtimeContext.use_container
       if (input.basedir) {
         runtimeContext.basedir = input.basedir;
       }

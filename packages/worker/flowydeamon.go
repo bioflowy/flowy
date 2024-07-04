@@ -332,12 +332,9 @@ func uploadOutputs(fileManager FileManager, outputBaseDir string, results map[st
 				if err != nil {
 					return err
 				}
-				lpath, err := os.Readlink(p)
-				if err == nil {
-					for s3path, localPath := range downloadPaths {
-						if localPath == lpath {
-							s3url = &s3path
-						}
+				for s3path, localPath := range downloadPaths {
+					if localPath == p {
+						s3url = &s3path
 					}
 				}
 			}
@@ -374,12 +371,9 @@ func uploadOutputs(fileManager FileManager, outputBaseDir string, results map[st
 				if err != nil {
 					return err
 				}
-				lpath, err := os.Readlink(p)
-				if err == nil {
-					for s3path, localPath := range downloadPaths {
-						if localPath == lpath {
-							s3url = &s3path
-						}
+				for s3path, localPath := range downloadPaths {
+					if localPath == p {
+						s3url = &s3path
 					}
 				}
 			}
@@ -401,8 +395,9 @@ func uploadToS3(fileManager FileManager, filePath string, s3url *string) (string
 	if fileManager.GetType() != "s3" {
 		return "file:/" + filePath, nil
 	}
-	if strings.HasPrefix(filePath, "file://") {
-		filePath = strings.TrimPrefix(filePath, "file:/")
+	filePath, err := fileUriToPath(filePath)
+	if err != nil {
+		return "", err
 	}
 	s3fileManager := fileManager.(*S3FileManager)
 	uploader := s3manager.NewUploader(s3fileManager.session)
@@ -884,13 +879,6 @@ func listdir(dir, fn string) ([]string, error) {
 
 	return uris, nil
 }
-func basename(path string) string {
-	if strings.HasPrefix(path, "file:/") {
-		// 文字列が "file:/" で始まる場合、これを取り除く
-		path = strings.TrimPrefix(path, "file:/")
-	}
-	return filepath.Base(path)
-}
 func get_listing(outdir string, dir Directory, recursive bool) error {
 	var listing = []FileOrDirectory{}
 	ls, err := listdir(outdir, dir.GetLocation())
@@ -1168,15 +1156,6 @@ func downloadS3FileToTemp(config *api.SharedFileSystemConfig, s3URL string, dstP
 	}
 
 	return destFile.Name(), nil
-}
-func getTarget(mounts []string) *string {
-	for _, mount := range mounts {
-		if strings.HasPrefix(mount, "target=") {
-			targetPath := mount[len("target="):]
-			return &targetPath
-		}
-	}
-	return nil
 }
 func toString(commandStr []api.CommandStringInner) string {
 	var str = ""

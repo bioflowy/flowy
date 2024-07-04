@@ -48,6 +48,7 @@ func (f *S3FileManager) NeedDownload(fileurl string) bool {
 func (f *S3FileManager) Download(fileurl string, localPath string) (bool, error) {
 	// if file exists on s3 bucket, download that to tmpfile and return tmpfile path
 	_, err := downloadS3File(f.session, fileurl, &localPath)
+	f.DownloadFileMap[fileurl] = localPath
 	return true, err
 }
 func (f *S3FileManager) GetType() string {

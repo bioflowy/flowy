@@ -97,8 +97,8 @@ export class Manager {
   ) {
     const promise = this.jobPromises.get(id);
     if (promise) {
-      promise.resolve([ret_code, isCwlOutput, outputResults]);
       this.jobPromises.delete(id);
+      promise.resolve([ret_code, isCwlOutput, outputResults]);
     }
   }
   jobfailed(id: string, errorMsg: string) {

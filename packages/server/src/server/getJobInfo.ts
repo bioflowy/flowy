@@ -46,13 +46,17 @@ export const getJobInfoPath: RouteConfig = {
   }
   export const getJobInfoHandler =  createFactory().createHandlers(
     zValidator('json',GetJobInfoInputSchema), async (c) => {
-      const input = await c.req.valid('json')
-      const manager = getManager()
-      const job = manager.getJobInfo(input.jobId)
-      const result:GetJobInfoOutput ={
-        result: job.results,
-        resultStatus: job.resultStatus,
-        status: job.status,
+      try{
+        const input = await c.req.valid('json')
+        const manager = getManager()
+        const job = manager.getJobInfo(input.jobId)
+        const result:GetJobInfoOutput ={
+          result: job.results,
+          resultStatus: job.resultStatus,
+          status: job.status,
+        }
+        return c.json(result);
+      }catch(e){
+        console.log(e)
       }
-      return c.json(result);
   })

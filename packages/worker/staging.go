@@ -10,26 +10,61 @@ import (
 func stageForCommandLine(fileManager FileManager, items []api.MapperEnt, inplaceUpdate bool) error {
 	var targets = []string{}
 	for _, item := range items {
-		if contains(targets, item.Target) {
+		if !item.Staged {
 			continue
 		}
 		if item.Type == "WritableFile" {
-			err := copy(item.Resolved, item.Target)
-			if err != nil {
-				return err
+			if inplaceUpdate {
+				if fileManager.NeedDownload(item.Resolved) {
+					_, err := fileManager.Download(item.Resolved, item.Target)
+					if err != nil {
+						return err
+					}
+				} else {
+					err := symlink(item.Resolved, item.Target, true)
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				if fileManager.NeedDownload(item.Resolved) {
+					_, err := fileManager.Download(item.Resolved, item.Target)
+					if err != nil {
+						return err
+					}
+				} else {
+					err := symlink(item.Resolved, item.Target, true)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		} else if item.Type == "WritableDirectory" {
 			if strings.HasPrefix(item.Resolved, "_:") {
 				os.Mkdir(item.Target, 0755)
 			} else if inplaceUpdate {
-				err := symlink(item.Resolved, item.Target, false)
-				if err != nil {
-					return err
+				if fileManager.NeedDownload(item.Resolved) {
+					_, err := fileManager.Download(item.Resolved, item.Target)
+					if err != nil {
+						return err
+					}
+				} else {
+					err := symlink(item.Resolved, item.Target, true)
+					if err != nil {
+						return err
+					}
 				}
 			} else {
-				err := fileManager.CopyDir(item.Resolved, item.Target)
-				if err != nil {
-					return err
+				if fileManager.NeedDownload(item.Resolved) {
+					_, err := fileManager.Download(item.Resolved, item.Target)
+					if err != nil {
+						return err
+					}
+				} else {
+					err := fileManager.CopyDir(item.Resolved, item.Target)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		} else if item.Type == "CreateFile" || item.Type == "CreateWritableFile" {
@@ -65,26 +100,40 @@ func stageForDocker(fileManager FileManager, hostWorkdir string, containerWorkDi
 		return nil, err
 	}
 	dockerCommands = append(dockerCommands, "--mount=type=bind,source="+tmpDir+",target=/tmp")
-	var targets []string
 	for _, item := range items {
 		if !item.Staged {
 			continue
 		}
 		if item.Type == "WritableFile" {
 			if inplaceUpdate {
-				if !contains(targets, item.Target) {
-					in_workdir := strings.HasPrefix(item.Target, containerWorkDir)
-					dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
-					targets = append(targets, item.Target)
-					if in_workdir {
-						hostTargetPath := strings.Replace(item.Target, containerWorkDir, hostWorkdir, 1)
+				in_workdir := strings.HasPrefix(item.Target, containerWorkDir)
+				hostTargetPath := strings.Replace(item.Target, containerWorkDir, hostWorkdir, 1)
+				if in_workdir {
+					if fileManager.NeedDownload(item.Resolved) {
+						_, err := fileManager.Download(item.Resolved, hostTargetPath)
+						if err != nil {
+							return nil, err
+						}
+					} else {
+						dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
 						err := symlink(item.Resolved, hostTargetPath, true)
 						if err != nil {
 							return nil, err
 						}
 					}
+				} else {
+					if fileManager.NeedDownload(item.Resolved) {
+						_, err := fileManager.Download(item.Resolved, hostTargetPath)
+						if err != nil {
+							return nil, err
+						}
+						dockerCommands = append(dockerCommands, "--mount=type=bind,source="+hostTargetPath+",target="+item.Target)
+					} else {
+						dockerCommands = append(dockerCommands, "--mount=type=bind,source="+item.Resolved+",target="+item.Target)
+					}
 				}
 			} else {
+				// always copy when writable file
 				target := strings.Replace(item.Target, containerWorkDir, hostWorkdir, 1)
 				err = fileManager.CopyFile(item.Resolved, target)
 				if err != nil {
@@ -157,34 +206,34 @@ func stageForDocker(fileManager FileManager, hostWorkdir string, containerWorkDi
 					}
 				}
 			} else {
-				if !contains(targets, item.Target) {
-					containerTargetPath := item.Target
-					in_workdir := strings.HasPrefix(item.Target, containerWorkDir)
-					sourcePath := fileUriToPath(item.Resolved)
-					hostTargetPath := item.Target
-					if in_workdir {
-						// convert container path to host path
-						hostTargetPath = strings.Replace(containerTargetPath, containerWorkDir, hostWorkdir, 1)
+				containerTargetPath := item.Target
+				in_workdir := strings.HasPrefix(item.Target, containerWorkDir)
+				sourcePath, err := fileUriToPath(item.Resolved)
+				if err != nil {
+					return nil, err
+				}
+				hostTargetPath := item.Target
+				if in_workdir {
+					// convert container path to host path
+					hostTargetPath = strings.Replace(containerTargetPath, containerWorkDir, hostWorkdir, 1)
+				}
+				needDownload := fileManager.NeedDownload(item.Resolved)
+				if needDownload {
+					_, err := fileManager.Download(item.Resolved, hostTargetPath)
+					if err != nil {
+						return nil, err
 					}
-					needDownload := fileManager.NeedDownload(item.Resolved)
-					if needDownload {
-						_, err := fileManager.Download(item.Resolved, hostTargetPath)
-						if err != nil {
-							return nil, err
-						}
-						sourcePath = hostTargetPath
-					}
-					cmd := []string{"--mount=type=bind", "source=" + sourcePath, "target=" + containerTargetPath}
-					if !inplaceUpdate {
-						cmd = append(cmd, "readonly")
-					}
-					dockerCommands = append(dockerCommands, strings.Join(cmd, ","))
-					targets = append(targets, item.Target)
-					if !needDownload && in_workdir {
-						err := symlink(sourcePath, hostTargetPath, true)
-						if err != nil {
-							return nil, err
-						}
+					sourcePath = hostTargetPath
+				}
+				cmd := []string{"--mount=type=bind", "source=" + sourcePath, "target=" + containerTargetPath}
+				if !inplaceUpdate {
+					cmd = append(cmd, "readonly")
+				}
+				dockerCommands = append(dockerCommands, strings.Join(cmd, ","))
+				if !needDownload && in_workdir {
+					err := symlink(sourcePath, hostTargetPath, true)
+					if err != nil {
+						return nil, err
 					}
 				}
 			}

@@ -3,17 +3,17 @@ package main
 import (
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func fileUriToPath(uri string) string {
-	if strings.HasPrefix(uri, "file://") {
-		return strings.TrimPrefix(uri, "file:/")
-	}
-	return uri
+func fileUriToPath(uri string) (string, error) {
+	parsedURI, err := url.Parse(uri)
+	return parsedURI.Path, err
 }
+
 func removeDirectoryRecursive(dir string) error {
 	// ディレクトリ内のファイルとサブディレクトリを取得
 	entries, err := os.ReadDir(dir)

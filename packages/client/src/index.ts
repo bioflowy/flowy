@@ -9,6 +9,7 @@ export interface Args {
   outdir?: string;
   basedir?: string;
   quiet?: boolean;
+  use_container?: boolean;
 }
 function wait(ms:number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -20,31 +21,35 @@ export async function main(args: Args): Promise<number> {
     job_path: args.job_path,
     clientWorkDir: process.cwd(),
     basedir: args.basedir??'file://'+process.cwd(),
+    use_container: args.use_container,
   }});
   const rlst = await res.json()
   while(true){
-    const res = await client.getJobInfo.$post({json:{jobId:rlst.jobId}})
-    if(res.status != 200){
-      console.log(res.statusText)
-      return 1;
-    }
-    const rslt = await res.json()
-    if(rslt.status === "finished"){
-      const result = rslt.result
-      const status  = rslt.resultStatus
-      if (status === 'success') {
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-        return new Promise((resolve) => {
-          process.stdout.end(() => {
-            resolve(0);
-          });
-        });
-      } else {
-        process.stderr.write(result+"\n");
+    try{
+      const res = await client.getJobInfo.$post({json:{jobId:rlst.jobId}})
+      if(res.status != 200){
+        console.log(res.statusText)
         return 1;
       }
-    }else{
-      await wait(1000)
+      const rslt = await res.json()
+      if(rslt.status === "finished"){
+        const result = rslt.result
+        const status  = rslt.resultStatus
+        if (status === 'success') {
+          process.stdout.write(`${JSON.stringify(result)}\n`);
+          return new Promise((resolve) => {
+            process.stdout.end(() => {
+              resolve(0);
+            });
+          });
+        } else {
+          process.stderr.write(result+"\n");
+          return 1;
+        }
+      }else{
+        await wait(1000)
+      }
+    }catch(e){
     }
   }
 }
@@ -77,6 +82,11 @@ export async function executeClient() {
       alias: 'q',
       description: 'supress log output',
       type: 'boolean',
+    })
+    .option('use_container', {
+      description: 'use container for execution',
+      type: 'boolean',
+      default: true,
     })
     .help()
     .parseSync();
