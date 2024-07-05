@@ -8,6 +8,9 @@ import { OutputBinding, OutputSecondaryFile, Runtime } from './JobExecutor.js';
 import { Builder } from './builder.js';
 import { OutputPortsType } from './collect_outputs.js';
 import { RuntimeContext } from './context.js';
+import * as expression from './expression.js';
+import * as cwlTsAuto from '@flowy/cwl-ts-auto';
+
 import {
   CommandOutputParameter,
   Directory,
@@ -34,11 +37,13 @@ import {
   which,
   checkOutput,
   JobStatus,
+  CWLOutputType,
 } from './utils.js';
 import { getManager } from './server/manager.js';
 import { CommandString, CommandStringToString } from './commandstring.js';
 
 export async function _job_popen(
+  job: JobBase,
   outputBaseDir: string,
   commands: CommandString[],
   stdin_path: string | undefined,
@@ -61,8 +66,7 @@ export async function _job_popen(
 ): Promise<[number, boolean, OutputPortsType]> {
   const id = uuidv4();
   const server = getManager();
-  server.addBuilder(id, builder);
-  return server.execute(id, {
+  return server.execute(id,job, {
     outputBaseDir,
     id,
     commands,
@@ -99,6 +103,7 @@ export abstract class JobBase {
   stdin?: string;
   stderr?: string;
   stdout?: string;
+  resources: { [key: string]: number };
   successCodes: number[];
   temporaryFailCodes: number[];
   permanentFailCodes: number[];
@@ -118,6 +123,7 @@ export abstract class JobBase {
   timelimit?: number;
   networkaccess: boolean;
   mpi_procs?: number;
+  cwlVersion: string = "unkown";
 
   constructor(
     builder: Builder,
@@ -133,6 +139,7 @@ export abstract class JobBase {
   ) {
     this.builder = builder;
     this.joborder = joborder;
+    this.resources = builder.resources;
     // TODO
     this.base_path_logs = '/tmp';
     this.stdin = undefined;
@@ -158,6 +165,50 @@ export abstract class JobBase {
     this.timelimit = undefined;
     this.networkaccess = false;
     this.mpi_procs = undefined;
+  }
+  async do_eval(
+    ex: CWLOutputType | undefined,
+    context: any = undefined,
+    recursive = false,
+    strip_whitespace = true,
+  ): Promise<CWLOutputType | undefined> {
+    if (recursive) {
+      if (ex instanceof Map) {
+        const mutatedMap: { [key: string]: any } = {};
+        ex.forEach((value, key) => {
+          mutatedMap[key] = this.do_eval(value, context, recursive);
+        });
+        return mutatedMap;
+      }
+      if (Array.isArray(ex)) {
+        const rets: CWLOutputType[] = [];
+        for (let index = 0; index < ex.length; index++) {
+          const ret = await this.do_eval(ex[index], context, recursive);
+          rets.push(ret);
+        }
+        return rets;
+      }
+    }
+
+    let resources = this.resources;
+    if (this.resources && this.resources['cores']) {
+      const cores = resources['cores'];
+      resources = { ...resources };
+      resources['cores'] = Math.ceil(cores);
+    }
+    const [javascriptRequirement] = getRequirement(this.tool, cwlTsAuto.InlineJavascriptRequirement);
+    const ret = await expression.do_eval(
+      ex as CWLObjectType,
+      this.joborder,
+      javascriptRequirement,
+      this.outdir,
+      this.tmpdir,
+      resources,
+      context,
+      strip_whitespace,
+      this.cwlVersion,
+    );
+    return ret;
   }
 
   toString(): string {
@@ -290,6 +341,7 @@ export abstract class JobBase {
       
       const outputBindings = await createOutputBinding(this.tool.outputs, this.builder);
       const [rcode, isCwlOutput, fileMap] = await _job_popen(
+        this,
         runtimeContext.basedir,
         this.command_line,
         stdin_path,

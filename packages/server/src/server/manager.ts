@@ -11,6 +11,7 @@ import { _logger } from '../loghandler.js';
 import { RuntimeContext } from '../context.js';
 import { string } from 'yargs';
 import { v4 as uuidv4 } from 'uuid';
+import { JobBase } from '../job.js';
 
 interface SubmitJob {
   readonly jobId: string;
@@ -48,10 +49,9 @@ export class Manager {
   private queuedJobs: Map<string,SubmitJob> = new Map();
   private jobWatcher: Map<string,Promise<SubmitJob>[]> = new Map();
   private config: ServerConfig;
-  private builders: Map<string, Builder> = new Map();
   private jobPromises: Map<
     string,
-    { resolve: (value: [number, boolean, Record<string,any>]) => void; reject: (error: Error) => void }
+    { job:JobBase,resolve: (value: [number, boolean, Record<string,any>]) => void; reject: (error: Error) => void }
   > = new Map();
   private queuedTasks: JobExec[] = [];
   constructor(setings: string = 'config.yml') {
@@ -64,22 +64,19 @@ export class Manager {
     const data = jsYaml.load(fs.readFileSync(configPath, 'utf-8'));
     this.config = ServerConfigSchema.parse(data);
   }
-  addBuilder(id: string, builder: Builder) {
-    this.builders.set(id, builder);
-  }
-  async execute(id: string, job: JobExec): Promise<[number, boolean, Record<string,any>]> {
-    this.queuedTasks.push(job);
+  async execute(id: string,job:JobBase, jobExec: JobExec): Promise<[number, boolean, Record<string,any>]> {
+    this.queuedTasks.push(jobExec);
     const promise = new Promise<[number, boolean, Record<string,any>]>((resolve, reject) => {
-      this.jobPromises.set(id, { resolve, reject });
+      this.jobPromises.set(id, { job,resolve, reject });
     });
     return promise;
   }
   async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
-    const builder = this.builders.get(id);
+    const {job} = this.jobPromises.get(id);
     if (exitCode != undefined) {
-      builder.resources['exitCode'] = exitCode;
+      job.resources['exitCode'] = exitCode;
     }
-    return builder.do_eval(ex, context, false);
+    return job.do_eval(ex, context, false);
   }
   getExecutableJob(): JobExec | undefined {
     if (this.queuedTasks.length === 0) {
