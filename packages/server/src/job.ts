@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DockerRequirement, ShellCommandRequirement } from '@flowy/cwl-ts-auto';
 import { v4 as uuidv4 } from 'uuid';
-import { OutputBinding, OutputSecondaryFile, Runtime } from './JobExecutor.js';
+import { JobExec, OutputBinding, OutputSecondaryFile, Runtime } from './JobExecutor.js';
 import { Builder } from './builder.js';
 import { OutputPortsType } from './collect_outputs.js';
 import { RuntimeContext } from './context.js';
@@ -41,8 +41,9 @@ import {
 } from './utils.js';
 import { getManager } from './server/manager.js';
 import { CommandString, CommandStringToString } from './commandstring.js';
+import { executeJobHandler } from './server/executeJob.js';
 
-export async function _job_popen(
+export function _job_popen(
   job: JobBase,
   outputBaseDir: string,
   commands: CommandString[],
@@ -63,10 +64,10 @@ export async function _job_popen(
   networkaccess:boolean,
   runtime: Runtime
 
-): Promise<[number, boolean, OutputPortsType]> {
+): JobExec {
   const id = uuidv4();
   const server = getManager();
-  return server.execute(id,job, {
+  const jobExec:JobExec = {
     outputBaseDir,
     id,
     commands,
@@ -85,7 +86,8 @@ export async function _job_popen(
     dockerImage,
     networkaccess,
     runtime,
-  });
+  }
+  return jobExec;
 }
 type CollectOutputsType = (
   str: string,
@@ -268,6 +270,17 @@ export abstract class JobBase {
     runtimeContext: RuntimeContext,
     monitor_function: ((popen: any) => void) | null = null,
   ) {
+    const manager = getManager();
+    const jobExec = await this._execute2(runtime,env,runtimeContext,monitor_function)
+    const [rcode, isCwlOutput, fileMap] = await manager.execute(this,jobExec)
+    await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
+  }
+  async _execute2(
+    runtime: string[],
+    env: { [id: string]: string },
+    runtimeContext: RuntimeContext,
+    monitor_function: ((popen: any) => void) | null = null,
+  ) :Promise<JobExec> {
     const scr = getRequirement(this.tool, ShellCommandRequirement)[0];
 
     const shouldquote = scr !== null;
@@ -289,8 +302,6 @@ export abstract class JobBase {
       this.stderr ? ` 2> ${path.join(this.base_path_logs, this.stderr)}` : '',
     ];
     _logger.info(`[job ${this.name}] %${this.outdir}$ ${command_line} ${tmp2[0]} ${tmp2[1]} ${tmp2[2]}`);
-    let outputs: any = {};
-    let processStatus:JobStatus = 'success';
     try {
       let stdin_path: string | undefined;
       if (this.stdin !== undefined) {
@@ -340,7 +351,7 @@ export abstract class JobBase {
       }
       
       const outputBindings = await createOutputBinding(this.tool.outputs, this.builder);
-      const [rcode, isCwlOutput, fileMap] = await _job_popen(
+      const jobExec = _job_popen(
         this,
         runtimeContext.basedir,
         this.command_line,
@@ -362,7 +373,19 @@ export abstract class JobBase {
         {
           custom_net: runtimeContext.custom_net
         }
-      );
+      )
+      return jobExec
+    } catch (err) {
+      if (err instanceof Error) {
+        _logger.error(`[job ${this.name}] Job error${err.message}\n${err.stack}`);
+      }
+    }
+  }
+  async executed(rcode, isCwlOutput, fileMap,stdout_path, stderr_path,runtimeContext:RuntimeContext){
+    let outputs: any = {};
+    let processStatus:JobStatus = 'success';
+    try{
+
       if (this.successCodes.includes(rcode)) {
         processStatus = 'success';
       } else if (this.temporaryFailCodes.includes(rcode)) {

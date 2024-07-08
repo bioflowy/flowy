@@ -64,10 +64,10 @@ export class Manager {
     const data = jsYaml.load(fs.readFileSync(configPath, 'utf-8'));
     this.config = ServerConfigSchema.parse(data);
   }
-  async execute(id: string,job:JobBase, jobExec: JobExec): Promise<[number, boolean, Record<string,any>]> {
+  async execute(job:JobBase, jobExec: JobExec): Promise<[number, boolean, Record<string,any>]> {
     this.queuedTasks.push(jobExec);
     const promise = new Promise<[number, boolean, Record<string,any>]>((resolve, reject) => {
-      this.jobPromises.set(id, { job,resolve, reject });
+      this.jobPromises.set(jobExec.id, { job,resolve, reject });
     });
     return promise;
   }
