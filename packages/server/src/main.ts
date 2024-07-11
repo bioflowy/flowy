@@ -22,6 +22,7 @@ import {
   isFile,
   isFileOrDirectory,
   pathJoin,
+  JobStatus,
 } from './utils.js';
 import { default_make_tool } from './workflow.js';
 import { getManager } from './server/manager.js';
@@ -222,7 +223,7 @@ export async function exec(
   runtimeContext: RuntimeContext,
   tool_path: string,
   job_path?: string,
-): Promise<[CWLOutputType, string]> {
+): Promise<[CWLOutputType, JobStatus]> {
   const loadingContext = new LoadingContext({});
   loadingContext.construct_tool_object = default_make_tool;
   if (job_path && !path.isAbsolute(job_path)) {

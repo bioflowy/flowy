@@ -5,11 +5,11 @@ import { ValidationException, WorkflowException } from './errors.js';
 import { _logger } from './loghandler.js';
 import { Process, cleanIntermediate, relocateOutputs } from './process.js';
 import { createRequirements } from './types.js';
-import { type CWLObjectType, type MutableSequence } from './utils.js';
+import { JobStatus, type CWLObjectType, type MutableSequence } from './utils.js';
 
 abstract class JobExecutor {
   final_output: MutableSequence<CWLObjectType | undefined>;
-  final_status: string[];
+  final_status: JobStatus[];
   output_dirs: string[];
 
   constructor() {
@@ -27,7 +27,7 @@ abstract class JobExecutor {
     return this.execute(process, job_order_object, runtime_context, logger);
   }
 
-  output_callback(out: CWLObjectType | undefined, process_status: string): void {
+  output_callback(out: CWLObjectType | undefined, process_status: JobStatus): void {
     this.final_status.push(process_status);
     this.final_output.push(out);
   }
@@ -44,7 +44,7 @@ abstract class JobExecutor {
     job_order_object: CWLObjectType,
     runtime_context: RuntimeContext,
     logger: Logger = _logger,
-  ): Promise<[CWLObjectType | null, string]> {
+  ): Promise<[CWLObjectType | null, JobStatus]> {
     this.final_output = [];
     this.final_status = [];
 
@@ -115,16 +115,14 @@ export class SingleJobExecutor extends JobExecutor {
   ): Promise<void> {
     const jobiter = process.job(
       job_order_object,
-      (out: CWLObjectType | undefined, process_status: string) => this.output_callback(out, process_status),
+      (out: CWLObjectType | undefined, process_status: JobStatus) => this.output_callback(out, process_status),
       runtime_context,
     );
 
     try {
       for await (const job of jobiter) {
         if (job) {
-          if (job.outdir !== null) {
-            this.output_dirs.push(job.outdir);
-          }
+          this.output_dirs.push(...job.getOutdirs());
           if (runtime_context.research_obj !== null) {
             // const prov_obj = process instanceof Workflow ? job.prov_obj : process.provenance_object;
             // if (prov_obj) {

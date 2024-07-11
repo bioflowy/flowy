@@ -82,9 +82,10 @@ function revmap_file(builder: Builder, outdir: string, f: File | Directory): Fil
       );
       f.location = joined_path;
     } else {
-      throw new WorkflowException(
-        `Output file path ${path1} must be within designated output directory ${builder.outdir} or an input file pass through.`,
-      );
+      console.log("Output File object is missing both 'location' and 'path' fields: ${str(f)}");
+      // throw new WorkflowException(
+      //   `Output file path ${path1} must be within designated output directory ${builder.outdir} or an input file pass through.`,
+      // );
     }
     return f;
   }
@@ -109,6 +110,9 @@ async function checkValidLocations(fsAccess: StdFsAccess, ob: Directory | File):
     }
   }
 }
+function wait(ms:number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 export async function collect_output_ports(
   ports: CommandOutputParameter[],
@@ -123,7 +127,6 @@ export async function collect_output_ports(
   // const ret: OutputPortsType = {};
   // const debug = _logger.isDebugEnabled();
   builder.resources['exitCode'] = rcode;
-
   try {
     // eslint-disable-next-line new-cap
     const fs_access = new builder.make_fs_access(outdir);

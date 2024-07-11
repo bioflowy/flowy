@@ -5,7 +5,7 @@ extendZodWithOpenApi(z);
 export const SharedFileSystemSchema = z
   .object({
     type: z.enum(['s3', 'nfs']),
-    rootUrl: z.string().url(),
+    rootUrl: z.string().url().optional(),
     region: z.string().optional(),
     endpoint: z.string().optional(),
     accessKey: z.string().optional(),

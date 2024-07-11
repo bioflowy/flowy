@@ -23,10 +23,6 @@ export const GetExecutableJobPath: RouteConfig = {
     },
   }
   export const GetExecutableJobHandler =  createFactory().createHandlers(async (c) => {
-    const jobs: JobExec[] = [];
     const ret = getManager().getExecutableJob();
-    if (ret) {
-      jobs.push(ret);
-    }
-      return c.json(jobs)
+    return c.json(ret)
   })

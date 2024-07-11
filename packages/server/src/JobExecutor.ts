@@ -1,9 +1,9 @@
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { MapperEntSchema } from './pathmapper.js';
-import { StagingCommandSchema } from './staging.js';
 
 import { CWLOutputType } from './utils.js';
+import { CommandStringSchema } from './commandstring.js';
 extendZodWithOpenApi(z);
 
 export async function fastifyEvaluator(
@@ -44,17 +44,20 @@ const OutputBindingSchema = z
     loadListing: LoadListingEnumSchema.optional(),
     glob: z.array(z.string()).optional(),
     outputEval: z.string().optional(),
+    streamable: z.boolean().optional().default(false)
   })
   .openapi('OutputBinding');
 export type OutputBinding = z.infer<typeof OutputBindingSchema>;
 
 export type OutputSecondaryFile = z.infer<typeof SecondaryFileSchema>;
 
+export const RuntimeSchema =  z.object({
+  custom_net: z.string().optional()
+}).openapi("runtime")
 // JobExec Schema
 export const JobExecSchema = z.object({
   id: z.string(),
-  staging: z.array(StagingCommandSchema),
-  commands: z.array(z.string()),
+  commands: z.array(CommandStringSchema),
   stdin_path: z.string().optional(),
   stdout_path: z.string().optional(),
   stderr_path: z.string().optional(),
@@ -66,6 +69,11 @@ export const JobExecSchema = z.object({
   fileitems: z.array(MapperEntSchema),
   generatedlist: z.array(MapperEntSchema),
   inplace_update: z.boolean(),
+  networkaccess: z.boolean(),
   outputBaseDir: z.string().optional(),
+  dockerExec: z.string().optional(),
+  dockerImage: z.string().optional(),
+  runtime: RuntimeSchema,
 });
+export type Runtime = z.infer<typeof RuntimeSchema>;
 export type JobExec = z.infer<typeof JobExecSchema>;

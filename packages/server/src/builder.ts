@@ -39,6 +39,7 @@ import {
 } from './utils.js';
 import { validate } from './validate.js';
 import { getManager } from './server/manager.js';
+import { CommandString, toCommandStringArray } from './commandstring.js';
 
 export const INPUT_OBJ_VOCAB: { [key: string]: string } = {
   Any: 'https://w3id.org/cwl/salad#Any',
@@ -767,7 +768,7 @@ export class Builder {
     }
     return value.toString();
   }
-  async generate_arg(binding: CommandLineBinded): Promise<string[]> {
+  async generate_arg(binding: CommandLineBinded): Promise<CommandString[]> {
     let value = binding.datum;
 
     if (binding.valueFrom) {
@@ -791,18 +792,18 @@ export class Builder {
         argl = [value.map((v) => this.tostr(v)).join(itemSeparator)];
       } else if (binding.valueFrom) {
         const v2 = value.map((v) => this.tostr(v));
-        return (prefix ? [prefix] : []).concat(v2);
+        return toCommandStringArray((prefix ? [prefix] : []).concat(v2));
       } else if (prefix && value.length > 0) {
-        return [prefix];
+        return toCommandStringArray([prefix]);
       } else {
         return [];
       }
     } else if (isFileOrDirectory(value)) {
       argl = [value];
     } else if (value instanceof Object) {
-      return prefix ? [prefix] : [];
+      return toCommandStringArray(prefix ? [prefix] : []);
     } else if (value === true && prefix) {
-      return [prefix];
+      return toCommandStringArray([prefix]);
     } else if (value === false || value === null || (value === true && !prefix)) {
       return [];
     } else {
@@ -817,8 +818,8 @@ export class Builder {
         args.push((prefix ? prefix : '') + this.tostr(j));
       }
     }
-
-    return args.filter((item): item is string => typeof item === 'string');
+    const parts = args.filter((item): item is string => typeof item === 'string')
+    return toCommandStringArray(parts);
   }
   async do_eval(
     ex: CWLOutputType | undefined,

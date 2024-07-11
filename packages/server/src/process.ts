@@ -36,7 +36,6 @@ import { _logger } from './loghandler.js';
 import { convertDictToFileDirectory } from './main.js';
 import { MapperEnt, PathMapper } from './pathmapper.js';
 import { SecretStore } from './secrets.js';
-import { LazyStaging } from './staging.js';
 import { StdFsAccess } from './stdfsaccess.js';
 
 import { compareInputBinding, CommandLineBinded, type ToolRequirement } from './types.js';
@@ -154,7 +153,6 @@ export async function stage_files_for_outputs(
 }
 
 export function stage_files(
-  staging: LazyStaging,
   pathmapper: PathMapper,
   stage_func?: (src: string, dest: string) => void,
   { ignore_writable = false, symlink = true, fix_conflicts = false }: StageFilesOptions = {},
@@ -185,37 +183,6 @@ export function stage_files(
     }
   }
 
-  items = symlink ? pathmapper.items_exclude_children() : pathmapper.items();
-
-  for (const [key, entry] of items) {
-    if (!entry.staged) continue;
-
-    const targetDir = path.dirname(entry.target);
-    staging.mkdirSync(targetDir, true);
-    if (entry.type === 'File' || entry.type === 'Directory') {
-      if (symlink) {
-        staging.symlinkSync(entry.resolved, entry.target);
-      } else if (stage_func) {
-        stage_func(entry.resolved, entry.target);
-      }
-    } else if (entry.type === 'Directory' && entry.resolved.startsWith('_:')) {
-      staging.mkdirSync(entry.target, true);
-    } else if (entry.type === 'WritableFile' && !ignore_writable) {
-      staging.copyFileSync(entry.resolved, entry.target, { ensureWritable: true });
-    } else if (entry.type === 'WritableDirectory' && !ignore_writable) {
-      if (entry.resolved.startsWith('_:')) {
-        staging.mkdirSync(entry.target, true);
-      } else {
-        staging.copyFileSync(entry.resolved, entry.target, { ensureWritable: true });
-      }
-    } else if (entry.type === 'CreateFile' || entry.type === 'CreateWritableFile') {
-      const content = entry.resolved;
-      staging.writeFileSync(entry.target, content, entry.type === 'CreateFile' ? 0o400 : 0o600, {
-        ensureWritable: entry.type === 'CreateWritableFile',
-      });
-      pathmapper.update(key, entry.target, entry.target, entry.type, entry.staged);
-    }
-  }
 }
 function commonPrefix(paths: string[]): string {
   if (paths.length === 0) return '';

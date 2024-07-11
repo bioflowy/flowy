@@ -22,7 +22,7 @@ var _ MappedNullable = &SharedFileSystemConfig{}
 // SharedFileSystemConfig struct for SharedFileSystemConfig
 type SharedFileSystemConfig struct {
 	Type string `json:"type"`
-	RootUrl string `json:"rootUrl"`
+	RootUrl *string `json:"rootUrl,omitempty"`
 	Region *string `json:"region,omitempty"`
 	Endpoint *string `json:"endpoint,omitempty"`
 	AccessKey *string `json:"accessKey,omitempty"`
@@ -35,10 +35,9 @@ type _SharedFileSystemConfig SharedFileSystemConfig
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewSharedFileSystemConfig(type_ string, rootUrl string) *SharedFileSystemConfig {
+func NewSharedFileSystemConfig(type_ string) *SharedFileSystemConfig {
 	this := SharedFileSystemConfig{}
 	this.Type = type_
-	this.RootUrl = rootUrl
 	return &this
 }
 
@@ -74,28 +73,36 @@ func (o *SharedFileSystemConfig) SetType(v string) {
 	o.Type = v
 }
 
-// GetRootUrl returns the RootUrl field value
+// GetRootUrl returns the RootUrl field value if set, zero value otherwise.
 func (o *SharedFileSystemConfig) GetRootUrl() string {
-	if o == nil {
+	if o == nil || IsNil(o.RootUrl) {
 		var ret string
 		return ret
 	}
-
-	return o.RootUrl
+	return *o.RootUrl
 }
 
-// GetRootUrlOk returns a tuple with the RootUrl field value
+// GetRootUrlOk returns a tuple with the RootUrl field value if set, nil otherwise
 // and a boolean to check if the value has been set.
 func (o *SharedFileSystemConfig) GetRootUrlOk() (*string, bool) {
-	if o == nil {
+	if o == nil || IsNil(o.RootUrl) {
 		return nil, false
 	}
-	return &o.RootUrl, true
+	return o.RootUrl, true
 }
 
-// SetRootUrl sets field value
+// HasRootUrl returns a boolean if a field has been set.
+func (o *SharedFileSystemConfig) HasRootUrl() bool {
+	if o != nil && !IsNil(o.RootUrl) {
+		return true
+	}
+
+	return false
+}
+
+// SetRootUrl gets a reference to the given string and assigns it to the RootUrl field.
 func (o *SharedFileSystemConfig) SetRootUrl(v string) {
-	o.RootUrl = v
+	o.RootUrl = &v
 }
 
 // GetRegion returns the Region field value if set, zero value otherwise.
@@ -237,7 +244,9 @@ func (o SharedFileSystemConfig) MarshalJSON() ([]byte, error) {
 func (o SharedFileSystemConfig) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
 	toSerialize["type"] = o.Type
-	toSerialize["rootUrl"] = o.RootUrl
+	if !IsNil(o.RootUrl) {
+		toSerialize["rootUrl"] = o.RootUrl
+	}
 	if !IsNil(o.Region) {
 		toSerialize["region"] = o.Region
 	}
@@ -259,7 +268,6 @@ func (o *SharedFileSystemConfig) UnmarshalJSON(data []byte) (err error) {
 	// that every required field exists as a key in the generic map.
 	requiredProperties := []string{
 		"type",
-		"rootUrl",
 	}
 
 	allProperties := make(map[string]interface{})

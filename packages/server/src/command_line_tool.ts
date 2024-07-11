@@ -7,7 +7,6 @@ import { Builder } from './builder.js';
 import { collect_output_ports } from './collect_outputs.js';
 import { LoadingContext, RuntimeContext, getDefault } from './context.js';
 import { CommandInputParameter, CommandOutputParameter, Directory, File, Tool } from './cwltypes.js';
-import { DockerCommandLineJob, PodmanCommandLineJob } from './docker.js';
 import { UnsupportedRequirement, WorkflowException } from './errors.js';
 import { pathJoin } from './fileutils.js';
 import { CommandLineJob, JobBase } from './job.js';
@@ -33,6 +32,7 @@ import {
   isFileOrDirectory,
   isFile,
 } from './utils.js';
+import { CommandString, CommandStringToString, quoteCommand, toCommandStringArray } from './commandstring.js';
 
 interface Dirent {
   entryname?: string;
@@ -66,7 +66,9 @@ export class ExpressionJob {
     this.tmpdir = tmpdir;
     this.script = script;
   }
-
+  getOutdirs():string[]{
+    return this.outdir?[this.outdir]:[]
+  }
   async run(runtimeContext: RuntimeContext, tmpdir_lock: any | null = null) {
     try {
       normalizeFilesDirs(this.builder.job);
@@ -239,23 +241,23 @@ export class CommandLineTool extends Process {
         }
       }
     }
-    if (dockerReq && runtimeContext.use_container) {
-      // if(runtimeContext.singularity){
-      //     return SingularityCommandLineJob
-      // }else if(runtimeContext.user_space_docker_cmd){
-      //     return UDockerCommandLineJob
-      // }
-      if (runtimeContext.podman) {
-        return (builder, joborder, make_path_mapper, tool, name) =>
-          new PodmanCommandLineJob(builder, joborder, make_path_mapper, tool, name);
-      }
-      return (builder, joborder, make_path_mapper, tool, name) =>
-        new DockerCommandLineJob(builder, joborder, make_path_mapper, tool, name);
-    }
-    if (dockerRequired)
-      throw new UnsupportedRequirement(
-        '--no-container, but this CommandLineTool has ' + "cwl.DockerRequirement under 'requirements'.",
-      );
+    // if (dockerReq && runtimeContext.use_container) {
+    //   // if(runtimeContext.singularity){
+    //   //     return SingularityCommandLineJob
+    //   // }else if(runtimeContext.user_space_docker_cmd){
+    //   //     return UDockerCommandLineJob
+    //   // }
+    //   if (runtimeContext.podman) {
+    //     return (builder, joborder, make_path_mapper, tool, name) =>
+    //       new PodmanCommandLineJob(builder, joborder, make_path_mapper, tool, name);
+    //   }
+    //   return (builder, joborder, make_path_mapper, tool, name) =>
+    //     new DockerCommandLineJob(builder, joborder, make_path_mapper, tool, name);
+    // }
+    // if (dockerRequired)
+    //   throw new UnsupportedRequirement(
+    //     '--no-container, but this CommandLineTool has ' + "cwl.DockerRequirement under 'requirements'.",
+    //   );
     return (builder, joborder, make_path_mapper, tool, name) =>
       new CommandLineJob(builder, joborder, make_path_mapper, tool, name);
   }
@@ -268,9 +270,10 @@ export class CommandLineTool extends Process {
     if (fn.location) {
       const location = fn.location;
       if (pathmap.contains(location)) {
+        const old = pathmap.mapper(location)
         pathmap.update(
           location,
-          pathmap.mapper(location).resolved,
+          old.resolved,
           path.join(outdir, basename),
           `${fn['writable'] ? 'Writable' : ''}${fn['class']}`,
           false,
@@ -629,22 +632,21 @@ export class CommandLineTool extends Process {
   async setup_command_line(builder: Builder, j: JobBase) {
     const [shellcmd, _] = getRequirement(this.tool, cwl.ShellCommandRequirement);
     if (shellcmd !== undefined) {
-      let cmd: string[] = []; // type: List[str]
+      let cmd: CommandString[] = []; // type: List[str]
       for (const b of builder.bindings) {
         let arg = await builder.generate_arg(b);
         if (!(b.shellQuote === false)) {
-          arg = aslist(arg).map((a) => quote(a));
+          arg = aslist(arg).map((a) => quoteCommand(a));
         }
         cmd = [...cmd, ...aslist(arg)];
       }
-      j.command_line = ['/bin/sh', '-c', cmd.join(' ')];
+      j.command_line = toCommandStringArray(['/bin/sh', '-c', cmd.map(CommandStringToString).join(" ")]);
     } else {
-      const cmd: string[] = [];
+      const cmd: CommandString[] = [];
       for (let index = 0; index < builder.bindings.length; index++) {
         const element = builder.bindings[index];
         const a = await builder.generate_arg(element);
-        const b = a.flat();
-        cmd.push(...b);
+        cmd.push(...a);
       }
       j.command_line = cmd;
     }

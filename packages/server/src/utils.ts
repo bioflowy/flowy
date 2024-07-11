@@ -13,6 +13,8 @@ import { CommandLineJob, JobBase } from './job.js';
 import { StdFsAccess } from './stdfsaccess.js';
 import type { ToolRequirement } from './types.js';
 import type { WorkflowJob } from './workflow_job.js';
+import { CommandString } from './commandstring.js';
+import { JobGroup } from './jobgroup.js';
 
 let __random_outdir: string | null = null;
 
@@ -44,9 +46,10 @@ export type CWLOutputType =
   | MutableMapping<CWLOutputAtomType>;
 export type CWLObjectType = MutableMapping<CWLOutputType | undefined>;
 
-export type JobsType = CommandLineJob | JobBase | ExpressionJob | WorkflowJob | undefined; //  ;
+export type JobsType = CommandLineJob | JobBase | ExpressionJob | WorkflowJob | JobGroup| undefined; //  ;
 export type JobsGeneratorType = AsyncGenerator<JobsType, void>;
-export type OutputCallbackType = (arg1: CWLObjectType, arg2: string) => void;
+export type JobStatus = "permanentFail" | "success" | "temporaryFail";
+export type OutputCallbackType = (arg1: CWLObjectType, arg2: JobStatus) => void;
 // type ResolverType = (Loader, string)=>string?;
 // type DestinationsType = MutableMapping<string, CWLOutputType?>;
 export type ScatterDestinationsType = MutableMapping<(CWLOutputType | undefined)[]>;
@@ -189,8 +192,6 @@ export function mkdtemp(prefix = '', dir?: string): string {
   }
   const uniqueName = prefix + uuidv4();
   const tempDirPath = path.join(dir, uniqueName);
-
-  fs.mkdirSync(tempDirPath);
   return tempDirPath;
 }
 export function versionstring(): string {

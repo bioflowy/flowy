@@ -10,7 +10,8 @@ import { Dictionary } from '@flowy/cwl-ts-auto/dist/util/Dict.js';
 import type { LoadingOptions } from '@flowy/cwl-ts-auto/dist/util/LoadingOptions.js';
 import { z } from 'zod';
 import { ToolRequirement } from './types.js';
-import { CWLOutputType } from './utils.js';
+import { CWLOutputType, isString } from './utils.js';
+import { CommandLineJob } from './job.js';
 extendZodWithOpenApi(z);
 
 export interface IOParam {
@@ -124,7 +125,33 @@ export interface SecondaryFileSchema {
   pattern: string;
   required?: undefined | boolean | string;
 }
-
+function isFixedFilename(filename: string): boolean {
+  return !filename.includes('*');
+}
+/**
+ * もし、出力がstreamableで、かつファイル名が固定ならば出力ファイル名のURLを返す。
+ * @param job 
+ * @param output 
+ */
+export function isChainableOutput(job:CommandLineJob,output:CommandOutputParameter):string | undefined{
+  if(!output.streamable){
+    return undefined
+  }
+  if(output.type !== cwl.CWLType.FILE){
+    return undefined
+  }
+  if(output.outputBinding === undefined){
+    return undefined
+  }
+  if(!isString(output.outputBinding.glob)){
+    return undefined
+  }
+  const filename = output.outputBinding.glob
+  if(!isFixedFilename(filename)){
+    return undefined
+  }
+  return `file://${job.outdir}/${filename}`
+}
 export interface CommandOutputParameter {
   extensionFields?: Dictionary<unknown>;
   id?: undefined | string;

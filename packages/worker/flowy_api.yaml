@@ -28,34 +28,21 @@ components:
           type: string
       required:
         - type
-        - rootUrl
-    StagingCommandName:
-      type: string
-      enum:
-        - writeFileContent
-        - relink
-        - symlink
-        - copy
-        - mkdir
-    StagingCommand:
-      type: object
-      properties:
-        command:
-          $ref: '#/components/schemas/StagingCommandName'
-        target:
-          type: string
-        resolved:
-          type: string
-        content:
-          type: string
-        mode:
-          type: integer
-        ensureWritable:
-          type: boolean
-        recursive:
-          type: boolean
-      required:
-        - command
+    CommandString:
+      type: array
+      items:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - Key
+              - Literal
+          value:
+            type: string
+        required:
+          - type
+          - value
     LoadListingEnum:
       type: string
       enum:
@@ -90,6 +77,9 @@ components:
             type: string
         outputEval:
           type: string
+        streamable:
+          type: boolean
+          default: false
       required:
         - name
         - secondaryFiles
@@ -102,13 +92,27 @@ components:
           type: string
         type:
           type: string
+          enum:
+            - File
+            - Directory
+            - CreateFile
+            - CreateWritableFile
+            - WritableFile
+            - WritableDirectory
         staged:
+          type: boolean
+        streamable:
           type: boolean
       required:
         - resolved
         - target
         - type
         - staged
+    runtime:
+      type: object
+      properties:
+        custom_net:
+          type: string
     JobFinishedRequest:
       type: object
       properties:
@@ -172,14 +176,10 @@ paths:
                   properties:
                     id:
                       type: string
-                    staging:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/StagingCommand'
                     commands:
                       type: array
                       items:
-                        type: string
+                        $ref: '#/components/schemas/CommandString'
                     stdin_path:
                       type: string
                     stdout_path:
@@ -210,11 +210,18 @@ paths:
                         $ref: '#/components/schemas/MapperEnt'
                     inplace_update:
                       type: boolean
+                    networkaccess:
+                      type: boolean
                     outputBaseDir:
                       type: string
+                    dockerExec:
+                      type: string
+                    dockerImage:
+                      type: string
+                    runtime:
+                      $ref: '#/components/schemas/runtime'
                   required:
                     - id
-                    - staging
                     - commands
                     - env
                     - cwd
@@ -223,6 +230,8 @@ paths:
                     - fileitems
                     - generatedlist
                     - inplace_update
+                    - networkaccess
+                    - runtime
   /api/jobFinished:
     post:
       description: report job finished

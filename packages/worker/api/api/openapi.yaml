@@ -111,44 +111,12 @@ components:
         secretKey:
           type: string
       required:
-      - rootUrl
       - type
       type: object
-    StagingCommandName:
-      enum:
-      - writeFileContent
-      - relink
-      - symlink
-      - copy
-      - mkdir
-      type: string
-    StagingCommand:
-      example:
-        mode: 0
-        ensureWritable: true
-        command: null
-        content: content
-        recursive: true
-        target: target
-        resolved: resolved
-      properties:
-        command:
-          $ref: '#/components/schemas/StagingCommandName'
-        target:
-          type: string
-        resolved:
-          type: string
-        content:
-          type: string
-        mode:
-          type: integer
-        ensureWritable:
-          type: boolean
-        recursive:
-          type: boolean
-      required:
-      - command
-      type: object
+    CommandString:
+      items:
+        $ref: '#/components/schemas/CommandString_inner'
+      type: array
     LoadListingEnum:
       enum:
       - no_listing
@@ -158,6 +126,7 @@ components:
     OutputBinding:
       example:
         loadContents: true
+        streamable: false
         loadListing: null
         outputEval: outputEval
         name: name
@@ -188,14 +157,18 @@ components:
           type: array
         outputEval:
           type: string
+        streamable:
+          default: false
+          type: boolean
       required:
       - name
       - secondaryFiles
       type: object
     MapperEnt:
       example:
+        streamable: true
         staged: true
-        type: type
+        type: File
         resolved: resolved
         target: target
       properties:
@@ -204,14 +177,30 @@ components:
         target:
           type: string
         type:
+          enum:
+          - File
+          - Directory
+          - CreateFile
+          - CreateWritableFile
+          - WritableFile
+          - WritableDirectory
           type: string
         staged:
+          type: boolean
+        streamable:
           type: boolean
       required:
       - resolved
       - staged
       - target
       - type
+      type: object
+    runtime:
+      example:
+        custom_net: custom_net
+      properties:
+        custom_net:
+          type: string
       type: object
     JobFinishedRequest:
       example:
@@ -254,53 +243,49 @@ components:
     _api_getExectableJob_post_200_response_inner:
       example:
         stdout_path: stdout_path
+        dockerImage: dockerImage
+        runtime:
+          custom_net: custom_net
         builderOutdir: builderOutdir
         env:
           key: env
-        timelimit: 6
+        outputBaseDir: outputBaseDir
+        networkaccess: true
+        timelimit: 0
         inplace_update: true
         stderr_path: stderr_path
         cwd: cwd
         fileitems:
-        - staged: true
-          type: type
+        - streamable: true
+          staged: true
+          type: File
           resolved: resolved
           target: target
-        - staged: true
-          type: type
+        - streamable: true
+          staged: true
+          type: File
           resolved: resolved
           target: target
         stdin_path: stdin_path
         generatedlist:
-        - staged: true
-          type: type
+        - streamable: true
+          staged: true
+          type: File
           resolved: resolved
           target: target
-        - staged: true
-          type: type
+        - streamable: true
+          staged: true
+          type: File
           resolved: resolved
           target: target
         id: id
-        staging:
-        - mode: 0
-          ensureWritable: true
-          command: null
-          content: content
-          recursive: true
-          target: target
-          resolved: resolved
-        - mode: 0
-          ensureWritable: true
-          command: null
-          content: content
-          recursive: true
-          target: target
-          resolved: resolved
+        dockerExec: dockerExec
         commands:
-        - commands
-        - commands
+        - null
+        - null
         outputBindings:
         - loadContents: true
+          streamable: false
           loadListing: null
           outputEval: outputEval
           name: name
@@ -315,6 +300,7 @@ components:
             requiredBoolean: true
             requiredString: requiredString
         - loadContents: true
+          streamable: false
           loadListing: null
           outputEval: outputEval
           name: name
@@ -331,13 +317,9 @@ components:
       properties:
         id:
           type: string
-        staging:
-          items:
-            $ref: '#/components/schemas/StagingCommand'
-          type: array
         commands:
           items:
-            type: string
+            $ref: '#/components/schemas/CommandString'
           type: array
         stdin_path:
           type: string
@@ -369,6 +351,16 @@ components:
           type: array
         inplace_update:
           type: boolean
+        networkaccess:
+          type: boolean
+        outputBaseDir:
+          type: string
+        dockerExec:
+          type: string
+        dockerImage:
+          type: string
+        runtime:
+          $ref: '#/components/schemas/runtime'
       required:
       - builderOutdir
       - commands
@@ -378,8 +370,9 @@ components:
       - generatedlist
       - id
       - inplace_update
+      - networkaccess
       - outputBindings
-      - staging
+      - runtime
       type: object
     _api_jobFailed_post_request:
       properties:
@@ -404,6 +397,19 @@ components:
       required:
       - ex
       - id
+      type: object
+    CommandString_inner:
+      properties:
+        type:
+          enum:
+          - Key
+          - Literal
+          type: string
+        value:
+          type: string
+      required:
+      - type
+      - value
       type: object
     OutputBinding_secondaryFiles_inner:
       example:

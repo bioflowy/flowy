@@ -1,10 +1,11 @@
+
 /* eslint-disable no-prototype-builtins */
 import * as cwlTsAuto from '@flowy/cwl-ts-auto';
 import { cloneDeep } from 'lodash-es';
 import { contentLimitRespectedReadBytes } from './builder.js';
 import { canAssignSrcToSinkType } from './checker.js';
 import { RuntimeContext, getDefault, make_default_fs_access } from './context.js';
-import { CommandOutputParameter, IOType, IWorkflowStep, WorkflowStepInput } from './cwltypes.js';
+import { CommandOutputParameter, IOType, isChainableOutput, IWorkflowStep, WorkflowStepInput } from './cwltypes.js';
 import { WorkflowException } from './errors.js';
 import { do_eval } from './expression.js';
 import { _logger } from './loghandler.js';
@@ -25,6 +26,8 @@ import {
   str,
 } from './utils.js';
 import { Workflow, WorkflowStep } from './workflow.js';
+import { JobGroup } from './jobgroup.js';
+import { CommandLineJob } from './job.js';
 
 class WorkflowJobStep {
   step: WorkflowStep;
@@ -336,6 +339,7 @@ async function dotproduct_scatter(
   return parallel_steps(steps, rc, runtimeContext); // Assuming parallel_steps is a function you've defined
 }
 function matchTypes(
+  input:WorkflowStepInput,
   sinktype: IOType,
   src: WorkflowStateItem,
   iid: string,
@@ -345,17 +349,17 @@ function matchTypes(
 ): boolean {
   if (sinktype instanceof Array) {
     for (const st of sinktype) {
-      if (matchTypes(st, src, iid, inputobj, linkMerge, valueFrom)) {
+      if (matchTypes(input,st, src, iid, inputobj, linkMerge, valueFrom)) {
         return true;
       }
     }
-  } else if (src.parameter['type'] instanceof Array) {
-    const original_types = src.parameter['type'];
+  } else if (src.parameter.type instanceof Array) {
+    const original_types = src.parameter.type;
     for (const source_type of original_types) {
-      src.parameter['type'] = source_type;
-      const match = matchTypes(sinktype, src, iid, inputobj, linkMerge, valueFrom);
+      src.parameter.type = source_type;
+      const match = matchTypes(input,sinktype, src, iid, inputobj, linkMerge, valueFrom);
       if (match) {
-        src.parameter['type'] = original_types;
+        src.parameter.type = original_types;
         return true;
       }
     }
@@ -380,6 +384,10 @@ function matchTypes(
     return true;
   } else if (valueFrom !== null || canAssignSrcToSinkType(src.parameter.type, sinktype) || sinktype === 'Any') {
     inputobj[iid] = cloneDeep(src.value);
+    if(sinktype === "File" && input.streamable){
+      const obj = inputobj[iid]
+      obj["streamable"] = input.streamable
+    }
     return true;
   }
   return false;
@@ -410,9 +418,10 @@ function objectFromState(
       }
       for (const src of connections) {
         const aState = state[src] || null;
-        if (aState && (aState.success === 'success' || aState.success === 'skipped' || incomplete)) {
+        if (aState && (aState.success === 'success'|| aState.success === 'streamable' && inp.streamable || aState.success === 'skipped' || incomplete)) {
           if (
             !matchTypes(
+              inp,
               inp.type,
               aState,
               iid,
@@ -518,7 +527,9 @@ export class WorkflowJob {
       this.tool.id || `workflow embedded in ${runtimeContext.part_of}`,
     );
   }
-
+  getOutdirs(){
+    return this.outdir?[this.outdir]:[]
+  }
   do_output_callback(final_output_callback) {
     const supportsMultipleInput = Boolean(this.workflow.getRequirement(cwlTsAuto.MultipleInputFeatureRequirement)[0]);
 
@@ -803,7 +814,6 @@ export class WorkflowJob {
         throw new WorkflowException(`Input '${inp.id}' not in input object and does not have a default value.`);
       }
     });
-
     this.steps.forEach((step) => {
       step.step.tool.outputs.forEach((out) => {
         this.state[out['id']] = null;
@@ -811,6 +821,7 @@ export class WorkflowJob {
     });
 
     let completed = 0;
+    let submittableJobs:CommandLineJob[]= []
     while (completed < this.steps.length) {
       this.made_progress = false;
       for (const step of this.steps) {
@@ -831,7 +842,27 @@ export class WorkflowJob {
               if (getDefault(runtimeContext.on_error, 'stop') === 'stop' && this.processStatus !== 'success') break;
               if (newjob) {
                 this.made_progress = true;
-                yield newjob;
+                if(newjob instanceof CommandLineJob){
+                  for (const i of newjob.tool.outputs) {
+                    if ('id' in i) {
+                      const outputFileUrl = isChainableOutput(newjob,i)
+                      if(outputFileUrl){
+                        const iid = i['id'];
+                        this.state[iid] = new WorkflowStateItem(i, {class:"File",location:outputFileUrl}, "streamable");
+                      }
+                    }
+                  }
+                  // もしCommandLineJobならStateを"streamable"にして、さらに実行可能なCommandLineJobがないか調べる
+                  submittableJobs.push(newjob)
+                }else{
+                  if(submittableJobs.length>0){
+                    // もしCommandLineJob以外のJobがきて、submittableJobsがあれば、submitしておく
+                    const prevJob = new JobGroup(submittableJobs)
+                    submittableJobs = []
+                    yield prevJob;  
+                  }
+                  yield newjob;
+                }
               } else {
                 break;
               }
@@ -844,11 +875,23 @@ export class WorkflowJob {
           }
         }
       }
-      completed = this.steps.filter((s) => s.completed).length;
-      if (!this.made_progress && completed < this.steps.length) {
-        if (this.processStatus !== 'success') break;
-        else yield undefined;
+      if(!this.made_progress && submittableJobs.length>0){
+        // もしsubmittableJobsがあれば、submitしておく
+        const prevJob = new JobGroup(submittableJobs)
+        submittableJobs = []
+        yield prevJob;
+        this.made_progress = true
       }
+      completed = this.steps.filter((s) => s.completed).length;
+      if (!this.made_progress){ 
+        if(completed < this.steps.length) {
+        if (this.processStatus !== 'success'){
+          break;
+        }else{
+           yield undefined;
+        }
+      }
+    }
     }
     if (!this.did_callback && output_callback) {
       this.do_output_callback(output_callback);

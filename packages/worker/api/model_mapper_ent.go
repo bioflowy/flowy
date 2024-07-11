@@ -25,6 +25,7 @@ type MapperEnt struct {
 	Target string `json:"target"`
 	Type string `json:"type"`
 	Staged bool `json:"staged"`
+	Streamable *bool `json:"streamable,omitempty"`
 }
 
 type _MapperEnt MapperEnt
@@ -146,6 +147,38 @@ func (o *MapperEnt) SetStaged(v bool) {
 	o.Staged = v
 }
 
+// GetStreamable returns the Streamable field value if set, zero value otherwise.
+func (o *MapperEnt) GetStreamable() bool {
+	if o == nil || IsNil(o.Streamable) {
+		var ret bool
+		return ret
+	}
+	return *o.Streamable
+}
+
+// GetStreamableOk returns a tuple with the Streamable field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *MapperEnt) GetStreamableOk() (*bool, bool) {
+	if o == nil || IsNil(o.Streamable) {
+		return nil, false
+	}
+	return o.Streamable, true
+}
+
+// HasStreamable returns a boolean if a field has been set.
+func (o *MapperEnt) HasStreamable() bool {
+	if o != nil && !IsNil(o.Streamable) {
+		return true
+	}
+
+	return false
+}
+
+// SetStreamable gets a reference to the given bool and assigns it to the Streamable field.
+func (o *MapperEnt) SetStreamable(v bool) {
+	o.Streamable = &v
+}
+
 func (o MapperEnt) MarshalJSON() ([]byte, error) {
 	toSerialize,err := o.ToMap()
 	if err != nil {
@@ -160,6 +193,9 @@ func (o MapperEnt) ToMap() (map[string]interface{}, error) {
 	toSerialize["target"] = o.Target
 	toSerialize["type"] = o.Type
 	toSerialize["staged"] = o.Staged
+	if !IsNil(o.Streamable) {
+		toSerialize["streamable"] = o.Streamable
+	}
 	return toSerialize, nil
 }
 

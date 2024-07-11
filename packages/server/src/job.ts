@@ -4,10 +4,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DockerRequirement, ShellCommandRequirement } from '@flowy/cwl-ts-auto';
 import { v4 as uuidv4 } from 'uuid';
-import { OutputBinding, OutputSecondaryFile } from './JobExecutor.js';
+import { JobExec, OutputBinding, OutputSecondaryFile, Runtime } from './JobExecutor.js';
 import { Builder } from './builder.js';
 import { OutputPortsType } from './collect_outputs.js';
 import { RuntimeContext } from './context.js';
+import * as expression from './expression.js';
+import * as cwlTsAuto from '@flowy/cwl-ts-auto';
+
 import {
   CommandOutputParameter,
   Directory,
@@ -22,7 +25,6 @@ import { _logger } from './loghandler.js';
 import { MakePathMapper, MapperEnt, PathMapper } from './pathmapper.js';
 import { stage_files } from './process.js';
 import { SecretStore } from './secrets.js';
-import { LazyStaging } from './staging.js';
 import {
   type CWLObjectType,
   type OutputCallbackType,
@@ -32,37 +34,19 @@ import {
   quote,
   aslist,
   isStringOrStringArray,
+  which,
+  checkOutput,
+  JobStatus,
+  CWLOutputType,
 } from './utils.js';
 import { getManager } from './server/manager.js';
+import { CommandString, CommandStringToString } from './commandstring.js';
+import { executeJobHandler } from './server/executeJob.js';
 
-function relink_initialworkdir_lazy(
-  staging: LazyStaging,
-  pathmapper: PathMapper,
-  host_outdir: string,
-  container_outdir: string,
-  inplace_update = false,
-) {
-  for (const [_key, vol] of pathmapper.items_exclude_children()) {
-    if (!vol.staged) {
-      continue;
-    }
-    if (
-      ['File', 'Directory'].includes(vol.type) ||
-      (inplace_update && ['WritableFile', 'WritableDirectory'].includes(vol.type))
-    ) {
-      if (!vol.target.startsWith(container_outdir)) {
-        continue;
-      }
-      const host_outdir_tgt = path.join(host_outdir, vol.target.substr(container_outdir.length + 1));
-      staging.relink(vol.resolved, host_outdir_tgt);
-    }
-  }
-}
-
-export async function _job_popen(
+export function _job_popen(
+  job: JobBase,
   outputBaseDir: string,
-  staging: LazyStaging,
-  commands: string[],
+  commands: CommandString[],
   stdin_path: string | undefined,
   stdout_path: string | undefined,
   stderr_path: string | undefined,
@@ -75,14 +59,17 @@ export async function _job_popen(
   make_job_dir: () => string,
   inplace_update: boolean,
   timelimit: number | undefined = undefined,
-): Promise<[number, boolean, OutputPortsType]> {
+  dockerExec: string | undefined,
+  dockerImage: string | undefined,
+  networkaccess:boolean,
+  runtime: Runtime
+
+): JobExec {
   const id = uuidv4();
   const server = getManager();
-  server.addBuilder(id, builder);
-  return server.execute(id, {
+  const jobExec:JobExec = {
     outputBaseDir,
     id,
-    staging: staging.commands,
     commands,
     stdin_path,
     stdout_path,
@@ -95,7 +82,12 @@ export async function _job_popen(
     generatedlist,
     timelimit,
     inplace_update,
-  });
+    dockerExec,
+    dockerImage,
+    networkaccess,
+    runtime,
+  }
+  return jobExec;
 }
 type CollectOutputsType = (
   str: string,
@@ -105,7 +97,6 @@ type CollectOutputsType = (
 ) => Promise<CWLObjectType>; // Assuming functools.partial as any
 export abstract class JobBase {
   builder: Builder;
-  staging: LazyStaging = new LazyStaging();
   base_path_logs: string;
   joborder: CWLObjectType;
   make_path_mapper: MakePathMapper;
@@ -114,10 +105,11 @@ export abstract class JobBase {
   stdin?: string;
   stderr?: string;
   stdout?: string;
+  resources: { [key: string]: number };
   successCodes: number[];
   temporaryFailCodes: number[];
   permanentFailCodes: number[];
-  command_line: string[];
+  command_line: CommandString[];
   pathmapper: PathMapper;
   generatemapper?: PathMapper;
   collect_outputs?: CollectOutputsType;
@@ -133,6 +125,7 @@ export abstract class JobBase {
   timelimit?: number;
   networkaccess: boolean;
   mpi_procs?: number;
+  cwlVersion: string = "unkown";
 
   constructor(
     builder: Builder,
@@ -148,6 +141,7 @@ export abstract class JobBase {
   ) {
     this.builder = builder;
     this.joborder = joborder;
+    this.resources = builder.resources;
     // TODO
     this.base_path_logs = '/tmp';
     this.stdin = undefined;
@@ -174,21 +168,65 @@ export abstract class JobBase {
     this.networkaccess = false;
     this.mpi_procs = undefined;
   }
+  getOutdirs():string[]{
+    return this.outdir?[this.outdir]:[]
+  }
+  async do_eval(
+    ex: CWLOutputType | undefined,
+    context: any = undefined,
+    recursive = false,
+    strip_whitespace = true,
+  ): Promise<CWLOutputType | undefined> {
+    if (recursive) {
+      if (ex instanceof Map) {
+        const mutatedMap: { [key: string]: any } = {};
+        ex.forEach((value, key) => {
+          mutatedMap[key] = this.do_eval(value, context, recursive);
+        });
+        return mutatedMap;
+      }
+      if (Array.isArray(ex)) {
+        const rets: CWLOutputType[] = [];
+        for (let index = 0; index < ex.length; index++) {
+          const ret = await this.do_eval(ex[index], context, recursive);
+          rets.push(ret);
+        }
+        return rets;
+      }
+    }
+
+    let resources = this.resources;
+    if (this.resources && this.resources['cores']) {
+      const cores = resources['cores'];
+      resources = { ...resources };
+      resources['cores'] = Math.ceil(cores);
+    }
+    const [javascriptRequirement] = getRequirement(this.tool, cwlTsAuto.InlineJavascriptRequirement);
+    const ret = await expression.do_eval(
+      ex as CWLObjectType,
+      this.joborder,
+      javascriptRequirement,
+      this.outdir,
+      this.tmpdir,
+      resources,
+      context,
+      strip_whitespace,
+      this.cwlVersion,
+    );
+    return ret;
+  }
 
   toString(): string {
     return `CommandLineJob(${this.name})`;
   }
   abstract run(runtimeContext: RuntimeContext): void;
-
+  _get_dockerExec():string | undefined{
+    return undefined
+  }
+  _get_dockerImage():string | undefined{
+    return undefined
+  }
   _setup(runtimeContext: RuntimeContext): void {
-    // cuda not supported now
-    // let cuda_req;
-    // [cuda_req, _] = this.builder.get_requirement("http://commonwl.org/cwltool#CUDARequirement");
-    // if (cuda_req) {
-    //     let count = cuda_check(cuda_req, Math.ceil(this.builder.resources["cudaDeviceCount"]));
-    //     if (count === 0) throw new WorkflowException("Could not satisfy CUDARequirement");
-    // }
-    if (!fs.existsSync(this.outdir)) fs.mkdirSync(this.outdir, { recursive: true });
 
     const is_streamable = (file: string): boolean => {
       if (!runtimeContext.streaming_allowed) return false;
@@ -215,7 +253,7 @@ export abstract class JobBase {
       runtimeContext.outdir = this.outdir;
       this.generatemapper = this.make_path_mapper(
         this.generatefiles.listing,
-        this.builder.outdir,
+        this.outdir,
         runtimeContext,
         false,
       );
@@ -235,6 +273,17 @@ export abstract class JobBase {
     runtimeContext: RuntimeContext,
     monitor_function: ((popen: any) => void) | null = null,
   ) {
+    const manager = getManager();
+    const jobExec = await this._execute2(runtime,env,runtimeContext,monitor_function)
+    const [rcode, isCwlOutput, fileMap] = await manager.execute(this,jobExec)
+    await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
+  }
+  async _execute2(
+    runtime: string[],
+    env: { [id: string]: string },
+    runtimeContext: RuntimeContext,
+    monitor_function: ((popen: any) => void) | null = null,
+  ) :Promise<JobExec> {
     const scr = getRequirement(this.tool, ShellCommandRequirement)[0];
 
     const shouldquote = scr !== null;
@@ -247,7 +296,7 @@ export abstract class JobBase {
     //   menv.set_env_vars(env);
     // }
     const command_line = runtime
-      .concat(this.command_line)
+      .concat(this.command_line.map(CommandStringToString))
       .map((arg) => (shouldquote ? quote(arg.toString()) : arg.toString())) // TODO
       .join(' \\\n');
     const tmp2 = [
@@ -256,8 +305,6 @@ export abstract class JobBase {
       this.stderr ? ` 2> ${path.join(this.base_path_logs, this.stderr)}` : '',
     ];
     _logger.info(`[job ${this.name}] %${this.outdir}$ ${command_line} ${tmp2[0]} ${tmp2[1]} ${tmp2[2]}`);
-    let outputs: any = {};
-    let processStatus = '';
     try {
       let stdin_path: string | undefined;
       if (this.stdin !== undefined) {
@@ -265,7 +312,11 @@ export abstract class JobBase {
         if (rmap === undefined) {
           throw new WorkflowException(`${this.stdin} missing from pathmapper`);
         } else {
-          stdin_path = rmap[1];
+          if(!rmap[0].startsWith("_:")){
+            stdin_path = rmap[1];
+          }else{
+            stdin_path = this.stdin
+          }
         }
       }
 
@@ -274,26 +325,22 @@ export abstract class JobBase {
         stderr_or_stdout: string | undefined,
       ): string | undefined => {
         if (stderr_or_stdout !== undefined) {
-          const abserr = path.join(base_path_logs, stderr_or_stdout);
-          const dnerr = path.dirname(abserr);
-          if (dnerr && !fs.existsSync(dnerr)) {
-            fs.mkdirSync(dnerr, { recursive: true });
-          }
-          return abserr;
+          return path.join(base_path_logs, stderr_or_stdout);
         }
         return undefined;
       };
 
       const stderr_path = stderr_stdout_log_path(this.base_path_logs, this.stderr);
       const stdout_path = stderr_stdout_log_path(this.base_path_logs, this.stdout);
-      let commands = runtime.concat(this.command_line).map((x) => x.toString());
+      // let commands = runtime.concat(this.command_line).map((x) => x.toString());
       if (runtimeContext.secret_store !== undefined) {
-        commands = runtimeContext.secret_store.retrieve(commands as any) as string[];
+        // TODO 
+        // commands = runtimeContext.secret_store.retrieve(commands as any) as string[];
         env = runtimeContext.secret_store.retrieve(env as any) as { [id: string]: string };
       }
       const fileitems: MapperEnt[] = [];
       if (this.builder.pathmapper) {
-        for (const [_, item] of this.builder.pathmapper.items()) {
+        for (const [_, item] of this.builder.pathmapper.items_exclude_children()) {
           fileitems.push(item);
         }
       }
@@ -306,11 +353,11 @@ export abstract class JobBase {
         }
       }
       
-      const outputBindings = await createOutputBinding(this.tool.outputs, this.builder);
-      const [rcode, isCwlOutput, fileMap] = await _job_popen(
+      const outputBindings = await createOutputBinding(this.tool.outputs, this);
+      const jobExec = _job_popen(
+        this,
         runtimeContext.basedir,
-        this.staging,
-        commands,
+        this.command_line,
         stdin_path,
         stdout_path,
         stderr_path,
@@ -323,7 +370,25 @@ export abstract class JobBase {
         () => runtimeContext.createOutdir(),
         this.inplace_update,
         this.timelimit,
-      );
+        this._get_dockerExec(),
+        this._get_dockerImage(),
+        this.networkaccess,
+        {
+          custom_net: runtimeContext.custom_net
+        }
+      )
+      return jobExec
+    } catch (err) {
+      if (err instanceof Error) {
+        _logger.error(`[job ${this.name}] Job error${err.message}\n${err.stack}`);
+      }
+    }
+  }
+  async executed(rcode, isCwlOutput, fileMap,stdout_path, stderr_path,runtimeContext:RuntimeContext){
+    let outputs: any = {};
+    let processStatus:JobStatus = 'success';
+    try{
+
       if (this.successCodes.includes(rcode)) {
         processStatus = 'success';
       } else if (this.temporaryFailCodes.includes(rcode)) {
@@ -493,18 +558,18 @@ export abstract class JobBase {
     // }
   }
 }
-async function createOutputBinding(outputs: CommandOutputParameter[], builder: Builder): Promise<OutputBinding[]> {
+async function createOutputBinding(outputs: CommandOutputParameter[], job: JobBase): Promise<OutputBinding[]> {
   const outputBindings: OutputBinding[] = [];
   for (const output of outputs) {
     const outputType = output.type;
     if (isCommandOutputRecordSchema(outputType)) {
-      const obs = await createOutputBinding(outputType.fields, builder);
+      const obs = await createOutputBinding(outputType.fields, job);
       outputBindings.push(...obs);
     }
     if (output.outputBinding) {
       const globpatterns: string[] = [];
       for (const glob of aslist(output.outputBinding.glob)) {
-        const gb = await builder.do_eval(glob);
+        const gb = await job.do_eval(glob);
         if (gb) {
           if (isStringOrStringArray(gb)) {
             globpatterns.push(...aslist(gb));
@@ -517,6 +582,7 @@ async function createOutputBinding(outputs: CommandOutputParameter[], builder: B
         }
       }
       const binding: OutputBinding = {
+        streamable: output.streamable,
         name: output.name,
         glob: globpatterns,
         secondaryFiles: aslist(output.secondaryFiles).map(convertSecondaryFiles),
@@ -538,9 +604,100 @@ function convertSecondaryFiles(file: SecondaryFileSchema): OutputSecondaryFile {
     return { pattern: file.pattern };
   }
 }
+const _IMAGES: Set<string> = new Set();
 
 export class CommandLineJob extends JobBase {
+  docker_exec = 'docker';
+  dockerImage:string|undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(builder: Builder, joborder: CWLObjectType, make_path_mapper: MakePathMapper, tool: Tool, name: string) {
+    super(builder, joborder, make_path_mapper, tool, name);
+    // this.inplace_update = true;
+  }
+  _get_dockerExec(){
+    return this.docker_exec
+  }
+  _get_dockerImage(){
+    return this.dockerImage
+  }
+  async get_image(docker_requirement: DockerRequirement, pull_image: boolean, force_pull: boolean): Promise<boolean> {
+    let found = false;
+
+    if (!docker_requirement.dockerImageId && docker_requirement.dockerPull){
+      docker_requirement.dockerImageId = docker_requirement.dockerPull;
+     this.dockerImage =  docker_requirement.dockerImageId
+    }
+ 
+    // synchronized (_IMAGES_LOCK, () => {
+    if (docker_requirement.dockerImageId in _IMAGES) return true;
+    // });
+    const images = await checkOutput([this.docker_exec, 'images', '--no-trunc', '--all']);
+    for (const line of images.split('\n')) {
+      try {
+        const match = line.match('^([^ ]+)\\s+([^ ]+)\\s+([^ ]+)');
+        const split = docker_requirement.dockerImageId.split(':');
+        if (split.length == 1) split.push('latest');
+        else if (split.length == 2) {
+          if (!split[1].match('[\\w][\\w.-]{0,127}')) split[0] = `${split[0]}:${split[1]}`;
+          split[1] = 'latest';
+        } else if (split.length == 3) {
+          if (split[2].match('[\\w][\\w.-]{0,127}')) {
+            split[0] = `${split[0]}:${split[1]}`;
+            split[1] = split[2];
+            split.splice(2, 1);
+          }
+        }
+
+        if (match && ((split[0] == match[1] && split[1] == match[2]) || docker_requirement.dockerImageId == match[3])) {
+          this.dockerImage = docker_requirement.dockerImageId
+          found = true;
+          break;
+        }
+      } catch (error) {
+        _logger.warn(`Error parsing docker images output: ${error}`);
+        continue;
+      }
+    }
+
+    if ((force_pull || !found) && pull_image) {
+      let cmd: string[] = [];
+      if ('dockerPull' in docker_requirement) {
+        cmd = [this.docker_exec, 'pull', docker_requirement['dockerPull'].toString()];
+        _logger.info(cmd.toString());
+        await checkOutput(cmd);
+        found = true;
+      }
+    }
+    if (found) {
+      // synchronized (_IMAGES_LOCK, () => {
+      _IMAGES.add(docker_requirement['dockerImageId']);
+      // });
+    }
+
+    return found;
+  }
+  async get_from_requirements(
+    r: DockerRequirement,
+    pull_image: boolean,
+    force_pull: boolean,
+  ): Promise<string | undefined> {
+    const rslt = await which(this.docker_exec);
+    if (!rslt) {
+      throw new WorkflowException(`${this.docker_exec} executable is not available`);
+    }
+    await this.get_image(r, pull_image, force_pull);
+    if (r) {
+      return r['dockerImageId'];
+    }
+    throw new WorkflowException(`Docker image ${r['dockerImageId']} not found`);
+  }
   async run(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<void> {
+    const jobExec = await this.run2(runtimeContext,tmpdir_lock)
+    const [rcode, isCwlOutput, fileMap] = await getManager().execute(this,jobExec)
+    await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
+  }
+  async run2(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<JobExec> {
     if (tmpdir_lock) {
       // assuming tmpdir_lock has a context equivalent
       tmpdir_lock.run(() => {
@@ -553,162 +710,6 @@ export class CommandLineJob extends JobBase {
         fs.mkdirSync(this.tmpdir, { recursive: true });
       }
     }
-
-    this._setup(runtimeContext);
-
-    stage_files(this.staging, this.pathmapper, null, {
-      ignore_writable: true,
-      symlink: true,
-      secret_store: runtimeContext.secret_store,
-    });
-    if (this.generatemapper) {
-      stage_files(this.staging, this.generatemapper, null, {
-        ignore_writable: this.inplace_update,
-        symlink: true,
-        secret_store: runtimeContext.secret_store,
-      });
-      relink_initialworkdir_lazy(
-        this.staging,
-        this.generatemapper,
-        this.outdir,
-        this.builder.outdir,
-        this.inplace_update,
-      );
-    }
-
-    const monitor_function = this.process_monitor.bind(this);
-
-    await this._execute([], this.environment, runtimeContext, monitor_function);
-  }
-
-  _required_env(): { [key: string]: string } {
-    const env: { [key: string]: string } = {};
-    env['HOME'] = this.outdir;
-    env['TMPDIR'] = this.tmpdir;
-    env['PATH'] = process.env['PATH'];
-    for (const extra of ['SYSTEMROOT', 'QEMU_LD_PREFIX']) {
-      if (extra in process.env) {
-        env[extra] = process.env[extra];
-      }
-    }
-    return env;
-  }
-}
-
-const CONTROL_CODE_RE = '\\x1b\\[[0-9;]*[a-zA-Z]';
-
-export abstract class ContainerCommandLineJob extends JobBase {
-  static readonly CONTAINER_TMPDIR: string = '/tmp';
-
-  abstract get_from_requirements(
-    r: any,
-    pull_image: boolean,
-    force_pull: boolean,
-    tmp_outdir_prefix: string,
-  ): Promise<string | undefined>;
-
-  abstract create_runtime(env: { [key: string]: string }, runtime_context: RuntimeContext): [string[], string | null];
-
-  abstract append_volume(runtime: string[], source: string, target: string, writable: boolean): void;
-
-  abstract add_file_or_directory_volume(runtime: string[], volume: MapperEnt, host_outdir_tgt: string | null): void;
-
-  abstract add_writable_file_volume(
-    runtime: string[],
-    volume: MapperEnt,
-    host_outdir_tgt: string | undefined,
-    tmpdir_prefix: string,
-  ): void;
-
-  abstract add_writable_directory_volume(
-    runtime: string[],
-    volume: MapperEnt,
-    host_outdir_tgt: string | undefined,
-    tmpdir_prefix: string,
-  ): void;
-
-  override _preserve_environment_on_containers_warning(varnames: string[] = []) {
-    let flags: string;
-    if (varnames.length === 0) {
-      flags = '--preserve-entire-environment';
-    } else {
-      flags = `--preserve-environment={${varnames.join(', ')}}`;
-    }
-
-    console.warn(
-      `You have specified ${flags} while running a container which will override variables set in the container. This may break the container, be non-portable, and/or affect reproducibility.`,
-    );
-  }
-  create_file_and_add_volume(
-    runtime: string[],
-    volume: MapperEnt,
-    host_outdir_tgt: string,
-    secret_store: SecretStore,
-    tmpdir_prefix: string,
-  ): string {
-    let new_file = '';
-    if (!host_outdir_tgt) {
-      new_file = path.join(createTmpDir(tmpdir_prefix), path.basename(volume.target));
-    }
-    const writable = volume.type === 'CreateWritableFile';
-    let contents = volume.resolved;
-    if (secret_store) {
-      contents = secret_store.retrieve(volume.resolved) as string;
-    }
-    const dirname = path.dirname(host_outdir_tgt || new_file);
-    this.staging.mkdirSync(dirname, true);
-    this.staging.writeFileSync(host_outdir_tgt || new_file, contents, 0o755, { ensureWritable: writable });
-    if (!host_outdir_tgt) {
-      this.append_volume(runtime, new_file, volume.target, writable);
-    }
-    return host_outdir_tgt || new_file;
-  }
-  add_volumes(
-    pathmapper: PathMapper,
-    runtime: string[],
-    tmpdir_prefix: string,
-    secret_store: SecretStore, // TODO SecretStore | null = null,
-    any_path_okay = false,
-  ): void {
-    const container_outdir = this.builder.outdir;
-    for (const [key, vol] of [...pathmapper.items().filter((itm) => itm[1].staged)]) {
-      let host_outdir_tgt: string | undefined = undefined;
-      if (vol.target.startsWith(`${container_outdir}/`)) {
-        host_outdir_tgt = path.join(this.outdir, vol.target.slice(container_outdir.length + 1));
-      }
-      if (!host_outdir_tgt && !any_path_okay) {
-        throw new WorkflowException(
-          `No mandatory DockerRequirement, yet path is outside ` +
-            `the designated output directory, also know as ` +
-            `${runtime.join(', ')}: ${str(vol)}`,
-        );
-      }
-      if (vol.type === 'File' || vol.type === 'Directory') {
-        this.add_file_or_directory_volume(runtime, vol, host_outdir_tgt);
-      } else if (vol.type === 'WritableFile') {
-        this.add_writable_file_volume(runtime, vol, host_outdir_tgt, tmpdir_prefix);
-      } else if (vol.type === 'WritableDirectory') {
-        this.add_writable_directory_volume(runtime, vol, host_outdir_tgt, tmpdir_prefix);
-      } else if (['CreateFile', 'CreateWritableFile'].includes(vol.type)) {
-        const new_path = this.create_file_and_add_volume(runtime, vol, host_outdir_tgt, secret_store, tmpdir_prefix);
-        pathmapper.update(key, new_path, vol.target, vol.type, vol.staged);
-      }
-    }
-  }
-  async run(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<void> {
-    const debug = runtimeContext.debug;
-    if (tmpdir_lock) {
-      tmpdir_lock(() => {
-        if (!fs.existsSync(this.tmpdir)) {
-          fs.mkdirSync(this.tmpdir);
-        }
-      });
-    } else {
-      if (!fs.existsSync(this.tmpdir)) {
-        fs.mkdirSync(this.tmpdir);
-      }
-    }
-
     const [docker_req, docker_is_req] = getRequirement(this.tool, DockerRequirement);
     let img_id: any = undefined;
     const user_space_docker_cmd = runtimeContext.user_space_docker_cmd;
@@ -719,14 +720,6 @@ export abstract class ContainerCommandLineJob extends JobBase {
         img_id = String(docker_req.dockerPull);
         const cmd = [user_space_docker_cmd, 'pull', img_id];
         _logger.info(String(cmd));
-        // TODO
-        // try {
-        //     process.check_call(cmd, sys.stderr)
-        // } catch (exc: any) {
-        //     throw new WorkflowException(
-        //         `Either Docker container ${img_id} is not available with  user space docker implementation ${user_space_docker_cmd}  or ${user_space_docker_cmd} is missing or broken.`
-        //     );
-        // }
       } else {
         throw new WorkflowException(
           "Docker image must be specified as 'dockerImageId' or 'dockerPull' when using user space implementations of Docker",
@@ -738,8 +731,7 @@ export abstract class ContainerCommandLineJob extends JobBase {
           img_id = await this.get_from_requirements(
             docker_req,
             runtimeContext.pull_image,
-            runtimeContext.force_docker_pull,
-            runtimeContext.tmp_outdir_prefix,
+            runtimeContext.force_docker_pull
           );
         }
         if (docker_req !== undefined && img_id === undefined && runtimeContext.use_container) {
@@ -768,94 +760,35 @@ export abstract class ContainerCommandLineJob extends JobBase {
 
     this._setup(runtimeContext);
 
-    const env = { ...process.env };
-    const [runtime, cidfile] = this.create_runtime(env as { [key: string]: string }, runtimeContext);
-
-    runtime.push(String(img_id));
-    let monitor_function: Function | null = null;
-    if (cidfile) {
-      monitor_function = (process: any) =>
-        this.docker_monitor(
-          cidfile,
-          runtimeContext.tmpdir_prefix,
-          !runtimeContext.cidfile_dir,
-          runtimeContext.podman ? 'podman' : 'docker',
-          process,
-        );
-    } else if (runtimeContext.user_space_docker_cmd) {
-      monitor_function = this.process_monitor;
-    }
-    await this._execute(runtime, env as { [key: string]: string }, runtimeContext, monitor_function as any);
-  }
-  docker_monitor(
-    cidfile: string,
-    tmpdir_prefix: string,
-    cleanup_cidfile: boolean,
-    docker_exe: string,
-    process: any,
-  ): void {
-    let cid: string | null = null;
-    while (!cid) {
-      // sleep(1);
-      if (process.returncode !== null) {
-        if (cleanup_cidfile) {
-          try {
-            fs.unlinkSync(cidfile);
-          } catch (exc) {
-            _logger.warn(`Ignored error cleaning up ${docker_exe} cidfile: ${exc}`);
-          }
-          return;
-        }
-      }
-      try {
-        cid = fs.readFileSync(cidfile, 'utf8').trim();
-      } catch {
-        cid = null;
-      }
-    }
-    const max_mem = os.totalmem();
-    // const [tmp_dir, tmp_prefix] = path.parse(tmpdir_prefix);
-    // const stats_file = tmp.fileSync({ prefix: tmp_prefix, dir: tmp_dir });
-    const stats_file_name = 'stats_file.name';
-    try {
-      const stats_file_handle = fs.createWriteStream(stats_file_name, { flags: 'w' });
-      const cmds = [docker_exe, 'stats'];
-      if (!docker_exe.includes('podman')) {
-        cmds.push('--no-trunc');
-      }
-      cmds.push('--format', '{{.MemPerc}}', cid);
-      const stats_proc = cp.spawn(cmds[0], cmds.slice(1), {
-        stdio: [
-          'ignore', // Use parent's stdin for child
-          stats_file_handle, // Pipe child's stdout to file
-          'ignore', // Pipe child's stderr to null
-        ],
+    stage_files( this.pathmapper, null, {
+      ignore_writable: true,
+      symlink: true,
+      secret_store: runtimeContext.secret_store,
+    });
+    if (this.generatemapper) {
+      stage_files(this.generatemapper, null, {
+        ignore_writable: this.inplace_update,
+        symlink: true,
+        secret_store: runtimeContext.secret_store,
       });
-      process.wait();
-      stats_proc.kill();
-    } catch (exc) {
-      _logger.warn('Ignored error with %s stats: %s', docker_exe, exc);
-      return;
     }
-    let max_mem_percent = 0;
-    let mem_percent = 0;
-    const stats = fs.readFileSync(stats_file_name).toString().split('\n');
-    for (const line of stats) {
-      if (!line) {
-        break;
-      }
-      try {
-        mem_percent = parseFloat(line.replace(CONTROL_CODE_RE, '').replace('%', ''));
-        if (mem_percent > max_mem_percent) {
-          max_mem_percent = mem_percent;
-        }
-      } catch (exc) {
-        _logger.debug('%s stats parsing error in line %s: %s', docker_exe, line, exc);
+
+    const monitor_function = this.process_monitor.bind(this);
+
+    return this._execute2([], this.environment, runtimeContext, monitor_function);
+  }
+
+  _required_env(): { [key: string]: string } {
+    const env: { [key: string]: string } = {};
+    env['HOME'] = this.outdir;
+    env['TMPDIR'] = this.tmpdir;
+    env['PATH'] = process.env['PATH'];
+    for (const extra of ['SYSTEMROOT', 'QEMU_LD_PREFIX']) {
+      if (extra in process.env) {
+        env[extra] = process.env[extra];
       }
     }
-    _logger.info(`[job ${this.name}] Max memory used: ${Math.floor(((max_mem_percent / 100) * max_mem) / 2 ** 20)}MiB`);
-    if (cleanup_cidfile) {
-      fs.unlinkSync(cidfile);
-    }
+    return env;
   }
 }
+

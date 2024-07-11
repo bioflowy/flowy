@@ -9,16 +9,19 @@ import { abspath } from './stdfsaccess.js';
 import { uriFilePath, dedup, downloadHttpFile, isFile, isDirectory } from './utils.js';
 extendZodWithOpenApi(z);
 
+const EntTypeSchema = z.enum(['File','Directory','CreateFile','CreateWritableFile','WritableFile','WritableDirectory'])
 // MapperEnt Schema
 export const MapperEntSchema = z
   .object({
     resolved: z.string(),
     target: z.string(),
-    type: z.string(),
+    type: EntTypeSchema,
     staged: z.boolean(),
+    streamable: z.boolean().optional(),
   })
   .openapi('MapperEnt');
 export type MapperEnt = z.infer<typeof MapperEntSchema>;
+export type EntTpe = z.infer<typeof EntTypeSchema>;
 
 export class PathMapper {
   /**
@@ -68,10 +71,10 @@ export class PathMapper {
     staged = false,
   ): void {
     for (const ld of listing) {
-      this.visit(ld, stagedir, basedir, (copy = ld.writable ?? copy), staged);
+      this.visit(ld, stagedir, basedir, (copy = ld.writable ?? copy), staged,false);
     }
   }
-  update(key: string, resolved: string, target: string, type: string, staged: boolean): MapperEnt {
+  update(key: string, resolved: string, target: string, type: EntTpe, staged: boolean): MapperEnt {
     // / Update an existine entry.
     const m: MapperEnt = {
       resolved,
@@ -92,7 +95,7 @@ export class PathMapper {
     return undefined;
   }
 
-  private visit(obj: File | Directory, stagedir: string, basedir: string, copy: boolean, staged: boolean): void {
+  private visit(obj: File | Directory, stagedir: string, basedir: string, copy: boolean, staged: boolean,streamable: boolean): void {
     stagedir = obj.dirname ?? stagedir;
 
     const tgt: string = path.join(stagedir, obj.basename);
@@ -128,6 +131,7 @@ export class PathMapper {
           target: tgt,
           type: copy ? 'CreateWritableFile' : 'CreateFile',
           staged,
+          streamable,
         };
       } else {
         let deref: string = ab;
@@ -135,15 +139,19 @@ export class PathMapper {
         if (deref.startsWith('s3:/')) {
           // do nothing when it is s3
         } else {
-          let st: fs.Stats = fs.lstatSync(deref);
-          while (st.isSymbolicLink()) {
-            const rl: string = fs.readlinkSync(deref);
-            deref = path.isAbsolute(rl) ? rl : path.join(path.dirname(deref), rl);
-            st = fs.lstatSync(deref);
+          try{
+            let st: fs.Stats = fs.lstatSync(deref);
+            while (st.isSymbolicLink()) {
+              const rl: string = fs.readlinkSync(deref);
+              deref = path.isAbsolute(rl) ? rl : path.join(path.dirname(deref), rl);
+              st = fs.lstatSync(deref);
+            }
+          }catch(e){
+            console.log("do nothing")
           }
         }
 
-        this._pathmap[path1] = { resolved: deref, target: tgt, type: copy ? 'WritableFile' : 'File', staged };
+        this._pathmap[path1] = { resolved: deref, target: tgt, type: copy ? 'WritableFile' : 'File', staged,streamable };
       }
 
       this.visitlisting(obj.secondaryFiles ?? [], stagedir, basedir, copy, staged);
@@ -156,7 +164,11 @@ export class PathMapper {
         stagedir = path.join(this.stagedir, `stg${uuidv4()}`);
       }
       const copy = fob.writable || false;
-      this.visit(fob, stagedir, basedir, copy, true);
+      let streamable = false
+      if("streamable" in fob){
+        streamable = (fob["streamable"] === true)
+      }
+      this.visit(fob, stagedir, basedir, copy, true,streamable);
     }
   }
 

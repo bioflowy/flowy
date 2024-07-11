@@ -15,6 +15,7 @@ export const ExecuteJobInputSchema = z.object({
     outdir: z.string().optional(),
     basedir: z.string().optional(),
     clientWorkDir: z.string(),
+    use_container: z.boolean().optional(),
     move_output: z.enum(['copy', 'leave', 'move']).optional(),
   });
 
@@ -48,7 +49,6 @@ export const executeJobPath: RouteConfig = {
   }
   export const executeJobHandler =  createFactory().createHandlers(
     zValidator('json',ExecuteJobInputSchema), async (c) => {
-      try{
       const input = await c.req.valid('json')
       console.log(input)
       const manager = getManager()
@@ -56,8 +56,10 @@ export const executeJobPath: RouteConfig = {
         clientWorkDir: input.clientWorkDir,
         outdir: input.outdir ? input.outdir : input.clientWorkDir,
         move_output: input.move_output,
+        use_container: input.use_container,
         sharedFilesystemConfig: manager.getServerConfig().sharedFileSystem,
       });
+      runtimeContext.use_container
       if (input.basedir) {
         runtimeContext.basedir = input.basedir;
       }
@@ -68,15 +70,6 @@ export const executeJobPath: RouteConfig = {
           input.tool_path = `${input.basedir}/${input.tool_path}`;
         }
       }
-      const [result, status] = await exec(runtimeContext, input.tool_path, input.job_path);
-      return c.json({result, status});
-    }catch(e){
-      _logger.error(e)
-      if(e instanceof Error){
-        _logger.error(e.message, e.stack)
-        return c.json({result: e.message, status: 'exception'})
-      }else{
-        return c.json({result: e.toString(), status: 'exception'})
-      }
-    }
+      const jobId = manager.queueJob(runtimeContext, input.tool_path, input.job_path);
+      return c.json({jobId});
   })
