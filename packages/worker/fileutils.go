@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -9,6 +11,36 @@ import (
 	"strings"
 )
 
+type BufferWriteCloser struct {
+	buffer *bytes.Buffer
+	closed bool
+}
+
+func NewBufferWriteCloser() *BufferWriteCloser {
+	return &BufferWriteCloser{
+		buffer: &bytes.Buffer{},
+		closed: false,
+	}
+}
+
+func (bwc *BufferWriteCloser) Write(p []byte) (n int, err error) {
+	if bwc.closed {
+		return 0, fmt.Errorf("cannot write to closed buffer")
+	}
+	return bwc.buffer.Write(p)
+}
+
+func (bwc *BufferWriteCloser) Close() error {
+	if bwc.closed {
+		return fmt.Errorf("buffer already closed")
+	}
+	bwc.closed = true
+	return nil
+}
+
+func (bwc *BufferWriteCloser) String() string {
+	return bwc.buffer.String()
+}
 func fileUriToPath(uri string) (string, error) {
 	parsedURI, err := url.Parse(uri)
 	return parsedURI.Path, err

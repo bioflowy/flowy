@@ -44,6 +44,7 @@ const OutputBindingSchema = z
     loadListing: LoadListingEnumSchema.optional(),
     glob: z.array(z.string()).optional(),
     outputEval: z.string().optional(),
+    streamable: z.boolean().optional().default(false)
   })
   .openapi('OutputBinding');
 export type OutputBinding = z.infer<typeof OutputBindingSchema>;

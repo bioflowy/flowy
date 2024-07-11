@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/bioflowy/flowy-cwl3/flowydeamon/api"
 )
 
-func stageForCommandLine(fileManager FileManager, items []api.MapperEnt, inplaceUpdate bool) error {
+func stageForCommandLine(fileManager FileManager, items []api.MapperEnt, inplaceUpdate bool, pipeMap map[string]*Pipe) error {
 	var targets = []string{}
 	for _, item := range items {
 		if !item.Staged {
@@ -75,19 +78,33 @@ func stageForCommandLine(fileManager FileManager, items []api.MapperEnt, inplace
 		} else if item.Type == "Directory" && strings.HasPrefix(item.Resolved, "_:") {
 			os.MkdirAll(item.Target, 0755)
 		} else {
-			needDownload := fileManager.NeedDownload(item.Resolved)
-			if needDownload {
-				_, err := fileManager.Download(item.Resolved, item.Target)
+			if item.GetStreamable() && pipeMap[item.Resolved] != nil {
+				err := ensureDirExists(item.Target)
 				if err != nil {
 					return err
 				}
+				if err = syscall.Mkfifo(item.Target, 0666); err != nil {
+					return fmt.Errorf("failed to create named pipe %s: %v", item.Target, err)
+				}
+				pipe := pipeMap[item.Resolved]
+				pipe.addWriter(func() (io.WriteCloser, error) {
+					return os.Create(item.Target)
+				})
 			} else {
-				err := symlink(item.Resolved, item.Target, true)
-				if err != nil {
-					return err
+				needDownload := fileManager.NeedDownload(item.Resolved)
+				if needDownload {
+					_, err := fileManager.Download(item.Resolved, item.Target)
+					if err != nil {
+						return err
+					}
+				} else {
+					err := symlink(item.Resolved, item.Target, true)
+					if err != nil {
+						return err
+					}
 				}
+				targets = append(targets, item.Target)
 			}
-			targets = append(targets, item.Target)
 		}
 	}
 	return nil

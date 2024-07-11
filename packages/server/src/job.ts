@@ -168,6 +168,9 @@ export abstract class JobBase {
     this.networkaccess = false;
     this.mpi_procs = undefined;
   }
+  getOutdirs():string[]{
+    return this.outdir?[this.outdir]:[]
+  }
   async do_eval(
     ex: CWLOutputType | undefined,
     context: any = undefined,
@@ -350,7 +353,7 @@ export abstract class JobBase {
         }
       }
       
-      const outputBindings = await createOutputBinding(this.tool.outputs, this.builder);
+      const outputBindings = await createOutputBinding(this.tool.outputs, this);
       const jobExec = _job_popen(
         this,
         runtimeContext.basedir,
@@ -555,18 +558,18 @@ export abstract class JobBase {
     // }
   }
 }
-async function createOutputBinding(outputs: CommandOutputParameter[], builder: Builder): Promise<OutputBinding[]> {
+async function createOutputBinding(outputs: CommandOutputParameter[], job: JobBase): Promise<OutputBinding[]> {
   const outputBindings: OutputBinding[] = [];
   for (const output of outputs) {
     const outputType = output.type;
     if (isCommandOutputRecordSchema(outputType)) {
-      const obs = await createOutputBinding(outputType.fields, builder);
+      const obs = await createOutputBinding(outputType.fields, job);
       outputBindings.push(...obs);
     }
     if (output.outputBinding) {
       const globpatterns: string[] = [];
       for (const glob of aslist(output.outputBinding.glob)) {
-        const gb = await builder.do_eval(glob);
+        const gb = await job.do_eval(glob);
         if (gb) {
           if (isStringOrStringArray(gb)) {
             globpatterns.push(...aslist(gb));
@@ -579,6 +582,7 @@ async function createOutputBinding(outputs: CommandOutputParameter[], builder: B
         }
       }
       const binding: OutputBinding = {
+        streamable: output.streamable,
         name: output.name,
         glob: globpatterns,
         secondaryFiles: aslist(output.secondaryFiles).map(convertSecondaryFiles),
@@ -688,8 +692,12 @@ export class CommandLineJob extends JobBase {
     }
     throw new WorkflowException(`Docker image ${r['dockerImageId']} not found`);
   }
-
   async run(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<void> {
+    const jobExec = await this.run2(runtimeContext,tmpdir_lock)
+    const [rcode, isCwlOutput, fileMap] = await getManager().execute(this,jobExec)
+    await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
+  }
+  async run2(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<JobExec> {
     if (tmpdir_lock) {
       // assuming tmpdir_lock has a context equivalent
       tmpdir_lock.run(() => {
@@ -767,7 +775,7 @@ export class CommandLineJob extends JobBase {
 
     const monitor_function = this.process_monitor.bind(this);
 
-    await this._execute([], this.environment, runtimeContext, monitor_function);
+    return this._execute2([], this.environment, runtimeContext, monitor_function);
   }
 
   _required_env(): { [key: string]: string } {

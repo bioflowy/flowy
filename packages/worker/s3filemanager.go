@@ -73,7 +73,7 @@ func NewFileManager(config *api.SharedFileSystemConfig) (FileManager, error) {
 			return nil, err
 		}
 		return &S3FileManager{
-			RootUrl:         config.RootUrl,
+			RootUrl:         *config.RootUrl,
 			Region:          *config.Region,
 			Endpoint:        config.Endpoint,
 			AccessKey:       config.AccessKey,

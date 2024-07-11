@@ -66,7 +66,9 @@ export class ExpressionJob {
     this.tmpdir = tmpdir;
     this.script = script;
   }
-
+  getOutdirs():string[]{
+    return this.outdir?[this.outdir]:[]
+  }
   async run(runtimeContext: RuntimeContext, tmpdir_lock: any | null = null) {
     try {
       normalizeFilesDirs(this.builder.job);

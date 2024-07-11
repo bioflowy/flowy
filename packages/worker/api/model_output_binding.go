@@ -27,6 +27,7 @@ type OutputBinding struct {
 	LoadListing *LoadListingEnum `json:"loadListing,omitempty"`
 	Glob []string `json:"glob,omitempty"`
 	OutputEval *string `json:"outputEval,omitempty"`
+	Streamable *bool `json:"streamable,omitempty"`
 }
 
 type _OutputBinding OutputBinding
@@ -39,6 +40,8 @@ func NewOutputBinding(name string, secondaryFiles []OutputBindingSecondaryFilesI
 	this := OutputBinding{}
 	this.Name = name
 	this.SecondaryFiles = secondaryFiles
+	var streamable bool = false
+	this.Streamable = &streamable
 	return &this
 }
 
@@ -47,6 +50,8 @@ func NewOutputBinding(name string, secondaryFiles []OutputBindingSecondaryFilesI
 // but it doesn't guarantee that properties required by API are set
 func NewOutputBindingWithDefaults() *OutputBinding {
 	this := OutputBinding{}
+	var streamable bool = false
+	this.Streamable = &streamable
 	return &this
 }
 
@@ -226,6 +231,38 @@ func (o *OutputBinding) SetOutputEval(v string) {
 	o.OutputEval = &v
 }
 
+// GetStreamable returns the Streamable field value if set, zero value otherwise.
+func (o *OutputBinding) GetStreamable() bool {
+	if o == nil || IsNil(o.Streamable) {
+		var ret bool
+		return ret
+	}
+	return *o.Streamable
+}
+
+// GetStreamableOk returns a tuple with the Streamable field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *OutputBinding) GetStreamableOk() (*bool, bool) {
+	if o == nil || IsNil(o.Streamable) {
+		return nil, false
+	}
+	return o.Streamable, true
+}
+
+// HasStreamable returns a boolean if a field has been set.
+func (o *OutputBinding) HasStreamable() bool {
+	if o != nil && !IsNil(o.Streamable) {
+		return true
+	}
+
+	return false
+}
+
+// SetStreamable gets a reference to the given bool and assigns it to the Streamable field.
+func (o *OutputBinding) SetStreamable(v bool) {
+	o.Streamable = &v
+}
+
 func (o OutputBinding) MarshalJSON() ([]byte, error) {
 	toSerialize,err := o.ToMap()
 	if err != nil {
@@ -249,6 +286,9 @@ func (o OutputBinding) ToMap() (map[string]interface{}, error) {
 	}
 	if !IsNil(o.OutputEval) {
 		toSerialize["outputEval"] = o.OutputEval
+	}
+	if !IsNil(o.Streamable) {
+		toSerialize["streamable"] = o.Streamable
 	}
 	return toSerialize, nil
 }

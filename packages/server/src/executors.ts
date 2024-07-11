@@ -122,9 +122,7 @@ export class SingleJobExecutor extends JobExecutor {
     try {
       for await (const job of jobiter) {
         if (job) {
-          if (job.outdir !== null) {
-            this.output_dirs.push(job.outdir);
-          }
+          this.output_dirs.push(...job.getOutdirs());
           if (runtime_context.research_obj !== null) {
             // const prov_obj = process instanceof Workflow ? job.prov_obj : process.provenance_object;
             // if (prov_obj) {

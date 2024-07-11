@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -13,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -179,14 +177,6 @@ func reportFailed(c *api.APIClient, jobId string, err error) {
 	})
 	r.Execute()
 }
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
 func loadCwlOutputJson(jsonPath string) (map[string]interface{}, error) {
 	file, err := os.Open(jsonPath)
 	if err != nil {
@@ -210,112 +200,33 @@ func GetAndExecuteJob(c *api.APIClient, fileManager FileManager, config *api.Sha
 		return
 	}
 	if httpres.StatusCode == 200 {
+		pipeMap := map[string]*Pipe{}
+		if len(res) == 0 {
+			return
+		}
 		for _, job := range res {
-			log.Default().Printf("job command = %+v", job.Commands)
-			os.MkdirAll(job.Cwd, 0770)
-
-			exitCode, err := executeJob(config, fileManager, &job, job.Commands, job.StdinPath, job.StdoutPath, job.StderrPath, job.Env, job.Cwd, job.BuilderOutdir, job.Timelimit)
+			err := prepareOutput(config, fileManager, &job, pipeMap)
 			if err != nil {
 				reportFailed(c, job.Id, err)
 				return
 			}
-			var downloadPaths = fileManager.GetDownloadFileMap()
-			cwlOutputPath := filepath.Join(job.Cwd, "cwl.output.json")
-			_, err = os.Stat(cwlOutputPath)
-			if !os.IsNotExist(err) {
-				results, err := loadCwlOutputJson(cwlOutputPath)
-				if err != nil {
-					reportFailed(c, job.Id, err)
-					return
-				}
-				err = VisitFileOrDirectory(results, func(value FileOrDirectory) error {
-					return RevmapFile(job.BuilderOutdir, job.Cwd, value, job.Fileitems)
-				})
-				if err != nil {
-					reportFailed(c, job.Id, err)
-					return
-				}
-
-				err = uploadOutputs(fileManager, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
-				if err != nil {
-					reportFailed(c, job.Id, err)
-					return
-				}
-				r := c.DefaultAPI.ApiJobFinishedPost(ctx).JobFinishedRequest(api.JobFinishedRequest{
-					Id:          job.Id,
-					IsCwlOutput: true,
-					ExitCode:    int32(exitCode),
-					Results:     results,
-				})
-				log.Default().Printf("job Finished exitCone = %d", exitCode)
-				log.Default().Printf("job Finished results = %+v", results)
-
-				r.Execute()
-				// os.RemoveAll(job.Cwd)
-				for _, localPath := range downloadPaths {
-					os.RemoveAll(localPath)
-				}
-				fmt.Print(exitCode)
-
-			} else {
-				results := map[string]interface{}{}
-				for _, output := range job.OutputBindings {
-					files2, err := globOutput(
-						job.BuilderOutdir,
-						output,
-						job.Cwd,
-						true,
-					)
-					if err != nil {
-						reportFailed(c, job.Id, err)
-						return
-					}
-					if len(files2) > 0 {
-						results[output.Name] = files2
-						for _, file := range files2 {
-							err = collect_secondary_files(c, config, job.Id, output, file, job.Cwd, job.BuilderOutdir, true, job.Fileitems)
-							if err != nil {
-								reportFailed(c, job.Id, err)
-								return
-							}
-						}
-					}
-					outputEval, ok := output.GetOutputEvalOk()
-					if ok {
-						var exitCode32 int32 = int32(exitCode)
-						ret, err := do_eval(c, job.Id, *outputEval, files2, &exitCode32)
-						if err != nil {
-							reportFailed(c, job.Id, err)
-							return
-						}
-						results[output.Name] = ret
-					}
-				}
-				err := VisitFileOrDirectory(results, func(f FileOrDirectory) error {
-					return RevmapFile(job.BuilderOutdir, job.Cwd, f, job.Fileitems)
-				})
-				if err != nil {
-					reportFailed(c, job.Id, err)
-					return
-				}
-				uploadOutputs(fileManager, *job.OutputBaseDir, results, downloadPaths, job.InplaceUpdate)
-				r := c.DefaultAPI.ApiJobFinishedPost(ctx).JobFinishedRequest(api.JobFinishedRequest{
-					Id:          job.Id,
-					IsCwlOutput: false,
-					ExitCode:    int32(exitCode),
-					Results:     results,
-				})
-				log.Default().Printf("job Finished exitCone = %d", exitCode)
-				log.Default().Printf("job Finished results = %+v", results)
-
-				r.Execute()
-				// os.RemoveAll(job.Cwd)
-				for _, localPath := range downloadPaths {
-					os.RemoveAll(localPath)
-				}
-				fmt.Print(exitCode)
-
+		}
+		var jobs []*PreparedJob
+		for _, job := range res {
+			pjob, err := prepareJob(config, fileManager, &job, pipeMap)
+			if err != nil {
+				reportFailed(c, job.Id, err)
+				return
 			}
+			jobs = append(jobs, pjob)
+		}
+		for _, pipe := range pipeMap {
+			go func(pipe *Pipe) {
+				pipe.Run()
+			}(pipe)
+		}
+		for _, job := range jobs {
+			go execAndUpload(c, fileManager, config, job)
 		}
 	}
 }
@@ -434,10 +345,10 @@ func main() {
 	cfg := api.NewConfiguration()
 	cfg.Scheme = "http"
 	cfg.Host = "127.0.0.1:5173"
-	cfg.HTTPClient = &http.Client{
-		Transport: &LoggingRoundTripper{Proxied: http.DefaultTransport},
-	}
-	cfg.Debug = true
+	// cfg.HTTPClient = &http.Client{
+	// 	Transport: &LoggingRoundTripper{Proxied: http.DefaultTransport},
+	// }
+	// cfg.Debug = true
 	c := api.NewAPIClient(cfg)
 	var err error = nil
 	var config *api.SharedFileSystemConfig = nil
@@ -840,14 +751,26 @@ func convertToFileOrDirectory(builderOutdir, prefix, path1 string) (FileOrDirect
 	if err != nil {
 		return nil, err
 	}
-	if stat.Mode().IsRegular() {
-		path2 := filepath.Join(builderOutdir, filepath.FromSlash(relPath))
-		file := NewFile(path1, &path2)
-		return file, nil
-	} else {
+	if stat.Mode().IsDir() {
 		path2 := filepath.Join(builderOutdir, filepath.FromSlash(relPath))
 		directory := NewDirectory(path1, &path2)
 		return directory, nil
+	} else {
+		if stat.Mode()&os.ModeNamedPipe != 0 {
+			//remove named pile and create dummy file
+			err := os.Remove(path1)
+			if err != nil {
+				return nil, err
+			}
+			f, err := os.Create(path1)
+			if err != nil {
+				return nil, err
+			}
+			f.Close()
+		}
+		path2 := filepath.Join(builderOutdir, filepath.FromSlash(relPath))
+		file := NewFile(path1, &path2)
+		return file, nil
 	}
 }
 
@@ -964,7 +887,7 @@ func contentLimitRespectedReadBytes(filePath string) (string, error) {
 	}
 
 	if bytesRead > CONTENT_LIMIT {
-		return "", errors.New(fmt.Sprintf("file is too large, loadContents limited to %d bytes", CONTENT_LIMIT))
+		return "", fmt.Errorf("file is too large, loadContents limited to %d bytes", CONTENT_LIMIT)
 	}
 
 	return string(buffer[:bytesRead]), nil
@@ -1168,117 +1091,4 @@ func toString(commandStr []api.CommandStringInner) string {
 		}
 	}
 	return str
-}
-func prepareForDocker(fileManager FileManager, job *api.ApiGetExectableJobPost200ResponseInner,
-	commands [][]api.CommandStringInner, hostOutdir string, containerCwd string) ([]string, error) {
-	var dockerCommands []string
-	dockerCommands = append(dockerCommands, *job.DockerExec)
-	dockerCommands = append(dockerCommands, "run", "-i")
-	mountParams, err := stageForDocker(fileManager, job.Cwd, job.BuilderOutdir, append(job.Fileitems, job.Generatedlist...), job.InplaceUpdate)
-	if err != nil {
-		return nil, err
-	}
-	dockerCommands = append(dockerCommands, mountParams...)
-	dockerCommands = append(dockerCommands, "--workdir="+containerCwd)
-	dockerCommands = append(dockerCommands, "--read-only=true")
-	if job.StdoutPath != nil {
-		dockerCommands = append(dockerCommands, "--log-driver=none")
-	}
-	if job.Networkaccess {
-		if job.Runtime.CustomNet != nil {
-			dockerCommands = append(dockerCommands, "--net="+*(job.Runtime.CustomNet))
-		}
-	} else {
-		dockerCommands = append(dockerCommands, "--net=none")
-	}
-	dockerCommands = append(dockerCommands, "--rm")
-	dockerCommands = append(dockerCommands, "--user=1001:1001")
-	dockerCommands = append(dockerCommands, "--env=HOME="+containerCwd)
-	dockerCommands = append(dockerCommands, "--env=TMPDIR=/tmp")
-	dockerCommands = append(dockerCommands, *job.DockerImage)
-	return dockerCommands, nil
-}
-func executeJob(config *api.SharedFileSystemConfig, fileManager FileManager, job *api.ApiGetExectableJobPost200ResponseInner, commands [][]api.CommandStringInner, stdinPath, stdoutPath, stderrPath *string, env map[string]string, cwd string, containerOutDir string, timelimit *int32) (int, error) {
-	var err error = nil
-	var commands2 []string
-	if job.DockerImage != nil {
-		commands2, err = prepareForDocker(fileManager, job, commands, cwd, containerOutDir)
-		if err != nil {
-			return -1, err
-		}
-	} else {
-		err = stageForCommandLine(fileManager, append(job.Fileitems, job.Generatedlist...), job.InplaceUpdate)
-		if err != nil {
-			return -1, err
-		}
-	}
-	for _, c := range commands {
-		commands2 = append(commands2, toString(c))
-	}
-	var stdin io.Reader = os.Stdin
-	var stdout, stderr io.Writer = os.Stdout, os.Stderr
-
-	if stdinPath != nil {
-		if strings.HasPrefix(*stdinPath, "s3://") {
-			tmppath, err := downloadS3FileToTemp(config, *stdinPath, nil)
-			if err != nil {
-				return 0, err
-
-			}
-			stdinPath = &tmppath
-		}
-		stdin, err = os.Open(*stdinPath)
-		if err != nil {
-			return -1, err
-		}
-		defer stdin.(*os.File).Close()
-	}
-	if stdoutPath != nil {
-		stdout, err = os.Create(*stdoutPath)
-		if err != nil {
-			return -1, err
-		}
-		defer stdout.(*os.File).Close()
-	}
-	var stderrb bytes.Buffer
-	if stderrPath != nil {
-		stderr, err = os.Create(*stderrPath)
-		if err != nil {
-			return -1, err
-		}
-		defer stderr.(*os.File).Close()
-	} else {
-		stderr = &stderrb
-	}
-	fmt.Println("start commands " + commands2[0])
-	cmd := exec.Command(commands2[0], commands2[1:]...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-	cmd.Dir = cwd
-	cmd.Env = os.Environ()
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-
-	if timelimit != nil && *timelimit > 0 {
-		timer := time.AfterFunc(time.Duration(*timelimit)*time.Second, func() {
-			cmd.Process.Kill()
-		})
-		defer timer.Stop()
-	}
-
-	err = cmd.Start()
-	if err != nil {
-		return -1, err
-	}
-
-	err = cmd.Wait()
-	if err != nil {
-		exitError, ok := err.(*exec.ExitError)
-		fmt.Println("Stderr:", stderrb.String())
-		if ok {
-			return exitError.ExitCode(), nil
-		}
-		return -1, err
-	}
-	return cmd.ProcessState.ExitCode(), nil
 }

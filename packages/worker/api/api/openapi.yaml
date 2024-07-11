@@ -111,7 +111,6 @@ components:
         secretKey:
           type: string
       required:
-      - rootUrl
       - type
       type: object
     CommandString:
@@ -127,6 +126,7 @@ components:
     OutputBinding:
       example:
         loadContents: true
+        streamable: false
         loadListing: null
         outputEval: outputEval
         name: name
@@ -157,12 +157,16 @@ components:
           type: array
         outputEval:
           type: string
+        streamable:
+          default: false
+          type: boolean
       required:
       - name
       - secondaryFiles
       type: object
     MapperEnt:
       example:
+        streamable: true
         staged: true
         type: File
         resolved: resolved
@@ -182,6 +186,8 @@ components:
           - WritableDirectory
           type: string
         staged:
+          type: boolean
+        streamable:
           type: boolean
       required:
       - resolved
@@ -250,21 +256,25 @@ components:
         stderr_path: stderr_path
         cwd: cwd
         fileitems:
-        - staged: true
+        - streamable: true
+          staged: true
           type: File
           resolved: resolved
           target: target
-        - staged: true
+        - streamable: true
+          staged: true
           type: File
           resolved: resolved
           target: target
         stdin_path: stdin_path
         generatedlist:
-        - staged: true
+        - streamable: true
+          staged: true
           type: File
           resolved: resolved
           target: target
-        - staged: true
+        - streamable: true
+          staged: true
           type: File
           resolved: resolved
           target: target
@@ -275,6 +285,7 @@ components:
         - null
         outputBindings:
         - loadContents: true
+          streamable: false
           loadListing: null
           outputEval: outputEval
           name: name
@@ -289,6 +300,7 @@ components:
             requiredBoolean: true
             requiredString: requiredString
         - loadContents: true
+          streamable: false
           loadListing: null
           outputEval: outputEval
           name: name
