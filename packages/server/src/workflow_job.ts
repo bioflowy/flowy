@@ -10,6 +10,7 @@ import { WorkflowException } from './errors.js';
 import { do_eval } from './expression.js';
 import { _logger } from './loghandler.js';
 import { shortname, uniquename } from './process.js';
+import { v4 as uuidv4 } from 'uuid';
 import {
   type CWLObjectType,
   type CWLOutputType,
@@ -27,7 +28,8 @@ import {
 } from './utils.js';
 import { Workflow, WorkflowStep } from './workflow.js';
 import { JobGroup } from './jobgroup.js';
-import { CommandLineJob } from './job.js';
+import { CommandLineJob, JobBase } from './job.js';
+import { getJobWatcher } from './server/job_watcher.js';
 
 class WorkflowJobStep {
   step: WorkflowStep;
@@ -47,13 +49,13 @@ class WorkflowJobStep {
     this.name = uniquename(`step ${shortname(this.id)}`);
   }
 
-  job(joborder: CWLObjectType, output_callback: OutputCallbackType, runtimeContext: RuntimeContext): JobsGeneratorType {
+  job(joborder: CWLObjectType, output_callback: OutputCallbackType, runtimeContext: RuntimeContext,workflow_id:string | null): JobsGeneratorType {
     const context = runtimeContext.copy();
     context.part_of = this.name;
     context.name = shortname(this.id);
 
     _logger.info(`[${this.name}] start`);
-    const jobs = this.step.job(joborder, output_callback, context);
+    const jobs = this.step.job(joborder, output_callback, context,workflow_id);
     return jobs;
   }
 }
@@ -114,6 +116,7 @@ async function* nested_crossproduct_scatter(
   scatter_keys: string[],
   output_callback: ScatterOutputCallbackType,
   runtimeContext: RuntimeContext,
+  parent_id: string | null
 ): JobsGeneratorType {
   const scatter_key = scatter_keys[0];
   const jobl = (joborder[scatter_key] as unknown[]).length;
@@ -134,7 +137,7 @@ async function* nested_crossproduct_scatter(
       }
       const curriedcallback = rc.receive_scatter_output.bind(rc, index);
       if (sjob !== null) {
-        steps.push(process.job(sjob, curriedcallback, runtimeContext));
+        steps.push(process.job(sjob, curriedcallback, runtimeContext,parent_id));
       } else {
         curriedcallback({}, 'skipped');
         steps.push(null);
@@ -147,6 +150,7 @@ async function* nested_crossproduct_scatter(
           scatter_keys.slice(1),
           rc.receive_scatter_output.bind(rc, index),
           runtimeContext,
+          parent_id
         ),
       );
     }
@@ -176,6 +180,7 @@ async function flat_crossproduct_scatter(
   scatter_keys: string[],
   output_callback: ScatterOutputCallbackType,
   runtimeContext: RuntimeContext,
+  parent_id: string | null
 ): Promise<JobsGeneratorType> {
   const output: ScatterDestinationsType = {};
 
@@ -183,7 +188,7 @@ async function flat_crossproduct_scatter(
     output[i.id] = Array(crossproduct_size(joborder, scatter_keys)).fill(null);
   }
   const callback = new ReceiveScatterOutput(output_callback, output, 0);
-  const [steps, total] = await _flat_crossproduct_scatter(process, joborder, scatter_keys, callback, 0, runtimeContext);
+  const [steps, total] = await _flat_crossproduct_scatter(process, joborder, scatter_keys, callback, 0, runtimeContext,parent_id);
   callback.setTotal(total, steps);
   return parallel_steps(steps, callback, runtimeContext);
 }
@@ -195,6 +200,7 @@ async function _flat_crossproduct_scatter(
   callback: ReceiveScatterOutput,
   startindex: number,
   runtimeContext: RuntimeContext,
+  parent_id: string | null
 ): Promise<[(JobsGeneratorType | undefined)[], number]> {
   const scatter_key = scatter_keys[0];
   const jobl = (joborder[scatter_key] as unknown[]).length;
@@ -211,7 +217,7 @@ async function _flat_crossproduct_scatter(
       }
       const curriedcallback = callback.receive_scatter_output.bind(null, put);
       if (sjob !== null) {
-        steps.push(process.job(sjob, curriedcallback, runtimeContext));
+        steps.push(process.job(sjob, curriedcallback, runtimeContext,parent_id));
       } else {
         curriedcallback({}, 'skipped');
         steps.push(null);
@@ -225,6 +231,7 @@ async function _flat_crossproduct_scatter(
         callback,
         put,
         runtimeContext,
+        parent_id
       );
       put += add.length;
       steps = steps.concat(add);
@@ -294,6 +301,7 @@ async function dotproduct_scatter(
   scatter_keys: string[],
   output_callback: ScatterOutputCallbackType,
   runtimeContext: RuntimeContext,
+  parent_id: string | null
 ): Promise<JobsGeneratorType> {
   let jobl: number | null = null;
   for (const key of scatter_keys) {
@@ -328,7 +336,7 @@ async function dotproduct_scatter(
     const curriedcallback = (jobout: CWLObjectType, processStatus: string) =>
       rc.receive_scatter_output(index, jobout, processStatus); // Binding index as the first argument
     if (sjobo) {
-      steps.push(process.job(sjobo, curriedcallback, runtimeContext));
+      steps.push(process.job(sjobo, curriedcallback, runtimeContext,parent_id));
     } else {
       curriedcallback({}, 'skipped');
       steps.push(null);
@@ -488,7 +496,7 @@ function objectFromState(
   }
   return inputobj;
 }
-export class WorkflowJob {
+export class WorkflowJob extends JobBase{
   workflow: Workflow;
   //   prov_obj: ProvenanceProfile | null;
   //   parent_wf: ProvenanceProfile | null;
@@ -499,9 +507,14 @@ export class WorkflowJob {
   did_callback: boolean;
   made_progress: boolean | null;
   outdir: string;
-  name: string;
-
-  constructor(workflow: Workflow, runtimeContext: RuntimeContext) {
+  _get_type() {
+    return "Workflow"
+  }
+  constructor(workflow: Workflow, runtimeContext: RuntimeContext,parent_id:string | null) {
+    super(uuidv4(),uniquename(
+      `workflow ${getDefault(runtimeContext.name, shortname(workflow.tool.id || 'embedded'))}`,
+    ),"Workflow")
+    this.parent_id = parent_id;
     this.workflow = workflow;
     // this.prov_obj = null;
     // this.parent_wf = null;
@@ -516,10 +529,6 @@ export class WorkflowJob {
     this.did_callback = false;
     this.made_progress = null;
     this.outdir = runtimeContext.getOutdir();
-
-    this.name = uniquename(
-      `workflow ${getDefault(runtimeContext.name, shortname(this.workflow.tool.id || 'embedded'))}`,
-    );
 
     _logger.debug(
       '[%s] initialized from %s',
@@ -556,6 +565,7 @@ export class WorkflowJob {
     }
 
     this.did_callback = true;
+    getJobWatcher().jobFinished(this,0,wo)
 
     final_output_callback(wo, this.processStatus);
   }
@@ -604,6 +614,7 @@ export class WorkflowJob {
     step: WorkflowJobStep,
     finalOutputCallback: OutputCallbackType | undefined,
     runtimeContext: RuntimeContext,
+    workflow_id: string | null
   ): Promise<JobsGeneratorType> {
     let containerEngine = 'docker';
     if (runtimeContext.podman) {
@@ -740,11 +751,11 @@ export class WorkflowJob {
           );
         }
         if (!method || method === cwlTsAuto.ScatterMethod.DOTPRODUCT) {
-          jobs = await dotproduct_scatter(step, inputObj, scatter, callback, runtimeContext);
+          jobs = await dotproduct_scatter(step, inputObj, scatter, callback, runtimeContext,workflow_id);
         } else if (method == cwlTsAuto.ScatterMethod.NESTED_CROSSPRODUCT) {
-          jobs = nested_crossproduct_scatter(step, inputObj, scatter, callback, runtimeContext);
+          jobs = nested_crossproduct_scatter(step, inputObj, scatter, callback, runtimeContext,workflow_id);
         } else if (method == cwlTsAuto.ScatterMethod.FLAT_CROSSPRODUCT) {
-          jobs = await flat_crossproduct_scatter(step, inputObj, scatter, callback, runtimeContext);
+          jobs = await flat_crossproduct_scatter(step, inputObj, scatter, callback, runtimeContext,workflow_id);
         }
       } else {
         const inputobj = await postScatterEval(inputObj);
@@ -757,7 +768,7 @@ export class WorkflowJob {
           //         step=step, container_engine=container_engine
           //     ).job(inputobj, callback, runtimeContext)
           // else:
-          jobs = step.job(inputobj, callback, runtimeContext);
+          jobs = step.job(inputobj, callback, runtimeContext,workflow_id);
         } else {
           _logger.info('[%s] will be skipped', step.name);
           const result = {};
@@ -785,14 +796,16 @@ export class WorkflowJob {
     }
     throw new Error('TODO');
   }
-  run(_runtimeContext: RuntimeContext): void {
+  run(_runtimeContext: RuntimeContext): Promise<void> {
     _logger.info(`[${this.name}] start`);
+    return
   }
 
   async *job(
     joborder: CWLObjectType,
     output_callback: OutputCallbackType,
     runtimeContext: RuntimeContext,
+    workflow_id: string | null
   ): JobsGeneratorType {
     this.state = {};
     this.processStatus = 'success';
@@ -828,7 +841,7 @@ export class WorkflowJob {
         if (getDefault(runtimeContext.on_error, 'stop') === 'stop' && this.processStatus !== 'success') break;
         if (!step.submitted) {
           try {
-            step.iterable = await this.tryMakeJob(step, output_callback, runtimeContext);
+            step.iterable = await this.tryMakeJob(step, output_callback, runtimeContext,workflow_id);
           } catch (exc: unknown) {
             if (exc instanceof Error) {
               _logger.error(`[${step.name}] Cannot make job: ${exc.message} ${exc.stack}`);

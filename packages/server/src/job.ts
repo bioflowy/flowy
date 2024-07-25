@@ -1,6 +1,4 @@
-import * as cp from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { DockerRequirement, ShellCommandRequirement } from '@flowy/cwl-ts-auto';
 import { v4 as uuidv4 } from 'uuid';
@@ -28,7 +26,6 @@ import { SecretStore } from './secrets.js';
 import {
   type CWLObjectType,
   type OutputCallbackType,
-  createTmpDir,
   getRequirement,
   str,
   quote,
@@ -41,10 +38,11 @@ import {
 } from './utils.js';
 import { getManager } from './server/manager.js';
 import { CommandString, CommandStringToString } from './commandstring.js';
-import { executeJobHandler } from './server/executeJob.js';
+import { getJobWatcher, JobWatcher } from './server/job_watcher.js';
+import { Expression } from 'kysely';
 
 export function _job_popen(
-  job: JobBase,
+  job: CommandLineJob,
   outputBaseDir: string,
   commands: CommandString[],
   stdin_path: string | undefined,
@@ -52,6 +50,7 @@ export function _job_popen(
   stderr_path: string | undefined,
   env: { [key: string]: string },
   cwd: string,
+  removeTmpDir: boolean,
   builder: Builder,
   outputBindings: OutputBinding[],
   fileitems: MapperEnt[],
@@ -65,7 +64,7 @@ export function _job_popen(
   runtime: Runtime
 
 ): JobExec {
-  const id = uuidv4();
+  const id = job.id;
   const server = getManager();
   const jobExec:JobExec = {
     outputBaseDir,
@@ -76,7 +75,9 @@ export function _job_popen(
     stderr_path,
     env,
     cwd,
-    builderOutdir: builder.outdir,
+    containerOutdir: builder.outdir,
+    tmpDir: job.tmpdir,
+    removeTmpDir: removeTmpDir,
     outputBindings,
     fileitems,
     generatedlist,
@@ -95,13 +96,26 @@ type CollectOutputsType = (
   isCwlOutput: boolean,
   results: OutputPortsType,
 ) => Promise<CWLObjectType>; // Assuming functools.partial as any
+
 export abstract class JobBase {
+  readonly id: string;
+  readonly name: string;
+  readonly type: "CommandLine" | "Expression" | "Workflow" ;
+  joborder: CWLObjectType;
+  parent_id: string;
+  abstract getOutdirs(): string[]
+  abstract run(runtimeContext: RuntimeContext): Promise<void>
+  constructor(id:string,name: string,type :"CommandLine" | "Expression" | "Workflow"){
+    this.id = id
+    this.name = name
+    this.type = type
+  }
+}
+export class CommandLineJob extends JobBase{
   builder: Builder;
   base_path_logs: string;
-  joborder: CWLObjectType;
   make_path_mapper: MakePathMapper;
   tool: Tool;
-  name: string;
   stdin?: string;
   stderr?: string;
   stdout?: string;
@@ -138,7 +152,10 @@ export abstract class JobBase {
     ) => PathMapper,
     tool: Tool,
     name: string,
+    workflow_id: string,
   ) {
+    super(uuidv4(),name,"CommandLine")
+    this.parent_id = workflow_id
     this.builder = builder;
     this.joborder = joborder;
     this.resources = builder.resources;
@@ -151,7 +168,6 @@ export abstract class JobBase {
     this.temporaryFailCodes = [];
     this.permanentFailCodes = [];
     this.tool = tool;
-    this.name = name;
     this.command_line = [];
     this.pathmapper = new PathMapper([], '', '');
     this.make_path_mapper = make_path_mapper;
@@ -167,6 +183,7 @@ export abstract class JobBase {
     this.timelimit = undefined;
     this.networkaccess = false;
     this.mpi_procs = undefined;
+
   }
   getOutdirs():string[]{
     return this.outdir?[this.outdir]:[]
@@ -219,13 +236,13 @@ export abstract class JobBase {
   toString(): string {
     return `CommandLineJob(${this.name})`;
   }
-  abstract run(runtimeContext: RuntimeContext): void;
-  _get_dockerExec():string | undefined{
-    return undefined
+  _get_dockerExec(){
+    return this.docker_exec
   }
-  _get_dockerImage():string | undefined{
-    return undefined
+  _get_dockerImage(){
+    return this.dockerImage
   }
+
   _setup(runtimeContext: RuntimeContext): void {
 
     const is_streamable = (file: string): boolean => {
@@ -271,10 +288,9 @@ export abstract class JobBase {
     runtime: string[],
     env: { [id: string]: string },
     runtimeContext: RuntimeContext,
-    monitor_function: ((popen: any) => void) | null = null,
   ) {
     const manager = getManager();
-    const jobExec = await this._execute2(runtime,env,runtimeContext,monitor_function)
+    const jobExec = await this._execute2(runtime,env,runtimeContext)
     const [rcode, isCwlOutput, fileMap] = await manager.execute(this,jobExec)
     await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
   }
@@ -282,7 +298,6 @@ export abstract class JobBase {
     runtime: string[],
     env: { [id: string]: string },
     runtimeContext: RuntimeContext,
-    monitor_function: ((popen: any) => void) | null = null,
   ) :Promise<JobExec> {
     const scr = getRequirement(this.tool, ShellCommandRequirement)[0];
 
@@ -363,6 +378,7 @@ export abstract class JobBase {
         stderr_path,
         env,
         this.outdir,
+        runtimeContext.rm_tmpdir,
         this.builder,
         outputBindings,
         fileitems,
@@ -484,13 +500,8 @@ export abstract class JobBase {
       _logger.debug(`[job ${this.name}] Removing input staging directory ${this.stagedir}`);
       await removeIgnorePermissionError(this.stagedir);
     }
-
-    if (runtimeContext.rm_tmpdir) {
-      _logger.debug(`[job ${this.name}] Removing temporary directory ${this.tmpdir}`);
-      await removeIgnorePermissionError(this.tmpdir);
-    }
+    getJobWatcher().jobFinished(this,rcode,outputs)
   }
-  abstract _required_env(): Record<string, string>;
 
   _preserve_environment_on_containers_warning(varname?: Iterable<string>): void {
     // By default, don't do anything; ContainerCommandLineJob below
@@ -525,102 +536,9 @@ export abstract class JobBase {
     // Set on ourselves
     this.environment = env;
   }
-  process_monitor(sproc: any): void {
-    // TODO
-    // let monitor = psutil.Process(sproc.pid);
-    // let memory_usage: (number | null)[] = [null];
-    // let get_tree_mem_usage = function(memory_usage: (number | null)[]) {
-    //     let children = monitor.children();
-    //     try {
-    //         let rss = monitor.memory_info().rss;
-    //         while (children.length) {
-    //             rss += children.reduce((sum, process) => sum + process.memory_info().rss, 0);
-    //             children = [].concat(...children.map(process => process.children()));
-    //         }
-    //         if (memory_usage[0] === null || rss > memory_usage[0]) {
-    //             memory_usage[0] = rss;
-    //         }
-    //     } catch (e) {
-    //         if (e instanceof psutil.NoSuchProcess) {
-    //             mem_tm.cancel();
-    //         }
-    //     }
-    // };
-    // let mem_tm = new Timer(1, get_tree_mem_usage, memory_usage);
-    // mem_tm.daemon = true;
-    // mem_tm.start();
-    // sproc.wait();
-    // mem_tm.cancel();
-    // if (memory_usage[0] !== null) {
-    //     _logger.info("[job ${this.name}] Max memory used: ${Math.round(memory_usage[0] / (2**20))}MiB");
-    // } else {
-    //     _logger.debug('Could not collect memory usage, job ended before monitoring began.');
-    // }
-  }
-}
-async function createOutputBinding(outputs: CommandOutputParameter[], job: JobBase): Promise<OutputBinding[]> {
-  const outputBindings: OutputBinding[] = [];
-  for (const output of outputs) {
-    const outputType = output.type;
-    if (isCommandOutputRecordSchema(outputType)) {
-      const obs = await createOutputBinding(outputType.fields, job);
-      outputBindings.push(...obs);
-    }
-    if (output.outputBinding) {
-      const globpatterns: string[] = [];
-      for (const glob of aslist(output.outputBinding.glob)) {
-        const gb = await job.do_eval(glob);
-        if (gb) {
-          if (isStringOrStringArray(gb)) {
-            globpatterns.push(...aslist(gb));
-          } else {
-            throw new WorkflowException(
-              'Resolved glob patterns must be strings or list of strings, not ' +
-                `${str(gb)} from ${str(output.outputBinding.glob)}`,
-            );
-          }
-        }
-      }
-      const binding: OutputBinding = {
-        streamable: output.streamable,
-        name: output.name,
-        glob: globpatterns,
-        secondaryFiles: aslist(output.secondaryFiles).map(convertSecondaryFiles),
-        outputEval: output.outputBinding.outputEval,
-        loadListing: output.outputBinding.loadListing,
-        loadContents: output.outputBinding.loadContents ?? false,
-      };
-      outputBindings.push(binding);
-    }
-  }
-  return outputBindings;
-}
-function convertSecondaryFiles(file: SecondaryFileSchema): OutputSecondaryFile {
-  if (typeof file.required === 'string') {
-    return { pattern: file.pattern, requiredString: file.required };
-  } else if (typeof file.required === 'boolean') {
-    return { pattern: file.pattern, requiredBoolean: file.required };
-  } else {
-    return { pattern: file.pattern };
-  }
-}
-const _IMAGES: Set<string> = new Set();
-
-export class CommandLineJob extends JobBase {
   docker_exec = 'docker';
   dockerImage:string|undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(builder: Builder, joborder: CWLObjectType, make_path_mapper: MakePathMapper, tool: Tool, name: string) {
-    super(builder, joborder, make_path_mapper, tool, name);
-    // this.inplace_update = true;
-  }
-  _get_dockerExec(){
-    return this.docker_exec
-  }
-  _get_dockerImage(){
-    return this.dockerImage
-  }
   async get_image(docker_requirement: DockerRequirement, pull_image: boolean, force_pull: boolean): Promise<boolean> {
     let found = false;
 
@@ -692,24 +610,13 @@ export class CommandLineJob extends JobBase {
     }
     throw new WorkflowException(`Docker image ${r['dockerImageId']} not found`);
   }
-  async run(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<void> {
-    const jobExec = await this.run2(runtimeContext,tmpdir_lock)
+  async run(runtimeContext: RuntimeContext): Promise<void> {
+    const jobExec = await this.run2(runtimeContext)
+    getJobWatcher().jobStarted(this);
     const [rcode, isCwlOutput, fileMap] = await getManager().execute(this,jobExec)
     await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
   }
-  async run2(runtimeContext: RuntimeContext, tmpdir_lock?: any): Promise<JobExec> {
-    if (tmpdir_lock) {
-      // assuming tmpdir_lock has a context equivalent
-      tmpdir_lock.run(() => {
-        if (!fs.existsSync(this.tmpdir)) {
-          fs.mkdirSync(this.tmpdir, { recursive: true });
-        }
-      });
-    } else {
-      if (!fs.existsSync(this.tmpdir)) {
-        fs.mkdirSync(this.tmpdir, { recursive: true });
-      }
-    }
+  async run2(runtimeContext: RuntimeContext): Promise<JobExec> {
     const [docker_req, docker_is_req] = getRequirement(this.tool, DockerRequirement);
     let img_id: any = undefined;
     const user_space_docker_cmd = runtimeContext.user_space_docker_cmd;
@@ -773,9 +680,7 @@ export class CommandLineJob extends JobBase {
       });
     }
 
-    const monitor_function = this.process_monitor.bind(this);
-
-    return this._execute2([], this.environment, runtimeContext, monitor_function);
+    return this._execute2([], this.environment, runtimeContext);
   }
 
   _required_env(): { [key: string]: string } {
@@ -791,4 +696,52 @@ export class CommandLineJob extends JobBase {
     return env;
   }
 }
+
+async function createOutputBinding(outputs: CommandOutputParameter[], job: CommandLineJob): Promise<OutputBinding[]> {
+  const outputBindings: OutputBinding[] = [];
+  for (const output of outputs) {
+    const outputType = output.type;
+    if (isCommandOutputRecordSchema(outputType)) {
+      const obs = await createOutputBinding(outputType.fields, job);
+      outputBindings.push(...obs);
+    }
+    if (output.outputBinding) {
+      const globpatterns: string[] = [];
+      for (const glob of aslist(output.outputBinding.glob)) {
+        const gb = await job.do_eval(glob);
+        if (gb) {
+          if (isStringOrStringArray(gb)) {
+            globpatterns.push(...aslist(gb));
+          } else {
+            throw new WorkflowException(
+              'Resolved glob patterns must be strings or list of strings, not ' +
+                `${str(gb)} from ${str(output.outputBinding.glob)}`,
+            );
+          }
+        }
+      }
+      const binding: OutputBinding = {
+        streamable: output.streamable,
+        name: output.name,
+        glob: globpatterns,
+        secondaryFiles: aslist(output.secondaryFiles).map(convertSecondaryFiles),
+        outputEval: output.outputBinding.outputEval,
+        loadListing: output.outputBinding.loadListing,
+        loadContents: output.outputBinding.loadContents ?? false,
+      };
+      outputBindings.push(binding);
+    }
+  }
+  return outputBindings;
+}
+function convertSecondaryFiles(file: SecondaryFileSchema): OutputSecondaryFile {
+  if (typeof file.required === 'string') {
+    return { pattern: file.pattern, requiredString: file.required };
+  } else if (typeof file.required === 'boolean') {
+    return { pattern: file.pattern, requiredBoolean: file.required };
+  } else {
+    return { pattern: file.pattern };
+  }
+}
+const _IMAGES: Set<string> = new Set();
 

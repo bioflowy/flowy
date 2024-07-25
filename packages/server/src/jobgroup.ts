@@ -23,7 +23,7 @@ export class JobGroup{
         const manager = getManager()
         const rqs:JobRequest[] =[]
         for(const job of this.jobs){
-            const jobExec = await job.run2(runtimeContext,tmpdir_lock)
+            const jobExec = await job.run2(runtimeContext)
             rqs.push({job:job,jobExec:jobExec})
         }
         await manager.executeJobs(rqs,runtimeContext)

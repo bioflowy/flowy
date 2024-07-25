@@ -28,7 +28,9 @@ type ApiGetExectableJobPost200ResponseInner struct {
 	StderrPath *string `json:"stderr_path,omitempty"`
 	Env map[string]string `json:"env"`
 	Cwd string `json:"cwd"`
-	BuilderOutdir string `json:"builderOutdir"`
+	ContainerOutdir string `json:"containerOutdir"`
+	TmpDir string `json:"tmpDir"`
+	RemoveTmpDir bool `json:"removeTmpDir"`
 	Timelimit *int32 `json:"timelimit,omitempty"`
 	OutputBindings []OutputBinding `json:"outputBindings"`
 	Fileitems []MapperEnt `json:"fileitems"`
@@ -47,13 +49,15 @@ type _ApiGetExectableJobPost200ResponseInner ApiGetExectableJobPost200ResponseIn
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewApiGetExectableJobPost200ResponseInner(id string, commands [][]CommandStringInner, env map[string]string, cwd string, builderOutdir string, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool, networkaccess bool, runtime Runtime) *ApiGetExectableJobPost200ResponseInner {
+func NewApiGetExectableJobPost200ResponseInner(id string, commands [][]CommandStringInner, env map[string]string, cwd string, containerOutdir string, tmpDir string, removeTmpDir bool, outputBindings []OutputBinding, fileitems []MapperEnt, generatedlist []MapperEnt, inplaceUpdate bool, networkaccess bool, runtime Runtime) *ApiGetExectableJobPost200ResponseInner {
 	this := ApiGetExectableJobPost200ResponseInner{}
 	this.Id = id
 	this.Commands = commands
 	this.Env = env
 	this.Cwd = cwd
-	this.BuilderOutdir = builderOutdir
+	this.ContainerOutdir = containerOutdir
+	this.TmpDir = tmpDir
+	this.RemoveTmpDir = removeTmpDir
 	this.OutputBindings = outputBindings
 	this.Fileitems = fileitems
 	this.Generatedlist = generatedlist
@@ -263,28 +267,76 @@ func (o *ApiGetExectableJobPost200ResponseInner) SetCwd(v string) {
 	o.Cwd = v
 }
 
-// GetBuilderOutdir returns the BuilderOutdir field value
-func (o *ApiGetExectableJobPost200ResponseInner) GetBuilderOutdir() string {
+// GetContainerOutdir returns the ContainerOutdir field value
+func (o *ApiGetExectableJobPost200ResponseInner) GetContainerOutdir() string {
 	if o == nil {
 		var ret string
 		return ret
 	}
 
-	return o.BuilderOutdir
+	return o.ContainerOutdir
 }
 
-// GetBuilderOutdirOk returns a tuple with the BuilderOutdir field value
+// GetContainerOutdirOk returns a tuple with the ContainerOutdir field value
 // and a boolean to check if the value has been set.
-func (o *ApiGetExectableJobPost200ResponseInner) GetBuilderOutdirOk() (*string, bool) {
+func (o *ApiGetExectableJobPost200ResponseInner) GetContainerOutdirOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.BuilderOutdir, true
+	return &o.ContainerOutdir, true
 }
 
-// SetBuilderOutdir sets field value
-func (o *ApiGetExectableJobPost200ResponseInner) SetBuilderOutdir(v string) {
-	o.BuilderOutdir = v
+// SetContainerOutdir sets field value
+func (o *ApiGetExectableJobPost200ResponseInner) SetContainerOutdir(v string) {
+	o.ContainerOutdir = v
+}
+
+// GetTmpDir returns the TmpDir field value
+func (o *ApiGetExectableJobPost200ResponseInner) GetTmpDir() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.TmpDir
+}
+
+// GetTmpDirOk returns a tuple with the TmpDir field value
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetTmpDirOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.TmpDir, true
+}
+
+// SetTmpDir sets field value
+func (o *ApiGetExectableJobPost200ResponseInner) SetTmpDir(v string) {
+	o.TmpDir = v
+}
+
+// GetRemoveTmpDir returns the RemoveTmpDir field value
+func (o *ApiGetExectableJobPost200ResponseInner) GetRemoveTmpDir() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.RemoveTmpDir
+}
+
+// GetRemoveTmpDirOk returns a tuple with the RemoveTmpDir field value
+// and a boolean to check if the value has been set.
+func (o *ApiGetExectableJobPost200ResponseInner) GetRemoveTmpDirOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.RemoveTmpDir, true
+}
+
+// SetRemoveTmpDir sets field value
+func (o *ApiGetExectableJobPost200ResponseInner) SetRemoveTmpDir(v bool) {
+	o.RemoveTmpDir = v
 }
 
 // GetTimelimit returns the Timelimit field value if set, zero value otherwise.
@@ -582,7 +634,9 @@ func (o ApiGetExectableJobPost200ResponseInner) ToMap() (map[string]interface{},
 	}
 	toSerialize["env"] = o.Env
 	toSerialize["cwd"] = o.Cwd
-	toSerialize["builderOutdir"] = o.BuilderOutdir
+	toSerialize["containerOutdir"] = o.ContainerOutdir
+	toSerialize["tmpDir"] = o.TmpDir
+	toSerialize["removeTmpDir"] = o.RemoveTmpDir
 	if !IsNil(o.Timelimit) {
 		toSerialize["timelimit"] = o.Timelimit
 	}
@@ -613,7 +667,9 @@ func (o *ApiGetExectableJobPost200ResponseInner) UnmarshalJSON(data []byte) (err
 		"commands",
 		"env",
 		"cwd",
-		"builderOutdir",
+		"containerOutdir",
+		"tmpDir",
+		"removeTmpDir",
 		"outputBindings",
 		"fileitems",
 		"generatedlist",

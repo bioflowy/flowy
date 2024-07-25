@@ -46,7 +46,7 @@ export type CWLOutputType =
   | MutableMapping<CWLOutputAtomType>;
 export type CWLObjectType = MutableMapping<CWLOutputType | undefined>;
 
-export type JobsType = CommandLineJob | JobBase | ExpressionJob | WorkflowJob | JobGroup| undefined; //  ;
+export type JobsType = JobBase | JobGroup| undefined; //  ;
 export type JobsGeneratorType = AsyncGenerator<JobsType, void>;
 export type JobStatus = "permanentFail" | "success" | "temporaryFail";
 export type OutputCallbackType = (arg1: CWLObjectType, arg2: JobStatus) => void;

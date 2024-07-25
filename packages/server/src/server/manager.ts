@@ -2,7 +2,6 @@ import * as fs from 'node:fs';
 import * as jsYaml from 'js-yaml';
 import { exec } from '../main.js';
 import { JobExec } from '../JobExecutor.js';
-import { Builder } from '../builder.js';
 import { Directory, File } from '../cwltypes.js';
 import { WorkflowException } from '../errors.js';
 import { CWLOutputType, JobStatus } from '../utils.js';
@@ -11,7 +10,9 @@ import { _logger } from '../loghandler.js';
 import { RuntimeContext } from '../context.js';
 import { string } from 'yargs';
 import { v4 as uuidv4 } from 'uuid';
-import { CommandLineJob, JobBase } from '../job.js';
+import { CommandLineJob } from '../job.js';
+import { AsyncFIFOQueue } from '../utils/fifo.js';
+import { getJobWatcher } from './job_watcher.js';
 
 interface SubmitJob {
   readonly jobId: string;
@@ -50,13 +51,12 @@ export class Manager {
     return this.queuedJobs[jobId]
   }
   private queuedJobs: Map<string,SubmitJob> = new Map();
-  private jobWatcher: Map<string,Promise<SubmitJob>[]> = new Map();
   private config: ServerConfig;
   private jobPromises: Map<
     string,
-    { job:JobBase,resolve: (value: [number, boolean, Record<string,any>]) => void; reject: (error: Error) => void }
+    { job:CommandLineJob,resolve: (value: [number, boolean, Record<string,any>]) => void; reject: (error: Error) => void }
   > = new Map();
-  private queuedTasks: JobExec[][] = [];
+  private queuedTasks = new AsyncFIFOQueue<JobExec[]>();
   constructor(setings: string = 'config.yml') {
     this.config = ServerConfigSchema.parse(jsYaml.load(fs.readFileSync(setings, 'utf-8')));
   }
@@ -82,13 +82,14 @@ export class Manager {
   }
   async executeJobs(rq:JobRequest[],runtimeContext:RuntimeContext): Promise<void> {
     const jobExecs = rq.map((r)=>r.jobExec)
-    const promises:Promise<number>[] =  []
+    const promises:Promise<void>[] =  []
     for(const r of rq){
-      const promise = new Promise<number>(async (resolve,reject) => {
+      const promise = new Promise<void>(async (resolve,reject) => {
         try{
+          getJobWatcher().jobStarted(r.job)
           const [rcode,isCwlOutput,fileMap] = await this.wait(r.job,r.jobExec)
           await r.job.executed(rcode,isCwlOutput,fileMap,r.jobExec.stdout_path,r.jobExec.stderr_path,runtimeContext)
-          resolve(1)  
+          resolve()  
         }catch(e){
           reject(e)
         }
@@ -96,8 +97,7 @@ export class Manager {
       promises.push(promise)
     }
     this.queuedTasks.push(jobExecs);
-    const results = await Promise.all(promises)
-    console.log(results)
+    await Promise.all(promises)
   }
   async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
     const {job} = this.jobPromises.get(id);
@@ -106,13 +106,8 @@ export class Manager {
     }
     return job.do_eval(ex, context, false);
   }
-  getExecutableJob(): JobExec[] {
-    if (this.queuedTasks.length === 0) {
-      return [];
-    } else {
-      return this.queuedTasks.pop();
-      // return this.executableJobs[0];
-    }
+  getExecutableJob(): Promise<JobExec[]> {
+    return this.queuedTasks.pop(60*1000);
   }
   jobfinished(
     id: string,

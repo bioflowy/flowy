@@ -149,7 +149,7 @@ func (o *ApiDoEvalPostRequest) GetContextOk() (*interface{}, bool) {
 
 // HasContext returns a boolean if a field has been set.
 func (o *ApiDoEvalPostRequest) HasContext() bool {
-	if o != nil && IsNil(o.Context) {
+	if o != nil && !IsNil(o.Context) {
 		return true
 	}
 

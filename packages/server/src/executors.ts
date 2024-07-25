@@ -6,6 +6,7 @@ import { _logger } from './loghandler.js';
 import { Process, cleanIntermediate, relocateOutputs } from './process.js';
 import { createRequirements } from './types.js';
 import { JobStatus, type CWLObjectType, type MutableSequence } from './utils.js';
+import { JobBase } from './job.js';
 
 abstract class JobExecutor {
   final_output: MutableSequence<CWLObjectType | undefined>;
@@ -117,24 +118,14 @@ export class SingleJobExecutor extends JobExecutor {
       job_order_object,
       (out: CWLObjectType | undefined, process_status: JobStatus) => this.output_callback(out, process_status),
       runtime_context,
+      null
     );
 
     try {
       for await (const job of jobiter) {
         if (job) {
           this.output_dirs.push(...job.getOutdirs());
-          if (runtime_context.research_obj !== null) {
-            // const prov_obj = process instanceof Workflow ? job.prov_obj : process.provenance_object;
-            // if (prov_obj) {
-            //   runtime_context.prov_obj = prov_obj;
-            //   prov_obj.fsaccess = runtime_context.make_fs_access('');
-            //   prov_obj.evaluate(process, job, job_order_object, runtime_context.research_obj);
-            //   process_run_id = prov_obj.record_process_start(process, job);
-            //   runtime_context = runtime_context.copy();
-            // }
-            // runtime_context.process_run_id = process_run_id;
-          }
-          await job.run(runtime_context);
+          await job.run(runtime_context);  
         } else {
           logger.error('Workflow cannot make any more progress.');
           break;

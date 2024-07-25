@@ -25,6 +25,8 @@ type PreparedJob struct {
 	Env              map[string]string
 	Cwd              string
 	ContainerWorkDir string
+	TmpDir           string
+	RemoveTmpDir     bool
 	OutputBaseDir    string
 	OutputBindings   []api.OutputBinding
 	Timelimit        *int32
@@ -54,12 +56,12 @@ func prepareForDocker(fileManager FileManager, job *api.ApiGetExectableJobPost20
 	var dockerCommands []string
 	dockerCommands = append(dockerCommands, *job.DockerExec)
 	dockerCommands = append(dockerCommands, "run", "-i")
-	mountParams, err := stageForDocker(fileManager, job.Cwd, job.BuilderOutdir, append(job.Fileitems, job.Generatedlist...), job.InplaceUpdate)
+	mountParams, err := stageForDocker(fileManager, job.Cwd, job.ContainerOutdir, append(job.Fileitems, job.Generatedlist...), job.InplaceUpdate)
 	if err != nil {
 		return nil, err
 	}
 	dockerCommands = append(dockerCommands, mountParams...)
-	dockerCommands = append(dockerCommands, "--workdir="+job.BuilderOutdir)
+	dockerCommands = append(dockerCommands, "--workdir="+job.ContainerOutdir)
 	dockerCommands = append(dockerCommands, "--read-only=true")
 	if job.StdoutPath != nil {
 		dockerCommands = append(dockerCommands, "--log-driver=none")
@@ -73,7 +75,7 @@ func prepareForDocker(fileManager FileManager, job *api.ApiGetExectableJobPost20
 	}
 	dockerCommands = append(dockerCommands, "--rm")
 	dockerCommands = append(dockerCommands, "--user=1001:1001")
-	dockerCommands = append(dockerCommands, "--env=HOME="+job.BuilderOutdir)
+	dockerCommands = append(dockerCommands, "--env=HOME="+job.ContainerOutdir)
 	dockerCommands = append(dockerCommands, "--env=TMPDIR=/tmp")
 	dockerCommands = append(dockerCommands, *job.DockerImage)
 	return dockerCommands, nil
@@ -141,7 +143,9 @@ func prepareJob(config *api.SharedFileSystemConfig, fileManager FileManager, job
 		StderrBuffer:     stderrb,
 		Env:              job.Env,
 		Cwd:              job.Cwd,
-		ContainerWorkDir: job.BuilderOutdir,
+		ContainerWorkDir: job.ContainerOutdir,
+		TmpDir:           job.TmpDir,
+		RemoveTmpDir:     job.RemoveTmpDir,
 		Timelimit:        job.Timelimit,
 		OutputBaseDir:    *job.OutputBaseDir,
 		OutputBindings:   job.OutputBindings,
@@ -201,6 +205,7 @@ func execAndUpload(c *api.APIClient, fileManager FileManager, config *api.Shared
 
 	log.Default().Printf("job command = %+v", job.Commands)
 	os.MkdirAll(job.Cwd, 0770)
+	os.MkdirAll(job.TmpDir, 0770)
 	exitCode, err := executeJob(job)
 	if err != nil {
 		reportFailed(c, job.Id, err)
@@ -299,6 +304,9 @@ func execAndUpload(c *api.APIClient, fileManager FileManager, config *api.Shared
 		// os.RemoveAll(job.Cwd)
 		for _, localPath := range downloadPaths {
 			os.RemoveAll(localPath)
+		}
+		if job.RemoveTmpDir {
+			os.RemoveAll(job.TmpDir)
 		}
 		fmt.Print(exitCode)
 

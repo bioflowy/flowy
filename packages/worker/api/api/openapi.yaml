@@ -127,7 +127,7 @@ components:
       example:
         loadContents: true
         streamable: false
-        loadListing: null
+        loadListing: no_listing
         outputEval: outputEval
         name: name
         glob:
@@ -244,17 +244,19 @@ components:
       example:
         stdout_path: stdout_path
         dockerImage: dockerImage
+        removeTmpDir: true
         runtime:
           custom_net: custom_net
-        builderOutdir: builderOutdir
         env:
           key: env
         outputBaseDir: outputBaseDir
         networkaccess: true
         timelimit: 0
         inplace_update: true
+        tmpDir: tmpDir
         stderr_path: stderr_path
         cwd: cwd
+        containerOutdir: containerOutdir
         fileitems:
         - streamable: true
           staged: true
@@ -281,12 +283,18 @@ components:
         id: id
         dockerExec: dockerExec
         commands:
-        - null
-        - null
+        - - type: Key
+            value: value
+          - type: Key
+            value: value
+        - - type: Key
+            value: value
+          - type: Key
+            value: value
         outputBindings:
         - loadContents: true
           streamable: false
-          loadListing: null
+          loadListing: no_listing
           outputEval: outputEval
           name: name
           glob:
@@ -301,7 +309,7 @@ components:
             requiredString: requiredString
         - loadContents: true
           streamable: false
-          loadListing: null
+          loadListing: no_listing
           outputEval: outputEval
           name: name
           glob:
@@ -333,8 +341,12 @@ components:
           type: object
         cwd:
           type: string
-        builderOutdir:
+        containerOutdir:
           type: string
+        tmpDir:
+          type: string
+        removeTmpDir:
+          type: boolean
         timelimit:
           type: integer
         outputBindings:
@@ -362,8 +374,8 @@ components:
         runtime:
           $ref: '#/components/schemas/runtime'
       required:
-      - builderOutdir
       - commands
+      - containerOutdir
       - cwd
       - env
       - fileitems
@@ -372,7 +384,9 @@ components:
       - inplace_update
       - networkaccess
       - outputBindings
+      - removeTmpDir
       - runtime
+      - tmpDir
       type: object
     _api_jobFailed_post_request:
       properties:
@@ -399,6 +413,9 @@ components:
       - id
       type: object
     CommandString_inner:
+      example:
+        type: Key
+        value: value
       properties:
         type:
           enum:

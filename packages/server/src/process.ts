@@ -833,6 +833,7 @@ hints:
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
+    workflow_id: string | null
   ): JobsGeneratorType;
 
   toString(): string {

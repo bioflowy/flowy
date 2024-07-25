@@ -192,8 +192,12 @@ paths:
                         type: string
                     cwd:
                       type: string
-                    builderOutdir:
+                    containerOutdir:
                       type: string
+                    tmpDir:
+                      type: string
+                    removeTmpDir:
+                      type: boolean
                     timelimit:
                       type: integer
                     outputBindings:
@@ -225,7 +229,9 @@ paths:
                     - commands
                     - env
                     - cwd
-                    - builderOutdir
+                    - containerOutdir
+                    - tmpDir
+                    - removeTmpDir
                     - outputBindings
                     - fileitems
                     - generatedlist

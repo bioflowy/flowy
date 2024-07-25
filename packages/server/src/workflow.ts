@@ -13,7 +13,6 @@ import {
   WorkflowStepOutput,
 } from './cwltypes.js';
 import { ValidationException, WorkflowException } from './errors.js';
-import { pathJoin } from './fileutils.js';
 import { loadDocument } from './loader.js';
 import { _logger } from './loghandler.js';
 import { Process, shortname } from './process.js';
@@ -29,6 +28,8 @@ import {
   JobStatus,
 } from './utils.js';
 import { WorkflowJob } from './workflow_job.js';
+import { getJobWatcher } from './server/job_watcher.js';
+import { JobBase } from './job.js';
 
 function sha1(data: string): string {
   const hash = crypto.createHash('sha1');
@@ -264,6 +265,7 @@ export class WorkflowStep extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
+    workflow_id: string | null
   ): JobsGeneratorType {
     // if (
     //   this.embedded_tool.tool['class'] == 'Workflow' &&
@@ -289,6 +291,7 @@ export class WorkflowStep extends Process {
         step_input,
         (output: CWLObjectType, processStatus: JobStatus) => this.receive_output(output_callbacks, output, processStatus),
         runtimeContext,
+        workflow_id
       );
       for await (const item of jobiter) {
         yield item;
@@ -387,6 +390,7 @@ export class Workflow extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType,
     runtimeContext: RuntimeContext,
+    workflow_id: string | null
   ): JobsGeneratorType {
     const builder = await this._init_job(job_order, runtimeContext);
 
@@ -398,14 +402,18 @@ export class Workflow extends Process {
       }
     }
 
-    const job = new WorkflowJob(this, runtimeContext);
+    const job = new WorkflowJob(this, runtimeContext,workflow_id);
+    getJobWatcher().jobCreated(job)
     yield job;
 
     runtimeContext = runtimeContext.copy();
     runtimeContext.part_of = `workflow ${job.name}`;
     runtimeContext.toplevel = false;
-    const jobiter = job.job(builder.job, output_callbacks, runtimeContext);
+    const jobiter = job.job(builder.job, output_callbacks, runtimeContext,job.id);
     for await (const j of jobiter) {
+      if( j instanceof JobBase){
+        j.parent_id = job.id
+      }
       yield j;
     }
   }

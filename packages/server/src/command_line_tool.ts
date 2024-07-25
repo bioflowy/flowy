@@ -33,6 +33,7 @@ import {
   isFile,
 } from './utils.js';
 import { CommandString, CommandStringToString, quoteCommand, toCommandStringArray } from './commandstring.js';
+import { getJobWatcher } from './server/job_watcher.js';
 
 interface Dirent {
   entryname?: string;
@@ -40,7 +41,7 @@ interface Dirent {
   writable?: boolean;
 }
 
-export class ExpressionJob {
+export class ExpressionJob extends JobBase{
   builder: Builder;
   script: string;
   output_callback: OutputCallbackType | null;
@@ -50,14 +51,18 @@ export class ExpressionJob {
   tmpdir: string | null;
 
   constructor(
+    name: string,
     builder: Builder,
     script: string,
     output_callback: OutputCallbackType | null,
     requirements: ToolRequirement,
     hints: ToolRequirement,
+    workflow_id: string | null,
     outdir: string | null = null,
     tmpdir: string | null = null,
   ) {
+    super(uuidv4(),name,"Expression")
+    this.parent_id = workflow_id;
     this.builder = builder;
     this.requirements = requirements;
     this.hints = hints;
@@ -65,11 +70,15 @@ export class ExpressionJob {
     this.outdir = outdir;
     this.tmpdir = tmpdir;
     this.script = script;
+    this.joborder = builder.job;
+  }
+  _get_type() {
+    return "Expression"
   }
   getOutdirs():string[]{
     return this.outdir?[this.outdir]:[]
   }
-  async run(runtimeContext: RuntimeContext, tmpdir_lock: any | null = null) {
+  async run(runtimeContext: RuntimeContext) {
     try {
       normalizeFilesDirs(this.builder.job);
       const ev = await this.builder.do_eval(this.script);
@@ -78,6 +87,7 @@ export class ExpressionJob {
       if (this.output_callback) {
         this.output_callback(ev as CWLObjectType, 'success');
       }
+      getJobWatcher().jobFinished(this,0,ev)
     } catch (err) {
       _logger.warn('Failed to evaluate expression:\n%s', err.toString(), { exc_info: runtimeContext.debug });
 
@@ -105,9 +115,12 @@ export class ExpressionTool extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
+    workflow_id: string | null
   ): JobsGeneratorType {
     const builder = await this._init_job(job_order, runtimeContext);
-    const job = new ExpressionJob(builder, this.tool['expression'], output_callbacks, this.requirements, this.hints);
+    const jobname = uniquename(runtimeContext.name || shortname(this.tool.id || 'job'));
+    const job = new ExpressionJob(jobname,builder, this.tool['expression'], output_callbacks, this.requirements, this.hints,workflow_id);
+    getJobWatcher().jobCreated(job)
     yield job;
   }
 }
@@ -226,7 +239,8 @@ export class CommandLineTool extends Process {
     ) => PathMapper,
     tool: Tool,
     name: string,
-  ) => JobBase {
+    workflow_id: string | null
+  ) => CommandLineJob {
     // placeholder types
     let [dockerReq, dockerRequired] = getRequirement(this.tool, cwl.DockerRequirement);
     if (!dockerReq && runtimeContext.use_container) {
@@ -258,8 +272,10 @@ export class CommandLineTool extends Process {
     //   throw new UnsupportedRequirement(
     //     '--no-container, but this CommandLineTool has ' + "cwl.DockerRequirement under 'requirements'.",
     //   );
-    return (builder, joborder, make_path_mapper, tool, name) =>
-      new CommandLineJob(builder, joborder, make_path_mapper, tool, name);
+    return (builder, joborder, make_path_mapper, tool, name,workflow_id) =>{
+      const job = new CommandLineJob(builder, joborder, make_path_mapper, tool, name,workflow_id);
+      return job
+    }
   }
 
   updatePathmap(outdir: string, pathmap: PathMapper, fn: File | Directory): void {
@@ -528,7 +544,7 @@ export class CommandLineTool extends Process {
     }
   }
 
-  async _initialworkdir(j: JobBase, builder: Builder): Promise<void> {
+  async _initialworkdir(j: CommandLineJob, builder: Builder): Promise<void> {
     const [initialWorkdir, _] = getRequirement(this.tool, cwl.InitialWorkDirRequirement);
     if (initialWorkdir == undefined) {
       return;
@@ -550,7 +566,7 @@ export class CommandLineTool extends Process {
     j.generatefiles.listing = ls2;
     this.setup_output_items(initialWorkdir, builder, ls2);
   }
-  async handle_tool_time_limit(builder: Builder, j: JobBase): Promise<void> {
+  async handle_tool_time_limit(builder: Builder, j: CommandLineJob): Promise<void> {
     const [timelimit, _] = getRequirement(this, cwl.ToolTimeLimit);
     if (timelimit == undefined) {
       return;
@@ -579,7 +595,7 @@ export class CommandLineTool extends Process {
     j.timelimit = timelimit_eval;
   }
 
-  async handle_network_access(builder: Builder, j: JobBase): Promise<void> {
+  async handle_network_access(builder: Builder, j: CommandLineJob): Promise<void> {
     const [networkaccess, _] = getRequirement(this.tool, cwl.NetworkAccess);
     if (networkaccess == null) {
       return;
@@ -629,7 +645,7 @@ export class CommandLineTool extends Process {
     }
     return required_env;
   }
-  async setup_command_line(builder: Builder, j: JobBase) {
+  async setup_command_line(builder: Builder, j: CommandLineJob) {
     const [shellcmd, _] = getRequirement(this.tool, cwl.ShellCommandRequirement);
     if (shellcmd !== undefined) {
       let cmd: CommandString[] = []; // type: List[str]
@@ -652,7 +668,7 @@ export class CommandLineTool extends Process {
     }
   }
 
-  async setup_std_io(builder: Builder, j: JobBase, reffiles: (File | Directory)[]): Promise<void> {
+  async setup_std_io(builder: Builder, j: CommandLineJob, reffiles: (File | Directory)[]): Promise<void> {
     if (this.tool.stdin) {
       const stdin_eval = await builder.do_eval(this.tool['stdin']);
       if (!(typeof stdin_eval === 'string' || stdin_eval === null)) {
@@ -696,7 +712,7 @@ export class CommandLineTool extends Process {
       }
     }
   }
-  handleMutationManager(builder: Builder, j: JobBase): Record<string, CWLObjectType> | undefined {
+  handleMutationManager(builder: Builder, j: CommandLineJob): Record<string, CWLObjectType> | undefined {
     const readers: Record<string, CWLObjectType> = {};
     const muts: Set<string> = new Set();
     // TODO MutationManager is not implemented
@@ -739,7 +755,8 @@ export class CommandLineTool extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
-  ): AsyncGenerator<JobBase> {
+    workflow_id: string | null
+  ): AsyncGenerator<CommandLineJob> {
     // const [workReuse] = getRequirement(this.tool, cwl.WorkReuse);
     // const enableReuse = workReuse ? workReuse.enableReuse : true;
 
@@ -755,7 +772,8 @@ export class CommandLineTool extends Process {
 
     const reffiles = cloneDeep(builder.files);
     const mjr = this.make_job_runner(runtimeContext);
-    const j = mjr(builder, builder.job, make_path_mapper, this.tool, jobname);
+    const j = mjr(builder, builder.job, make_path_mapper, this.tool, jobname,workflow_id);
+    getJobWatcher().jobCreated(j)
 
     j.prov_obj = this.prov_obj;
 
