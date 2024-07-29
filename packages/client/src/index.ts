@@ -32,9 +32,9 @@ export async function main(args: Args): Promise<number> {
         return 1;
       }
       const rslt = await res.json()
-      if(rslt.status === "finished"){
+      if(rslt.status === "success" || rslt.status ==="permanentFail" || rslt.status === "temporaryFail"){
         const result = rslt.result
-        const status  = rslt.resultStatus
+        const status  = rslt.status
         if (status === 'success') {
           process.stdout.write(`${JSON.stringify(result)}\n`);
           return new Promise((resolve) => {

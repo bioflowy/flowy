@@ -66,5 +66,3 @@ void watcher.dispatch()
 export function getJobWatcher(){
     return watcher
 }
-const jobManager = new JobManager()
-getJobWatcher().addListener(jobManager)

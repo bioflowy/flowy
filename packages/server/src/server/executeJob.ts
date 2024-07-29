@@ -70,6 +70,7 @@ export const executeJobPath: RouteConfig = {
           input.tool_path = `${input.basedir}/${input.tool_path}`;
         }
       }
-      const jobId = manager.queueJob(runtimeContext, input.tool_path, input.job_path);
+      const job = await exec(runtimeContext, input.tool_path, input.job_path)
+      const jobId = job.id;
       return c.json({jobId});
   })

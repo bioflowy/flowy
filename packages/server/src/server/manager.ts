@@ -18,29 +18,10 @@ interface SubmitJob {
   readonly jobId: string;
   readonly tool_path:string;
   readonly job_path:string;
-  status:"queued" | "running" | "finished";
   results?:CWLOutputType;
   resultStatus?: JobStatus;
 }
-export class Manager {
-  queueJob(runtimeContext: RuntimeContext, tool_path: string, job_path: string):string {
-    const job:SubmitJob = {
-      jobId: uuidv4(),
-      tool_path: tool_path,
-      job_path: job_path,
-      status: "queued"
-    }
-    this.queuedJobs[job.jobId] = job;
-    exec(runtimeContext,tool_path,job_path).then(([results,status])=>{
-      this.jobStatusChange(job.jobId,results,status)
-    }).catch(e=>{
-      if(e instanceof Error){
-        console.log(e)
-     }
-      this.jobStatusChange(job.jobId,e,"permanentFail")
-    });
-    return job.jobId
-  }
+export class CommandLineJobManager {
   jobStatusChange(jobId:string,results:CWLOutputType,status:JobStatus){
     const job = this.queuedJobs[jobId]
     job.results = results
@@ -50,12 +31,8 @@ export class Manager {
   getJobInfo(jobId:string):SubmitJob{
     return this.queuedJobs[jobId]
   }
-  private queuedJobs: Map<string,SubmitJob> = new Map();
+  private queuedJobs: Map<string,CommandLineJob> = new Map();
   private config: ServerConfig;
-  private jobPromises: Map<
-    string,
-    { job:CommandLineJob,resolve: (value: [number, boolean, Record<string,any>]) => void; reject: (error: Error) => void }
-  > = new Map();
   private queuedTasks = new AsyncFIFOQueue<JobExec[]>();
   constructor(setings: string = 'config.yml') {
     this.config = ServerConfigSchema.parse(jsYaml.load(fs.readFileSync(setings, 'utf-8')));
@@ -67,40 +44,18 @@ export class Manager {
     const data = jsYaml.load(fs.readFileSync(configPath, 'utf-8'));
     this.config = ServerConfigSchema.parse(data);
   }
-  async execute(job:CommandLineJob, jobExec: JobExec): Promise<[number, boolean, Record<string,any>]> {
-    this.queuedTasks.push([jobExec]);
-    const promise = new Promise<[number, boolean, Record<string,any>]>((resolve, reject) => {
-      this.jobPromises.set(jobExec.id, { job,resolve, reject });
-    });
-    return promise;
+  async execute(job:CommandLineJob, jobExec: JobExec,runtimeContext:RuntimeContext) {
+    return this.executeJobs([{job:job,jobExec:jobExec}],runtimeContext);
   }
-  async wait(job:CommandLineJob, jobExec: JobExec): Promise<[number, boolean, Record<string,any>]>{
-    const promise = new Promise<[number, boolean, Record<string,any>]>((resolve, reject) => {
-      this.jobPromises.set(jobExec.id, { job,resolve, reject });
-    });
-    return promise
-  }
-  async executeJobs(rq:JobRequest[],runtimeContext:RuntimeContext): Promise<void> {
-    const jobExecs = rq.map((r)=>r.jobExec)
-    const promises:Promise<void>[] =  []
-    for(const r of rq){
-      const promise = new Promise<void>(async (resolve,reject) => {
-        try{
-          getJobWatcher().jobStarted(r.job)
-          const [rcode,isCwlOutput,fileMap] = await this.wait(r.job,r.jobExec)
-          await r.job.executed(rcode,isCwlOutput,fileMap,r.jobExec.stdout_path,r.jobExec.stderr_path,runtimeContext)
-          resolve()  
-        }catch(e){
-          reject(e)
-        }
-      })
-      promises.push(promise)
+  async executeJobs(requests:JobRequest[],runtimeContext:RuntimeContext) {
+    const jobExecs = requests.map((r)=>r.jobExec)
+    for(const rq of requests){
+      this.queuedJobs[rq.job.id] = rq.job
     }
     this.queuedTasks.push(jobExecs);
-    await Promise.all(promises)
   }
   async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
-    const {job} = this.jobPromises.get(id);
+    const job = this.queuedJobs.get(id);
     if (exitCode != undefined) {
       job.resources['exitCode'] = exitCode;
     }
@@ -115,18 +70,18 @@ export class Manager {
     isCwlOutput: boolean,
     outputResults: { [key: string]: (File | Directory)[] },
   ) {
-    const promise = this.jobPromises.get(id);
-    if (promise) {
-      this.jobPromises.delete(id);
-      promise.resolve([ret_code, isCwlOutput, outputResults]);
+    const job = this.queuedJobs[id];
+    if (job) {
+      this.queuedJobs.delete(id);
+      job.executed(ret_code,isCwlOutput,outputResults)
     }
   }
   jobfailed(id: string, errorMsg: string) {
-    const promise = this.jobPromises.get(id);
-    if (promise) {
-      promise.reject(new WorkflowException(errorMsg));
-      this.jobPromises.delete(id);
-    } 
+    const job = this.queuedJobs.get(id);
+    if (job) {
+      this.queuedJobs.delete(id);
+      job.executed(1,false,errorMsg)
+    }
   }
 }
 export interface JobRequest{
@@ -134,15 +89,15 @@ export interface JobRequest{
   jobExec: JobExec
 }
 
-let manager: Manager;
-export function getManager(): Manager {
+let manager: CommandLineJobManager;
+export function getManager(): CommandLineJobManager {
   if (!manager) {
-    manager = new Manager();
+    manager = new CommandLineJobManager();
   }
   return manager;
 }
-export function initManager(configPath: string = 'config.yml'): Manager {
+export function initManager(configPath: string = 'config.yml'): CommandLineJobManager {
   _logger.info(`initManager by ${configPath}`);
-  manager = new Manager(configPath);
+  manager = new CommandLineJobManager(configPath);
   return manager;
 }

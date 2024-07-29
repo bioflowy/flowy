@@ -101,6 +101,8 @@ export abstract class JobBase {
   readonly id: string;
   readonly name: string;
   readonly type: "CommandLine" | "Expression" | "Workflow" ;
+  processStatus: JobStatus;
+  results: CWLObjectType;
   joborder: CWLObjectType;
   parent_id: string;
   abstract getOutdirs(): string[]
@@ -291,8 +293,7 @@ export class CommandLineJob extends JobBase{
   ) {
     const manager = getManager();
     const jobExec = await this._execute2(runtime,env,runtimeContext)
-    const [rcode, isCwlOutput, fileMap] = await manager.execute(this,jobExec)
-    await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
+    await manager.execute(this,jobExec,runtimeContext)
   }
   async _execute2(
     runtime: string[],
@@ -400,7 +401,7 @@ export class CommandLineJob extends JobBase{
       }
     }
   }
-  async executed(rcode, isCwlOutput, fileMap,stdout_path, stderr_path,runtimeContext:RuntimeContext){
+  async executed(rcode, isCwlOutput, fileMap){
     let outputs: any = {};
     let processStatus:JobStatus = 'success';
     try{
@@ -425,21 +426,7 @@ export class CommandLineJob extends JobBase{
         }
       }
 
-      runtimeContext.log_dir_handler(this.outdir, this.base_path_logs, stdout_path, stderr_path);
       outputs = await this.collect_outputs(this.outdir, rcode, isCwlOutput, fileMap);
-      // outputs = bytes2str_in_dicts(outputs);
-      // } catch (e) {
-      //     if (e.errno == 2) {
-      //         if (runtime) {
-      //             _logger.error(`'${runtime[0]}' not found: ${e}`);
-      //         } else {
-      //             _logger.error(`'${this.command_line[0]}' not found: ${e}`);
-      //         }
-      //     } else {
-      //         new Error("Exception while running job");
-
-      //     }
-      //     processStatus = "permanentFail";
     } catch (err) {
       if (err instanceof Error) {
         _logger.error(`[job ${this.name}] Job error${err.message}\n${err.stack}`);
@@ -450,14 +437,6 @@ export class CommandLineJob extends JobBase{
     //     _logger.exception("Exception while running job");
     //     processStatus = "permanentFail";
     // }
-    if (
-      runtimeContext.research_obj !== undefined &&
-      this.prov_obj !== undefined &&
-      runtimeContext.process_run_id !== undefined
-    ) {
-      // creating entities for the outputs produced by each step (in the provenance document)
-      this.prov_obj.record_process_end(String(this.name), runtimeContext.process_run_id, outputs, new Date());
-    }
     if (processStatus !== 'success') {
       _logger.warn(`[job ${this.name}] completed ${processStatus}`);
     } else {
@@ -467,36 +446,13 @@ export class CommandLineJob extends JobBase{
     if (_logger.isDebugEnabled()) {
       _logger.debug(`[job ${this.name}] outputs ${JSON.stringify(outputs, null, 4)}`);
     }
-
-    if (this.generatemapper !== null && runtimeContext.secret_store !== null) {
-      // TODO
-      // Delete any runtime-generated files containing secrets.
-      // for (let _, p of Object.entries(this.generatemapper)) {
-      //     if (p.type === "CreateFile") {
-      //         if (runtimeContext.secret_store.has_secret(p.resolved)) {
-      //             let host_outdir = this.outdir;
-      //             let container_outdir = this.builder.outdir;
-      //             let host_outdir_tgt = p.target;
-      //             if (p.target.startsWith(container_outdir + "/")) {
-      //                 host_outdir_tgt = path.join(
-      //                     host_outdir, p.target.slice(container_outdir.length + 1)
-      //                 );
-      //             }
-      //             fs.unlinkSync(host_outdir_tgt);
-      //         }
-      //     }
-      // }
-    }
-
-    if (runtimeContext.workflow_eval_lock === null) {
-      throw new Error('runtimeContext.workflow_eval_lock must not be None');
-    }
-
+    this.processStatus = processStatus
+    this.results = outputs
     if (this.output_callback) {
       this.output_callback(outputs, processStatus);
     }
 
-    if (runtimeContext.rm_tmpdir && this.stagedir !== undefined && fs.existsSync(this.stagedir)) {
+    if (false && this.stagedir !== undefined && fs.existsSync(this.stagedir)) {
       _logger.debug(`[job ${this.name}] Removing input staging directory ${this.stagedir}`);
       await removeIgnorePermissionError(this.stagedir);
     }
@@ -613,8 +569,7 @@ export class CommandLineJob extends JobBase{
   async run(runtimeContext: RuntimeContext): Promise<void> {
     const jobExec = await this.run2(runtimeContext)
     getJobWatcher().jobStarted(this);
-    const [rcode, isCwlOutput, fileMap] = await getManager().execute(this,jobExec)
-    await this.executed(rcode,isCwlOutput,fileMap,jobExec.stdout_path,jobExec.stderr_path,runtimeContext)
+    await getManager().execute(this,jobExec,runtimeContext)
   }
   async run2(runtimeContext: RuntimeContext): Promise<JobExec> {
     const [docker_req, docker_is_req] = getRequirement(this.tool, DockerRequirement);

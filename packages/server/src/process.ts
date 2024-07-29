@@ -59,6 +59,7 @@ import {
   isFile,
 } from './utils.js';
 import { validate } from './validate.js';
+import { JobBase } from './job.js';
 
 export function shortname(inputid: string): string {
   try {
@@ -834,7 +835,7 @@ hints:
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
     workflow_id: string | null
-  ): JobsGeneratorType;
+  ): Promise<JobBase>;
 
   toString(): string {
     // eslint-disable-next-line

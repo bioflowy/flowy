@@ -26,6 +26,7 @@ import {
 } from './utils.js';
 import { default_make_tool } from './workflow.js';
 import { getManager } from './server/manager.js';
+import { JobBase } from './job.js';
 
 async function parseFile(filePath: string): Promise<object | null> {
   const extname = path.extname(filePath).toLowerCase();
@@ -223,7 +224,7 @@ export async function exec(
   runtimeContext: RuntimeContext,
   tool_path: string,
   job_path?: string,
-): Promise<[CWLOutputType, JobStatus]> {
+): Promise<JobBase> {
   const loadingContext = new LoadingContext({});
   loadingContext.construct_tool_object = default_make_tool;
   if (job_path && !path.isAbsolute(job_path)) {
@@ -250,6 +251,6 @@ export async function exec(
   runtimeContext.basedir = input_basedir;
   const initialized_job_order = await init_job_order(job_order_object, tool, input_basedir, tool_path, runtimeContext);
   const process_executor = new SingleJobExecutor();
-  const [out, status] = await process_executor.execute(tool, initialized_job_order, runtimeContext);
-  return [out, status];
+  const jobBase = await process_executor.execute(tool, initialized_job_order, runtimeContext);
+  return jobBase;
 }

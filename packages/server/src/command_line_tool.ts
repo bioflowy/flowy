@@ -34,6 +34,7 @@ import {
 } from './utils.js';
 import { CommandString, CommandStringToString, quoteCommand, toCommandStringArray } from './commandstring.js';
 import { getJobWatcher } from './server/job_watcher.js';
+import { TypeGuards } from '@flowy/cwl-ts-auto/dist/util/Internal.js';
 
 interface Dirent {
   entryname?: string;
@@ -83,10 +84,11 @@ export class ExpressionJob extends JobBase{
       normalizeFilesDirs(this.builder.job);
       const ev = await this.builder.do_eval(this.script);
       normalizeFilesDirs(ev);
-
+      this.processStatus = 'success'
       if (this.output_callback) {
         this.output_callback(ev as CWLObjectType, 'success');
       }
+      this.results = ev as any;
       getJobWatcher().jobFinished(this,0,ev)
     } catch (err) {
       _logger.warn('Failed to evaluate expression:\n%s', err.toString(), { exc_info: runtimeContext.debug });
@@ -111,17 +113,17 @@ export class ExpressionTool extends Process {
     super.init(loadContent);
   }
 
-  async *job(
+  async job(
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
     workflow_id: string | null
-  ): JobsGeneratorType {
+  ): Promise<JobBase> {
     const builder = await this._init_job(job_order, runtimeContext);
     const jobname = uniquename(runtimeContext.name || shortname(this.tool.id || 'job'));
     const job = new ExpressionJob(jobname,builder, this.tool['expression'], output_callbacks, this.requirements, this.hints,workflow_id);
     getJobWatcher().jobCreated(job)
-    yield job;
+    return job;
   }
 }
 
@@ -751,12 +753,12 @@ export class CommandLineTool extends Process {
 
     return readers;
   }
-  async *job(
+  async job(
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
     workflow_id: string | null
-  ): AsyncGenerator<CommandLineJob> {
+  ): Promise<CommandLineJob> {
     // const [workReuse] = getRequirement(this.tool, cwl.WorkReuse);
     // const enableReuse = workReuse ? workReuse.enableReuse : true;
 
@@ -861,6 +863,6 @@ export class CommandLineTool extends Process {
     j.output_callback = output_callbacks;
 
     // this.handle_mpi_require(runtimeContext, builder, j, debug);
-    yield j;
+    return j;
   }
 }

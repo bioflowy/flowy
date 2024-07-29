@@ -30,6 +30,7 @@ import {
 import { WorkflowJob } from './workflow_job.js';
 import { getJobWatcher } from './server/job_watcher.js';
 import { JobBase } from './job.js';
+import { Job } from './databases.js';
 
 function sha1(data: string): string {
   const hash = crypto.createHash('sha1');
@@ -261,12 +262,12 @@ export class WorkflowStep extends Process {
     output_callback(output, processStatus);
   }
 
-  async *job(
+  async job(
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
     workflow_id: string | null
-  ): JobsGeneratorType {
+  ): Promise<JobBase> {
     // if (
     //   this.embedded_tool.tool['class'] == 'Workflow' &&
     //   runtimeContext.research_obj &&
@@ -293,9 +294,7 @@ export class WorkflowStep extends Process {
         runtimeContext,
         workflow_id
       );
-      for await (const item of jobiter) {
-        yield item;
-      }
+      return jobiter;
     } catch (e) {
       if (e instanceof WorkflowException) {
         _logger.error(`Exception on step '${runtimeContext.name}'`);
@@ -386,12 +385,12 @@ export class Workflow extends Process {
     // , parentworkflowProv);
   }
 
-  async *job(
+  async job(
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType,
     runtimeContext: RuntimeContext,
     workflow_id: string | null
-  ): JobsGeneratorType {
+  ): Promise<WorkflowJob> {
     const builder = await this._init_job(job_order, runtimeContext);
 
     if (runtimeContext.research_obj != null) {
@@ -402,20 +401,20 @@ export class Workflow extends Process {
       }
     }
 
-    const job = new WorkflowJob(this, runtimeContext,workflow_id);
+    const job = new WorkflowJob(this, runtimeContext,workflow_id,output_callbacks,builder.job);
     getJobWatcher().jobCreated(job)
-    yield job;
+    return job;
 
-    runtimeContext = runtimeContext.copy();
-    runtimeContext.part_of = `workflow ${job.name}`;
-    runtimeContext.toplevel = false;
-    const jobiter = job.job(builder.job, output_callbacks, runtimeContext,job.id);
-    for await (const j of jobiter) {
-      if( j instanceof JobBase){
-        j.parent_id = job.id
-      }
-      yield j;
-    }
+    // runtimeContext = runtimeContext.copy();
+    // runtimeContext.part_of = `workflow ${job.name}`;
+    // runtimeContext.toplevel = false;
+    // const jobiter = job.job(builder.job, output_callbacks, runtimeContext,job.id);
+    // for await (const j of jobiter) {
+    //   if( j instanceof JobBase){
+    //     j.parent_id = job.id
+    //   }
+    //   yield j;
+    // }
   }
 }
 

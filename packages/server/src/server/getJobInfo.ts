@@ -6,6 +6,7 @@ import { getManager } from "./manager.js";
 import { RuntimeContext } from "../context.js";
 import { exec } from "../main.js";
 import { _logger } from "../loghandler.js";
+import { getJobManager } from "../jobmanager.js";
 
 extendZodWithOpenApi(z);
 
@@ -16,7 +17,6 @@ export const GetJobInfoInputSchema = z.object({
 export const GetJobInfoOutputSchema = z.object({
   result: z.any(),
   status: z.string(),
-  resultStatus: z.string(),
 });
 type GetJobInfoOutput = z.infer<typeof GetJobInfoOutputSchema>
 export const getJobInfoPath: RouteConfig = {
@@ -48,12 +48,11 @@ export const getJobInfoPath: RouteConfig = {
     zValidator('json',GetJobInfoInputSchema), async (c) => {
       try{
         const input = await c.req.valid('json')
-        const manager = getManager()
+        const manager = getJobManager()
         const job = manager.getJobInfo(input.jobId)
         const result:GetJobInfoOutput ={
           result: job.results,
-          resultStatus: job.resultStatus,
-          status: job.status,
+          status: job.processStatus,
         }
         return c.json(result);
       }catch(e){

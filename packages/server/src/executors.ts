@@ -24,7 +24,7 @@ abstract class JobExecutor {
     job_order_object: CWLObjectType,
     runtime_context: RuntimeContext,
     logger: Logger = _logger,
-  ): Promise<[CWLObjectType | undefined, string]> {
+  ): Promise<JobBase> {
     return this.execute(process, job_order_object, runtime_context, logger);
   }
 
@@ -38,14 +38,14 @@ abstract class JobExecutor {
     _job_order_object: CWLObjectType,
     _logger: Logger,
     _runtime_context: RuntimeContext,
-  ): Promise<void>;
+  ): Promise<JobBase>;
 
   async execute(
     process: Process,
     job_order_object: CWLObjectType,
     runtime_context: RuntimeContext,
     logger: Logger = _logger,
-  ): Promise<[CWLObjectType | null, JobStatus]> {
+  ): Promise<JobBase> {
     this.final_output = [];
     this.final_status = [];
 
@@ -78,33 +78,29 @@ abstract class JobExecutor {
       }
     }
 
-    await this.run_jobs(process, job_order_object, logger, runtime_context);
+    const job =await this.run_jobs(process, job_order_object, logger, runtime_context);
 
-    if (this.final_output && this.final_output[0] !== undefined && finaloutdir !== null) {
-      this.final_output[0] = await relocateOutputs(
-        this.final_output[0],
-        finaloutdir,
-        new Set(this.output_dirs),
-        runtime_context.move_outputs,
-        runtime_context.make_fs_access(''),
-        getDefault(runtime_context.compute_checksum, false),
-      );
-    }
+    // if (this.final_output && this.final_output[0] !== undefined && finaloutdir !== null) {
+    //   this.final_output[0] = await relocateOutputs(
+    //     this.final_output[0],
+    //     finaloutdir,
+    //     new Set(this.output_dirs),
+    //     runtime_context.move_outputs,
+    //     runtime_context.make_fs_access(''),
+    //     getDefault(runtime_context.compute_checksum, false),
+    //   );
+    // }
 
-    if (runtime_context.rm_tmpdir) {
-      let output_dirs: string[];
-      if (!runtime_context.cachedir) {
-        output_dirs = this.output_dirs;
-      } else {
-        output_dirs = this.output_dirs.filter((x) => !x.startsWith(runtime_context.cachedir));
-      }
-      await cleanIntermediate(output_dirs);
-    }
-
-    if (this.final_output && this.final_status) {
-      return [this.final_output[0], this.final_status[0]];
-    }
-    return [null, 'permanentFail'];
+    // if (runtime_context.rm_tmpdir) {
+    //   let output_dirs: string[];
+    //   if (!runtime_context.cachedir) {
+    //     output_dirs = this.output_dirs;
+    //   } else {
+    //     output_dirs = this.output_dirs.filter((x) => !x.startsWith(runtime_context.cachedir));
+    //   }
+    //   await cleanIntermediate(output_dirs);
+    // }
+    return job
   }
 }
 export class SingleJobExecutor extends JobExecutor {
@@ -113,31 +109,14 @@ export class SingleJobExecutor extends JobExecutor {
     job_order_object: CWLObjectType,
     logger: Logger,
     runtime_context: RuntimeContext,
-  ): Promise<void> {
-    const jobiter = process.job(
+  ): Promise<JobBase> {
+    const jobiter = await process.job(
       job_order_object,
       (out: CWLObjectType | undefined, process_status: JobStatus) => this.output_callback(out, process_status),
       runtime_context,
       null
     );
-
-    try {
-      for await (const job of jobiter) {
-        if (job) {
-          this.output_dirs.push(...job.getOutdirs());
-          await job.run(runtime_context);  
-        } else {
-          logger.error('Workflow cannot make any more progress.');
-          break;
-        }
-      }
-    } catch (err) {
-      if (err instanceof ValidationException || err instanceof WorkflowException) {
-        throw err;
-      } else {
-        logger.warn('Got workflow error', err);
-        throw err;
-      }
-    }
+    jobiter.run(runtime_context)
+    return jobiter;
   }
 }
