@@ -161,6 +161,7 @@ export class CommandLineJob extends JobBase{
     this.builder = builder;
     this.joborder = joborder;
     this.resources = builder.resources;
+    this.processStatus = "created"
     // TODO
     this.base_path_logs = '/tmp';
     this.stdin = undefined;

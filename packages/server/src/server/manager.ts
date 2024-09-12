@@ -55,7 +55,7 @@ export class CommandLineJobManager {
     this.queuedTasks.push(jobExecs);
   }
   async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
-    const job = this.queuedJobs.get(id);
+    const job = this.queuedJobs[id];
     if (exitCode != undefined) {
       job.resources['exitCode'] = exitCode;
     }

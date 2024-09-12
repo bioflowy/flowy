@@ -9,7 +9,7 @@ import {
 } from './cwltypes.js';
 import { ValidationException, WorkflowException } from './errors.js';
 import { _logger } from './loghandler.js';
-import { shortname } from './process.js';
+import { compute_checksums, shortname } from './process.js';
 import { StdFsAccess } from './stdfsaccess.js';
 import {
   CONTENT_LIMIT,
@@ -278,5 +278,11 @@ async function collect_output(
     }
     return out;
   }
+  if (compute_checksum) {
+    const promises: Promise<void>[] = [];
+    visitFile(result, (vals) => promises.push(compute_checksums(fs_access, vals)));
+    await Promise.all(promises);
+  }
+
   return result;
 }

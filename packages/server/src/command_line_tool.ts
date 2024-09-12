@@ -71,6 +71,7 @@ export class ExpressionJob extends JobBase{
     this.outdir = outdir;
     this.tmpdir = tmpdir;
     this.script = script;
+    this.processStatus ="created";
     this.joborder = builder.job;
   }
   _get_type() {

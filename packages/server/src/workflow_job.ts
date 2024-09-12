@@ -829,8 +829,10 @@ export class WorkflowJob extends JobBase{
 
 
     const jobs = await this.createExectableJobs(this.joborder,this.output_callback,_runtimeContext,this.id)
-    for(const job of jobs){
-      await job.run(_runtimeContext)
+    if(jobs){
+      for(const job of jobs){
+        await job.run(_runtimeContext)
+      }  
     }
     const completed = this.steps.filter((s) => s.completed).length;
     if(completed>=this.steps.length){

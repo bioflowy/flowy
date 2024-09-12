@@ -1,0 +1,87 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: Flowy Client API
+  description: This is the API
+servers:
+  - url: ''
+components:
+  schemas: {}
+  parameters: {}
+paths:
+  /api/executeJob:
+    post:
+      description: report job failed
+      summary: report job failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tool_path:
+                  type: string
+                job_path:
+                  type: string
+                outdir:
+                  type: string
+                basedir:
+                  type: string
+                clientWorkDir:
+                  type: string
+                use_container:
+                  type: boolean
+                move_output:
+                  type: string
+                  enum:
+                    - copy
+                    - leave
+                    - move
+              required:
+                - tool_path
+                - clientWorkDir
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                    nullable: true
+                  error:
+                    type: string
+                    nullable: true
+                required:
+                  - jobId
+                  - error
+  /api/getJobInfo:
+    post:
+      description: get job detailed imformation
+      summary: get job detailed imformation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jobId:
+                  type: string
+              required:
+                - jobId
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    nullable: true
+                  status:
+                    type: string
+                required:
+                  - status

@@ -20,7 +20,7 @@ export const GetJobInfoOutputSchema = z.object({
 });
 type GetJobInfoOutput = z.infer<typeof GetJobInfoOutputSchema>
 export const getJobInfoPath: RouteConfig = {
-    method: 'get',
+    method: 'post',
     path: '/api/getJobInfo',
     description: 'get job detailed imformation',
     summary: 'get job detailed imformation',

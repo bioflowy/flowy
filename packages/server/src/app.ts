@@ -11,19 +11,19 @@ import { JobFinishedHandler, JobFinishedPath } from './server/jobFinished.js';
 import { JobFailedHandler, JobFailedPath } from './server/jobFailed.js';
 import { JobEvalHandler, DoEvalPath } from './server/doEval.js';
 import { executeJobHandler, executeJobPath } from './server/executeJob.js';
-import { OpenApiHandler} from './server/openapi.js';
+import { WorkerApiHandler,ClientApiHandler} from './server/openapi.js';
 import { getJobInfoHandler, getJobInfoPath } from './server/getJobInfo.js';
 import { hc } from 'hono/client'
 
 const app = new Hono()
-app.get("docs",...OpenApiHandler);
+app.get("worker-docs",...WorkerApiHandler);
+app.get("client-docs",...ClientApiHandler);
 app.post(WorkerStartedPath.path,...WorkerStartedHandler)
                   .post(GetExecutableJobPath.path,...GetExecutableJobHandler)
                   .post(JobFinishedPath.path, ...JobFinishedHandler)
                   .post(JobFailedPath.path,...JobFailedHandler)
                   .post(DoEvalPath.path,...JobEvalHandler)
-
-const route = app.post(executeJobPath.path, ...executeJobHandler).post(getJobInfoPath.path,...getJobInfoHandler)
-export type ExecuteJobRoute = typeof route
+                  .post(executeJobPath.path, ...executeJobHandler)
+                  .post(getJobInfoPath.path,...getJobInfoHandler)
 
 export default app

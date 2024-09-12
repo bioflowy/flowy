@@ -24,6 +24,7 @@ export async function main(args: Args): Promise<number> {
     use_container: args.use_container,
   }});
   const rlst = await res.json()
+  if(rlst.)
   while(true){
     try{
       const res = await client.getJobInfo.$post({json:{jobId:rlst.jobId}})

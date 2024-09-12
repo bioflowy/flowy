@@ -2,4 +2,4 @@
 **/dist/
 packages/client/cwl*
 work/
-cwl-*/
+cwl-*/**

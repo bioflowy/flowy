@@ -1,0 +1,308 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: My API
+  description: This is the API
+servers:
+  - url: ''
+components:
+  schemas:
+    SharedFileSystemConfig:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - s3
+            - nfs
+        rootUrl:
+          type: string
+          format: uri
+        region:
+          type: string
+        endpoint:
+          type: string
+        accessKey:
+          type: string
+        secretKey:
+          type: string
+      required:
+        - type
+    CommandString:
+      type: array
+      items:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - Key
+              - Literal
+          value:
+            type: string
+        required:
+          - type
+          - value
+    LoadListingEnum:
+      type: string
+      enum:
+        - no_listing
+        - shallow_listing
+        - deep_listing
+    OutputBinding:
+      type: object
+      properties:
+        name:
+          type: string
+        secondaryFiles:
+          type: array
+          items:
+            type: object
+            properties:
+              pattern:
+                type: string
+              requiredBoolean:
+                type: boolean
+              requiredString:
+                type: string
+            required:
+              - pattern
+        loadContents:
+          type: boolean
+        loadListing:
+          $ref: '#/components/schemas/LoadListingEnum'
+        glob:
+          type: array
+          items:
+            type: string
+        outputEval:
+          type: string
+        streamable:
+          type: boolean
+          default: false
+      required:
+        - name
+        - secondaryFiles
+    MapperEnt:
+      type: object
+      properties:
+        resolved:
+          type: string
+        target:
+          type: string
+        type:
+          type: string
+          enum:
+            - File
+            - Directory
+            - CreateFile
+            - CreateWritableFile
+            - WritableFile
+            - WritableDirectory
+        staged:
+          type: boolean
+        streamable:
+          type: boolean
+      required:
+        - resolved
+        - target
+        - type
+        - staged
+    runtime:
+      type: object
+      properties:
+        custom_net:
+          type: string
+    JobFinishedRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        isCwlOutput:
+          type: boolean
+        exitCode:
+          type: integer
+        results:
+          type: object
+          additionalProperties:
+            nullable: true
+      required:
+        - id
+        - isCwlOutput
+        - exitCode
+        - results
+  parameters: {}
+paths:
+  /api/workerStarted:
+    post:
+      description: report worker started and return shared file system settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hostname:
+                  type: string
+                cpu:
+                  type: integer
+                memory:
+                  type: integer
+                  description: memory in MB
+              required:
+                - hostname
+                - cpu
+                - memory
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedFileSystemConfig'
+  /api/getExectableJob:
+    post:
+      description: Get executable job
+      summary: Get a single user
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    commands:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/CommandString'
+                    stdin_path:
+                      type: string
+                    stdout_path:
+                      type: string
+                    stderr_path:
+                      type: string
+                    env:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    cwd:
+                      type: string
+                    containerOutdir:
+                      type: string
+                    tmpDir:
+                      type: string
+                    removeTmpDir:
+                      type: boolean
+                    timelimit:
+                      type: integer
+                    outputBindings:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/OutputBinding'
+                    fileitems:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/MapperEnt'
+                    generatedlist:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/MapperEnt'
+                    inplace_update:
+                      type: boolean
+                    networkaccess:
+                      type: boolean
+                    outputBaseDir:
+                      type: string
+                    dockerExec:
+                      type: string
+                    dockerImage:
+                      type: string
+                    runtime:
+                      $ref: '#/components/schemas/runtime'
+                  required:
+                    - id
+                    - commands
+                    - env
+                    - cwd
+                    - containerOutdir
+                    - tmpDir
+                    - removeTmpDir
+                    - outputBindings
+                    - fileitems
+                    - generatedlist
+                    - inplace_update
+                    - networkaccess
+                    - runtime
+  /api/jobFinished:
+    post:
+      description: report job finished
+      summary: report job finished
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobFinishedRequest'
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                type: string
+  /api/jobFailed:
+    post:
+      description: report job failed
+      summary: report job failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                errorMsg:
+                  type: string
+              required:
+                - id
+                - errorMsg
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                type: string
+  /api/do_eval:
+    post:
+      description: report job failed
+      summary: report job failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                ex:
+                  type: string
+                exitCode:
+                  type: integer
+                context:
+                  nullable: true
+              required:
+                - id
+                - ex
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                nullable: true
