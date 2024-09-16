@@ -22,12 +22,6 @@ interface SubmitJob {
   resultStatus?: JobStatus;
 }
 export class CommandLineJobManager {
-  jobStatusChange(jobId:string,results:CWLOutputType,status:JobStatus){
-    const job = this.queuedJobs[jobId]
-    job.results = results
-    job.resultStatus = status
-    job.status = "finished"
-  }
   getJobInfo(jobId:string):SubmitJob{
     return this.queuedJobs[jobId]
   }
@@ -50,12 +44,12 @@ export class CommandLineJobManager {
   async executeJobs(requests:JobRequest[],runtimeContext:RuntimeContext) {
     const jobExecs = requests.map((r)=>r.jobExec)
     for(const rq of requests){
-      this.queuedJobs[rq.job.id] = rq.job
+      this.queuedJobs.set(rq.job.id, rq.job);
     }
     this.queuedTasks.push(jobExecs);
   }
   async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
-    const job = this.queuedJobs[id];
+    const job = this.queuedJobs.get(id);
     if (exitCode != undefined) {
       job.resources['exitCode'] = exitCode;
     }
@@ -70,7 +64,7 @@ export class CommandLineJobManager {
     isCwlOutput: boolean,
     outputResults: { [key: string]: (File | Directory)[] },
   ) {
-    const job = this.queuedJobs[id];
+    const job = this.queuedJobs.get(id);
     if (job) {
       this.queuedJobs.delete(id);
       job.executed(ret_code,isCwlOutput,outputResults)

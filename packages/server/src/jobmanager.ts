@@ -1,8 +1,10 @@
+import { log } from "console";
 import { RuntimeContext } from "./context";
 import { JobUpdate, type NewJob, db } from "./databases";
 import { CommandLineJob, JobBase } from "./job";
 import { exec } from "./main";
 import { getJobWatcher, JobListener, JobWatcher } from "./server/job_watcher";
+import { _logger } from "./loghandler";
 
 
 export class JobManager implements JobListener{
@@ -30,6 +32,7 @@ export class JobManager implements JobListener{
             exitCode: rcode,
             outputs: JSON.stringify(output),
         }
+        _logger.info(`job ${job.id} ${job.name} finished with code ${rcode}`)
         await db.updateTable('job').set(j).where('id',"=",job.id).execute()
 
     }

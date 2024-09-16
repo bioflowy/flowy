@@ -408,6 +408,7 @@ export class Workflow extends Process {
     // runtimeContext = runtimeContext.copy();
     // runtimeContext.part_of = `workflow ${job.name}`;
     // runtimeContext.toplevel = false;
+
     // const jobiter = job.job(builder.job, output_callbacks, runtimeContext,job.id);
     // for await (const j of jobiter) {
     //   if( j instanceof JobBase){

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/bioflowy/flowy/golang/cmd/worker/api"
+	"github.com/bioflowy/flowy/golang/internal"
 )
 
 type FileSystemEntity interface {
@@ -35,7 +35,6 @@ type FileSystemEntity interface {
 	GetBasename() string
 	SetBasename(string)
 }
-type DataMap map[string]interface{}
 
 type LoggingRoundTripper struct {
 	Proxied http.RoundTripper
@@ -50,16 +49,16 @@ func collect_secondary_files(
 	config *api.SharedFileSystemConfig,
 	id string,
 	schema api.OutputBinding,
-	result FileOrDirectory,
+	result map[string]interface{},
 	outdir string,
 	builderOutDir string,
 	computeCheckSum bool,
 	fileitems []api.MapperEnt,
 ) error {
-	if !result.IsFile() {
+	if !internal.IsFile(result) {
 		return nil
 	}
-	primary := result.(File)
+	primary := internal.DataMap(result)
 	fullPath := primary.GetPath()
 	sepIndex := strings.LastIndex(fullPath, string(filepath.Separator))
 	var pathprefix string
@@ -102,7 +101,7 @@ func collect_secondary_files(
 			if sfitem == nil {
 				continue
 			}
-			var secondaryFile DataMap = map[string]interface{}{}
+			var secondaryFile internal.DataMap = map[string]interface{}{}
 			switch sfitem2 := sfitem.(type) {
 			case string:
 				secondaryFile.SetPath(pathprefix + sfitem2)
@@ -115,7 +114,7 @@ func collect_secondary_files(
 			if isFile(config, outdir, secondaryFile.GetLocation()) {
 				secondaryFile.SetClass("File")
 				if computeCheckSum {
-					err := ComputeChecksums(secondaryFile)
+					err := internal.ComputeChecksums(secondaryFile)
 					if err != nil {
 						return err
 					}
@@ -234,9 +233,9 @@ func uploadOutputs(fileManager FileManager, outputBaseDir string, results map[st
 	if !strings.HasPrefix(outputBaseDir, "s3://") {
 		return nil
 	}
-	err := VisitFileOrDirectory(results, func(f_or_d FileOrDirectory) error {
+	err := internal.VisitFileOrDirectory(results, true, func(f_or_d internal.FileOrDirectory) error {
 		if f_or_d.IsFile() {
-			file := f_or_d.(File)
+			file := f_or_d.(internal.File)
 			var s3url *string = nil
 			if inplaceUpdate {
 				p, err := uriFilePath(file.GetLocation())
@@ -275,7 +274,7 @@ func uploadOutputs(fileManager FileManager, outputBaseDir string, results map[st
 			// 	}
 			// }
 		} else if f_or_d.IsDirectory() {
-			directory := f_or_d.(Directory)
+			directory := f_or_d.(internal.Directory)
 			var s3url *string = nil
 			if inplaceUpdate {
 				p, err := uriFilePath(directory.GetLocation())
@@ -465,28 +464,6 @@ func isDir(config *api.SharedFileSystemConfig, dir string, filepath string) bool
 	fileInfo, err := os.Stat(path)
 	return err == nil && fileInfo.IsDir()
 }
-func (d DataMap) GetStringPtr(key string) *string {
-	val, ok := d[key]
-	if !ok {
-		return nil
-	}
-	str, ok := val.(string)
-	if !ok {
-		return nil
-	}
-	return &str
-}
-func (d DataMap) GetFloat32Ptr(key string) *float32 {
-	val, ok := d[key]
-	if !ok {
-		return nil
-	}
-	str, ok := val.(float32)
-	if !ok {
-		return nil
-	}
-	return &str
-}
 
 // func convertToFile(data DataMap) *ChildFile {
 // 	file := ChildFile{
@@ -663,7 +640,7 @@ func FileUrlJoin(baseurl string, path string) string {
 
 	}
 }
-func RevmapFile(builderOutdir, outdir string, f FileOrDirectory, fileitems []api.MapperEnt) error {
+func RevmapFile(builderOutdir, outdir string, f internal.FileOrDirectory, fileitems []api.MapperEnt) error {
 	if strings.HasPrefix(outdir, "/") {
 		outdir, _ = fileUri(outdir, false)
 	}
@@ -705,35 +682,6 @@ func RevmapFile(builderOutdir, outdir string, f FileOrDirectory, fileitems []api
 	}
 	return errors.New("output File object is missing both 'location' and 'path' fields")
 }
-func ComputeChecksums(file File) error {
-	if !file.HasChecksum() {
-		hash := sha1.New()
-		p, err := uriFilePath(file.GetLocation())
-		if err != nil {
-			return nil
-		}
-		fileHandle, err := os.Open(p)
-		if err != nil {
-			return err
-		}
-		defer fileHandle.Close()
-
-		_, err = io.Copy(hash, fileHandle)
-		if err != nil {
-			return err
-		}
-		checksum := fmt.Sprintf("sha1$%x", hash.Sum(nil))
-		file.SetChecksum(checksum)
-
-		fileInfo, err := fileHandle.Stat()
-		if err != nil {
-			return err
-		}
-		file.SetSize(fileInfo.Size())
-	}
-
-	return nil
-}
 func splitext(path string) (root, ext string) {
 	ext = filepath.Ext(path)
 	root = path[:len(path)-len(ext)]
@@ -741,7 +689,7 @@ func splitext(path string) (root, ext string) {
 }
 
 // convertToFileOrDirectory determines if the given path is a file or directory and returns the corresponding struct.
-func convertToFileOrDirectory(builderOutdir, prefix, path1 string) (FileOrDirectory, error) {
+func convertToFileOrDirectory(builderOutdir, prefix, path1 string) (map[string]interface{}, error) {
 	stat, err := os.Stat(path1)
 	if err != nil {
 		return nil, err
@@ -753,7 +701,7 @@ func convertToFileOrDirectory(builderOutdir, prefix, path1 string) (FileOrDirect
 	}
 	if stat.Mode().IsDir() {
 		path2 := filepath.Join(builderOutdir, filepath.FromSlash(relPath))
-		directory := NewDirectory(path1, &path2)
+		directory := internal.NewDirectory(path1, &path2)
 		return directory, nil
 	} else {
 		if stat.Mode()&os.ModeNamedPipe != 0 {
@@ -769,7 +717,7 @@ func convertToFileOrDirectory(builderOutdir, prefix, path1 string) (FileOrDirect
 			f.Close()
 		}
 		path2 := filepath.Join(builderOutdir, filepath.FromSlash(relPath))
-		file := NewFile(path1, &path2)
+		file := internal.NewFile(path1, &path2)
 		return file, nil
 	}
 }
@@ -802,8 +750,8 @@ func listdir(dir, fn string) ([]string, error) {
 
 	return uris, nil
 }
-func get_listing(outdir string, dir Directory, recursive bool) error {
-	var listing = []FileOrDirectory{}
+func get_listing(outdir string, dir internal.Directory, recursive bool) error {
+	var listing = []map[string]interface{}{}
 	ls, err := listdir(outdir, dir.GetLocation())
 	if err != nil {
 		return err
@@ -811,21 +759,22 @@ func get_listing(outdir string, dir Directory, recursive bool) error {
 	for _, ld := range ls {
 		fileUri(ld, false)
 		if isDir(nil, outdir, ld) {
-			ent := NewDirectory(ld, nil)
+			ent := internal.NewDirectory(ld, nil)
 			// if (recursive) {
 			// get_listing(fs_access, ent, recursive);
 			// }
-			listing = append(listing, ent)
+			var m map[string]interface{} = ent
+			listing = append(listing, m)
 		} else {
-			ent := NewFile(ld, nil)
+			ent := internal.NewFile(ld, nil)
 			listing = append(listing, ent)
 		}
 	}
 	dir.SetListing(listing)
 	return nil
 }
-func globOutput(builderOutdir string, binding api.OutputBinding, outdir string, computeChecksum bool) ([]FileOrDirectory, error) {
-	var results []FileOrDirectory
+func globOutput(builderOutdir string, binding api.OutputBinding, outdir string, computeChecksum bool) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
 	// Example of globbing in Go
 	for _, glob := range binding.Glob {
 		globPath := Join(outdir, glob)
@@ -833,7 +782,7 @@ func globOutput(builderOutdir string, binding api.OutputBinding, outdir string, 
 		} else if globPath == "." {
 			globPath = outdir
 		} else if strings.HasPrefix(globPath, "/") {
-			return []FileOrDirectory{}, errors.New("glob patterns must not start with '/'")
+			return results, errors.New("glob patterns must not start with '/'")
 		}
 		matches, err := filepath.Glob(globPath) // This needs to be adapted to your specific logic
 		if err != nil {
@@ -845,20 +794,22 @@ func globOutput(builderOutdir string, binding api.OutputBinding, outdir string, 
 			if err != nil {
 				return results, err
 			}
-			if f.IsFile() {
-				file := f.(File)
+			if internal.IsFile(f) {
+				file := internal.DataMap(f)
 				if binding.LoadContents != nil && *binding.LoadContents {
-					content, _ := contentLimitRespectedReadBytes(f.GetLocation())
+					content, _ := contentLimitRespectedReadBytes(file.GetLocation())
 					file.SetContent(content)
 				}
 
 				if computeChecksum {
-					ComputeChecksums(file)
+					internal.ComputeChecksums(file)
 				}
-				results = append(results, file)
-			} else if f.IsDirectory() {
+				var m map[string]interface{} = file
+				results = append(results, m)
+			} else if internal.IsDirectory(f) {
+				d := internal.DataMap(f)
 				if binding.LoadListing != nil && *binding.LoadListing != api.NO_LISTING {
-					get_listing(outdir, f.(Directory), *binding.LoadListing == api.DEEP_LISTING)
+					get_listing(outdir, d, *binding.LoadListing == api.DEEP_LISTING)
 				}
 				results = append(results, f)
 			} else if err != nil {

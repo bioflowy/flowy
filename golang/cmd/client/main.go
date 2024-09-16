@@ -7,11 +7,11 @@ import (
 	"log"
 	"os"
 	"path"
-	"reflect"
 	"strings"
 	"time"
 
 	"github.com/bioflowy/flowy/golang/cmd/client/api"
+	"github.com/bioflowy/flowy/golang/internal"
 	"github.com/urfave/cli/v2"
 )
 
@@ -31,11 +31,13 @@ func exec_job(tool_path string, job_path *string) (int, interface{}) {
 		os.Exit(1)
 	}
 	basedir := fmt.Sprintf("file://%s", cwd)
+	useContainer := true
 	r := api.ApiExecuteJobPostRequest{
 		ToolPath:      tool_path,
 		JobPath:       job_path,
 		ClientWorkDir: cwd,
 		Basedir:       &basedir,
+		UseContainer:  &useContainer,
 	}
 	res, _, err := c.DefaultAPI.ApiExecuteJobPost(ctx).ApiExecuteJobPostRequest(r).Execute()
 	if err != nil {
@@ -65,306 +67,123 @@ func exec_job(tool_path string, job_path *string) (int, interface{}) {
 
 }
 
-type DataMap map[string]interface{}
-
-func (o DataMap) GetClass() string {
-	l, exists := o["class"]
-	if !exists {
-		return ""
-	}
-	class, ok := l.(string)
-	if ok {
-		return class
-	} else {
-		return ""
+func visitlisting(
+	objs []map[string]interface{},
+	stagedir string,
+	basedir string,
+	copy bool,
+	staged bool,
+	targets map[string]string,
+) {
+	for _, obj := range objs {
+		visit(obj, stagedir, basedir, copy, staged, targets)
 	}
 }
 
-type FileOrDirectory interface {
-	GetClass() string
-	IsFile() bool
-	IsDirectory() bool
-	HasLocation() bool
-	GetLocation() string
-	SetLocation(string)
-	ClearPath()
-	HasPath() bool
-	GetPath() string
-	SetPath(string)
-	HasBasename() bool
-	GetBasename() string
-	SetBasename(string)
-}
-type Directory interface {
-	GetClass() string
-	IsFile() bool
-	IsDirectory() bool
-	HasLocation() bool
-	GetLocation() string
-	SetLocation(string)
-	ClearPath()
-	HasPath() bool
-	GetPath() string
-	SetPath(string)
-	GetListing() []FileOrDirectory
-	SetListing([]FileOrDirectory)
-	HasBasename() bool
-	GetBasename() string
-	SetBasename(string)
-}
-type File interface {
-	GetClass() string
-	IsFile() bool
-	IsDirectory() bool
-	HasLocation() bool
-	GetLocation() string
-	SetLocation(string)
-	HasPath() bool
-	GetPath() string
-	SetPath(string)
-	ClearPath()
-	HasBasename() bool
-	GetBasename() string
-	SetBasename(string)
-	GetDirname() string
-	SetDirname(string)
-	GetNameroot() string
-	SetNameroot(string)
-	HasChecksum() bool
-	GetChecksum() string
-	SetChecksum(string)
-	GetSize() int64
-	SetSize(int64)
-	GetContent() string
-	SetContent(string)
-	GetWritable() bool
-	SetWritable(bool)
-	GetSecondaryFiles() []FileOrDirectory
-	SetSecondaryFiles([]FileOrDirectory)
-}
+// generateUniqueDestination generates a unique destination path for a given source.
+// It ensures that each source has a unique destination in the targets map.
+// If a collision occurs, it appends a counter to the destination until a unique path is found.
+//
+// Parameters:
+//   - source: The original source path
+//   - dist: The desired destination path
+//   - targets: A map of existing destination-to-source mappings
+//
+// Returns:
+//   - bool: True if copying is necessary, false otherwise
+//   - string: The final (possibly modified) destination path
+func generateUniqueDistination(source string, dist string, targets map[string]string) (bool, string) {
+	prevSource, exists := targets[dist]
+	if !exists {
+		// If the destination is not already registered, copying is necessary
+		targets[dist] = source
+		return true, dist
+	}
+	if prevSource == source {
+		// If the destination and source are the same, no copying is needed
+		return false, dist
+	}
+	// If the destination is the same but the source is different, modify the destination
 
-func (o DataMap) IsFile() bool {
-	return o.GetClass() == "File"
-}
-func (o DataMap) IsDirectory() bool {
-	return o.GetClass() == "Directory"
-}
-
-// GetLocation returns the Location field value if set, zero value otherwise.
-func (o DataMap) HasLocation() bool {
-	_, exists := o["location"]
-	return exists
-}
-func (o DataMap) GetLocation() string {
-	l, exists := o["location"]
-	if !exists {
-		return ""
-	}
-	location, ok := l.(string)
-	if ok {
-		return location
-	} else {
-		return ""
-	}
-}
-func (o DataMap) SetLocation(location string) {
-	o["location"] = location
-}
-
-// GetLocation returns the Location field value if set, zero value otherwise.
-func (o DataMap) HasPath() bool {
-	_, exists := o["path"]
-	return exists
-}
-func (o DataMap) GetPath() string {
-	p, exists := o["path"]
-	if !exists {
-		return ""
-	}
-	value, ok := p.(string)
-	if ok {
-		return value
-	} else {
-		return ""
-	}
-}
-func (o DataMap) ClearPath() {
-	delete(o, "path")
-}
-func (o DataMap) ClearDirName() {
-	delete(o, "dirname")
-}
-func (o DataMap) SetPath(path string) {
-	o["path"] = path
-}
-func (o DataMap) HasBasename() bool {
-	_, exists := o["basename"]
-	return exists
-}
-func (o DataMap) GetBasename() string {
-	v, exists := o["basename"]
-	if !exists {
-		return ""
-	}
-	value, ok := v.(string)
-	if ok {
-		return value
-	} else {
-		return ""
-	}
-}
-func (o DataMap) SetBasename(path string) {
-	o["basename"] = path
-}
-func (o DataMap) GetDirname() string {
-	v, exists := o["dirname"]
-	if !exists {
-		return ""
-	}
-	value, ok := v.(string)
-	if ok {
-		return value
-	} else {
-		return ""
-	}
-}
-func (o DataMap) SetDirname(path string) {
-	o["dirname"] = path
-}
-func (o DataMap) GetNameroot() string {
-	v, exists := o["nameroot"]
-	if !exists {
-		return ""
-	}
-	value, ok := v.(string)
-	if ok {
-		return value
-	} else {
-		return ""
-	}
-}
-func (o DataMap) SetNameroot(path string) {
-	o["nameroot"] = path
-}
-func (o DataMap) GetNameext() string {
-	v, exists := o["nameext"]
-	if !exists {
-		return ""
-	}
-	value, ok := v.(string)
-	if ok {
-		return value
-	} else {
-		return ""
-	}
-}
-func (o DataMap) SetNameext(path string) {
-	o["nameext"] = path
-}
-func (o DataMap) HasChecksum() bool {
-	_, exists := o["checksum"]
-	return exists
-}
-
-func (o DataMap) GetChecksum() string {
-	v, exists := o["checksum"]
-	if !exists {
-		return ""
-	}
-	value, ok := v.(string)
-	if ok {
-		return value
-	} else {
-		return ""
-	}
-}
-func (o DataMap) SetChecksum(path string) {
-	o["checksum"] = path
-}
-func (o DataMap) SetContent(path string) {
-	o["contents"] = path
-}
-
-func VisitFileOrDirectory(arg interface{}, visitFunc func(FileOrDirectory) error) error {
-	if arg == nil {
-		return nil
-	}
-	callVisitFunc := func(dm DataMap) error {
-		if dm.GetClass() == "File" || dm.GetClass() == "Directory" {
-			return visitFunc(dm)
-		} else {
-			for _, value := range dm {
-				err := VisitFileOrDirectory(value, visitFunc)
-				if err != nil {
-					return err
-				}
-			}
+	counter := 1
+	newDist := dist
+	for {
+		newDist = fmt.Sprintf("%s_%d", dist, counter)
+		if _, exists := targets[newDist]; !exists {
+			targets[newDist] = source
+			// If the source is different, copying is necessary
+			return true, newDist
 		}
-		return nil
+		counter++
 	}
-	switch v := arg.(type) {
-	case map[string]interface{}:
-		var v2 DataMap = v
-		err := callVisitFunc(v)
-		if v2.IsFile() {
-			secondaryFiles := v2.GetSecondaryFiles()
-			for _, secondary := range secondaryFiles {
-				err := callVisitFunc(secondary.(DataMap))
-				if err != nil {
-					return err
-				}
-			}
-		} else if v2.IsDirectory() {
-			lists := v2.GetListing()
-			for _, list := range lists {
-				err := callVisitFunc(list.(DataMap))
-				if err != nil {
-					return err
-				}
-			}
-		}
-		for _, val := range v {
-			err := VisitFileOrDirectory(val, visitFunc)
-			if err != nil {
-				return err
-			}
-		}
+}
+
+func visit(
+	obj map[string]interface{},
+	stagedir string,
+	basedir string,
+	copy bool,
+	staged bool,
+	targets map[string]string,
+) error {
+	fd := internal.DataMap(obj)
+	sourcePath, err := internal.ResolvePath(uriToPath(fd.GetLocation()))
+	if err != nil {
 		return err
-	case []interface{}:
-		for _, val := range v {
-			err := VisitFileOrDirectory(val, visitFunc)
-			if err != nil {
-				return err
-			}
-		}
-	case []FileOrDirectory:
-		for _, val := range v {
-			err := VisitFileOrDirectory(val, visitFunc)
-			if err != nil {
-				return err
-			}
-		}
-	case []File:
-		for _, val := range v {
-			err := VisitFileOrDirectory(val, visitFunc)
-			if err != nil {
-				return err
-			}
-		}
-	default:
 	}
-	valueType := reflect.TypeOf(arg)
-	value := reflect.ValueOf(arg)
-	if valueType.Kind() == reflect.Array || valueType.Kind() == reflect.Slice {
-		for i := 0; i < value.Len(); i++ {
-			err := VisitFileOrDirectory(value.Index(i), visitFunc)
-			if err != nil {
-				return err
+	needCopy, tgt := generateUniqueDistination(sourcePath, path.Join(stagedir, fd.GetBasename()), targets)
+	if fd.IsDirectory() {
+		var dir internal.Directory = fd
+		location := uriToPath(dir.GetLocation())
+
+		if staged {
+			internal.RemovePath(tgt)
+			if strings.HasPrefix(location, "_:") {
+				os.MkdirAll(tgt, 0755)
+			} else {
+				internal.CopyDir(location, tgt)
 			}
 		}
+		dir.SetLocation(tgt)
+		if strings.HasPrefix("file://", location) {
+			//
+			staged = false
+		}
+		dir.SetLocation(tgt)
+		visitlisting(
+			dir.GetListing(),
+			tgt,
+			basedir,
+			copy,
+			staged,
+			targets,
+		)
+	} else if fd.IsFile() {
+		var file internal.File = fd
+		location := uriToPath(file.GetLocation())
+		if staged {
+			if strings.HasPrefix(location, "_:") {
+				err := os.WriteFile(tgt, []byte(file.GetContent()), 0644)
+				if err != nil {
+					return err
+				}
+			} else if needCopy {
+				internal.CopyFile(location, tgt)
+			}
+		}
+		file.SetLocation(tgt)
+		visitlisting(
+			file.GetSecondaryFiles(),
+			stagedir,
+			basedir,
+			copy,
+			staged,
+			targets,
+		)
 	}
 	return nil
 }
+
 func uriToPath(uri string) string {
 	if strings.HasPrefix(uri, "file:///") {
 		return strings.TrimPrefix(uri, "file://")
@@ -373,32 +192,41 @@ func uriToPath(uri string) string {
 	}
 	return uri
 }
-func (o DataMap) SetSecondaryFiles(secondaryFiles []FileOrDirectory) {
-	o["secondaryFiles"] = secondaryFiles
-}
-func (o DataMap) GetSecondaryFiles() []FileOrDirectory {
-	v, exists := o["secondaryFiles"]
-	if !exists {
-		return nil
+
+// 本来はworker側でDirectoryのlistingを取得するが、一時的にclient側でlistingを取得する
+func get_listing(rec internal.Directory) {
+	/// Expand, recursively, any 'listing' fields in a Directory."""
+	if rec.GetListing() != nil {
+		return
 	}
-	value, ok := v.([]FileOrDirectory)
-	if ok {
-		return value
-	} else {
-		return nil
+	lists := []map[string]interface{}{}
+
+	location := uriToPath(rec.GetLocation())
+	files, err := os.ReadDir(location)
+	if err != nil {
+		log.Fatal(err)
 	}
-}
-func (o DataMap) GetListing() []FileOrDirectory {
-	l, exists := o["listing"]
-	if !exists {
-		return []FileOrDirectory{}
+
+	for _, file := range files {
+		if file.IsDir() {
+			var file2 internal.DataMap = internal.DataMap{
+				"class":    "Directory",
+				"location": "file://" + path.Join(location, file.Name()),
+				"basename": file.Name(),
+			}
+			get_listing(file2)
+			lists = append(lists, file2)
+		} else {
+			var file2 internal.DataMap = internal.DataMap{
+				"class":    "File",
+				"location": "file://" + path.Join(location, file.Name()),
+				"basename": file.Name(),
+			}
+			internal.ComputeChecksums(file2)
+			lists = append(lists, file2)
+		}
 	}
-	class, ok := l.([]FileOrDirectory)
-	if ok {
-		return class
-	} else {
-		return []FileOrDirectory{}
-	}
+	rec.SetListing(lists)
 }
 
 func main() {
@@ -457,23 +285,17 @@ func main() {
 				if err != nil {
 					return cli.Exit(err, 1)
 				}
-				err = VisitFileOrDirectory(jsonData, func(f_or_d FileOrDirectory) error {
-					if f_or_d.IsFile() {
-						location := path.Join(cwd, f_or_d.GetBasename())
-						err = os.Symlink(uriToPath(f_or_d.GetLocation()), location)
-						if err != nil {
-							return cli.Exit(err, 1)
-						}
-						f_or_d.SetLocation(location)
-					} else if f_or_d.IsDirectory() {
-						location := path.Join(cwd, f_or_d.GetBasename())
-						err = os.Symlink(uriToPath(f_or_d.GetLocation()), location)
-						if err != nil {
-							return cli.Exit(err, 1)
-						}
-						f_or_d.SetLocation(location)
-					}
-					return nil
+				f_or_ds := internal.CollectDirEntries(jsonData)
+				targets := map[string]string{}
+				for _, f_or_d := range f_or_ds {
+					internal.VisitDirectory(f_or_d, true, func(d internal.Directory) error {
+						get_listing(d)
+						return nil
+					})
+					visit(f_or_d, cwd, cwd, true, true, targets)
+				}
+				err = internal.VisitFile(jsonData, true, func(f internal.File) error {
+					return internal.ComputeChecksums(f)
 				})
 				if err != nil {
 					return cli.Exit(err, 1)

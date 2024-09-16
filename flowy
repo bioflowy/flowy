@@ -1,0 +1,4 @@
+#!/bin/sh
+
+../golang/client $*
+md5sum tests/whale.txt >>conformance_tests.log

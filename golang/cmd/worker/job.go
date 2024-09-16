@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bioflowy/flowy/golang/cmd/worker/api"
+	"github.com/bioflowy/flowy/golang/internal"
 )
 
 type PreparedJob struct {
@@ -220,9 +221,10 @@ func execAndUpload(c *api.APIClient, fileManager FileManager, config *api.Shared
 			reportFailed(c, job.Id, err)
 			return
 		}
-		err = VisitFileOrDirectory(results, func(value FileOrDirectory) error {
-			return RevmapFile(job.ContainerWorkDir, job.Cwd, value, job.Fileitems)
-		})
+		err = internal.VisitFileOrDirectory(results, true,
+			func(value internal.FileOrDirectory) error {
+				return RevmapFile(job.ContainerWorkDir, job.Cwd, value, job.Fileitems)
+			})
 		if err != nil {
 			reportFailed(c, job.Id, err)
 			return
@@ -283,7 +285,7 @@ func execAndUpload(c *api.APIClient, fileManager FileManager, config *api.Shared
 				results[output.Name] = ret
 			}
 		}
-		err := VisitFileOrDirectory(results, func(f FileOrDirectory) error {
+		err := internal.VisitFileOrDirectory(results, true, func(f internal.FileOrDirectory) error {
 			return RevmapFile(job.ContainerWorkDir, job.Cwd, f, job.Fileitems)
 		})
 		if err != nil {

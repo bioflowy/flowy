@@ -552,7 +552,6 @@ export class WorkflowJob extends JobBase{
     try {
       wo = objectFromState(this.state, this.tool.outputs, true, supportsMultipleInput, 'outputSource', true);
       this.results = wo
-      this.processStatus = 'success'
     } catch (err) {
       if (err instanceof Error) {
         _logger.error(`[${this.name}] Cannot collect workflow output: ${err.message} ${err.stack}`);
@@ -573,6 +572,9 @@ export class WorkflowJob extends JobBase{
     }
 
     this.did_callback = true;
+    if(["created" , "queued" , "started"].includes(this.processStatus) ){
+      this.processStatus = "success"
+    }
     getJobWatcher().jobFinished(this,0,wo)
 
     final_output_callback(wo, this.processStatus);
@@ -826,12 +828,13 @@ export class WorkflowJob extends JobBase{
         this.state[out['id']] = null;
       });
     });
+    const runtimeContext = _runtimeContext.copy();
+    runtimeContext.toplevel = false;
 
-
-    const jobs = await this.createExectableJobs(this.joborder,this.output_callback,_runtimeContext,this.id)
+    const jobs = await this.createExectableJobs(this.joborder,this.output_callback,runtimeContext,this.id)
     if(jobs){
       for(const job of jobs){
-        await job.run(_runtimeContext)
+        await job.run(runtimeContext)
       }  
     }
     const completed = this.steps.filter((s) => s.completed).length;
@@ -887,35 +890,35 @@ export class WorkflowJob extends JobBase{
         }
         if (step.iterable) {
           try {
-            for await (const newjob of step.iterable) {
-              if (getDefault(runtimeContext.on_error, 'stop') === 'stop' && this.processStatus !== 'started') break;
-              if (newjob) {
-                this.made_progress = true;
-                if(newjob instanceof CommandLineJob){
-                  for (const i of newjob.tool.outputs) {
-                    if ('id' in i) {
-                      const outputFileUrl = isChainableOutput(newjob,i)
-                      if(outputFileUrl){
-                        const iid = i['id'];
-                        this.state[iid] = new WorkflowStateItem(i, {class:"File",location:outputFileUrl}, "streamable");
-                      }
+          for await (const newjob of step.iterable) {
+            if (getDefault(runtimeContext.on_error, 'stop') === 'stop' && this.processStatus !== 'started') break;
+            if (newjob) {
+              this.made_progress = true;
+              if(newjob instanceof CommandLineJob){
+                for (const i of newjob.tool.outputs) {
+                  if ('id' in i) {
+                    const outputFileUrl = isChainableOutput(newjob,i)
+                    if(outputFileUrl){
+                      const iid = i['id'];
+                      this.state[iid] = new WorkflowStateItem(i, {class:"File",location:outputFileUrl}, "streamable");
                     }
                   }
-                  // もしCommandLineJobならStateを"streamable"にして、さらに実行可能なCommandLineJobがないか調べる
-                  submittableJobs.push(newjob)
-                }else{
-                  if(submittableJobs.length>0){
-                    // もしCommandLineJob以外のJobがきて、submittableJobsがあれば、submitしておく
-                    const prevJob = new JobGroup(submittableJobs)
-                    submittableJobs = []
-                    executableJobs.push(prevJob)
-                  }
-                  executableJobs.push(newjob)
                 }
-              } else {
-                break;
+                // もしCommandLineJobならStateを"streamable"にして、さらに実行可能なCommandLineJobがないか調べる
+                submittableJobs.push(newjob)
+              }else{
+                if(submittableJobs.length>0){
+                  // もしCommandLineJob以外のJobがきて、submittableJobsがあれば、submitしておく
+                  const prevJob = new JobGroup(submittableJobs)
+                  submittableJobs = []
+                  executableJobs.push(prevJob)
+                }
+                executableJobs.push(newjob)
               }
+            } else {
+              break;
             }
+          }
           } catch (exc) {
             if (exc instanceof Error) {
               _logger.error(`[${step.name}] Cannot make job: ${exc.message} ${exc.stack}`);

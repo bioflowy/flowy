@@ -2,6 +2,8 @@ package main
 
 import (
 	"strings"
+
+	"github.com/bioflowy/flowy/golang/internal"
 )
 
 type FileManager interface {
@@ -24,7 +26,7 @@ func (f *LocalFileManager) CopyFile(srcPath string, destPath string) error {
 	return copy(srcPath, destPath)
 }
 func (f *LocalFileManager) CopyDir(srcPath string, destPath string) error {
-	return copyDir(srcPath, destPath)
+	return internal.CopyDir(srcPath, destPath)
 }
 func (f *LocalFileManager) NeedDownload(fileurl string) bool {
 	// never need download when local filesystem is available

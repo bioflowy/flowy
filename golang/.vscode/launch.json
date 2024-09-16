@@ -9,7 +9,18 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}"
+            "program": "${workspaceFolder}/cmd/worker"
+        },
+        {
+            "name": "exec client",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/cmd/client",
+            "args": ["tests/paramref_arguments_inputs.cwl", "tests/empty.json"]
+
         }
+
     ]
 }

@@ -36,7 +36,8 @@ func stageForCommandLine(fileManager FileManager, items []api.MapperEnt, inplace
 						return err
 					}
 				} else {
-					err := symlink(item.Resolved, item.Target, true)
+
+					err := fileManager.CopyFile(item.Resolved, item.Target)
 					if err != nil {
 						return err
 					}

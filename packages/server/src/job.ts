@@ -221,7 +221,7 @@ export class CommandLineJob extends JobBase{
       resources = { ...resources };
       resources['cores'] = Math.ceil(cores);
     }
-    const [javascriptRequirement] = getRequirement(this.tool, cwlTsAuto.InlineJavascriptRequirement);
+    const [javascriptRequirement] = getRequirement(this.builder, cwlTsAuto.InlineJavascriptRequirement);
     const ret = await expression.do_eval(
       ex as CWLObjectType,
       this.joborder,
