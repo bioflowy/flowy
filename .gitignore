@@ -4,3 +4,4 @@
 packages/client/cwl*
 work/
 cwl-*/**
+**/*.db

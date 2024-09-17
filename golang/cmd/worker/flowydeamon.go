@@ -777,13 +777,15 @@ func globOutput(builderOutdir string, binding api.OutputBinding, outdir string, 
 	var results []map[string]interface{}
 	// Example of globbing in Go
 	for _, glob := range binding.Glob {
-		globPath := Join(outdir, glob)
-		if strings.HasPrefix(globPath, outdir) {
-		} else if globPath == "." {
-			globPath = outdir
-		} else if strings.HasPrefix(globPath, "/") {
+		if strings.HasPrefix(glob, outdir) {
+			glob = strings.TrimPrefix(glob, outdir)
+			glob = strings.TrimPrefix(glob, "/")
+		} else if glob == "." {
+			glob = outdir
+		} else if strings.HasPrefix(glob, "/") {
 			return results, errors.New("glob patterns must not start with '/'")
 		}
+		globPath := Join(outdir, glob)
 		matches, err := filepath.Glob(globPath) // This needs to be adapted to your specific logic
 		if err != nil {
 			return results, err

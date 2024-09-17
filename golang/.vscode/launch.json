@@ -18,7 +18,7 @@
             "mode": "auto",
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/cmd/client",
-            "args": ["tests/paramref_arguments_inputs.cwl", "tests/empty.json"]
+            "args": ["tests/dir3.cwl", "tests/dir3-job.yml"]
 
         }
 
