@@ -95,7 +95,7 @@ type CollectOutputsType = (
   int: number,
   isCwlOutput: boolean,
   results: OutputPortsType,
-) => Promise<CWLObjectType>; // Assuming functools.partial as any
+) => Promise<OutputPortsType>; // Assuming functools.partial as any
 
 export abstract class JobBase {
   readonly id: string;

@@ -368,6 +368,18 @@ export type CommandOutputType =
   | CommandOutputArraySchema
   | string
   | (cwl.CWLType | CommandOutputRecordSchema | CommandOutputEnumSchema | CommandOutputArraySchema | string)[];
+
+export function toString(t: CommandOutputType): string {
+  if (isCommandOutputRecordSchema(t)) {
+    return t.name;
+  } else if (isCommandOutputArraySchema(t)) {
+    return `Array<${toString(t.items)}>`;
+  } else if (isCommandOutputEnumSchema(t)) {
+    return t.symbols.join(' | ');
+  } else if (typeof t === 'string') {
+    return t;
+  }
+}
 export type OutputType =
   | cwl.CWLType
   | OutputRecordSchema
@@ -394,6 +406,12 @@ export function isCommandInputRecordSchema(t: CommandInputParameter): t is Comma
   return t instanceof Object && t['type'] === 'record';
 }
 export function isCommandInputArraySchema(t: CommandInputParameter): t is CommandInputArraySchema {
+  return t instanceof Object && t['type'] === 'array';
+}
+export function isCommandOutputEnumSchema(t: CommandOutputType): t is CommandOutputEnumSchema {
+  return t instanceof Object && t['type'] === 'enum';
+}
+export function isCommandOutputArraySchema(t: CommandOutputType): t is CommandOutputArraySchema {
   return t instanceof Object && t['type'] === 'array';
 }
 export function isIORecordSchema(t: unknown): t is IORecordSchema {

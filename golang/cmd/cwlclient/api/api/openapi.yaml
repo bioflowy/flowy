@@ -1,0 +1,101 @@
+openapi: 3.0.0
+info:
+  description: This is the API
+  title: Flowy Client API
+  version: 1.0.0
+servers:
+- url: ""
+paths:
+  /api/executeJob:
+    post:
+      description: report job failed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/_api_executeJob_post_request'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/_api_executeJob_post_200_response'
+          description: Exectable jobs
+      summary: report job failed
+  /api/getJobInfo:
+    post:
+      description: get job detailed imformation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/_api_getJobInfo_post_request'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/_api_getJobInfo_post_200_response'
+          description: Exectable jobs
+      summary: get job detailed imformation
+components:
+  parameters: {}
+  schemas:
+    _api_executeJob_post_request:
+      properties:
+        tool_path:
+          type: string
+        job_path:
+          type: string
+        outdir:
+          type: string
+        basedir:
+          type: string
+        clientWorkDir:
+          type: string
+        use_container:
+          type: boolean
+        move_output:
+          enum:
+          - copy
+          - leave
+          - move
+          type: string
+      required:
+      - clientWorkDir
+      - tool_path
+      type: object
+    _api_executeJob_post_200_response:
+      example:
+        jobId: jobId
+        error: error
+      properties:
+        jobId:
+          nullable: true
+          type: string
+        error:
+          nullable: true
+          type: string
+      required:
+      - error
+      - jobId
+      type: object
+    _api_getJobInfo_post_request:
+      properties:
+        jobId:
+          type: string
+      required:
+      - jobId
+      type: object
+    _api_getJobInfo_post_200_response:
+      example:
+        result: ""
+        status: status
+      properties:
+        result:
+          nullable: true
+        status:
+          type: string
+      required:
+      - status
+      type: object

@@ -49,9 +49,9 @@ export const getJobInfoPath: RouteConfig = {
       try{
         const input = await c.req.valid('json')
         const manager = getJobManager()
-        const job = manager.getJobInfo(input.jobId)
+        const job = await manager.getJobInfo(input.jobId)
         const result:GetJobInfoOutput ={
-          result: job.results,
+          result: job.outputs,
           status: job.processStatus,
         }
         return c.json(result);

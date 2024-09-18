@@ -50,9 +50,10 @@ export class ExpressionJob extends JobBase{
   hints: ToolRequirement;
   outdir: string | null;
   tmpdir: string | null;
-
+  tool: cwl.ExpressionTool
   constructor(
     name: string,
+    tool: cwl.ExpressionTool,
     builder: Builder,
     script: string,
     output_callback: OutputCallbackType | null,
@@ -63,6 +64,7 @@ export class ExpressionJob extends JobBase{
     tmpdir: string | null = null,
   ) {
     super(uuidv4(),name,"Expression")
+    this.tool = tool;
     this.parent_id = workflow_id;
     this.builder = builder;
     this.requirements = requirements;
@@ -122,7 +124,7 @@ export class ExpressionTool extends Process {
   ): Promise<JobBase> {
     const builder = await this._init_job(job_order, runtimeContext);
     const jobname = uniquename(runtimeContext.name || shortname(this.tool.id || 'job'));
-    const job = new ExpressionJob(jobname,builder, this.tool['expression'], output_callbacks, this.requirements, this.hints,workflow_id);
+    const job = new ExpressionJob(jobname,this.tool,builder, this.tool['expression'], output_callbacks, this.requirements, this.hints,workflow_id);
     getJobWatcher().jobCreated(job)
     return job;
   }

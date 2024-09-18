@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: cwltool",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/cwltool/__main__.py",
+            "args": ["--debug", "${workspaceFolder}/tests/test_examples/1st-workflow.cwl", "${workspaceFolder}/tests/test_examples/1st-workflow-job.yml"],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}

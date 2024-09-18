@@ -18,7 +18,7 @@
             "mode": "auto",
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/cmd/client",
-            "args": ["tests/dir3.cwl", "tests/dir3-job.yml"]
+            "args": ["tests/bwa-mem-tool.cwl", "tests/bwa-mem-job.json"]
 
         }
 

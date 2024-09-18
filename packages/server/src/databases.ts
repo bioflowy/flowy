@@ -9,9 +9,11 @@ import {
   import SQLite from 'better-sqlite3'
   import { Kysely, SqliteDialect } from 'kysely'
 import * as path from 'path'
+import { JobStatus } from './utils'
   
   export interface Database {
     job: JobTable
+    job_output: JobOutputTable
   }
   
   // This interface describes the `person` table to Kysely. Table
@@ -21,17 +23,27 @@ import * as path from 'path'
   export interface JobTable {
     id: string
     type: 'Workflow' | 'CommandLine' | 'Expression'
-    status: 'Created' | 'Started' | 'Finished' | 'Failed'
+    status: JobStatus
     exitCode: number | undefined
     inputs: JSONColumnType<Record<string,any>>
     outputs: JSONColumnType<Record<string,any>>
     name: string
     parent_id: string
   }
+  export interface JobOutputTable {
+    id: string
+    job_id: string
+    type: string
+    name: string
+    value: JSONColumnType<any>
+  }
 
 export type Job = Selectable<JobTable>
 export type NewJob = Insertable<JobTable>
 export type JobUpdate = Updateable<JobTable>
+
+export type JobOutput = Selectable<JobOutputTable>
+export type NewJobOutput = Insertable<JobTable>
 
 const dbPath = path.join(process.cwd(),'flowy.db')
 console.log(`dbPath=${dbPath}`)
