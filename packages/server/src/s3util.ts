@@ -15,6 +15,7 @@ export class S3Fetcher extends Fetcher {
   async fetchText(url: string, _?: string[]): Promise<string> {
     const config = getManager().getServerConfig();
     const content = await getFileContentFromS3(config.sharedFileSystem, url, true);
+    
     return content;
   }
   checkExists(urlString: string): boolean {

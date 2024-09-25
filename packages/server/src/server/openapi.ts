@@ -12,6 +12,7 @@ import { JobFinishedPath } from "./jobFinished.js";
 import * as yaml from "js-yaml";
 import { executeJobPath } from "./executeJob.js";
 import { getJobInfoPath } from "./getJobInfo.js";
+import { ImportToolInputSchema, ImportToolPath } from "./importTool.js";
   
 export const WorkerApiHandler =  createFactory().createHandlers(async (c) => {
     const registry = new OpenAPIRegistry();
@@ -37,6 +38,7 @@ export const ClientApiHandler =  createFactory().createHandlers(async (c) => {
     const registry = new OpenAPIRegistry();
     registry.registerPath(executeJobPath)
     registry.registerPath(getJobInfoPath)
+    registry.registerPath(ImportToolPath)
     const generator = new OpenApiGeneratorV3(registry.definitions);
     const docs = generator.generateDocument({
     openapi: '3.0.0',

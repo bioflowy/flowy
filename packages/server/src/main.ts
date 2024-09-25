@@ -27,6 +27,7 @@ import {
 import { default_make_tool } from './workflow.js';
 import { getManager } from './server/manager.js';
 import { JobBase } from './job.js';
+import { getToolManager } from './toolmanager.js';
 
 async function parseFile(filePath: string): Promise<object | null> {
   const extname = path.extname(filePath).toLowerCase();
@@ -121,7 +122,9 @@ async function load_job_order(job_order_file: string): Promise<[CWLObjectType | 
     );
     throw Error('error');
   }
-
+  if (job_order_object == null) {
+    job_order_object = {};
+  }
   return [job_order_object, input_basedir];
 }
 export const convertObjectToFileDirectory = (obj: unknown): File | Directory | undefined => {
@@ -175,12 +178,8 @@ async function init_job_order(
   job_order_object: CWLObjectType | null,
   process: Process,
   input_basedir,
-  tool_file_path,
   runtime_context: RuntimeContext | null = null,
 ): Promise<CWLObjectType> {
-  if (!job_order_object) {
-    job_order_object = { id: tool_file_path };
-  }
   for (const inp of process.tool.inputs) {
     if (inp.default_ && (!job_order_object || !job_order_object[shortname(inp.id)])) {
       if (!job_order_object) job_order_object = {};
@@ -222,34 +221,30 @@ async function init_job_order(
 }
 export async function exec(
   runtimeContext: RuntimeContext,
-  tool_path: string,
+  toolId: string,
   job_path?: string,
 ): Promise<JobBase> {
-  const loadingContext = new LoadingContext({});
-  loadingContext.construct_tool_object = default_make_tool;
   if (job_path && !path.isAbsolute(job_path)) {
     if (runtimeContext) job_path = pathJoin(runtimeContext.basedir, job_path);
   }
-  _logger.info(`tool_path=${tool_path}`);
+  _logger.info(`tool_path=${toolId}`);
   _logger.info(`job_path=${job_path}`);
-  loadingContext.baseuri = path.dirname(tool_path);
   const loadingOptions = new cwlTsAuto.LoadingOptions({});
-  if(tool_path.startsWith("s3://")){
-    loadingOptions.fetcher = new S3Fetcher();
-  }else{
-    loadingOptions.fetcher = new DefaultFetcher2();
-  }
-  loadingContext.loadingOptions = loadingOptions;
-  const [tool] = await loadDocument(tool_path, loadingContext);
+  const toolManager = getToolManager()
+  const [tool,baseuri] = await toolManager.loadTool(toolId)
   const jo = await load_job_order(job_path);
   const job_order_object = jo[0];
   let input_basedir = jo[1];
   if (job_order_object == null) {
-    input_basedir = path.dirname(tool_path);
+    if(job_path){
+      input_basedir = path.dirname(job_path);
+    }else{
+      input_basedir = path.dirname(baseuri);
+    }
   }
   _logger.info(`outdir=${runtimeContext.outdir}`);
   runtimeContext.basedir = input_basedir;
-  const initialized_job_order = await init_job_order(job_order_object, tool, input_basedir, tool_path, runtimeContext);
+  const initialized_job_order = await init_job_order(job_order_object, tool, input_basedir, runtimeContext);
   const process_executor = new SingleJobExecutor();
   const jobBase = await process_executor.execute(tool, initialized_job_order, runtimeContext);
   return jobBase;

@@ -85,3 +85,29 @@ paths:
                     type: string
                 required:
                   - status
+  /api/importTool:
+    post:
+      description: import tool
+      summary: import tool
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                toolPath:
+                  type: string
+              required:
+                - toolPath
+      responses:
+        '200':
+          description: Exectable jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  toolId:
+                    type: string
+                required:
+                  - toolId

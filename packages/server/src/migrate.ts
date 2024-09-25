@@ -1,5 +1,5 @@
 import * as path from 'path'
-import SQLite from 'better-sqlite3'
+import pg from 'pg'
 import { promises as fs } from 'fs'
 import {
   Kysely,
@@ -12,7 +12,14 @@ import { Database } from './databases'
 
 async function migrateToLatest() {
   const db = new Kysely<Database>({
-    dialect: new SqliteDialect({database: new SQLite("flowy.db")}) 
+    dialect: new PostgresDialect({
+      pool: new pg.Pool({
+        host: 'localhost',
+        database: 'flowy',
+        user: 'flowy',
+        password: 'flowy',
+      }),
+    }),
   })
   const migratePath =path.join(process.cwd(),'src','migrations')
   console.log(`migratePath=${migratePath}`)

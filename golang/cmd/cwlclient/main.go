@@ -32,8 +32,19 @@ func exec_job(tool_path string, job_path *string) (int, interface{}) {
 	}
 	basedir := fmt.Sprintf("file://%s", cwd)
 	useContainer := true
+	wd, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("Error: %s", err.Error())
+		return 1, nil
+	}
+	fileUri := fmt.Sprintf("file://%s", path.Join(wd, tool_path))
+	res2, _, err := c.DefaultAPI.ApiImportToolPost(ctx).ApiImportToolPostRequest(api.ApiImportToolPostRequest{ToolPath: fileUri}).Execute()
+	if err != nil {
+		fmt.Printf("Error: %s", err.Error())
+		return 1, nil
+	}
 	r := api.ApiExecuteJobPostRequest{
-		ToolPath:      tool_path,
+		ToolPath:      res2.GetToolId(),
 		JobPath:       job_path,
 		ClientWorkDir: cwd,
 		Basedir:       &basedir,
