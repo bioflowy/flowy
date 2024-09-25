@@ -14,6 +14,7 @@ import { executeJobHandler, executeJobPath } from './server/executeJob.js';
 import { WorkerApiHandler,ClientApiHandler} from './server/openapi.js';
 import { getJobInfoHandler, getJobInfoPath } from './server/getJobInfo.js';
 import { hc } from 'hono/client'
+import { ImportToolHandler, ImportToolPath } from './server/importTool.js';
 
 const app = new Hono()
 app.get("worker-docs",...WorkerApiHandler);
@@ -25,5 +26,6 @@ app.post(WorkerStartedPath.path,...WorkerStartedHandler)
                   .post(DoEvalPath.path,...JobEvalHandler)
                   .post(executeJobPath.path, ...executeJobHandler)
                   .post(getJobInfoPath.path,...getJobInfoHandler)
+                  .post(ImportToolPath.path,...ImportToolHandler)
 
 export default app

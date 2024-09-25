@@ -35,8 +35,9 @@ export async function copyRecursively(source, destination) {
     await fsp.copyFile(source, destination);
   }
 }
-async function deletePathRecursive(targetPath: string): Promise<void> {
-  const stat = await fsp.lstat(targetPath);
+export async function deletePathRecursive(targetPath: string): Promise<void> {
+  try{
+    const stat = await fsp.lstat(targetPath);
   if (stat.isDirectory()) {
       // ディレクトリの場合、再帰的に削除
       const entries = await fsp.readdir(targetPath);
@@ -48,6 +49,13 @@ async function deletePathRecursive(targetPath: string): Promise<void> {
   } else {
       // ファイルの場合、ファイルを削除
       await fsp.unlink(targetPath);
+  }
+  }catch(e){
+    if(e.code === 'ENOENT'){
+      _logger.info(`File does not exist: ${targetPath}`);
+    }else{
+      throw e
+    }
   }
 }
 

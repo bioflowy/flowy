@@ -3,7 +3,6 @@ import { CommandLineJob, JobBase } from "./job";
 import { getJobWatcher, JobListener } from "./server/job_watcher";
 import { _logger } from "./loghandler";
 import { OutputPortsType } from "./collect_outputs";
-import { Expression } from "@flowy/cwl-ts-auto";
 import { ExpressionJob } from "./command_line_tool";
 import { CommandOutputParameter, toString } from "./cwltypes";
 import { JobStatus } from "./utils";
@@ -47,7 +46,7 @@ export class JobManager implements JobListener{
         const j:NewJob ={
             id:job.id,
             name: job.name,
-            status: "Created",
+            status: "created",
             inputs: JSON.stringify(job.joborder),
             type: job.type,
             parent_id: job.parent_id
@@ -58,7 +57,7 @@ export class JobManager implements JobListener{
     async jobFinished(job: JobBase,rcode:number,outputs:OutputPortsType) {
         this.jobs[job.id] = job
         const j: JobUpdate ={
-            status: 'Finished',
+            status: 'success',
             exitCode: rcode,
         }
         _logger.info(`job ${job.id} ${job.name} finished with code ${rcode}`)
@@ -73,7 +72,6 @@ export class JobManager implements JobListener{
             if(bind.name in outputs){
                 const output = outputs[bind.name]
                 const jout = {
-                    id: `${job.id}-${bind.id}`,
                     job_id: job.id,
                     name: bind.id,
                     type: toString(bind.type),
@@ -86,7 +84,7 @@ export class JobManager implements JobListener{
     async jobStarted(job: JobBase) {
         this.jobs[job.id] = job
         const j: JobUpdate ={
-            status: 'Started',
+            status: 'started',
         }
         await db.updateTable('job').set(j).where('id',"=",job.id).execute()        
     }

@@ -1,0 +1,4 @@
+{
+    "vitest.rootConfig": "packages/server",
+    "vitest.testFilePattern": "**/*.{test,spec}.{js,ts}"
+}

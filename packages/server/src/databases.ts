@@ -1,25 +1,31 @@
 import {
-    ColumnType,
-    Generated,
     Insertable,
     JSONColumnType,
+    PostgresDialect,
     Selectable,
     Updateable,
   } from 'kysely'
-  import SQLite from 'better-sqlite3'
+  import pg from 'pg'
   import { Kysely, SqliteDialect } from 'kysely'
 import * as path from 'path'
 import { JobStatus } from './utils'
   
-  export interface Database {
-    job: JobTable
-    job_output: JobOutputTable
-  }
+export interface Database {
+  tool: ToolTable
+  job: JobTable
+  job_output: JobOutputTable
+}
+export interface ToolTable {
+  id: string
+  name: string
+  version: string
+  hash: string
+  comefrom: string
+  references: string
+  content: string
+  created_at: Date
+}
   
-  // This interface describes the `person` table to Kysely. Table
-  // interfaces should only be used in the `Database` type above
-  // and never as a result type of a query!. See the `Person`,
-  // `NewPerson` and `PersonUpdate` types below.
   export interface JobTable {
     id: string
     type: 'Workflow' | 'CommandLine' | 'Expression'
@@ -38,6 +44,9 @@ import { JobStatus } from './utils'
     value: JSONColumnType<any>
   }
 
+export type Tool = Selectable<ToolTable>
+export type NewTool = Insertable<ToolTable>
+
 export type Job = Selectable<JobTable>
 export type NewJob = Insertable<JobTable>
 export type JobUpdate = Updateable<JobTable>
@@ -45,12 +54,14 @@ export type JobUpdate = Updateable<JobTable>
 export type JobOutput = Selectable<JobOutputTable>
 export type NewJobOutput = Insertable<JobTable>
 
-const dbPath = path.join(process.cwd(),'flowy.db')
-console.log(`dbPath=${dbPath}`)
-const dialect = new SqliteDialect({
-  database: new SQLite(dbPath),
+const dialect = new PostgresDialect({
+  pool: new pg.Pool({
+    host: 'localhost',
+    database: 'flowy',
+    user: 'flowy',
+    password: 'flowy',
+  }),
 })
-
 // Database interface is passed to Kysely's constructor, and from now on, Kysely 
 // knows your database structure.
 // Dialect is passed to Kysely's constructor, and from now on, Kysely knows how 

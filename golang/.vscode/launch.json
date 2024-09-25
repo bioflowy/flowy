@@ -17,8 +17,8 @@
             "request": "launch",
             "mode": "auto",
             "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/cmd/client",
-            "args": ["tests/bwa-mem-tool.cwl", "tests/bwa-mem-job.json"]
+            "program": "${workspaceFolder}/cmd/cwlclient",
+            "args": ["tests/schemadef-tool.cwl", "tests/schemadef-job.json"]
 
         }
 

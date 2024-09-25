@@ -66,17 +66,11 @@ export const executeJobPath: RouteConfig = {
       if (input.basedir) {
         runtimeContext.basedir = input.basedir;
       }
-      if (!input.tool_path.startsWith('/')) {
-        if (input.basedir.endsWith('/')) {
-          input.tool_path = `${input.basedir}${input.tool_path}`;
-        } else {
-          input.tool_path = `${input.basedir}/${input.tool_path}`;
-        }
-      }
       try{
         const job = await exec(runtimeContext, input.tool_path, input.job_path)
         return c.json({jobId:job.id,error:null});  
       }catch(e){
+        console.log(e)
         if(e instanceof Error){
           return c.json({jobId:null,error:e.message});  
         }else{
