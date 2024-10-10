@@ -3,6 +3,7 @@ import { RouteConfig, extendZodWithOpenApi } from '@asteasolutions/zod-to-openap
 import { createFactory } from "hono/factory";
 import { zValidator } from "@hono/zod-validator";
 import { getManager } from "./manager.js";
+import { createFlowyJobURL, createFlowyToolURL } from "../flowyurl.js";
 
 extendZodWithOpenApi(z);
 export const JobFinishedRequestSchema = z
@@ -42,6 +43,6 @@ export const JobFinishedPath: RouteConfig = {
 export const JobFinishedHandler =  createFactory().createHandlers(
   zValidator('json',JobFinishedRequestSchema), async (c) => {
     const jsonData = await c.req.valid('json')
-    getManager().jobfinished(jsonData.id, jsonData.exitCode, jsonData.isCwlOutput, jsonData.results);
+    getManager().jobfinished(createFlowyJobURL(jsonData.id) , jsonData.exitCode, jsonData.isCwlOutput, jsonData.results);
     return c.json('OK')
 })

@@ -7,7 +7,6 @@ import { getFileContentFromS3 } from './builder.js';
 import { LoadingContext, RuntimeContext } from './context.js';
 import { Directory, File } from './cwltypes.js';
 import { SingleJobExecutor } from './executors.js';
-import { loadDocument } from './loader.js';
 import { _logger } from './loghandler.js';
 import { shortname, type Process, add_sizes } from './process.js';
 import { DefaultFetcher2, S3Fetcher, dirnames3 } from './s3util.js';
@@ -15,19 +14,18 @@ import {
   type CWLObjectType,
   normalizeFilesDirs,
   filePathToURI,
-  type CWLOutputType,
   trim_listing,
   isString,
   visitFileDirectory,
   isFile,
   isFileOrDirectory,
   pathJoin,
-  JobStatus,
 } from './utils.js';
 import { default_make_tool } from './workflow.js';
 import { getManager } from './server/manager.js';
 import { JobBase } from './job.js';
 import { getToolManager } from './toolmanager.js';
+import { FlowyToolURL } from './flowyurl.js';
 
 async function parseFile(filePath: string): Promise<object | null> {
   const extname = path.extname(filePath).toLowerCase();
@@ -221,7 +219,7 @@ async function init_job_order(
 }
 export async function exec(
   runtimeContext: RuntimeContext,
-  toolId: string,
+  toolId: FlowyToolURL,
   job_path?: string,
 ): Promise<JobBase> {
   if (job_path && !path.isAbsolute(job_path)) {

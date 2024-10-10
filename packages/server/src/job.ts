@@ -39,7 +39,7 @@ import {
 import { getManager } from './server/manager.js';
 import { CommandString, CommandStringToString } from './commandstring.js';
 import { getJobWatcher, JobWatcher } from './server/job_watcher.js';
-import { Expression } from 'kysely';
+import { FlowyJobURL } from './flowyurl.js';
 
 export function _job_popen(
   job: CommandLineJob,
@@ -68,7 +68,7 @@ export function _job_popen(
   const server = getManager();
   const jobExec:JobExec = {
     outputBaseDir,
-    id,
+    id: id.toString(),
     commands,
     stdin_path,
     stdout_path,
@@ -98,16 +98,16 @@ type CollectOutputsType = (
 ) => Promise<OutputPortsType>; // Assuming functools.partial as any
 
 export abstract class JobBase {
-  readonly id: string;
+  readonly id: FlowyJobURL;
   readonly name: string;
   readonly type: "CommandLine" | "Expression" | "Workflow" ;
   processStatus: JobStatus;
   results: CWLObjectType;
   joborder: CWLObjectType;
-  parent_id: string;
+  parent_id: FlowyJobURL;
   abstract getOutdirs(): string[]
   abstract run(runtimeContext: RuntimeContext): Promise<void>
-  constructor(id:string,name: string,type :"CommandLine" | "Expression" | "Workflow"){
+  constructor(id:FlowyJobURL,name: string,type :"CommandLine" | "Expression" | "Workflow"){
     this.id = id
     this.name = name
     this.type = type
@@ -154,9 +154,9 @@ export class CommandLineJob extends JobBase{
     ) => PathMapper,
     tool: Tool,
     name: string,
-    workflow_id: string,
+    workflow_id: FlowyJobURL,
   ) {
-    super(uuidv4(),name,"CommandLine")
+    super(new FlowyJobURL(uuidv4()),name,"CommandLine")
     this.parent_id = workflow_id
     this.builder = builder;
     this.joborder = joborder;

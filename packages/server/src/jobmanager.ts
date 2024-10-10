@@ -6,17 +6,19 @@ import { OutputPortsType } from "./collect_outputs";
 import { ExpressionJob } from "./command_line_tool";
 import { CommandOutputParameter, toString } from "./cwltypes";
 import { JobStatus } from "./utils";
+import { FlowyJobURL } from "./flowyurl";
+import { Dictionary } from "./maputils";
 
 interface JobInfo{
-    id:string,
+    id:FlowyJobURL,
     processStatus: JobStatus,
     outputs: OutputPortsType
 }
 export class JobManager implements JobListener{
-    private jobs:{[key:string]:JobBase} = {}
-    async getJobInfo(id:string):Promise<JobInfo | undefined>{
-        if(id in this.jobs){
-            const job = this.jobs[id]
+    private jobs:Dictionary<FlowyJobURL,JobBase> = new Dictionary()
+    async getJobInfo(id:FlowyJobURL):Promise<JobInfo | undefined>{
+        const job = this.jobs.get(id)
+        if(this.jobs){
             return {
                 id: job.id,
                 processStatus: job.processStatus,
@@ -25,43 +27,43 @@ export class JobManager implements JobListener{
         }
         return this.getJobInfoFromDB(id)
     }
-    async getJobInfoFromDB(id: string) :Promise<JobInfo | undefined>{
-        const job = await db.selectFrom('job').select(['id','status']).where('id',"=",id).executeTakeFirst()
+    async getJobInfoFromDB(id: FlowyJobURL) :Promise<JobInfo | undefined>{
+        const job = await db.selectFrom('job').select(['id','status']).where('id',"=",id.getId()).executeTakeFirst()
         if(!job){
             return undefined
         }
         const results: OutputPortsType = {}
-        const outputs = await db.selectFrom('job_output').selectAll().where('job_id',"=",id).execute()
+        const outputs = await db.selectFrom('job_output').selectAll().where('job_id',"=",id.getId()).execute()
         for(const out of outputs){
             results[out.name] = JSON.parse(out.value)
         }
         return {
-            id: job.id,
+            id,
             processStatus: job.status,
             outputs: results
         }
     }
     async jobCreated(job: JobBase) {
-        this.jobs[job.id] = job
+        this.jobs.add(job.id, job)
         const j:NewJob ={
-            id:job.id,
+            id:job.id.toString(),
             name: job.name,
             status: "created",
             inputs: JSON.stringify(job.joborder),
             type: job.type,
-            parent_id: job.parent_id
+            parent_id: job.parent_id?.toString()
         }
         console.log(`type=${job.type}`)
         await db.insertInto('job').values(j).execute()
     }
     async jobFinished(job: JobBase,rcode:number,outputs:OutputPortsType) {
-        this.jobs[job.id] = job
+        this.jobs.add(job.id, job)
         const j: JobUpdate ={
             status: 'success',
             exitCode: rcode,
         }
         _logger.info(`job ${job.id} ${job.name} finished with code ${rcode}`)
-        await db.updateTable('job').set(j).where('id',"=",job.id).execute()
+        await db.updateTable('job').set(j).where('id',"=",job.id.getId()).execute()
         let bindings:CommandOutputParameter[] = [];
         if(job instanceof CommandLineJob){
             bindings = job.tool.outputs
@@ -72,7 +74,7 @@ export class JobManager implements JobListener{
             if(bind.name in outputs){
                 const output = outputs[bind.name]
                 const jout = {
-                    job_id: job.id,
+                    job_id: job.id.toString(),
                     name: bind.id,
                     type: toString(bind.type),
                     value: JSON.stringify(output)
@@ -82,11 +84,11 @@ export class JobManager implements JobListener{
         }
     }
     async jobStarted(job: JobBase) {
-        this.jobs[job.id] = job
+        this.jobs.add(job.id, job)
         const j: JobUpdate ={
             status: 'started',
         }
-        await db.updateTable('job').set(j).where('id',"=",job.id).execute()        
+        await db.updateTable('job').set(j).where('id',"=",job.id.toString()).execute()        
     }
 }
 const jobManager = new JobManager()

@@ -7,6 +7,7 @@ import { RuntimeContext } from "../context.js";
 import { exec } from "../main.js";
 import { _logger } from "../loghandler.js";
 import { getJobManager } from "../jobmanager.js";
+import { createFlowyJobURL } from "../flowyurl.js";
 
 extendZodWithOpenApi(z);
 
@@ -49,7 +50,7 @@ export const getJobInfoPath: RouteConfig = {
       try{
         const input = await c.req.valid('json')
         const manager = getJobManager()
-        const job = await manager.getJobInfo(input.jobId)
+        const job = await manager.getJobInfo(createFlowyJobURL(input.jobId))
         const result:GetJobInfoOutput ={
           result: job.outputs,
           status: job.processStatus,

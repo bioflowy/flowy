@@ -2,12 +2,9 @@ import { z } from "zod";
 import { RouteConfig, extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { createFactory } from "hono/factory";
 import { zValidator } from "@hono/zod-validator";
-import { getManager } from "./manager.js";
-import { RuntimeContext } from "../context.js";
-import { exec } from "../main.js";
 import { _logger } from "../loghandler.js";
-import { getJobManager } from "../jobmanager.js";
 import { getToolManager } from "../toolmanager.js";
+import { FlowyToolURL } from "../flowyurl.js";
 
 extendZodWithOpenApi(z);
 
@@ -49,11 +46,11 @@ export const ImportToolPath: RouteConfig = {
       try{
         const input = await c.req.valid('json')
         const manager = getToolManager()
-        const toolInfo = await manager.importTool(input.toolPath)
+        const toolInfo = await manager.importTool(new URL(input.toolPath))
         const result:ImportToolOutput ={
           toolId: toolInfo.id
         }
-        return c.json(result);
+        return c.json({"toolId":new FlowyToolURL(toolInfo.id).toString()});
       }catch(e){
         console.log(e)
       }

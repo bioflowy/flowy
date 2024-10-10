@@ -30,6 +30,7 @@ import { Workflow, WorkflowStep } from './workflow.js';
 import { JobGroup } from './jobgroup.js';
 import { CommandLineJob, JobBase } from './job.js';
 import { getJobWatcher } from './server/job_watcher.js';
+import { FlowyJobURL, FlowyToolURL } from './flowyurl.js';
 
 class WorkflowJobStep {
   step: WorkflowStep;
@@ -49,7 +50,7 @@ class WorkflowJobStep {
     this.name = uniquename(`step ${shortname(this.id)}`);
   }
 
-  job(joborder: CWLObjectType, output_callback: OutputCallbackType, runtimeContext: RuntimeContext,workflow_id:string | null): Promise<JobBase> {
+  job(joborder: CWLObjectType, output_callback: OutputCallbackType, runtimeContext: RuntimeContext,workflow_id:FlowyJobURL | null): Promise<JobBase> {
     const context = runtimeContext.copy();
     context.part_of = this.name;
     context.name = shortname(this.id);
@@ -116,7 +117,7 @@ async function* nested_crossproduct_scatter(
   scatter_keys: string[],
   output_callback: ScatterOutputCallbackType,
   runtimeContext: RuntimeContext,
-  parent_id: string | null
+  parent_id: FlowyJobURL | null
 ): JobsGeneratorType {
   const scatter_key = scatter_keys[0];
   const jobl = (joborder[scatter_key] as unknown[]).length;
@@ -183,7 +184,7 @@ async function flat_crossproduct_scatter(
   scatter_keys: string[],
   output_callback: ScatterOutputCallbackType,
   runtimeContext: RuntimeContext,
-  parent_id: string | null
+  parent_id: FlowyJobURL | null
 ): Promise<JobsGeneratorType> {
   const output: ScatterDestinationsType = {};
 
@@ -203,7 +204,7 @@ async function _flat_crossproduct_scatter(
   callback: ReceiveScatterOutput,
   startindex: number,
   runtimeContext: RuntimeContext,
-  parent_id: string | null
+  parent_id: FlowyJobURL | null
 ): Promise<[(JobsGeneratorType | undefined)[], number]> {
   const scatter_key = scatter_keys[0];
   const jobl = (joborder[scatter_key] as unknown[]).length;
@@ -304,7 +305,7 @@ async function dotproduct_scatter(
   scatter_keys: string[],
   output_callback: ScatterOutputCallbackType,
   runtimeContext: RuntimeContext,
-  parent_id: string | null
+  parent_id: FlowyJobURL | null
 ): Promise<JobsGeneratorType> {
   let jobl: number | null = null;
   for (const key of scatter_keys) {
@@ -514,8 +515,8 @@ export class WorkflowJob extends JobBase{
   _get_type() {
     return "Workflow"
   }
-  constructor(workflow: Workflow, runtimeContext: RuntimeContext,parent_id:string | null,output_callback: OutputCallbackType,job: CWLObjectType) {
-    super(uuidv4(),uniquename(
+  constructor(workflow: Workflow, runtimeContext: RuntimeContext,parent_id:FlowyJobURL | null,output_callback: OutputCallbackType,job: CWLObjectType) {
+    super(new FlowyJobURL(uuidv4()),uniquename(
       `workflow ${getDefault(runtimeContext.name, shortname(workflow.tool.id || 'embedded'))}`,
     ),"Workflow")
     this.parent_id = parent_id;
@@ -626,7 +627,7 @@ export class WorkflowJob extends JobBase{
     step: WorkflowJobStep,
     finalOutputCallback: OutputCallbackType | undefined,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<JobsGeneratorType> {
     let containerEngine = 'docker';
     if (runtimeContext.podman) {
@@ -862,7 +863,7 @@ export class WorkflowJob extends JobBase{
     joborder: CWLObjectType,
     output_callback: OutputCallbackType,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<(JobBase | JobGroup)[]> {
     const executableJobs :(JobBase | JobGroup)[] = []
     if (_logger.isDebugEnabled()) {
