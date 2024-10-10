@@ -31,6 +31,7 @@ import { WorkflowJob } from './workflow_job.js';
 import { getJobWatcher } from './server/job_watcher.js';
 import { JobBase } from './job.js';
 import { Job } from './databases.js';
+import { FlowyJobURL, FlowyToolURL } from './flowyurl.js';
 
 function sha1(data: string): string {
   const hash = crypto.createHash('sha1');
@@ -266,7 +267,7 @@ export class WorkflowStep extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<JobBase> {
     // if (
     //   this.embedded_tool.tool['class'] == 'Workflow' &&
@@ -389,7 +390,7 @@ export class Workflow extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<WorkflowJob> {
     const builder = await this._init_job(job_order, runtimeContext);
 

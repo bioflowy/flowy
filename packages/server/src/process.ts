@@ -60,6 +60,7 @@ import {
 } from './utils.js';
 import { validate } from './validate.js';
 import { JobBase } from './job.js';
+import { FlowyJobURL } from './flowyurl.js';
 
 export function shortname(inputid: string): string {
   try {
@@ -834,7 +835,7 @@ hints:
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<JobBase>;
 
   toString(): string {

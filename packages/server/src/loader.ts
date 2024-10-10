@@ -25,9 +25,6 @@ export async function loadDocument(
   if (tool_file_path.includes('#')) {
     tool_file_path = tool_file_path.split('#')[0];
   }
-  if (tool_file_path.startsWith('file://')) {
-    tool_file_path = url.fileURLToPath(tool_file_path);
-  }
   const doc = await cwlTsAuto.loadDocument(tool_file_path, loadingContext.baseuri, loadingContext.loadingOptions);
   if (doc instanceof Array) {
     let tool_id = tool_path;

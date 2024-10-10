@@ -3,7 +3,6 @@ import app from './app'
 import yargs, { config } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { initManager } from './server/manager';
-export {type ExecuteJobRoute} from './app.js'
 
 interface Args {
   config?: string;

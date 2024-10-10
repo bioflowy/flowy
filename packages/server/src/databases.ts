@@ -11,11 +11,11 @@ import * as path from 'path'
 import { JobStatus } from './utils'
   
 export interface Database {
-  tool: ToolTable
+  tool: ToolInfoTable
   job: JobTable
   job_output: JobOutputTable
 }
-export interface ToolTable {
+export interface ToolInfoTable {
   id: string
   name: string
   version: string
@@ -44,8 +44,8 @@ export interface ToolTable {
     value: JSONColumnType<any>
   }
 
-export type Tool = Selectable<ToolTable>
-export type NewTool = Insertable<ToolTable>
+export type ToolInfo = Selectable<ToolInfoTable>
+export type NewToolInfo = Insertable<ToolInfoTable>
 
 export type Job = Selectable<JobTable>
 export type NewJob = Insertable<JobTable>

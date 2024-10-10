@@ -13,6 +13,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { CommandLineJob } from '../job.js';
 import { AsyncFIFOQueue } from '../utils/fifo.js';
 import { getJobWatcher } from './job_watcher.js';
+import { Dictionary } from '../maputils.js';
+import { FlowyJobURL } from '../flowyurl.js';
 
 interface SubmitJob {
   readonly jobId: string;
@@ -25,7 +27,7 @@ export class CommandLineJobManager {
   getJobInfo(jobId:string):SubmitJob{
     return this.queuedJobs[jobId]
   }
-  private queuedJobs: Map<string,CommandLineJob> = new Map();
+  private queuedJobs = new Dictionary<FlowyJobURL,CommandLineJob>();
   private config: ServerConfig;
   private queuedTasks = new AsyncFIFOQueue<JobExec[]>();
   constructor(setings: string = 'config.yml') {
@@ -44,11 +46,11 @@ export class CommandLineJobManager {
   async executeJobs(requests:JobRequest[],runtimeContext:RuntimeContext) {
     const jobExecs = requests.map((r)=>r.jobExec)
     for(const rq of requests){
-      this.queuedJobs.set(rq.job.id, rq.job);
+      this.queuedJobs.add(rq.job.id, rq.job);
     }
     this.queuedTasks.push(jobExecs);
   }
-  async evaluate(id: string, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
+  async evaluate(id: FlowyJobURL, ex: string, context: File | Directory, exitCode?: number): Promise<CWLOutputType> {
     const job = this.queuedJobs.get(id);
     if (exitCode != undefined) {
       job.resources['exitCode'] = exitCode;
@@ -59,21 +61,21 @@ export class CommandLineJobManager {
     return this.queuedTasks.pop(60*1000);
   }
   jobfinished(
-    id: string,
+    id: FlowyJobURL,
     ret_code: number,
     isCwlOutput: boolean,
     outputResults: { [key: string]: (File | Directory)[] },
   ) {
     const job = this.queuedJobs.get(id);
     if (job) {
-      this.queuedJobs.delete(id);
+      this.queuedJobs.remove(id);
       job.executed(ret_code,isCwlOutput,outputResults)
     }
   }
-  jobfailed(id: string, errorMsg: string) {
+  jobfailed(id: FlowyJobURL, errorMsg: string) {
     const job = this.queuedJobs.get(id);
     if (job) {
-      this.queuedJobs.delete(id);
+      this.queuedJobs.remove(id);
       job.executed(1,false,errorMsg)
     }
   }

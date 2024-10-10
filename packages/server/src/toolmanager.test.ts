@@ -11,13 +11,14 @@ import { Workflow } from './workflow'
 import { copyRecursively, deletePathRecursive } from './fileutils'
 import * as cwl from '@flowy/cwl-ts-auto'
 import { CommandLineTool } from './command_line_tool'
+import { createFlowyToolURL,FlowyToolURL } from './flowyurl'
 interface ReplaceOption {
   searchValue: string | RegExp;
   replaceValue: string;
 }
 
-function pathToUrl(filePath: string): string {
-  return url.pathToFileURL(path.join(process.cwd(),filePath)).toString()
+function pathToUrl(filePath: string): URL {
+  return url.pathToFileURL(path.join(process.cwd(),filePath))
 }
 // データベース接続の設定
 describe('Database Tests', () => {
@@ -42,13 +43,12 @@ describe('Database Tests', () => {
       const toolmanager = new ToolManager()
       const tool = await toolmanager.importTool(pathToUrl('testres/schemadef-tool.cwl'))
       expect(tool.name).toEqual('schemadef-tool.cwl')
-      const proc = await toolmanager.loadTool(tool.id)
-
+      const [proc,status] = await toolmanager.loadTool(createFlowyToolURL(tool.id))
       expect(proc instanceof CommandLineTool).toBeTruthy()
     }, { timeout: 1000000 })
     // test('import invalid cwlfile', async () => {
     //   const toolmanager = new ToolManager() 
-    //   expect(async ()=>{
+    //   expect(async ()=>{h
     //     await toolmanager.importTool(pathToUrl('testres/error.cwl'))
     //   }).rejects.toThrow()
     // })

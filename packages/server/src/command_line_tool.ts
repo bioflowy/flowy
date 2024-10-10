@@ -35,6 +35,7 @@ import {
 import { CommandString, CommandStringToString, quoteCommand, toCommandStringArray } from './commandstring.js';
 import { getJobWatcher } from './server/job_watcher.js';
 import { TypeGuards } from '@flowy/cwl-ts-auto/dist/util/Internal.js';
+import { FlowyJobURL } from './flowyurl.js';
 
 interface Dirent {
   entryname?: string;
@@ -59,11 +60,11 @@ export class ExpressionJob extends JobBase{
     output_callback: OutputCallbackType | null,
     requirements: ToolRequirement,
     hints: ToolRequirement,
-    workflow_id: string | null,
+    workflow_id: FlowyJobURL | null,
     outdir: string | null = null,
     tmpdir: string | null = null,
   ) {
-    super(uuidv4(),name,"Expression")
+    super(new FlowyJobURL(uuidv4()),name,"Expression")
     this.tool = tool;
     this.parent_id = workflow_id;
     this.builder = builder;
@@ -120,7 +121,7 @@ export class ExpressionTool extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<JobBase> {
     const builder = await this._init_job(job_order, runtimeContext);
     const jobname = uniquename(runtimeContext.name || shortname(this.tool.id || 'job'));
@@ -244,7 +245,7 @@ export class CommandLineTool extends Process {
     ) => PathMapper,
     tool: Tool,
     name: string,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ) => CommandLineJob {
     // placeholder types
     let [dockerReq, dockerRequired] = getRequirement(this.tool, cwl.DockerRequirement);
@@ -760,7 +761,7 @@ export class CommandLineTool extends Process {
     job_order: CWLObjectType,
     output_callbacks: OutputCallbackType | null,
     runtimeContext: RuntimeContext,
-    workflow_id: string | null
+    workflow_id: FlowyJobURL | null
   ): Promise<CommandLineJob> {
     // const [workReuse] = getRequirement(this.tool, cwl.WorkReuse);
     // const enableReuse = workReuse ? workReuse.enableReuse : true;

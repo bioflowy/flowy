@@ -6,8 +6,7 @@ import { getManager } from "./manager.js";
 import { RuntimeContext } from "../context.js";
 import { exec } from "../main.js";
 import { _logger } from "../loghandler.js";
-import { v4 } from "uuid";
-import { error } from "console";
+import { createFlowyToolURL, FlowyToolURL } from "../flowyurl.js";
 
 extendZodWithOpenApi(z);
 
@@ -53,7 +52,6 @@ export const executeJobPath: RouteConfig = {
   export const executeJobHandler =  createFactory().createHandlers(
     zValidator('json',ExecuteJobInputSchema), async (c) => {
       const input = await c.req.valid('json')
-      console.log(input)
       const manager = getManager()
       const runtimeContext = new RuntimeContext({
         clientWorkDir: input.clientWorkDir,
@@ -67,7 +65,7 @@ export const executeJobPath: RouteConfig = {
         runtimeContext.basedir = input.basedir;
       }
       try{
-        const job = await exec(runtimeContext, input.tool_path, input.job_path)
+        const job = await exec(runtimeContext, createFlowyToolURL(input.tool_path), input.job_path)
         return c.json({jobId:job.id,error:null});  
       }catch(e){
         console.log(e)
