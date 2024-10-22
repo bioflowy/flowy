@@ -18,7 +18,7 @@
             "mode": "auto",
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/cmd/cwlclient",
-            "args": ["tests/bwa-mem-tool.cwl","tests/bwa-mem-job.json"]
+            "args": ["tests/scatter-wf3.cwl#main", "tests/scatter-job2.json"]
 
         }
 

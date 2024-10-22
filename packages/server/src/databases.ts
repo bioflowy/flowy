@@ -11,9 +11,20 @@ import * as path from 'path'
 import { JobStatus } from './utils'
   
 export interface Database {
+  dataset: DatasetTable
   tool: ToolInfoTable
   job: JobTable
   job_output: JobOutputTable
+}
+export interface DatasetTable {
+  id: string
+  name: string
+  location: string
+  checksum: string
+  size: number
+  created_at: Date
+  modified_at: Date
+  type: string
 }
 export interface ToolInfoTable {
   id: string
@@ -43,7 +54,9 @@ export interface ToolInfoTable {
     name: string
     value: JSONColumnType<any>
   }
-
+export type Dataset = Selectable<DatasetTable>
+export type NewDataset = Insertable<DatasetTable>
+  
 export type ToolInfo = Selectable<ToolInfoTable>
 export type NewToolInfo = Insertable<ToolInfoTable>
 

@@ -15,6 +15,15 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+func splitByHash(s string) (before, after string) {
+	parts := strings.SplitN(s, "#", 2)
+	if len(parts) == 1 {
+		// '#' が見つからない場合
+		return parts[0], ""
+	}
+	// '#' が見つかった場合（parts[1] に '#' は含まれない）
+	return parts[0], "#" + parts[1]
+}
 func exec_job(tool_path string, job_path *string) (int, interface{}) {
 	cfg := api.NewConfiguration()
 	cfg.Scheme = "http"
@@ -38,13 +47,14 @@ func exec_job(tool_path string, job_path *string) (int, interface{}) {
 		return 1, nil
 	}
 	fileUri := fmt.Sprintf("file://%s", path.Join(wd, tool_path))
-	res2, _, err := c.DefaultAPI.ApiImportToolPost(ctx).ApiImportToolPostRequest(api.ApiImportToolPostRequest{ToolPath: fileUri}).Execute()
+	cwlFileUrl, fragment := splitByHash(fileUri)
+	res2, _, err := c.DefaultAPI.ApiImportToolPost(ctx).ApiImportToolPostRequest(api.ApiImportToolPostRequest{ToolPath: cwlFileUrl}).Execute()
 	if err != nil {
 		fmt.Printf("Error: %s", err.Error())
 		return 1, nil
 	}
 	r := api.ApiExecuteJobPostRequest{
-		ToolPath:      res2.GetToolId(),
+		ToolPath:      res2.GetToolId() + fragment,
 		JobPath:       job_path,
 		ClientWorkDir: cwd,
 		Basedir:       &basedir,

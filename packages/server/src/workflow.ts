@@ -13,7 +13,7 @@ import {
   WorkflowStepOutput,
 } from './cwltypes.js';
 import { ValidationException, WorkflowException } from './errors.js';
-import { loadDocument } from './loader.js';
+import { loadDocument, loadTool } from './loader.js';
 import { _logger } from './loghandler.js';
 import { Process, shortname } from './process.js';
 import { transferProperties } from './types.js';
@@ -142,7 +142,8 @@ export class WorkflowStep extends Process {
 
     if (isString(this.tool.run)) {
       loadingContext.metadata = {};
-      const [tool, _] = await loadDocument(this.tool.run, loadingContext);
+      const doc = await loadDocument(this.tool.run, loadingContext);
+      const [tool,status] = await  loadTool(doc, this.tool.run, loadingContext);
       this.embedded_tool = tool;
     } else {
       this.embedded_tool = await loadingContext.construct_tool_object(this.tool.run, loadingContext);

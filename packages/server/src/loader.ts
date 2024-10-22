@@ -1,6 +1,5 @@
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
-import * as url from 'node:url';
 import * as cwlTsAuto from '@flowy/cwl-ts-auto';
 import type { LoadingContext } from './context.js';
 import { ValidationException } from './errors.js';
@@ -17,15 +16,8 @@ export async function load_tool(tool_path: string, loadingContext: LoadingContex
   const doc = await cwlTsAuto.loadDocument(tool_path);
   return doc;
 }
-export async function loadDocument(
-  tool_path: string,
-  loadingContext: LoadingContext,
-): Promise<[Process | undefined, string]> {
-  let tool_file_path = tool_path;
-  if (tool_file_path.includes('#')) {
-    tool_file_path = tool_file_path.split('#')[0];
-  }
-  const doc = await cwlTsAuto.loadDocument(tool_file_path, loadingContext.baseuri, loadingContext.loadingOptions);
+export type CwlDocument = cwlTsAuto.CommandLineTool | cwlTsAuto.ExpressionTool | cwlTsAuto.Workflow | cwlTsAuto.Operation | Array<cwlTsAuto.CommandLineTool | cwlTsAuto.ExpressionTool | cwlTsAuto.Workflow | cwlTsAuto.Operation>;
+export async function loadTool(doc: CwlDocument,tool_path: string,loadingContext: LoadingContext): Promise<[Process | undefined, string]>{
   if (doc instanceof Array) {
     let tool_id = tool_path;
     if (!(tool_id.startsWith('file://') || tool_id.startsWith('s3:/'))) {
@@ -49,45 +41,16 @@ export async function loadDocument(
     return [await default_make_tool(doc, loadingContext), 'success'];
   }
   return [undefined, 'failed'];
+
+}
+export async function loadDocument(
+  tool_path: string,
+  loadingContext: LoadingContext,
+): Promise<CwlDocument> {
+  let tool_file_path = tool_path;
+  if (tool_file_path.includes('#')) {
+    tool_file_path = tool_file_path.split('#')[0];
+  }
+  return await cwlTsAuto.loadDocument(tool_file_path, loadingContext.baseuri, loadingContext.loadingOptions);
 }
 
-function _convert_stdstreams_to_files(tool: cwlTsAuto.CommandLineTool) {
-  for (const out of tool.outputs) {
-    for (const streamtype of ['stdout', 'stderr']) {
-      if (out.type === streamtype) {
-        if (out.outputBinding) {
-          throw new ValidationException(`Not allowed to specify outputBinding when using ${streamtype} shortcut.`);
-        }
-        let filename = undefined;
-        if (streamtype === 'stdout') {
-          filename = tool.stdout;
-        } else if (streamtype === 'stderr') {
-          filename = tool.stderr;
-        }
-        if (!filename) {
-          filename = sha1(JSON.stringify(tool));
-        }
-        if (streamtype === 'stdout') {
-          tool.stdout = filename;
-        } else if (streamtype === 'stderr') {
-          tool.stderr = filename;
-        }
-        out.type = 'File';
-        out.outputBinding = new cwlTsAuto.CommandOutputBinding({ glob: filename });
-      }
-    }
-  }
-  for (const inp of tool.inputs) {
-    if (inp.type === 'stdin') {
-      if (inp.inputBinding) {
-        throw new ValidationException('Not allowed to specify inputBinding when using stdin shortcut.');
-      }
-      if (tool.stdin) {
-        throw new ValidationException('Not allowed to specify stdin path when using stdin type shortcut.');
-      } else {
-        tool.stdin = inp.id.split('#').pop()?.split('/').pop();
-        inp.type = 'File';
-      }
-    }
-  }
-}

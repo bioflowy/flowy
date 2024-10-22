@@ -5,14 +5,15 @@ import * as cwlTsAuto from "@flowy/cwl-ts-auto";
 import * as path from "path";
 import * as fs from "fs";
 import * as crypto from "crypto";
-import { loadDocument } from "./loader";
+import { loadDocument, loadTool } from "./loader";
 import { default_make_tool } from "./workflow";
 import { LoadingContext } from "./context";
 import * as url from "node:url";
 import { DefaultFetcher, Fetcher } from "@flowy/cwl-ts-auto/dist/util/Fetcher";
 import { Process } from "./process";
-import { createFlowyToolURL,FlowyToolURL } from "./flowyurl";
+import { createFlowyDatasetURL, createFlowyToolURL,FlowyDatasetURL,FlowyToolURL, FlowyURL } from "./flowyurl";
 import { URL } from "url";
+import { getDatasetManager } from "./datasetmanager";
 
 export class DefaultFetcher2 extends Fetcher {
   constructor(
@@ -39,7 +40,7 @@ export class DefaultFetcher2 extends Fetcher {
 
     return tool.content;
   }
-  getUrlToIdMap(): Map<string, FlowyToolURL> {
+  getUrlToIdMap(): Map<string, FlowyURL> {
     return this.urlToIdMap;
   }
   checkExists(urlString: string): boolean {
@@ -68,6 +69,27 @@ export class ToolInfoFetcher extends Fetcher {
     return url;
   }
 }
+// 再帰的に探索して特定のクラスのインスタンスを抽出する関数
+function extractInstances<T>(
+  data: any,
+  targetClass: new (...args: any[]) => T
+): T[] {
+  const results: T[] = [];
+
+  function traverse(item: any) {
+    if (item instanceof targetClass) {
+      results.push(item);
+    } else if (Array.isArray(item)) {
+      item.forEach(traverse);
+    } else if (typeof item === 'object' && item !== null) {
+      Object.values(item).forEach(traverse);
+    }
+  }
+
+  traverse(data);
+  return results;
+}
+
 export class ToolManager {
   async getToolInfo(toolUrl: FlowyToolURL): Promise<ToolInfo> {
     return await db
@@ -85,19 +107,26 @@ export class ToolManager {
     if (name === undefined) {
       name = path.basename(toolPath);
     }
-    const loadingContext = new LoadingContext({});
-    loadingContext.construct_tool_object = default_make_tool;
     const loadingOptions = new cwlTsAuto.LoadingOptions({});
-    loadingContext.loadingOptions = loadingOptions;
     const fetcher = new DefaultFetcher2(toolUrl.toString(), this);
     loadingOptions.fetcher = fetcher;
-    loadingContext.baseuri = path.dirname(toolUrl.toString());
-    try {
-      await loadDocument(toolUrl.toString(), loadingContext);
-    } catch (e) {
-      console.log(e);
-    }
     const idMap = fetcher.getUrlToIdMap();
+    try{
+      const doc = await cwlTsAuto.loadDocument(toolUrl.toString(), toolUrl.toString(), loadingOptions);
+      const loadingContext = new LoadingContext({});
+      loadingContext.construct_tool_object = default_make_tool;
+      loadingContext.loadingOptions = loadingOptions;
+      const [process,status] =await loadTool(doc,toolUrl.toString(), loadingContext);
+      const files = extractInstances(doc, cwlTsAuto.File);
+      for(const file of files){
+        const dataset =  await getDatasetManager().importDataset(new URL(file.location));
+        if(dataset){
+          idMap.set(file.location, new FlowyDatasetURL(dataset.id));
+        }
+      }  
+    }catch(e){
+      console.error(e);
+    }
     const content = await fs.promises.readFile(toolPath, { encoding: "utf-8" });
     const hash = crypto.createHash("sha1");
     hash.update(content);
@@ -130,12 +159,17 @@ export class ToolManager {
   async loadTool(toolUrl: FlowyToolURL): Promise<[Process, string]> {
     // fetch tool files from database
     const t = await this.getToolInfo(toolUrl);
+    const urlToDatasetIdtMap = new Map<string, FlowyDatasetURL>();
     const urlToContentMap = new Map<string, string>();
     urlToContentMap.set(t.comefrom, t.content);
     for(const [url, id] of JSON.parse(t.references)){
-      const toolInfo = await this.getToolInfo(createFlowyToolURL(id));
-      if(toolInfo){
-        urlToContentMap.set(toolInfo.comefrom, toolInfo.content);
+      if(id.startsWith("flowy://tool/")){
+        const toolInfo = await this.getToolInfo(createFlowyToolURL(id));
+        if(toolInfo){
+          urlToContentMap.set(toolInfo.comefrom, toolInfo.content);
+        }
+      }else if(id.startsWith("flowy://dataset/")){
+        urlToDatasetIdtMap.set(url, createFlowyDatasetURL(id));
       }
     }    // load tool
     const loadingContext = new LoadingContext({});
@@ -144,12 +178,14 @@ export class ToolManager {
     loadingContext.loadingOptions = loadingOptions;
     const fetcher = new ToolInfoFetcher(urlToContentMap);
     loadingOptions.fetcher = fetcher;
-    loadingContext.baseuri = path.dirname(t.comefrom);
-    try {
-      return await loadDocument(t.comefrom, loadingContext);
-    } catch (e) {
-      console.log(e);
+    const doc = await loadDocument(t.comefrom, loadingContext);
+    const files = extractInstances(doc, cwlTsAuto.File);
+    for(const file of files){
+      const datasetid = urlToDatasetIdtMap.get(file.location);
+      file['flowy_id'] = datasetid;
     }
+
+    return await loadTool(doc,t.comefrom+toolUrl.getFragment(), loadingContext);
   }
 }
 const toolManager = new ToolManager();

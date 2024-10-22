@@ -41,8 +41,8 @@ describe('Database Tests', () => {
     // }, { timeout: 1000000 })
     test('import cwlfile with import', async () => {
       const toolmanager = new ToolManager()
-      const tool = await toolmanager.importTool(pathToUrl('testres/schemadef-tool.cwl'))
-      expect(tool.name).toEqual('schemadef-tool.cwl')
+      const tool = await toolmanager.importTool(pathToUrl('testres/bwa-mem-tool.cwl'))
+      expect(tool.name).toEqual('bwa-mem-tool.cwl')
       const [proc,status] = await toolmanager.loadTool(createFlowyToolURL(tool.id))
       expect(proc instanceof CommandLineTool).toBeTruthy()
     }, { timeout: 1000000 })

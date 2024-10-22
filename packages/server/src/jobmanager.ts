@@ -20,7 +20,7 @@ export class JobManager implements JobListener{
         const job = this.jobs.get(id)
         if(this.jobs){
             return {
-                id: job.id,
+                id: id,
                 processStatus: job.processStatus,
                 outputs: job.results
             }
@@ -46,7 +46,7 @@ export class JobManager implements JobListener{
     async jobCreated(job: JobBase) {
         this.jobs.add(job.id, job)
         const j:NewJob ={
-            id:job.id.toString(),
+            id:job.id.getId(),
             name: job.name,
             status: "created",
             inputs: JSON.stringify(job.joborder),
@@ -74,7 +74,7 @@ export class JobManager implements JobListener{
             if(bind.name in outputs){
                 const output = outputs[bind.name]
                 const jout = {
-                    job_id: job.id.toString(),
+                    job_id: job.id.getId(),
                     name: bind.id,
                     type: toString(bind.type),
                     value: JSON.stringify(output)
