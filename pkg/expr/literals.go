@@ -153,7 +153,9 @@ func (s *StringLiteral) InferType(typeEnv *env.Bindings[types.Base], stdlib StdL
 			}
 			// All interpolated expressions should be coercible to String
 			if err := exprType.Check(types.NewString(false), true); err != nil {
-				return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "String", exprType.String()))
+				return nil, &errors.InvalidType{
+					ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "String", exprType.String())),
+				}
 			}
 		}
 	}
@@ -177,7 +179,7 @@ func (s *StringLiteral) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib)
 		// Coerce to string
 		stringVal, err := val.Coerce(types.NewString(false))
 		if err != nil {
-			return nil, errors.NewEvalError(nil, "cannot convert expression to string: "+err.Error())
+			return nil, errors.NewEvalErrorFromPos(s.pos, "cannot convert expression to string: "+err.Error())
 		}
 
 		// Replace placeholder with actual value
@@ -253,7 +255,9 @@ func (n *NullLiteral) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (
 
 func (n *NullLiteral) TypeCheck(expectedType types.Base, typeEnv *env.Bindings[types.Base], stdlib StdLib) error {
 	if !expectedType.Optional() {
-		return errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", expectedType.String(), "None"))
+		return &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(n.pos, fmt.Sprintf("type mismatch: expected %s, got %s", expectedType.String(), "None")),
+		}
 	}
 	return nil
 }

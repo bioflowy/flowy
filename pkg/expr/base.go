@@ -88,7 +88,9 @@ type TypeCheckHelper struct{}
 // CheckCoercion verifies that fromType can coerce to toType
 func (h TypeCheckHelper) CheckCoercion(fromType, toType types.Base, pos errors.SourcePosition) error {
 	if err := fromType.Check(toType, true); err != nil {
-		return errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", toType.String(), fromType.String()))
+		return &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(pos, fmt.Sprintf("type mismatch: expected %s, got %s", toType.String(), fromType.String())),
+		}
 	}
 	return nil
 }
@@ -97,11 +99,15 @@ func (h TypeCheckHelper) CheckCoercion(fromType, toType types.Base, pos errors.S
 func (h TypeCheckHelper) CheckArity(funcName string, expected, actual int, variadic bool, pos errors.SourcePosition) error {
 	if variadic {
 		if actual < expected {
-			return errors.NewWrongArity(nil, funcName, expected)
+			return &errors.WrongArity{
+				ValidationError: errors.NewValidationErrorFromPos(pos, fmt.Sprintf("wrong number of arguments for %s: expected at least %d, got %d", funcName, expected, actual)),
+			}
 		}
 	} else {
 		if actual != expected {
-			return errors.NewWrongArity(nil, funcName, expected)
+			return &errors.WrongArity{
+				ValidationError: errors.NewValidationErrorFromPos(pos, fmt.Sprintf("wrong number of arguments for %s: expected %d, got %d", funcName, expected, actual)),
+			}
 		}
 	}
 	return nil
@@ -113,14 +119,18 @@ type InferTypeHelper struct{}
 // UnifyTypes attempts to unify multiple types into a common type
 func (h InferTypeHelper) UnifyTypes(typeList []types.Base, pos errors.SourcePosition) (types.Base, error) {
 	if len(typeList) == 0 {
-		return types.NewAny(false, false), nil
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(pos, "cannot unify empty type list"),
+		}
 	}
 
 	result := typeList[0]
 	for _, t := range typeList[1:] {
 		unified, err := types.Unify(result, t)
 		if err != nil {
-			return nil, errors.NewInvalidType(nil, fmt.Sprintf("cannot unify types %s and %s", result.String(), t.String()))
+			return nil, &errors.InvalidType{
+				ValidationError: errors.NewValidationErrorFromPos(pos, fmt.Sprintf("cannot unify types %s and %s", result.String(), t.String())),
+			}
 		}
 		result = unified
 	}
@@ -134,7 +144,7 @@ type EvalHelper struct{}
 func (h EvalHelper) CoerceValue(value values.Base, targetType types.Base, pos errors.SourcePosition) (values.Base, error) {
 	result, err := value.Coerce(targetType)
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "type coercion failed: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(pos, "type coercion failed: "+err.Error())
 	}
 	return result, nil
 }
@@ -142,7 +152,7 @@ func (h EvalHelper) CoerceValue(value values.Base, targetType types.Base, pos er
 // CheckNonNull verifies that a value is not null when required
 func (h EvalHelper) CheckNonNull(value values.Base, pos errors.SourcePosition) error {
 	if _, isNull := value.(*values.Null); isNull {
-		return errors.NewNullValue(nil)
+		return errors.NewNullValueFromPos(pos)
 	}
 	return nil
 }
