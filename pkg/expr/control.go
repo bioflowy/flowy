@@ -35,7 +35,9 @@ func (i *IfThenElse) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib)
 	}
 
 	if err := conditionType.Check(types.NewBoolean(false), true); err != nil {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", conditionType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(i.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", conditionType.String())),
+		}
 	}
 
 	// Infer types of both branches
@@ -69,7 +71,7 @@ func (i *IfThenElse) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (v
 	// Coerce condition to Boolean
 	boolValue, err := conditionValue.Coerce(types.NewBoolean(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "condition must be Boolean: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(i.pos, "condition must be Boolean: "+err.Error())
 	}
 
 	boolVal := boolValue.(*values.BooleanValue)
@@ -144,7 +146,9 @@ func (l *LogicalAnd) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib)
 	}
 
 	if err := leftType.Check(types.NewBoolean(false), true); err != nil {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", leftType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(l.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", leftType.String())),
+		}
 	}
 
 	// Check right operand
@@ -154,7 +158,9 @@ func (l *LogicalAnd) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib)
 	}
 
 	if err := rightType.Check(types.NewBoolean(false), true); err != nil {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", rightType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(l.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", rightType.String())),
+		}
 	}
 
 	// Result is Boolean, optional if either operand is optional
@@ -177,7 +183,7 @@ func (l *LogicalAnd) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (v
 	// Coerce to Boolean
 	boolLeft, err := leftValue.Coerce(types.NewBoolean(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "logical AND requires Boolean operand: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(l.pos, "logical AND requires Boolean operand: "+err.Error())
 	}
 
 	leftBool := boolLeft.(*values.BooleanValue).Value().(bool)
@@ -200,7 +206,7 @@ func (l *LogicalAnd) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (v
 	// Coerce to Boolean
 	boolRight, err := rightValue.Coerce(types.NewBoolean(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "logical AND requires Boolean operand: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(l.pos, "logical AND requires Boolean operand: "+err.Error())
 	}
 
 	rightBool := boolRight.(*values.BooleanValue).Value().(bool)
@@ -262,7 +268,9 @@ func (l *LogicalOr) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) 
 	}
 
 	if err := leftType.Check(types.NewBoolean(false), true); err != nil {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", leftType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(l.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", leftType.String())),
+		}
 	}
 
 	// Check right operand
@@ -272,7 +280,9 @@ func (l *LogicalOr) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) 
 	}
 
 	if err := rightType.Check(types.NewBoolean(false), true); err != nil {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", rightType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(l.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", rightType.String())),
+		}
 	}
 
 	// Result is Boolean, optional if either operand is optional
@@ -295,7 +305,7 @@ func (l *LogicalOr) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (va
 	// Coerce to Boolean
 	boolLeft, err := leftValue.Coerce(types.NewBoolean(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "logical OR requires Boolean operand: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(l.pos, "logical OR requires Boolean operand: "+err.Error())
 	}
 
 	leftBool := boolLeft.(*values.BooleanValue).Value().(bool)
@@ -318,7 +328,7 @@ func (l *LogicalOr) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (va
 	// Coerce to Boolean
 	boolRight, err := rightValue.Coerce(types.NewBoolean(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "logical OR requires Boolean operand: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(l.pos, "logical OR requires Boolean operand: "+err.Error())
 	}
 
 	rightBool := boolRight.(*values.BooleanValue).Value().(bool)
@@ -377,7 +387,9 @@ func (l *LogicalNot) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib)
 	}
 
 	if err := operandType.Check(types.NewBoolean(false), true); err != nil {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", operandType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(l.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", operandType.String())),
+		}
 	}
 
 	// Result is Boolean with same optionality as operand
@@ -398,7 +410,7 @@ func (l *LogicalNot) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (v
 	// Coerce to Boolean
 	boolValue, err := operandValue.Coerce(types.NewBoolean(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "logical NOT requires Boolean operand: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(l.pos, "logical NOT requires Boolean operand: "+err.Error())
 	}
 
 	operandBool := boolValue.(*values.BooleanValue).Value().(bool)

@@ -28,12 +28,16 @@ func NewApply(function string, args []Expr, pos errors.SourcePosition) *Apply {
 
 func (a *Apply) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (types.Base, error) {
 	if stdlib == nil {
-		return nil, errors.NewUnknownIdentifier(nil, a.Function)
+		return nil, &errors.UnknownIdentifier{
+			ValidationError: errors.NewValidationErrorFromPos(a.pos, fmt.Sprintf("unknown function: %s", a.Function)),
+		}
 	}
 
 	// Check if function exists
 	if !stdlib.HasFunction(a.Function) {
-		return nil, errors.NewUnknownIdentifier(nil, a.Function)
+		return nil, &errors.UnknownIdentifier{
+			ValidationError: errors.NewValidationErrorFromPos(a.pos, fmt.Sprintf("unknown function: %s", a.Function)),
+		}
 	}
 
 	// Get function metadata
@@ -64,7 +68,9 @@ func (a *Apply) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (typ
 		}
 
 		if err := argType.Check(expectedType, true); err != nil {
-			return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", expectedType.String(), argType.String()))
+			return nil, &errors.InvalidType{
+				ValidationError: errors.NewValidationErrorFromPos(a.pos, fmt.Sprintf("type mismatch: expected %s, got %s", expectedType.String(), argType.String())),
+			}
 		}
 	}
 
@@ -73,7 +79,9 @@ func (a *Apply) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (typ
 
 func (a *Apply) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (values.Base, error) {
 	if stdlib == nil {
-		return nil, errors.NewUnknownIdentifier(nil, a.Function)
+		return nil, &errors.UnknownIdentifier{
+			ValidationError: errors.NewValidationErrorFromPos(a.pos, fmt.Sprintf("unknown function: %s", a.Function)),
+		}
 	}
 
 	// Evaluate arguments
@@ -97,13 +105,7 @@ func (a *Apply) TypeCheck(expectedType types.Base, typeEnv *env.Bindings[types.B
 	}
 
 	helper := TypeCheckHelper{}
-	if err := helper.CheckCoercion(resultType, expectedType, a.pos); err != nil {
-		return err
-	}
-
-	// Type check all arguments (already done in InferType, but we need to ensure it's called)
-	_, err = a.InferType(typeEnv, stdlib)
-	return err
+	return helper.CheckCoercion(resultType, expectedType, a.pos)
 }
 
 func (a *Apply) Children() []Expr {
@@ -172,22 +174,11 @@ func (b *BinaryOp) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (
 			helper := InferTypeHelper{}
 			return helper.UnifyTypes([]types.Base{leftType, rightType}, b.pos)
 		}
-		return nil, errors.NewEvalError(nil, "unknown binary operator: "+b.Operator)
+		return nil, errors.NewEvalErrorFromPos(b.pos, "unknown binary operator: "+b.Operator)
 	}
 }
 
 func (b *BinaryOp) inferArithmeticType(leftType, rightType types.Base) (types.Base, error) {
-	// Check if operands are numeric
-	leftNumeric := b.isNumericType(leftType)
-	rightNumeric := b.isNumericType(rightType)
-
-	if !leftNumeric {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "numeric", leftType.String()))
-	}
-	if !rightNumeric {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "numeric", rightType.String()))
-	}
-
 	// String concatenation for +
 	if b.Operator == "+" {
 		leftString := b.isStringType(leftType)
@@ -198,9 +189,24 @@ func (b *BinaryOp) inferArithmeticType(leftType, rightType types.Base) (types.Ba
 		}
 	}
 
-	// Numeric operations - return Float if either operand is Float, otherwise Int
+	// Check if operands are numeric
+	leftNumeric := b.isNumericType(leftType)
+	rightNumeric := b.isNumericType(rightType)
+
+	if !leftNumeric {
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(b.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "numeric", leftType.String())),
+		}
+	}
+	if !rightNumeric {
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(b.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "numeric", rightType.String())),
+		}
+	}
+
+	// Numeric operations - return Float if either operand is Float, or for division (always returns float)
 	optional := leftType.Optional() || rightType.Optional()
-	if b.isFloatType(leftType) || b.isFloatType(rightType) {
+	if b.Operator == "/" || b.isFloatType(leftType) || b.isFloatType(rightType) {
 		return types.NewFloat(optional), nil
 	}
 	return types.NewInt(optional), nil
@@ -209,10 +215,14 @@ func (b *BinaryOp) inferArithmeticType(leftType, rightType types.Base) (types.Ba
 func (b *BinaryOp) inferComparisonType(leftType, rightType types.Base) (types.Base, error) {
 	// Check if operands are comparable
 	if !b.isComparableType(leftType) {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "comparable", leftType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(b.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "comparable", leftType.String())),
+		}
 	}
 	if !b.isComparableType(rightType) {
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "comparable", rightType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(b.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "comparable", rightType.String())),
+		}
 	}
 
 	// Result is always Boolean
@@ -290,7 +300,7 @@ func (b *BinaryOp) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (val
 		if stdlib != nil && stdlib.HasOperator(b.Operator) {
 			return stdlib.CallOperator(b.Operator, []values.Base{leftValue, rightValue}, b.pos)
 		}
-		return nil, errors.NewEvalError(nil, "unknown binary operator: "+b.Operator)
+		return nil, errors.NewEvalErrorFromPos(b.pos, "unknown binary operator: "+b.Operator)
 	}
 }
 
@@ -310,12 +320,12 @@ func (b *BinaryOp) evalAddition(left, right values.Base) (values.Base, error) {
 func (b *BinaryOp) evalStringConcat(left, right values.Base) (values.Base, error) {
 	leftStr, err := left.Coerce(types.NewString(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "cannot convert to string: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(b.pos, "cannot convert to string: "+err.Error())
 	}
 
 	rightStr, err := right.Coerce(types.NewString(false))
 	if err != nil {
-		return nil, errors.NewEvalError(nil, "cannot convert to string: "+err.Error())
+		return nil, errors.NewEvalErrorFromPos(b.pos, "cannot convert to string: "+err.Error())
 	}
 
 	leftVal := leftStr.(*values.StringValue).Value().(string)
@@ -339,7 +349,7 @@ func (b *BinaryOp) evalArithmetic(left, right values.Base, op func(interface{}, 
 		rightVal := rightInt.(*values.IntValue).Value().(int64)
 		result, err := op(leftVal, rightVal)
 		if err != nil {
-			return nil, errors.NewEvalError(nil, err.Error())
+			return nil, errors.NewEvalErrorFromPos(b.pos, err.Error())
 		}
 		if intResult, ok := result.(int64); ok {
 			return values.NewInt(intResult, false), nil
@@ -351,24 +361,24 @@ func (b *BinaryOp) evalArithmetic(left, right values.Base, op func(interface{}, 
 
 	// Fall back to float arithmetic
 	if leftErr != nil {
-		return nil, errors.NewEvalError(nil, "cannot convert to number: "+leftErr.Error())
+		return nil, errors.NewEvalErrorFromPos(b.pos, "cannot convert to number: "+leftErr.Error())
 	}
 	if rightErr != nil {
-		return nil, errors.NewEvalError(nil, "cannot convert to number: "+rightErr.Error())
+		return nil, errors.NewEvalErrorFromPos(b.pos, "cannot convert to number: "+rightErr.Error())
 	}
 
 	leftVal := leftFloat.(*values.FloatValue).Value().(float64)
 	rightVal := rightFloat.(*values.FloatValue).Value().(float64)
 	result, err := op(leftVal, rightVal)
-	if err != nil {
-		return nil, errors.NewEvalError(nil, err.Error())
-	}
+		if err != nil {
+			return nil, errors.NewEvalErrorFromPos(b.pos, err.Error())
+		}
 
 	if floatResult, ok := result.(float64); ok {
 		return values.NewFloat(floatResult, false), nil
 	}
 
-	return nil, errors.NewEvalError(nil, "invalid arithmetic result")
+	return nil, errors.NewEvalErrorFromPos(b.pos, "invalid arithmetic result")
 }
 
 func (b *BinaryOp) addNumbers(left, right interface{}) (interface{}, error) {
@@ -467,7 +477,7 @@ func (b *BinaryOp) evalComparison(left, right values.Base) (values.Base, error) 
 	// Convert to comparable types and compare
 	result, err := b.compareValues(left, right)
 	if err != nil {
-		return nil, errors.NewEvalError(nil, err.Error())
+		return nil, errors.NewEvalErrorFromPos(b.pos, err.Error())
 	}
 
 	var boolResult bool
@@ -565,15 +575,19 @@ func (u *UnaryOp) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (t
 		if u.isNumericType(operandType) {
 			return operandType, nil
 		}
-		return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "numeric", operandType.String()))
+		return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(u.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "numeric", operandType.String())),
+		}
 	case "!":
 		// Logical NOT - already handled in control.go as LogicalNot
 		if err := operandType.Check(types.NewBoolean(false), true); err != nil {
-			return nil, errors.NewInvalidType(nil, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", operandType.String()))
+			return nil, &errors.InvalidType{
+			ValidationError: errors.NewValidationErrorFromPos(u.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", operandType.String())),
+		}
 		}
 		return types.NewBoolean(operandType.Optional()), nil
 	default:
-		return nil, errors.NewEvalError(nil, "unknown unary operator: "+u.Operator)
+		return nil, errors.NewEvalErrorFromPos(u.pos, "unknown unary operator: "+u.Operator)
 	}
 }
 
@@ -603,7 +617,7 @@ func (u *UnaryOp) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (valu
 		if u.isNumericValue(operandValue) {
 			return operandValue, nil
 		}
-		return nil, errors.NewEvalError(nil, "unary + requires numeric value")
+		return nil, errors.NewEvalErrorFromPos(u.pos, "unary + requires numeric value")
 	case "-":
 		// Unary minus
 		return u.negateValue(operandValue)
@@ -611,12 +625,12 @@ func (u *UnaryOp) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (valu
 		// Logical NOT
 		boolValue, err := operandValue.Coerce(types.NewBoolean(false))
 		if err != nil {
-			return nil, errors.NewEvalError(nil, "logical NOT requires Boolean: "+err.Error())
+			return nil, errors.NewEvalErrorFromPos(u.pos, "logical NOT requires Boolean: "+err.Error())
 		}
 		operandBool := boolValue.(*values.BooleanValue).Value().(bool)
 		return values.NewBoolean(!operandBool, false), nil
 	default:
-		return nil, errors.NewEvalError(nil, "unknown unary operator: "+u.Operator)
+		return nil, errors.NewEvalErrorFromPos(u.pos, "unknown unary operator: "+u.Operator)
 	}
 }
 
@@ -638,7 +652,7 @@ func (u *UnaryOp) negateValue(v values.Base) (values.Base, error) {
 		floatVal := val.Value().(float64)
 		return values.NewFloat(-floatVal, false), nil
 	default:
-		return nil, errors.NewEvalError(nil, "unary - requires numeric value")
+		return nil, errors.NewEvalErrorFromPos(u.pos, "unary - requires numeric value")
 	}
 }
 
