@@ -17,9 +17,9 @@ func TestNewBaseExpr(t *testing.T) {
 		Line:   10,
 		Column: 5,
 	}
-	
+
 	base := NewBaseExpr(pos)
-	
+
 	if base.pos != pos {
 		t.Errorf("Expected position %v, got %v", pos, base.pos)
 	}
@@ -27,13 +27,13 @@ func TestNewBaseExpr(t *testing.T) {
 
 func TestBaseExprPos(t *testing.T) {
 	pos := errors.SourcePosition{
-		URI:    "test.wdl", 
+		URI:    "test.wdl",
 		Line:   20,
 		Column: 15,
 	}
-	
+
 	base := baseExpr{pos: pos}
-	
+
 	if base.Pos() != pos {
 		t.Errorf("Expected position %v, got %v", pos, base.Pos())
 	}
@@ -41,13 +41,13 @@ func TestBaseExprPos(t *testing.T) {
 
 func TestBaseExprLiteral(t *testing.T) {
 	base := baseExpr{}
-	
+
 	literal, isLiteral := base.Literal()
-	
+
 	if literal != nil {
 		t.Errorf("Expected nil literal, got %v", literal)
 	}
-	
+
 	if isLiteral {
 		t.Errorf("Expected false for isLiteral, got true")
 	}
@@ -61,15 +61,15 @@ func TestFunction(t *testing.T) {
 		ReturnType: types.NewBoolean(false),
 		Variadic:   false,
 	}
-	
+
 	if fn.Name != "test_function" {
 		t.Errorf("Expected name 'test_function', got %s", fn.Name)
 	}
-	
+
 	if len(fn.ParamTypes) != 2 {
 		t.Errorf("Expected 2 parameter types, got %d", len(fn.ParamTypes))
 	}
-	
+
 	if fn.Variadic {
 		t.Errorf("Expected Variadic to be false, got true")
 	}
@@ -82,10 +82,10 @@ func TestTypeCheckHelperCheckCoercion(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 
 	tests := []struct {
-		name           string
-		sourceType     types.Base
-		targetType     types.Base
-		expectError    bool
+		name        string
+		sourceType  types.Base
+		targetType  types.Base
+		expectError bool
 	}{
 		{
 			name:        "Same types",
@@ -116,11 +116,11 @@ func TestTypeCheckHelperCheckCoercion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := helper.CheckCoercion(tt.sourceType, tt.targetType, pos)
-			
+
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
-			
+
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error but got: %v", err)
 			}
@@ -133,12 +133,12 @@ func TestTypeCheckHelperCheckArity(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 
 	tests := []struct {
-		name         string
-		function     string
-		expected     int
-		actual       int
-		variadic     bool
-		expectError  bool
+		name        string
+		function    string
+		expected    int
+		actual      int
+		variadic    bool
+		expectError bool
 	}{
 		{
 			name:        "Exact match",
@@ -193,11 +193,11 @@ func TestTypeCheckHelperCheckArity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := helper.CheckArity(tt.function, tt.expected, tt.actual, tt.variadic, pos)
-			
+
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
-			
+
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error but got: %v", err)
 			}
@@ -249,15 +249,15 @@ func TestInferTypeHelperUnifyTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := helper.UnifyTypes(tt.types, pos)
-			
+
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
-			
+
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error but got: %v", err)
 			}
-			
+
 			if !tt.expectError && result != nil && tt.expectedStr != "" {
 				if result.String() != tt.expectedStr {
 					t.Errorf("Expected unified type %s, got %s", tt.expectedStr, result.String())
@@ -301,7 +301,7 @@ func TestExpressionIntegration(t *testing.T) {
 	// Create mock environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("test_var", types.NewString(false), nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("test_var", values.NewString("hello", false), nil)
 
@@ -326,7 +326,7 @@ func TestExpressionIntegration(t *testing.T) {
 	if err != nil {
 		t.Errorf("Type inference failed: %v", err)
 	}
-	
+
 	if inferredType.String() != "String" {
 		t.Errorf("Expected String type, got %s", inferredType.String())
 	}
@@ -336,12 +336,12 @@ func TestExpressionIntegration(t *testing.T) {
 	if err != nil {
 		t.Errorf("Evaluation failed: %v", err)
 	}
-	
+
 	stringVal, ok := value.(*values.StringValue)
 	if !ok {
 		t.Errorf("Expected StringValue, got %T", value)
 	}
-	
+
 	if stringVal.Value().(string) != "hello" {
 		t.Errorf("Expected 'hello', got %s", stringVal.Value().(string))
 	}
@@ -363,13 +363,13 @@ func TestExpressionLiteralDefault(t *testing.T) {
 	// Test that expressions return (nil, false) for Literal() by default
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	identifier := NewIdentifier("test", pos)
-	
+
 	literal, isLiteral := identifier.Literal()
-	
+
 	if literal != nil {
 		t.Errorf("Expected nil literal, got %v", literal)
 	}
-	
+
 	if isLiteral {
 		t.Errorf("Expected false for isLiteral, got true")
 	}
@@ -382,14 +382,14 @@ func TestFunctionStringAndPos(t *testing.T) {
 		Line:   42,
 		Column: 10,
 	}
-	
+
 	identifier := NewIdentifier("my_var", pos)
-	
+
 	// Test Pos()
 	if identifier.Pos() != pos {
 		t.Errorf("Expected position %v, got %v", pos, identifier.Pos())
 	}
-	
+
 	// Test String()
 	expected := "my_var"
 	if identifier.String() != expected {

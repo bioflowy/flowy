@@ -254,7 +254,7 @@ func (m *MapLiteral) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib)
 
 func (m *MapLiteral) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (values.Base, error) {
 	// Infer the key/value types for the result map
-	var keyType types.Base = types.NewString(false)   // Default
+	var keyType types.Base = types.NewString(false)       // Default
 	var valueType types.Base = types.NewAny(false, false) // Default
 
 	if len(m.Items) > 0 {

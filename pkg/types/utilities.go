@@ -15,17 +15,17 @@ func Unify(left Base, right Base) (Base, error) {
 	}
 	if rightAny, ok := right.(*AnyType); ok {
 		if rightAny.isNull {
-			// None literal - return left type made optional  
+			// None literal - return left type made optional
 			return left.Copy(&[]bool{true}[0]), nil
 		}
 		return left, nil
 	}
-	
+
 	// Same types unify to themselves
 	if left.String() == right.String() {
 		return left, nil
 	}
-	
+
 	// Int and Float unify to Float
 	if isInt(left) && isFloat(right) {
 		optional := left.Optional() || right.Optional()
@@ -35,7 +35,7 @@ func Unify(left Base, right Base) (Base, error) {
 		optional := left.Optional() || right.Optional()
 		return NewFloat(optional), nil
 	}
-	
+
 	// Array unification
 	if leftArray, ok := left.(*ArrayType); ok {
 		if rightArray, ok := right.(*ArrayType); ok {
@@ -48,7 +48,7 @@ func Unify(left Base, right Base) (Base, error) {
 			return NewArray(unified, optional, nonempty), nil
 		}
 	}
-	
+
 	// Map unification
 	if leftMap, ok := left.(*MapType); ok {
 		if rightMap, ok := right.(*MapType); ok {
@@ -64,7 +64,7 @@ func Unify(left Base, right Base) (Base, error) {
 			return NewMap(keyUnified, valueUnified, optional), nil
 		}
 	}
-	
+
 	// Pair unification
 	if leftPair, ok := left.(*PairType); ok {
 		if rightPair, ok := right.(*PairType); ok {
@@ -80,7 +80,7 @@ func Unify(left Base, right Base) (Base, error) {
 			return NewPair(leftUnified, rightUnified, optional), nil
 		}
 	}
-	
+
 	// Struct unification - only if same type ID
 	if leftStruct, ok := left.(*StructInstanceType); ok {
 		if rightStruct, ok := right.(*StructInstanceType); ok {
@@ -90,7 +90,7 @@ func Unify(left Base, right Base) (Base, error) {
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("cannot unify %s with %s", left.String(), right.String())
 }
 

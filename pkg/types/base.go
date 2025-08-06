@@ -7,31 +7,31 @@ import "fmt"
 type Base interface {
 	// String returns the string representation of the type
 	String() string
-	
+
 	// Optional returns true if the type has the optional quantifier (T?)
 	Optional() bool
-	
+
 	// Copy creates a copy of the type, possibly with different optional setting
 	Copy(optional *bool) Base
-	
+
 	// Equal checks if two types are equal (ignoring optional quantifier in some cases)
 	Equal(other Base) bool
-	
+
 	// Coerces checks if this type can be coerced to the target type
 	Coerces(target Base, checkQuant bool) bool
-	
+
 	// Check verifies this type can be coerced to target, raises error if not
 	Check(target Base, checkQuant bool) error
-	
+
 	// Equatable checks if values of this type can be compared with == operator
 	Equatable(other Base, compound bool) bool
-	
+
 	// Comparable checks if values of this type can be compared with <, >, etc.
 	Comparable(other Base, checkQuant bool) bool
-	
+
 	// Parameters returns the type parameters (for composite types)
 	Parameters() []Base
-	
+
 	// checkOptional performs optional quantifier checking
 	checkOptional(target Base, checkQuant bool) error
 }

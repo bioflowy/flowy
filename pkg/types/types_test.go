@@ -244,7 +244,7 @@ func TestArrayToStringCoercion(t *testing.T) {
 	intType := NewInt(false)
 	stringType := NewString(false)
 	intArray := NewArray(intType, false, false)
-	
+
 	// Array[T] coerces to String if T coerces to String
 	if !intArray.Coerces(stringType, true) {
 		t.Error("Expected Array[Int] to coerce to String")
@@ -320,19 +320,19 @@ func TestComparable(t *testing.T) {
 
 func TestTypeCopy(t *testing.T) {
 	intType := NewInt(false)
-	
+
 	// Copy with same optional
 	intCopy := intType.Copy(nil)
 	if intCopy.Optional() != false {
 		t.Error("Expected copied type to have same optional setting")
 	}
-	
+
 	// Copy with different optional
 	intOptionalCopy := intType.Copy(&[]bool{true}[0])
 	if intOptionalCopy.Optional() != true {
 		t.Error("Expected copied type to have new optional setting")
 	}
-	
+
 	// Original should be unchanged
 	if intType.Optional() != false {
 		t.Error("Expected original type to be unchanged")

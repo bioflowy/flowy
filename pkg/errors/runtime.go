@@ -7,14 +7,14 @@ import (
 
 // MultipleValidationErrors propagates several validation/typechecking errors
 type MultipleValidationErrors struct {
-	Exceptions          []error
-	SourceText          *string
-	DeclaredWDLVersion  *string
+	Exceptions         []error
+	SourceText         *string
+	DeclaredWDLVersion *string
 }
 
 func NewMultipleValidationErrors(exceptions ...error) *MultipleValidationErrors {
 	var allExceptions []error
-	
+
 	for _, exc := range exceptions {
 		if multiExc, ok := exc.(*MultipleValidationErrors); ok {
 			allExceptions = append(allExceptions, multiExc.Exceptions...)
@@ -22,19 +22,19 @@ func NewMultipleValidationErrors(exceptions ...error) *MultipleValidationErrors 
 			allExceptions = append(allExceptions, exc)
 		}
 	}
-	
+
 	// Sort by position if possible
 	sort.Slice(allExceptions, func(i, j int) bool {
 		// Try to get position from errors that have it
 		var posI, posJ *SourcePosition
-		
+
 		if errI, ok := allExceptions[i].(*ValidationError); ok {
 			posI = &errI.Pos
 		}
 		if errJ, ok := allExceptions[j].(*ValidationError); ok {
 			posJ = &errJ.Pos
 		}
-		
+
 		if posI != nil && posJ != nil {
 			if posI.AbsPath != posJ.AbsPath {
 				return posI.AbsPath < posJ.AbsPath
@@ -44,10 +44,10 @@ func NewMultipleValidationErrors(exceptions ...error) *MultipleValidationErrors 
 			}
 			return posI.Column < posJ.Column
 		}
-		
+
 		return false // Keep original order if positions not available
 	})
-	
+
 	return &MultipleValidationErrors{
 		Exceptions: allExceptions,
 	}

@@ -47,7 +47,7 @@ func (n *BaseSourceNode) Less(other SourceNode) bool {
 		return false
 	}
 	otherPos := other.GetPos()
-	
+
 	if n.Pos.AbsPath != otherPos.AbsPath {
 		return n.Pos.AbsPath < otherPos.AbsPath
 	}

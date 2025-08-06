@@ -50,7 +50,7 @@ func (tc *TaskCommand) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLi
 func (tc *TaskCommand) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (values.Base, error) {
 	// Remove common leading whitespace (dedentation)
 	_, dedented := utils.StripLeadingWhitespace(tc.Value)
-	
+
 	if tc.Interpolation == nil {
 		// Simple command string - return dedented value
 		return values.NewString(dedented, false), nil
@@ -152,7 +152,7 @@ func (ms *MultilineString) InferType(typeEnv *env.Bindings[types.Base], stdlib S
 func (ms *MultilineString) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (values.Base, error) {
 	// Process multiline string: trim whitespace, remove escaped newlines, dedent
 	processed := ms.processMultilineString(ms.Value)
-	
+
 	if ms.Interpolation == nil {
 		return values.NewString(processed, false), nil
 	}
@@ -182,13 +182,13 @@ func (ms *MultilineString) Eval(valueEnv *env.Bindings[values.Base], stdlib StdL
 func (ms *MultilineString) processMultilineString(value string) string {
 	// Remove escaped newlines
 	escaped := regexp.MustCompile(`\\n`).ReplaceAllString(value, "\n")
-	
+
 	// Dedent non-blank lines while preserving structure
 	lines := strings.Split(escaped, "\n")
 	if len(lines) <= 1 {
 		return escaped
 	}
-	
+
 	// Find minimum indentation of non-empty lines
 	minIndent := -1
 	for _, line := range lines {
@@ -206,11 +206,11 @@ func (ms *MultilineString) processMultilineString(value string) string {
 			}
 		}
 	}
-	
+
 	if minIndent <= 0 {
 		return escaped
 	}
-	
+
 	// Remove common indentation
 	var dedented []string
 	for _, line := range lines {
@@ -222,7 +222,7 @@ func (ms *MultilineString) processMultilineString(value string) string {
 			dedented = append(dedented, line)
 		}
 	}
-	
+
 	return strings.Join(dedented, "\n")
 }
 
@@ -299,10 +299,10 @@ type Placeholder struct {
 
 // PlaceholderOptions contains options for placeholder interpolation
 type PlaceholderOptions struct {
-	Separator string    // sep option
-	Default   Expr      // default option  
-	TrueValue *string   // true option
-	FalseValue *string  // false option
+	Separator  string  // sep option
+	Default    Expr    // default option
+	TrueValue  *string // true option
+	FalseValue *string // false option
 }
 
 // NewPlaceholder creates a new placeholder
@@ -320,7 +320,7 @@ func (p *Placeholder) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Type check default expression if present
 	if p.Options != nil && p.Options.Default != nil {
 		_, err := p.Options.Default.InferType(typeEnv, stdlib)
@@ -328,7 +328,7 @@ func (p *Placeholder) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib
 			return nil, err
 		}
 	}
-	
+
 	return types.NewString(false), nil
 }
 
@@ -372,7 +372,7 @@ func (p *Placeholder) valueToString(val values.Base) (string, error) {
 			return "true", nil
 		}
 		return "false", nil
-		
+
 	case *values.ArrayValue:
 		items := v.Items()
 		var strItems []string
@@ -388,7 +388,7 @@ func (p *Placeholder) valueToString(val values.Base) (string, error) {
 			separator = p.Options.Separator
 		}
 		return strings.Join(strItems, separator), nil
-		
+
 	default:
 		// Use standard string coercion
 		stringVal, err := val.Coerce(types.NewString(false))
@@ -411,7 +411,7 @@ func (p *Placeholder) TypeCheck(expectedType types.Base, typeEnv *env.Bindings[t
 	if err := p.Expression.TypeCheck(types.NewAny(false, false), typeEnv, stdlib); err != nil {
 		return err
 	}
-	
+
 	// Type check default if present
 	if p.Options != nil && p.Options.Default != nil {
 		if err := p.Options.Default.TypeCheck(types.NewAny(false, false), typeEnv, stdlib); err != nil {

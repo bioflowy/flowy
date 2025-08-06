@@ -22,7 +22,7 @@ func TestFromJSON(t *testing.T) {
 	} else {
 		t.Error("Expected BooleanValue")
 	}
-	
+
 	// Test parsing Int
 	intType := types.NewInt(false)
 	intData := json.RawMessage("42")
@@ -37,7 +37,7 @@ func TestFromJSON(t *testing.T) {
 	} else {
 		t.Error("Expected IntValue")
 	}
-	
+
 	// Test parsing Float
 	floatType := types.NewFloat(false)
 	floatData := json.RawMessage("3.14")
@@ -52,7 +52,7 @@ func TestFromJSON(t *testing.T) {
 	} else {
 		t.Error("Expected FloatValue")
 	}
-	
+
 	// Test parsing String
 	stringType := types.NewString(false)
 	stringData := json.RawMessage(`"hello"`)
@@ -67,7 +67,7 @@ func TestFromJSON(t *testing.T) {
 	} else {
 		t.Error("Expected StringValue")
 	}
-	
+
 	// Test parsing null
 	optionalIntType := types.NewInt(true)
 	nullData := json.RawMessage("null")
@@ -78,7 +78,7 @@ func TestFromJSON(t *testing.T) {
 	if _, ok := val.(*Null); !ok {
 		t.Error("Expected Null value")
 	}
-	
+
 	// Test parsing null for non-optional type should fail
 	nonOptionalIntType := types.NewInt(false)
 	_, err = FromJSON(nullData, nonOptionalIntType)
@@ -91,12 +91,12 @@ func TestFromJSONArray(t *testing.T) {
 	intType := types.NewInt(false)
 	arrayType := types.NewArray(intType, false, false)
 	arrayData := json.RawMessage("[1, 2, 3]")
-	
+
 	val, err := FromJSON(arrayData, arrayType)
 	if err != nil {
 		t.Fatalf("Failed to parse array: %v", err)
 	}
-	
+
 	if arrayVal, ok := val.(*ArrayValue); ok {
 		if len(arrayVal.Items()) != 3 {
 			t.Errorf("Expected 3 items, got %d", len(arrayVal.Items()))
@@ -112,7 +112,7 @@ func TestFromJSONArray(t *testing.T) {
 	} else {
 		t.Error("Expected ArrayValue")
 	}
-	
+
 	// Test non-empty array constraint
 	nonemptyArrayType := types.NewArray(intType, false, true)
 	emptyArrayData := json.RawMessage("[]")
@@ -127,12 +127,12 @@ func TestFromJSONMap(t *testing.T) {
 	intType := types.NewInt(false)
 	mapType := types.NewMap(stringType, intType, false)
 	mapData := json.RawMessage(`{"a": 1, "b": 2, "c": 3}`)
-	
+
 	val, err := FromJSON(mapData, mapType)
 	if err != nil {
 		t.Fatalf("Failed to parse map: %v", err)
 	}
-	
+
 	if mapVal, ok := val.(*MapValue); ok {
 		if len(mapVal.Entries()) != 3 {
 			t.Errorf("Expected 3 entries, got %d", len(mapVal.Entries()))
@@ -159,12 +159,12 @@ func TestFromJSONPair(t *testing.T) {
 	intType := types.NewInt(false)
 	pairType := types.NewPair(stringType, intType, false)
 	pairData := json.RawMessage(`["hello", 42]`)
-	
+
 	val, err := FromJSON(pairData, pairType)
 	if err != nil {
 		t.Fatalf("Failed to parse pair: %v", err)
 	}
-	
+
 	if pairVal, ok := val.(*PairValue); ok {
 		if strVal, ok := pairVal.Left().(*StringValue); ok {
 			if strVal.Value().(string) != "hello" {
@@ -183,7 +183,7 @@ func TestFromJSONPair(t *testing.T) {
 	} else {
 		t.Error("Expected PairValue")
 	}
-	
+
 	// Test invalid pair (wrong number of elements)
 	invalidPairData := json.RawMessage(`["hello"]`)
 	_, err = FromJSON(invalidPairData, pairType)
@@ -200,12 +200,12 @@ func TestFromJSONStruct(t *testing.T) {
 	}
 	structType := types.NewStructInstance("Person", memberTypes, false)
 	structData := json.RawMessage(`{"name": "Alice", "age": 30}`)
-	
+
 	val, err := FromJSON(structData, structType)
 	if err != nil {
 		t.Fatalf("Failed to parse struct: %v", err)
 	}
-	
+
 	if structVal, ok := val.(*StructValue); ok {
 		if nameVal, ok := structVal.Get("name"); ok {
 			if strVal, ok := nameVal.(*StringValue); ok {
@@ -236,7 +236,7 @@ func TestFromJSONStruct(t *testing.T) {
 	} else {
 		t.Error("Expected StructValue")
 	}
-	
+
 	// Test missing required field
 	invalidStructData := json.RawMessage(`{"name": "Alice"}`)
 	_, err = FromJSON(invalidStructData, structType)
@@ -255,7 +255,7 @@ func TestInferValueFromJSON(t *testing.T) {
 	if _, ok := val.(*BooleanValue); !ok {
 		t.Error("Expected BooleanValue")
 	}
-	
+
 	// Test inferring integer
 	intData := json.RawMessage("42")
 	val, err = inferValueFromJSON(intData)
@@ -265,7 +265,7 @@ func TestInferValueFromJSON(t *testing.T) {
 	if _, ok := val.(*IntValue); !ok {
 		t.Error("Expected IntValue")
 	}
-	
+
 	// Test inferring float
 	floatData := json.RawMessage("3.14")
 	val, err = inferValueFromJSON(floatData)
@@ -275,7 +275,7 @@ func TestInferValueFromJSON(t *testing.T) {
 	if _, ok := val.(*FloatValue); !ok {
 		t.Error("Expected FloatValue")
 	}
-	
+
 	// Test inferring string
 	stringData := json.RawMessage(`"hello"`)
 	val, err = inferValueFromJSON(stringData)
@@ -285,7 +285,7 @@ func TestInferValueFromJSON(t *testing.T) {
 	if _, ok := val.(*StringValue); !ok {
 		t.Error("Expected StringValue")
 	}
-	
+
 	// Test inferring array
 	arrayData := json.RawMessage("[1, 2, 3]")
 	val, err = inferValueFromJSON(arrayData)
@@ -299,7 +299,7 @@ func TestInferValueFromJSON(t *testing.T) {
 	} else {
 		t.Error("Expected ArrayValue")
 	}
-	
+
 	// Test inferring object
 	objectData := json.RawMessage(`{"a": 1, "b": "hello"}`)
 	val, err = inferValueFromJSON(objectData)
@@ -309,7 +309,7 @@ func TestInferValueFromJSON(t *testing.T) {
 	if _, ok := val.(*ObjectValue); !ok {
 		t.Error("Expected ObjectValue")
 	}
-	
+
 	// Test inferring null
 	nullData := json.RawMessage("null")
 	val, err = inferValueFromJSON(nullData)
@@ -331,7 +331,7 @@ func TestToJSON(t *testing.T) {
 	if string(jsonData) != "true" {
 		t.Errorf("Expected JSON 'true', got '%s'", string(jsonData))
 	}
-	
+
 	// Test Int to JSON
 	intVal := NewInt(42, false)
 	jsonData, err = ToJSON(intVal)
@@ -341,7 +341,7 @@ func TestToJSON(t *testing.T) {
 	if string(jsonData) != "42" {
 		t.Errorf("Expected JSON '42', got '%s'", string(jsonData))
 	}
-	
+
 	// Test String to JSON
 	strVal := NewString("hello", false)
 	jsonData, err = ToJSON(strVal)
@@ -351,7 +351,7 @@ func TestToJSON(t *testing.T) {
 	if string(jsonData) != `"hello"` {
 		t.Errorf("Expected JSON '\"hello\"', got '%s'", string(jsonData))
 	}
-	
+
 	// Test null to JSON
 	nullVal := NewNull(types.NewInt(true))
 	jsonData, err = ToJSON(nullVal)

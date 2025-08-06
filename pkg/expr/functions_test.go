@@ -55,7 +55,7 @@ func newFunctionTestStdLib() *functionTestStdLib {
 			},
 		},
 	}
-	
+
 	return &functionTestStdLib{mockStdLib: base}
 }
 
@@ -87,11 +87,11 @@ func (f *functionTestStdLib) CallOperator(op string, args []values.Base, pos err
 func TestApplyBasicFunction(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	stdlib := newFunctionTestStdLib()
-	
+
 	// length("hello")
 	arg := NewStringLiteral("hello", pos)
 	apply := NewApply("length", []Expr{arg}, pos)
-	
+
 	// Test type inference
 	inferredType, err := apply.InferType(nil, stdlib)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestApplyBasicFunction(t *testing.T) {
 	if inferredType.String() != "Int" {
 		t.Errorf("Expected Int type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := apply.Eval(nil, stdlib)
 	if err != nil {
@@ -113,13 +113,13 @@ func TestApplyBasicFunction(t *testing.T) {
 	if intValue.Value().(int64) != 5 {
 		t.Errorf("Expected 5, got %d", intValue.Value().(int64))
 	}
-	
+
 	// Test string representation
 	expected := "length(\"hello\")"
 	if apply.String() != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, apply.String())
 	}
-	
+
 	// Test children
 	children := apply.Children()
 	if len(children) != 1 {
@@ -129,16 +129,16 @@ func TestApplyBasicFunction(t *testing.T) {
 
 func TestApplyUnknownFunction(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// unknown_func()
 	apply := NewApply("unknown_func", []Expr{}, pos)
-	
+
 	// Test with nil stdlib
 	_, err := apply.InferType(nil, nil)
 	if err == nil {
 		t.Errorf("Expected type inference to fail with nil stdlib")
 	}
-	
+
 	// Test with stdlib that doesn't have the function
 	stdlib := newFunctionTestStdLib()
 	_, err = apply.InferType(nil, stdlib)
@@ -150,18 +150,18 @@ func TestApplyUnknownFunction(t *testing.T) {
 func TestApplyWithVariables(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	stdlib := newFunctionTestStdLib()
-	
+
 	// length(name) where name is a variable
 	nameVar := NewIdentifier("name", pos)
 	apply := NewApply("length", []Expr{nameVar}, pos)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("name", types.NewString(false), nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("name", values.NewString("world", false), nil)
-	
+
 	// Test evaluation
 	value, err := apply.Eval(valueEnv, stdlib)
 	if err != nil {
@@ -179,10 +179,10 @@ func TestApplyWithVariables(t *testing.T) {
 func TestApplyTypeCheck(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	stdlib := newFunctionTestStdLib()
-	
+
 	arg := NewStringLiteral("test", pos)
 	apply := NewApply("length", []Expr{arg}, pos)
-	
+
 	tests := []struct {
 		name         string
 		expectedType types.Base
@@ -199,15 +199,15 @@ func TestApplyTypeCheck(t *testing.T) {
 			shouldFail:   true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := apply.TypeCheck(tt.expectedType, nil, stdlib)
-			
+
 			if tt.shouldFail && err == nil {
 				t.Errorf("Expected type check to fail but it succeeded")
 			}
-			
+
 			if !tt.shouldFail && err != nil {
 				t.Errorf("Expected type check to succeed but got error: %v", err)
 			}
@@ -219,7 +219,7 @@ func TestApplyTypeCheck(t *testing.T) {
 
 func TestBinaryOpArithmetic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	tests := []struct {
 		name     string
 		left     Expr
@@ -293,11 +293,11 @@ func TestBinaryOpArithmetic(t *testing.T) {
 			expType:  "Int",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			binOp := NewBinaryOp(tt.left, tt.operator, tt.right, pos)
-			
+
 			// Test type inference
 			inferredType, err := binOp.InferType(nil, nil)
 			if err != nil {
@@ -306,13 +306,13 @@ func TestBinaryOpArithmetic(t *testing.T) {
 			if inferredType.String() != tt.expType {
 				t.Errorf("Expected %s type, got %s", tt.expType, inferredType.String())
 			}
-			
+
 			// Test evaluation
 			value, err := binOp.Eval(nil, nil)
 			if err != nil {
 				t.Errorf("Evaluation failed: %v", err)
 			}
-			
+
 			switch tt.expType {
 			case "Int":
 				intValue, ok := value.(*values.IntValue)
@@ -345,7 +345,7 @@ func TestBinaryOpArithmetic(t *testing.T) {
 
 func TestBinaryOpComparison(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	tests := []struct {
 		name     string
 		left     Expr
@@ -389,11 +389,11 @@ func TestBinaryOpComparison(t *testing.T) {
 			expected: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			binOp := NewBinaryOp(tt.left, tt.operator, tt.right, pos)
-			
+
 			// Test type inference
 			inferredType, err := binOp.InferType(nil, nil)
 			if err != nil {
@@ -402,7 +402,7 @@ func TestBinaryOpComparison(t *testing.T) {
 			if inferredType.String() != "Boolean" {
 				t.Errorf("Expected Boolean type, got %s", inferredType.String())
 			}
-			
+
 			// Test evaluation
 			value, err := binOp.Eval(nil, nil)
 			if err != nil {
@@ -421,7 +421,7 @@ func TestBinaryOpComparison(t *testing.T) {
 
 func TestBinaryOpEquality(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Test equality
 	eqOp := NewBinaryOp(NewIntLiteral(5, pos), "==", NewIntLiteral(5, pos), pos)
 	value, err := eqOp.Eval(nil, nil)
@@ -435,7 +435,7 @@ func TestBinaryOpEquality(t *testing.T) {
 	if !boolValue.Value().(bool) {
 		t.Errorf("Expected true for equality, got false")
 	}
-	
+
 	// Test inequality
 	neqOp := NewBinaryOp(NewIntLiteral(5, pos), "!=", NewIntLiteral(3, pos), pos)
 	value, err = neqOp.Eval(nil, nil)
@@ -453,7 +453,7 @@ func TestBinaryOpEquality(t *testing.T) {
 
 func TestBinaryOpNullPropagation(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// null + 5 should return null
 	binOp := NewBinaryOp(NewNullLiteral(pos), "+", NewIntLiteral(5, pos), pos)
 	value, err := binOp.Eval(nil, nil)
@@ -468,7 +468,7 @@ func TestBinaryOpNullPropagation(t *testing.T) {
 
 func TestBinaryOpInvalidTypes(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// "hello" - 5 should fail (string subtraction)
 	binOp := NewBinaryOp(NewStringLiteral("hello", pos), "-", NewIntLiteral(5, pos), pos)
 	_, err := binOp.InferType(nil, nil)
@@ -480,10 +480,10 @@ func TestBinaryOpInvalidTypes(t *testing.T) {
 func TestBinaryOpWithStdlibOperator(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	stdlib := newFunctionTestStdLib()
-	
+
 	// 2 ** 3 (power operator from stdlib)
 	binOp := NewBinaryOp(NewIntLiteral(2, pos), "**", NewIntLiteral(3, pos), pos)
-	
+
 	// Test evaluation with stdlib
 	value, err := binOp.Eval(nil, stdlib)
 	if err != nil {
@@ -500,11 +500,11 @@ func TestBinaryOpWithStdlibOperator(t *testing.T) {
 
 func TestBinaryOpChildren(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	left := NewIntLiteral(5, pos)
 	right := NewIntLiteral(3, pos)
 	binOp := NewBinaryOp(left, "+", right, pos)
-	
+
 	children := binOp.Children()
 	if len(children) != 2 {
 		t.Errorf("Expected 2 children, got %d", len(children))
@@ -518,7 +518,7 @@ func TestBinaryOpChildren(t *testing.T) {
 
 func TestUnaryOpNumeric(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	tests := []struct {
 		name     string
 		operator string
@@ -555,11 +555,11 @@ func TestUnaryOpNumeric(t *testing.T) {
 			expType:  "Float",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			unaryOp := NewUnaryOp(tt.operator, tt.operand, pos)
-			
+
 			// Test type inference
 			inferredType, err := unaryOp.InferType(nil, nil)
 			if err != nil {
@@ -568,13 +568,13 @@ func TestUnaryOpNumeric(t *testing.T) {
 			if inferredType.String() != tt.expType {
 				t.Errorf("Expected %s type, got %s", tt.expType, inferredType.String())
 			}
-			
+
 			// Test evaluation
 			value, err := unaryOp.Eval(nil, nil)
 			if err != nil {
 				t.Errorf("Evaluation failed: %v", err)
 			}
-			
+
 			switch tt.expType {
 			case "Int":
 				intValue, ok := value.(*values.IntValue)
@@ -599,10 +599,10 @@ func TestUnaryOpNumeric(t *testing.T) {
 
 func TestUnaryOpLogicalNot(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// !true
 	unaryOp := NewUnaryOp("!", NewBooleanLiteral(true, pos), pos)
-	
+
 	// Test type inference
 	inferredType, err := unaryOp.InferType(nil, nil)
 	if err != nil {
@@ -611,7 +611,7 @@ func TestUnaryOpLogicalNot(t *testing.T) {
 	if inferredType.String() != "Boolean" {
 		t.Errorf("Expected Boolean type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := unaryOp.Eval(nil, nil)
 	if err != nil {
@@ -628,7 +628,7 @@ func TestUnaryOpLogicalNot(t *testing.T) {
 
 func TestUnaryOpNullPropagation(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// -null should return null
 	unaryOp := NewUnaryOp("-", NewNullLiteral(pos), pos)
 	value, err := unaryOp.Eval(nil, nil)
@@ -643,14 +643,14 @@ func TestUnaryOpNullPropagation(t *testing.T) {
 
 func TestUnaryOpInvalidTypes(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// -"hello" should fail (string negation)
 	unaryOp := NewUnaryOp("-", NewStringLiteral("hello", pos), pos)
 	_, err := unaryOp.InferType(nil, nil)
 	if err == nil {
 		t.Errorf("Expected type inference to fail for string negation")
 	}
-	
+
 	// !"hello" should fail (string logical NOT)
 	unaryOp2 := NewUnaryOp("!", NewStringLiteral("hello", pos), pos)
 	_, err = unaryOp2.InferType(nil, nil)
@@ -661,7 +661,7 @@ func TestUnaryOpInvalidTypes(t *testing.T) {
 
 func TestUnaryOpUnknownOperator(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// ~5 (unknown operator)
 	unaryOp := NewUnaryOp("~", NewIntLiteral(5, pos), pos)
 	_, err := unaryOp.InferType(nil, nil)
@@ -672,10 +672,10 @@ func TestUnaryOpUnknownOperator(t *testing.T) {
 
 func TestUnaryOpChildren(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	operand := NewIntLiteral(5, pos)
 	unaryOp := NewUnaryOp("-", operand, pos)
-	
+
 	children := unaryOp.Children()
 	if len(children) != 1 {
 		t.Errorf("Expected 1 child, got %d", len(children))
@@ -687,10 +687,10 @@ func TestUnaryOpChildren(t *testing.T) {
 
 func TestUnaryOpString(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	operand := NewIntLiteral(5, pos)
 	unaryOp := NewUnaryOp("-", operand, pos)
-	
+
 	expected := "-5"
 	if unaryOp.String() != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, unaryOp.String())
@@ -701,12 +701,12 @@ func TestUnaryOpString(t *testing.T) {
 
 func TestComplexArithmeticExpression(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// (5 + 3) * 2 - 1
 	add := NewBinaryOp(NewIntLiteral(5, pos), "+", NewIntLiteral(3, pos), pos)
 	mul := NewBinaryOp(add, "*", NewIntLiteral(2, pos), pos)
 	sub := NewBinaryOp(mul, "-", NewIntLiteral(1, pos), pos)
-	
+
 	value, err := sub.Eval(nil, nil)
 	if err != nil {
 		t.Errorf("Complex expression evaluation failed: %v", err)
@@ -722,10 +722,10 @@ func TestComplexArithmeticExpression(t *testing.T) {
 
 func TestMixedTypeArithmetic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// 5 + 2.5 (int + float = float)
 	binOp := NewBinaryOp(NewIntLiteral(5, pos), "+", NewFloatLiteral(2.5, pos), pos)
-	
+
 	// Test type inference
 	inferredType, err := binOp.InferType(nil, nil)
 	if err != nil {
@@ -734,7 +734,7 @@ func TestMixedTypeArithmetic(t *testing.T) {
 	if inferredType.String() != "Float" {
 		t.Errorf("Expected Float type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := binOp.Eval(nil, nil)
 	if err != nil {
@@ -753,7 +753,7 @@ func TestMixedTypeArithmetic(t *testing.T) {
 
 func TestDivisionByZero(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// 5 / 0
 	binOp := NewBinaryOp(NewIntLiteral(5, pos), "/", NewIntLiteral(0, pos), pos)
 	_, err := binOp.Eval(nil, nil)
@@ -764,7 +764,7 @@ func TestDivisionByZero(t *testing.T) {
 
 func TestModuloByZero(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// 5 % 0
 	binOp := NewBinaryOp(NewIntLiteral(5, pos), "%", NewIntLiteral(0, pos), pos)
 	_, err := binOp.Eval(nil, nil)
@@ -778,7 +778,7 @@ func TestModuloByZero(t *testing.T) {
 func TestFunctionOperatorTypeCheck(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	stdlib := newFunctionTestStdLib()
-	
+
 	tests := []struct {
 		name         string
 		expr         Expr
@@ -816,15 +816,15 @@ func TestFunctionOperatorTypeCheck(t *testing.T) {
 			shouldFail:   true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.expr.TypeCheck(tt.expectedType, nil, stdlib)
-			
+
 			if tt.shouldFail && err == nil {
 				t.Errorf("Expected type check to fail but it succeeded")
 			}
-			
+
 			if !tt.shouldFail && err != nil {
 				t.Errorf("Expected type check to succeed but got error: %v", err)
 			}

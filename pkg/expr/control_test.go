@@ -13,13 +13,13 @@ import (
 
 func TestIfThenElseBasic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// if true then "yes" else "no"
 	condition := NewBooleanLiteral(true, pos)
 	thenExpr := NewStringLiteral("yes", pos)
 	elseExpr := NewStringLiteral("no", pos)
 	ifExpr := NewIfThenElse(condition, thenExpr, elseExpr, pos)
-	
+
 	// Test type inference
 	inferredType, err := ifExpr.InferType(nil, nil)
 	if err != nil {
@@ -28,7 +28,7 @@ func TestIfThenElseBasic(t *testing.T) {
 	if inferredType.String() != "String" {
 		t.Errorf("Expected String type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := ifExpr.Eval(nil, nil)
 	if err != nil {
@@ -41,13 +41,13 @@ func TestIfThenElseBasic(t *testing.T) {
 	if stringValue.Value().(string) != "yes" {
 		t.Errorf("Expected 'yes', got %s", stringValue.Value().(string))
 	}
-	
+
 	// Test string representation
 	expected := "if true then \"yes\" else \"no\""
 	if ifExpr.String() != expected {
 		t.Errorf("Expected '%s', got %s", expected, ifExpr.String())
 	}
-	
+
 	// Test children
 	children := ifExpr.Children()
 	if len(children) != 3 {
@@ -57,13 +57,13 @@ func TestIfThenElseBasic(t *testing.T) {
 
 func TestIfThenElseFalseCondition(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// if false then 10 else 20
 	condition := NewBooleanLiteral(false, pos)
 	thenExpr := NewIntLiteral(10, pos)
 	elseExpr := NewIntLiteral(20, pos)
 	ifExpr := NewIfThenElse(condition, thenExpr, elseExpr, pos)
-	
+
 	// Test evaluation
 	value, err := ifExpr.Eval(nil, nil)
 	if err != nil {
@@ -80,13 +80,13 @@ func TestIfThenElseFalseCondition(t *testing.T) {
 
 func TestIfThenElseTypeUnification(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// if true then 1 else 2.5 (Int and Float should unify to Float)
 	condition := NewBooleanLiteral(true, pos)
 	thenExpr := NewIntLiteral(1, pos)
 	elseExpr := NewFloatLiteral(2.5, pos)
 	ifExpr := NewIfThenElse(condition, thenExpr, elseExpr, pos)
-	
+
 	// Test type inference
 	inferredType, err := ifExpr.InferType(nil, nil)
 	if err != nil {
@@ -99,13 +99,13 @@ func TestIfThenElseTypeUnification(t *testing.T) {
 
 func TestIfThenElseIncompatibleTypes(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// if true then 1 else "hello" (incompatible types)
 	condition := NewBooleanLiteral(true, pos)
 	thenExpr := NewIntLiteral(1, pos)
 	elseExpr := NewStringLiteral("hello", pos)
 	ifExpr := NewIfThenElse(condition, thenExpr, elseExpr, pos)
-	
+
 	// Test type inference - should fail
 	_, err := ifExpr.InferType(nil, nil)
 	if err == nil {
@@ -115,13 +115,13 @@ func TestIfThenElseIncompatibleTypes(t *testing.T) {
 
 func TestIfThenElseNonBooleanCondition(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// if "string" then 1 else 2 (non-boolean condition)
 	condition := NewStringLiteral("string", pos)
 	thenExpr := NewIntLiteral(1, pos)
 	elseExpr := NewIntLiteral(2, pos)
 	ifExpr := NewIfThenElse(condition, thenExpr, elseExpr, pos)
-	
+
 	// Test type inference - should fail
 	_, err := ifExpr.InferType(nil, nil)
 	if err == nil {
@@ -131,24 +131,24 @@ func TestIfThenElseNonBooleanCondition(t *testing.T) {
 
 func TestIfThenElseWithVariables(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// if condition then x else y
 	conditionVar := NewIdentifier("condition", pos)
 	thenVar := NewIdentifier("x", pos)
 	elseVar := NewIdentifier("y", pos)
 	ifExpr := NewIfThenElse(conditionVar, thenVar, elseVar, pos)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("condition", types.NewBoolean(false), nil)
 	typeEnv = typeEnv.Bind("x", types.NewInt(false), nil)
 	typeEnv = typeEnv.Bind("y", types.NewInt(false), nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("condition", values.NewBoolean(true, false), nil)
 	valueEnv = valueEnv.Bind("x", values.NewInt(42, false), nil)
 	valueEnv = valueEnv.Bind("y", values.NewInt(100, false), nil)
-	
+
 	// Test evaluation
 	value, err := ifExpr.Eval(valueEnv, nil)
 	if err != nil {
@@ -167,12 +167,12 @@ func TestIfThenElseWithVariables(t *testing.T) {
 
 func TestLogicalAndBasic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// true && false
 	leftExpr := NewBooleanLiteral(true, pos)
 	rightExpr := NewBooleanLiteral(false, pos)
 	andExpr := NewLogicalAnd(leftExpr, rightExpr, pos)
-	
+
 	// Test type inference
 	inferredType, err := andExpr.InferType(nil, nil)
 	if err != nil {
@@ -181,7 +181,7 @@ func TestLogicalAndBasic(t *testing.T) {
 	if inferredType.String() != "Boolean" {
 		t.Errorf("Expected Boolean type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := andExpr.Eval(nil, nil)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestLogicalAndBasic(t *testing.T) {
 	if boolValue.Value().(bool) != false {
 		t.Errorf("Expected false, got %t", boolValue.Value().(bool))
 	}
-	
+
 	// Test string representation
 	expected := "(true && false)"
 	if andExpr.String() != expected {
@@ -204,12 +204,12 @@ func TestLogicalAndBasic(t *testing.T) {
 
 func TestLogicalAndShortCircuit(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// false && true (should short-circuit)
 	leftExpr := NewBooleanLiteral(false, pos)
 	rightExpr := NewBooleanLiteral(true, pos)
 	andExpr := NewLogicalAnd(leftExpr, rightExpr, pos)
-	
+
 	// Test evaluation
 	value, err := andExpr.Eval(nil, nil)
 	if err != nil {
@@ -226,12 +226,12 @@ func TestLogicalAndShortCircuit(t *testing.T) {
 
 func TestLogicalAndTrueTrue(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// true && true
 	leftExpr := NewBooleanLiteral(true, pos)
 	rightExpr := NewBooleanLiteral(true, pos)
 	andExpr := NewLogicalAnd(leftExpr, rightExpr, pos)
-	
+
 	// Test evaluation
 	value, err := andExpr.Eval(nil, nil)
 	if err != nil {
@@ -248,12 +248,12 @@ func TestLogicalAndTrueTrue(t *testing.T) {
 
 func TestLogicalAndWithNull(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// null && true (should return null)
 	leftExpr := NewNullLiteral(pos)
 	rightExpr := NewBooleanLiteral(true, pos)
 	andExpr := NewLogicalAnd(leftExpr, rightExpr, pos)
-	
+
 	// Test evaluation
 	value, err := andExpr.Eval(nil, nil)
 	if err != nil {
@@ -267,12 +267,12 @@ func TestLogicalAndWithNull(t *testing.T) {
 
 func TestLogicalAndNonBooleanOperand(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// "string" && true (non-boolean operand)
 	leftExpr := NewStringLiteral("string", pos)
 	rightExpr := NewBooleanLiteral(true, pos)
 	andExpr := NewLogicalAnd(leftExpr, rightExpr, pos)
-	
+
 	// Test type inference - should fail
 	_, err := andExpr.InferType(nil, nil)
 	if err == nil {
@@ -284,12 +284,12 @@ func TestLogicalAndNonBooleanOperand(t *testing.T) {
 
 func TestLogicalOrBasic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// false || true
 	leftExpr := NewBooleanLiteral(false, pos)
 	rightExpr := NewBooleanLiteral(true, pos)
 	orExpr := NewLogicalOr(leftExpr, rightExpr, pos)
-	
+
 	// Test evaluation
 	value, err := orExpr.Eval(nil, nil)
 	if err != nil {
@@ -302,7 +302,7 @@ func TestLogicalOrBasic(t *testing.T) {
 	if boolValue.Value().(bool) != true {
 		t.Errorf("Expected true, got %t", boolValue.Value().(bool))
 	}
-	
+
 	// Test string representation
 	expected := "(false || true)"
 	if orExpr.String() != expected {
@@ -312,12 +312,12 @@ func TestLogicalOrBasic(t *testing.T) {
 
 func TestLogicalOrShortCircuit(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// true || false (should short-circuit)
 	leftExpr := NewBooleanLiteral(true, pos)
 	rightExpr := NewBooleanLiteral(false, pos)
 	orExpr := NewLogicalOr(leftExpr, rightExpr, pos)
-	
+
 	// Test evaluation
 	value, err := orExpr.Eval(nil, nil)
 	if err != nil {
@@ -334,12 +334,12 @@ func TestLogicalOrShortCircuit(t *testing.T) {
 
 func TestLogicalOrFalseFalse(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// false || false
 	leftExpr := NewBooleanLiteral(false, pos)
 	rightExpr := NewBooleanLiteral(false, pos)
 	orExpr := NewLogicalOr(leftExpr, rightExpr, pos)
-	
+
 	// Test evaluation
 	value, err := orExpr.Eval(nil, nil)
 	if err != nil {
@@ -358,11 +358,11 @@ func TestLogicalOrFalseFalse(t *testing.T) {
 
 func TestLogicalNotBasic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// !true
 	operand := NewBooleanLiteral(true, pos)
 	notExpr := NewLogicalNot(operand, pos)
-	
+
 	// Test type inference
 	inferredType, err := notExpr.InferType(nil, nil)
 	if err != nil {
@@ -371,7 +371,7 @@ func TestLogicalNotBasic(t *testing.T) {
 	if inferredType.String() != "Boolean" {
 		t.Errorf("Expected Boolean type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := notExpr.Eval(nil, nil)
 	if err != nil {
@@ -384,13 +384,13 @@ func TestLogicalNotBasic(t *testing.T) {
 	if boolValue.Value().(bool) != false {
 		t.Errorf("Expected false, got %t", boolValue.Value().(bool))
 	}
-	
+
 	// Test string representation
 	expected := "!true"
 	if notExpr.String() != expected {
 		t.Errorf("Expected '%s', got %s", expected, notExpr.String())
 	}
-	
+
 	// Test children
 	children := notExpr.Children()
 	if len(children) != 1 {
@@ -400,11 +400,11 @@ func TestLogicalNotBasic(t *testing.T) {
 
 func TestLogicalNotFalse(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// !false
 	operand := NewBooleanLiteral(false, pos)
 	notExpr := NewLogicalNot(operand, pos)
-	
+
 	// Test evaluation
 	value, err := notExpr.Eval(nil, nil)
 	if err != nil {
@@ -421,11 +421,11 @@ func TestLogicalNotFalse(t *testing.T) {
 
 func TestLogicalNotWithNull(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// !null
 	operand := NewNullLiteral(pos)
 	notExpr := NewLogicalNot(operand, pos)
-	
+
 	// Test evaluation - should return null
 	value, err := notExpr.Eval(nil, nil)
 	if err != nil {
@@ -439,11 +439,11 @@ func TestLogicalNotWithNull(t *testing.T) {
 
 func TestLogicalNotNonBoolean(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// !"string" (non-boolean operand)
 	operand := NewStringLiteral("string", pos)
 	notExpr := NewLogicalNot(operand, pos)
-	
+
 	// Test type inference - should fail
 	_, err := notExpr.InferType(nil, nil)
 	if err == nil {
@@ -455,22 +455,22 @@ func TestLogicalNotNonBoolean(t *testing.T) {
 
 func TestComplexLogicalExpression(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// !(true && false) || (false || true)
 	// Should evaluate to: !false || true = true || true = true
-	
+
 	// Build the expression
 	trueExpr1 := NewBooleanLiteral(true, pos)
 	falseExpr1 := NewBooleanLiteral(false, pos)
 	andExpr := NewLogicalAnd(trueExpr1, falseExpr1, pos)
 	notExpr := NewLogicalNot(andExpr, pos)
-	
+
 	falseExpr2 := NewBooleanLiteral(false, pos)
 	trueExpr2 := NewBooleanLiteral(true, pos)
 	orExpr1 := NewLogicalOr(falseExpr2, trueExpr2, pos)
-	
+
 	finalOrExpr := NewLogicalOr(notExpr, orExpr1, pos)
-	
+
 	// Test evaluation
 	value, err := finalOrExpr.Eval(nil, nil)
 	if err != nil {
@@ -489,7 +489,7 @@ func TestComplexLogicalExpression(t *testing.T) {
 
 func TestControlExpressionTypeCheck(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	tests := []struct {
 		name         string
 		expr         Expr
@@ -527,15 +527,15 @@ func TestControlExpressionTypeCheck(t *testing.T) {
 			shouldFail:   true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.expr.TypeCheck(tt.expectedType, nil, nil)
-			
+
 			if tt.shouldFail && err == nil {
 				t.Errorf("Expected type check to fail but it succeeded")
 			}
-			
+
 			if !tt.shouldFail && err != nil {
 				t.Errorf("Expected type check to succeed but got error: %v", err)
 			}
@@ -547,13 +547,13 @@ func TestControlExpressionTypeCheck(t *testing.T) {
 
 func TestControlExpressionChildren(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Test IfThenElse children
 	condition := NewBooleanLiteral(true, pos)
 	thenExpr := NewStringLiteral("yes", pos)
 	elseExpr := NewStringLiteral("no", pos)
 	ifExpr := NewIfThenElse(condition, thenExpr, elseExpr, pos)
-	
+
 	children := ifExpr.Children()
 	if len(children) != 3 {
 		t.Errorf("Expected 3 children for IfThenElse, got %d", len(children))
@@ -561,12 +561,12 @@ func TestControlExpressionChildren(t *testing.T) {
 	if children[0] != condition || children[1] != thenExpr || children[2] != elseExpr {
 		t.Errorf("IfThenElse children don't match expected order")
 	}
-	
+
 	// Test LogicalAnd children
 	leftExpr := NewBooleanLiteral(true, pos)
 	rightExpr := NewBooleanLiteral(false, pos)
 	andExpr := NewLogicalAnd(leftExpr, rightExpr, pos)
-	
+
 	children = andExpr.Children()
 	if len(children) != 2 {
 		t.Errorf("Expected 2 children for LogicalAnd, got %d", len(children))
@@ -574,11 +574,11 @@ func TestControlExpressionChildren(t *testing.T) {
 	if children[0] != leftExpr || children[1] != rightExpr {
 		t.Errorf("LogicalAnd children don't match expected order")
 	}
-	
+
 	// Test LogicalNot children
 	operand := NewBooleanLiteral(true, pos)
 	notExpr := NewLogicalNot(operand, pos)
-	
+
 	children = notExpr.Children()
 	if len(children) != 1 {
 		t.Errorf("Expected 1 child for LogicalNot, got %d", len(children))

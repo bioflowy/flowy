@@ -8,8 +8,8 @@ import (
 // ArrayType represents the WDL Array type
 type ArrayType struct {
 	baseType
-	itemType   Base
-	nonempty   bool // Array[T]+ if true
+	itemType Base
+	nonempty bool // Array[T]+ if true
 }
 
 func NewArray(itemType Base, optional bool, nonempty bool) *ArrayType {
@@ -71,7 +71,7 @@ func (a *ArrayType) Check(target Base, checkQuant bool) error {
 		}
 		return a.checkOptional(target, checkQuant)
 	}
-	
+
 	// Array[T] coerces to String if T coerces to String
 	if _, ok := target.(*StringType); ok {
 		if err := a.itemType.Check(NewString(false), checkQuant); err != nil {
@@ -79,11 +79,11 @@ func (a *ArrayType) Check(target Base, checkQuant bool) error {
 		}
 		return a.checkOptional(target, checkQuant)
 	}
-	
+
 	if isAny(target) {
 		return a.checkOptional(target, checkQuant)
 	}
-	
+
 	return fmt.Errorf("cannot coerce %s to %s", a.String(), target.String())
 }
 
@@ -166,11 +166,11 @@ func (m *MapType) Check(target Base, checkQuant bool) error {
 		}
 		return m.checkOptional(target, checkQuant)
 	}
-	
+
 	if isAny(target) {
 		return m.checkOptional(target, checkQuant)
 	}
-	
+
 	return fmt.Errorf("cannot coerce %s to %s", m.String(), target.String())
 }
 
@@ -253,11 +253,11 @@ func (p *PairType) Check(target Base, checkQuant bool) error {
 		}
 		return p.checkOptional(target, checkQuant)
 	}
-	
+
 	if isAny(target) {
 		return p.checkOptional(target, checkQuant)
 	}
-	
+
 	return fmt.Errorf("cannot coerce %s to %s", p.String(), target.String())
 }
 
@@ -282,9 +282,9 @@ func (p *PairType) Comparable(other Base, checkQuant bool) bool {
 // StructInstanceType represents a WDL struct instance type
 type StructInstanceType struct {
 	baseType
-	typeName  string
-	members   map[string]Base
-	typeID    string
+	typeName string
+	members  map[string]Base
+	typeID   string
 }
 
 func NewStructInstance(typeName string, members map[string]Base, optional bool) *StructInstanceType {
@@ -340,11 +340,11 @@ func (s *StructInstanceType) Check(target Base, checkQuant bool) error {
 		}
 		return s.checkOptional(target, checkQuant)
 	}
-	
+
 	if isAny(target) {
 		return s.checkOptional(target, checkQuant)
 	}
-	
+
 	return fmt.Errorf("cannot coerce %s to %s", s.String(), target.String())
 }
 
@@ -399,11 +399,11 @@ func (o *ObjectType) Check(target Base, checkQuant bool) error {
 	if _, ok := target.(*ObjectType); ok {
 		return o.checkOptional(target, checkQuant)
 	}
-	
+
 	if isAny(target) {
 		return o.checkOptional(target, checkQuant)
 	}
-	
+
 	return fmt.Errorf("cannot coerce %s to %s", o.String(), target.String())
 }
 
@@ -425,17 +425,17 @@ func (o *ObjectType) Comparable(other Base, checkQuant bool) bool {
 func generateStructTypeID(typeName string, members map[string]Base) string {
 	var parts []string
 	parts = append(parts, typeName)
-	
+
 	// Sort member names for consistent ID generation
 	var memberNames []string
 	for name := range members {
 		memberNames = append(memberNames, name)
 	}
-	
+
 	// Simple string concatenation for ID (could be made more sophisticated)
 	for _, name := range memberNames {
 		parts = append(parts, fmt.Sprintf("%s:%s", name, members[name].String()))
 	}
-	
+
 	return strings.Join(parts, "|")
 }

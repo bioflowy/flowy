@@ -370,9 +370,9 @@ func (b *BinaryOp) evalArithmetic(left, right values.Base, op func(interface{}, 
 	leftVal := leftFloat.(*values.FloatValue).Value().(float64)
 	rightVal := rightFloat.(*values.FloatValue).Value().(float64)
 	result, err := op(leftVal, rightVal)
-		if err != nil {
-			return nil, errors.NewEvalErrorFromPos(b.pos, err.Error())
-		}
+	if err != nil {
+		return nil, errors.NewEvalErrorFromPos(b.pos, err.Error())
+	}
 
 	if floatResult, ok := result.(float64); ok {
 		return values.NewFloat(floatResult, false), nil
@@ -582,8 +582,8 @@ func (u *UnaryOp) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (t
 		// Logical NOT - already handled in control.go as LogicalNot
 		if err := operandType.Check(types.NewBoolean(false), true); err != nil {
 			return nil, &errors.InvalidType{
-			ValidationError: errors.NewValidationErrorFromPos(u.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", operandType.String())),
-		}
+				ValidationError: errors.NewValidationErrorFromPos(u.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Boolean", operandType.String())),
+			}
 		}
 		return types.NewBoolean(operandType.Optional()), nil
 	default:

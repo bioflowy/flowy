@@ -3,19 +3,19 @@ package utils
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
-	"github.com/google/uuid"
 )
 
 // StripLeadingWhitespace removes common leading whitespace from all lines
 func StripLeadingWhitespace(txt string) (int, string) {
 	lines := strings.Split(txt, "\n")
-	
+
 	var toStrip *int
 	for _, line := range lines {
 		trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
@@ -26,17 +26,17 @@ func StripLeadingWhitespace(txt string) (int, string) {
 			}
 		}
 	}
-	
+
 	if toStrip == nil || *toStrip == 0 {
 		return 0, txt
 	}
-	
+
 	for i, line := range lines {
 		if len(strings.TrimSpace(line)) > 0 && len(line) >= *toStrip {
 			lines[i] = line[*toStrip:]
 		}
 	}
-	
+
 	return *toStrip, strings.Join(lines, "\n")
 }
 
@@ -105,7 +105,7 @@ func (a *AdjM[T]) AddNode(node T) {
 func (a *AdjM[T]) AddEdge(source, sink T) {
 	a.AddNode(source)
 	a.AddNode(sink)
-	
+
 	if !a.forward[source][sink] {
 		a.forward[source][sink] = true
 		a.reverse[sink][source] = true
@@ -134,7 +134,7 @@ func (a *AdjM[T]) RemoveNode(node T) {
 	for sink := range a.forward[node] {
 		a.RemoveEdge(node, sink)
 	}
-	
+
 	delete(a.forward, node)
 	delete(a.reverse, node)
 	delete(a.unconstrained, node)
@@ -143,7 +143,7 @@ func (a *AdjM[T]) RemoveNode(node T) {
 // TopSort performs topological sorting on the adjacency matrix
 func TopSort[T comparable](adj *AdjM[T]) []T {
 	var result []T
-	
+
 	for len(adj.unconstrained) > 0 {
 		// Get any unconstrained node
 		var node T
@@ -151,16 +151,16 @@ func TopSort[T comparable](adj *AdjM[T]) []T {
 			node = n
 			break
 		}
-		
+
 		adj.RemoveNode(node)
 		result = append(result, node)
 	}
-	
+
 	// Check for cycles
 	if len(adj.forward) > 0 {
 		panic("cycle detected in graph")
 	}
-	
+
 	return result
 }
 
@@ -172,43 +172,43 @@ func WriteAtomic(contents, filename string) error {
 // WriteAtomicWithEnd writes content to a file atomically with custom ending
 func WriteAtomicWithEnd(contents, filename, end string) error {
 	tempFile := filename + ".tmp." + uuid.New().String()
-	
+
 	f, err := os.Create(tempFile)
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = f.WriteString(contents + end)
 	if err != nil {
 		f.Close()
 		os.Remove(tempFile)
 		return err
 	}
-	
+
 	err = f.Close()
 	if err != nil {
 		os.Remove(tempFile)
 		return err
 	}
-	
+
 	return os.Rename(tempFile, filename)
 }
 
 // SymlinkForce creates a symbolic or hard link, replacing any existing link
 func SymlinkForce(src, dst string, hard bool) error {
 	tempLink := dst + ".tmp." + uuid.New().String()
-	
+
 	var err error
 	if hard {
 		err = os.Link(src, tempLink)
 	} else {
 		err = os.Symlink(src, tempLink)
 	}
-	
+
 	if err != nil {
 		return err
 	}
-	
+
 	return os.Rename(tempLink, dst)
 }
 
@@ -218,12 +218,12 @@ func ParseByteSize(s string) (int64, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty byte size string")
 	}
-	
+
 	// Check for negative values
 	if strings.HasPrefix(s, "-") {
 		return 0, fmt.Errorf("negative byte size not allowed")
 	}
-	
+
 	// Find the first non-digit, non-decimal point character
 	var numPart, unitPart string
 	for i, r := range s {
@@ -233,21 +233,21 @@ func ParseByteSize(s string) (int64, error) {
 			break
 		}
 	}
-	
+
 	if numPart == "" {
 		numPart = s
 		unitPart = ""
 	}
-	
+
 	num, err := strconv.ParseFloat(numPart, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid number: %s", numPart)
 	}
-	
+
 	if num < 0 {
 		return 0, fmt.Errorf("negative byte size not allowed")
 	}
-	
+
 	var multiplier int64 = 1
 	switch unitPart {
 	case "", "B":
@@ -263,7 +263,7 @@ func ParseByteSize(s string) (int64, error) {
 	default:
 		return 0, fmt.Errorf("unknown unit: %s", unitPart)
 	}
-	
+
 	result := int64(math.Round(num * float64(multiplier)))
 	return result, nil
 }
@@ -273,26 +273,26 @@ func SplitAll(path string) []string {
 	if path == "" {
 		return []string{}
 	}
-	
+
 	var parts []string
 	path = filepath.Clean(path)
-	
+
 	for {
 		dir, file := filepath.Split(path)
 		if file != "" {
 			parts = append([]string{file}, parts...)
 		}
-		
+
 		if dir == "" || dir == "/" {
 			if dir == "/" {
 				parts = append([]string{"/"}, parts...)
 			}
 			break
 		}
-		
+
 		path = filepath.Clean(dir)
 	}
-	
+
 	return parts
 }
 
@@ -302,25 +302,25 @@ func PathReallyWithin(child, parent string) bool {
 	if err != nil {
 		return false
 	}
-	
+
 	parentAbs, err := filepath.Abs(parent)
 	if err != nil {
 		return false
 	}
-	
+
 	// Ensure paths end with separator for proper comparison
 	if !strings.HasSuffix(parentAbs, string(filepath.Separator)) {
 		parentAbs += string(filepath.Separator)
 	}
-	
+
 	if !strings.HasSuffix(childAbs, string(filepath.Separator)) {
 		childAbs += string(filepath.Separator)
 	}
-	
+
 	// Handle the case where child equals parent
 	if childAbs == parentAbs {
 		return true
 	}
-	
+
 	return strings.HasPrefix(childAbs, parentAbs)
 }

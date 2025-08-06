@@ -16,7 +16,7 @@ func TestBooleanValue(t *testing.T) {
 	if trueVal.String() != "true" {
 		t.Errorf("Expected 'true', got '%s'", trueVal.String())
 	}
-	
+
 	// Test false value
 	falseVal := NewBoolean(false, false)
 	if falseVal.Value().(bool) != false {
@@ -25,7 +25,7 @@ func TestBooleanValue(t *testing.T) {
 	if falseVal.String() != "false" {
 		t.Errorf("Expected 'false', got '%s'", falseVal.String())
 	}
-	
+
 	// Test JSON
 	jsonData := trueVal.JSON()
 	var jsonBool bool
@@ -39,17 +39,17 @@ func TestBooleanValue(t *testing.T) {
 
 func TestIntValue(t *testing.T) {
 	intVal := NewInt(42, false)
-	
+
 	// Test value
 	if intVal.Value().(int64) != 42 {
 		t.Errorf("Expected value 42, got %v", intVal.Value())
 	}
-	
+
 	// Test string
 	if intVal.String() != "42" {
 		t.Errorf("Expected '42', got '%s'", intVal.String())
 	}
-	
+
 	// Test JSON
 	jsonData := intVal.JSON()
 	var jsonInt int64
@@ -63,17 +63,17 @@ func TestIntValue(t *testing.T) {
 
 func TestFloatValue(t *testing.T) {
 	floatVal := NewFloat(3.14159, false)
-	
+
 	// Test value
 	if floatVal.Value().(float64) != 3.14159 {
 		t.Errorf("Expected value 3.14159, got %v", floatVal.Value())
 	}
-	
+
 	// Test string
 	if floatVal.String() != "3.14159" {
 		t.Errorf("Expected '3.14159', got '%s'", floatVal.String())
 	}
-	
+
 	// Test JSON
 	jsonData := floatVal.JSON()
 	var jsonFloat float64
@@ -87,17 +87,17 @@ func TestFloatValue(t *testing.T) {
 
 func TestStringValue(t *testing.T) {
 	strVal := NewString("hello world", false)
-	
+
 	// Test value
 	if strVal.Value().(string) != "hello world" {
 		t.Errorf("Expected value 'hello world', got %v", strVal.Value())
 	}
-	
+
 	// Test string
 	if strVal.String() != "hello world" {
 		t.Errorf("Expected 'hello world', got '%s'", strVal.String())
 	}
-	
+
 	// Test JSON
 	jsonData := strVal.JSON()
 	var jsonStr string
@@ -111,12 +111,12 @@ func TestStringValue(t *testing.T) {
 
 func TestFileValue(t *testing.T) {
 	fileVal := NewFile("/path/to/file.txt", false)
-	
+
 	// Test value
 	if fileVal.Value().(string) != "/path/to/file.txt" {
 		t.Errorf("Expected value '/path/to/file.txt', got %v", fileVal.Value())
 	}
-	
+
 	// Test string
 	if fileVal.String() != "/path/to/file.txt" {
 		t.Errorf("Expected '/path/to/file.txt', got '%s'", fileVal.String())
@@ -125,12 +125,12 @@ func TestFileValue(t *testing.T) {
 
 func TestDirectoryValue(t *testing.T) {
 	dirVal := NewDirectory("/path/to/dir", false)
-	
+
 	// Test value
 	if dirVal.Value().(string) != "/path/to/dir" {
 		t.Errorf("Expected value '/path/to/dir', got %v", dirVal.Value())
 	}
-	
+
 	// Test string
 	if dirVal.String() != "/path/to/dir" {
 		t.Errorf("Expected '/path/to/dir', got '%s'", dirVal.String())
@@ -152,7 +152,7 @@ func TestPrimitiveCoercion(t *testing.T) {
 	} else {
 		t.Error("Coerced value should be FloatValue")
 	}
-	
+
 	// String to Int
 	strVal := NewString("123", false)
 	intType := types.NewInt(false)
@@ -167,7 +167,7 @@ func TestPrimitiveCoercion(t *testing.T) {
 	} else {
 		t.Error("Coerced value should be IntValue")
 	}
-	
+
 	// String to Float
 	strVal = NewString("3.14", false)
 	coerced, err = strVal.Coerce(floatType)
@@ -181,7 +181,7 @@ func TestPrimitiveCoercion(t *testing.T) {
 	} else {
 		t.Error("Coerced value should be FloatValue")
 	}
-	
+
 	// File to String
 	fileVal := NewFile("/path/to/file", false)
 	stringType := types.NewString(false)
@@ -203,21 +203,21 @@ func TestPrimitiveEquality(t *testing.T) {
 	int1 := NewInt(42, false)
 	int2 := NewInt(42, false)
 	int3 := NewInt(43, false)
-	
+
 	if !int1.Equal(int2) {
 		t.Error("Same integer values should be equal")
 	}
-	
+
 	if int1.Equal(int3) {
 		t.Error("Different integer values should not be equal")
 	}
-	
+
 	// Int and Float with same value
 	float1 := NewFloat(42.0, false)
 	if !int1.Equal(float1) {
 		t.Error("Int 42 and Float 42.0 should be equal")
 	}
-	
+
 	// Float and Int with same value
 	if !float1.Equal(int1) {
 		t.Error("Float 42.0 and Int 42 should be equal")
@@ -232,14 +232,14 @@ func TestInvalidCoercion(t *testing.T) {
 	if err == nil {
 		t.Error("Boolean should not coerce to Int")
 	}
-	
+
 	// Invalid string to Int should fail
 	strVal := NewString("not a number", false)
 	_, err = strVal.Coerce(intType)
 	if err == nil {
 		t.Error("Invalid string should not coerce to Int")
 	}
-	
+
 	// Float to Int should fail
 	floatVal := NewFloat(3.14, false)
 	_, err = floatVal.Coerce(intType)

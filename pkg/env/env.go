@@ -68,7 +68,7 @@ func (b *Bindings[T]) Bind(name string, value T, info any) *Bindings[T] {
 	if name == "" || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
 		panic(fmt.Sprintf("invalid binding name: %s", name))
 	}
-	
+
 	binding := NewBinding(name, value, info)
 	return &Bindings[T]{
 		binding: binding,
@@ -80,7 +80,7 @@ func (b *Bindings[T]) Bind(name string, value T, info any) *Bindings[T] {
 func (b *Bindings[T]) ResolveBinding(name string) (*Binding[T], error) {
 	seen := make(map[string]bool)
 	current := b
-	
+
 	for current != nil && current.binding != nil {
 		if current.binding.name == name && !seen[name] {
 			return current.binding, nil
@@ -88,7 +88,7 @@ func (b *Bindings[T]) ResolveBinding(name string) (*Binding[T], error) {
 		seen[current.binding.name] = true
 		current = current.next
 	}
-	
+
 	return nil, fmt.Errorf("binding not found: %s", name)
 }
 
@@ -120,7 +120,7 @@ func (b *Bindings[T]) HasBinding(name string) bool {
 func (b *Bindings[T]) ForEach(fn func(*Binding[T])) {
 	seen := make(map[string]bool)
 	current := b
-	
+
 	for current != nil && current.binding != nil {
 		if !seen[current.binding.name] {
 			seen[current.binding.name] = true
@@ -135,14 +135,14 @@ func (b *Bindings[T]) ForEach(fn func(*Binding[T])) {
 func (b *Bindings[T]) Map(fn func(*Binding[T]) *Binding[T]) *Bindings[T] {
 	var result *Bindings[T] = NewBindings[T]()
 	var bindings []*Binding[T]
-	
+
 	// Collect transformed bindings
 	b.ForEach(func(binding *Binding[T]) {
 		if transformed := fn(binding); transformed != nil {
 			bindings = append(bindings, transformed)
 		}
 	})
-	
+
 	// Add in reverse order to maintain original order
 	for i := len(bindings) - 1; i >= 0; i-- {
 		result = &Bindings[T]{
@@ -150,7 +150,7 @@ func (b *Bindings[T]) Map(fn func(*Binding[T]) *Binding[T]) *Bindings[T] {
 			next:    result,
 		}
 	}
-	
+
 	return result
 }
 
@@ -175,7 +175,7 @@ func (b *Bindings[T]) Subtract(rhs *Bindings[any]) *Bindings[T] {
 // Each element ends with a dot
 func (b *Bindings[T]) Namespaces() []string {
 	nsSet := make(map[string]bool)
-	
+
 	b.ForEach(func(binding *Binding[T]) {
 		parts := strings.Split(binding.Name(), ".")
 		if len(parts) > 1 {
@@ -185,12 +185,12 @@ func (b *Bindings[T]) Namespaces() []string {
 			}
 		}
 	})
-	
+
 	var namespaces []string
 	for ns := range nsSet {
 		namespaces = append(namespaces, ns)
 	}
-	
+
 	return namespaces
 }
 
@@ -199,14 +199,14 @@ func (b *Bindings[T]) HasNamespace(namespace string) bool {
 	if !strings.HasSuffix(namespace, ".") {
 		namespace += "."
 	}
-	
+
 	found := false
 	b.ForEach(func(binding *Binding[T]) {
 		if strings.HasPrefix(binding.Name()+".", namespace) {
 			found = true
 		}
 	})
-	
+
 	return found
 }
 
@@ -216,7 +216,7 @@ func (b *Bindings[T]) EnterNamespace(namespace string) *Bindings[T] {
 	if !strings.HasSuffix(namespace, ".") {
 		namespace += "."
 	}
-	
+
 	return b.Map(func(binding *Binding[T]) *Binding[T] {
 		if strings.HasPrefix(binding.Name(), namespace) {
 			newName := strings.TrimPrefix(binding.Name(), namespace)
@@ -231,7 +231,7 @@ func (b *Bindings[T]) WrapNamespace(namespace string) *Bindings[T] {
 	if !strings.HasSuffix(namespace, ".") {
 		namespace += "."
 	}
-	
+
 	return b.Map(func(binding *Binding[T]) *Binding[T] {
 		newName := namespace + binding.Name()
 		return NewBinding(newName, binding.Value(), binding.Info())
@@ -244,13 +244,13 @@ func Merge[T any](envs ...*Bindings[T]) *Bindings[T] {
 	if len(envs) == 0 {
 		return NewBindings[T]()
 	}
-	
+
 	// Start with the last environment for efficiency
 	result := envs[len(envs)-1]
 	if result == nil {
 		result = NewBindings[T]()
 	}
-	
+
 	// Add bindings from earlier environments (in reverse order to maintain precedence)
 	for i := len(envs) - 2; i >= 0; i-- {
 		if envs[i] != nil {
@@ -259,7 +259,7 @@ func Merge[T any](envs ...*Bindings[T]) *Bindings[T] {
 			envs[i].ForEach(func(binding *Binding[T]) {
 				bindings = append(bindings, binding)
 			})
-			
+
 			// Add in reverse order
 			for j := len(bindings) - 1; j >= 0; j-- {
 				b := bindings[j]
@@ -270,6 +270,6 @@ func Merge[T any](envs ...*Bindings[T]) *Bindings[T] {
 			}
 		}
 	}
-	
+
 	return result
 }

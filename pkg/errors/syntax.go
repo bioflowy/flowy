@@ -2,10 +2,10 @@ package errors
 
 // SyntaxError represents a failure to lex/parse a WDL document
 type SyntaxError struct {
-	Pos                 SourcePosition
-	Message             string
-	WDLVersion          string
-	DeclaredWDLVersion  *string
+	Pos                SourcePosition
+	Message            string
+	WDLVersion         string
+	DeclaredWDLVersion *string
 }
 
 func NewSyntaxError(pos SourcePosition, message string, wdlVersion string, declaredWDLVersion *string) *SyntaxError {
@@ -34,7 +34,7 @@ func (e *BadCharacterEncoding) Error() string {
 	return "Invalid character encoding"
 }
 
-// ImportError represents failure to open/retrieve an imported WDL document  
+// ImportError represents failure to open/retrieve an imported WDL document
 type ImportError struct {
 	Pos       SourcePosition
 	ImportURI string

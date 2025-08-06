@@ -28,7 +28,7 @@ func TestSourcePosition(t *testing.T) {
 func TestSyntaxError(t *testing.T) {
 	pos := SourcePosition{
 		URI:       "test.wdl",
-		AbsPath:   "/path/to/test.wdl", 
+		AbsPath:   "/path/to/test.wdl",
 		Line:      1,
 		Column:    1,
 		EndLine:   1,
@@ -37,7 +37,7 @@ func TestSyntaxError(t *testing.T) {
 
 	declaredVersion := "1.0"
 	err := NewSyntaxError(pos, "test syntax error", "1.0", &declaredVersion)
-	
+
 	if err.Pos != pos {
 		t.Error("Expected position to match")
 	}
@@ -61,7 +61,7 @@ func TestImportError(t *testing.T) {
 	}
 
 	err := NewImportError(pos, "imported.wdl", "file not found")
-	
+
 	if err.Pos != pos {
 		t.Error("Expected position to match")
 	}
@@ -94,7 +94,7 @@ func TestSourceNode(t *testing.T) {
 	if node2.Less(node1) {
 		t.Error("Expected !(node2 < node1)")
 	}
-	
+
 	// Test equality
 	node3 := &BaseSourceNode{Pos: pos1}
 	if !node1.Equal(node3) {
@@ -112,7 +112,7 @@ func TestValidationError(t *testing.T) {
 	node := &BaseSourceNode{Pos: pos}
 
 	err := NewValidationError(node, "test validation error")
-	
+
 	if err.Node != node {
 		t.Error("Expected node to match")
 	}
@@ -158,7 +158,7 @@ func TestMultipleValidationErrors(t *testing.T) {
 	err2 := NewNoSuchFunction(node, "func1")
 
 	multiErr := NewMultipleValidationErrors(err1, err2)
-	
+
 	if len(multiErr.Exceptions) != 2 {
 		t.Errorf("Expected 2 exceptions, got %d", len(multiErr.Exceptions))
 	}
@@ -171,7 +171,7 @@ func TestRuntimeError(t *testing.T) {
 	}
 
 	err := NewRuntimeError("test runtime error", moreInfo)
-	
+
 	if err.Error() != "test runtime error" {
 		t.Errorf("Expected 'test runtime error', got '%s'", err.Error())
 	}
@@ -185,12 +185,12 @@ func TestEvalError(t *testing.T) {
 	node := &BaseSourceNode{Pos: pos}
 
 	err := NewEvalError(node, "evaluation failed")
-	
+
 	if err.Node != node {
 		t.Error("Expected node to match")
 	}
 	if err.Pos != pos {
-		t.Error("Expected position to match") 
+		t.Error("Expected position to match")
 	}
 	if err.Error() != "evaluation failed" {
 		t.Errorf("Expected 'evaluation failed', got '%s'", err.Error())

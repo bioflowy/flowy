@@ -4,11 +4,11 @@ import "fmt"
 
 // ValidationError represents base class for WDL validation errors
 type ValidationError struct {
-	Pos                 SourcePosition
-	Node                SourceNode
-	Message             string
-	SourceText          *string
-	DeclaredWDLVersion  *string
+	Pos                SourcePosition
+	Node               SourceNode
+	Message            string
+	SourceText         *string
+	DeclaredWDLVersion *string
 }
 
 func NewValidationError(node SourceNode, message string) *ValidationError {
@@ -57,11 +57,11 @@ type NoSuchTask struct {
 func NewNoSuchTask(node SourceNode, name string) *NoSuchTask {
 	return &NoSuchTask{
 		ValidationError: NewValidationError(node, "No such task/workflow: "+name),
-		Name:           name,
+		Name:            name,
 	}
 }
 
-// NoSuchCall represents missing call error  
+// NoSuchCall represents missing call error
 type NoSuchCall struct {
 	*ValidationError
 	Name string
@@ -70,20 +70,20 @@ type NoSuchCall struct {
 func NewNoSuchCall(node SourceNode, name string) *NoSuchCall {
 	return &NoSuchCall{
 		ValidationError: NewValidationError(node, "No such call in this workflow: "+name),
-		Name:           name,
+		Name:            name,
 	}
 }
 
 // NoSuchFunction represents missing function error
 type NoSuchFunction struct {
-	*ValidationError  
+	*ValidationError
 	Name string
 }
 
 func NewNoSuchFunction(node SourceNode, name string) *NoSuchFunction {
 	return &NoSuchFunction{
 		ValidationError: NewValidationError(node, "No such function: "+name),
-		Name:           name,
+		Name:            name,
 	}
 }
 
@@ -97,7 +97,7 @@ func NewWrongArity(node SourceNode, functionName string, expected int) *WrongAri
 	message := fmt.Sprintf("%s expects %d argument(s)", functionName, expected)
 	return &WrongArity{
 		ValidationError: NewValidationError(node, message),
-		Expected:       expected,
+		Expected:        expected,
 	}
 }
 
@@ -119,7 +119,7 @@ type NoSuchMember struct {
 func NewNoSuchMember(node SourceNode, member string) *NoSuchMember {
 	return &NoSuchMember{
 		ValidationError: NewValidationError(node, fmt.Sprintf("No such member '%s'", member)),
-		Member:         member,
+		Member:          member,
 	}
 }
 
@@ -153,7 +153,7 @@ type NoSuchInput struct {
 func NewNoSuchInput(node SourceNode, name string) *NoSuchInput {
 	return &NoSuchInput{
 		ValidationError: NewValidationError(node, "No such input "+name),
-		Name:           name,
+		Name:            name,
 	}
 }
 
@@ -169,7 +169,7 @@ func NewUncallableWorkflow(node SourceNode, name string) *UncallableWorkflow {
 			"and/or it lacks an output section", name)
 	return &UncallableWorkflow{
 		ValidationError: NewValidationError(node, message),
-		Name:           name,
+		Name:            name,
 	}
 }
 

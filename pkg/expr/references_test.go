@@ -14,14 +14,14 @@ import (
 func TestIdentifierSimple(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	identifier := NewIdentifier("myVar", pos)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("myVar", types.NewString(false), nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("myVar", values.NewString("hello", false), nil)
-	
+
 	// Test type inference
 	inferredType, err := identifier.InferType(typeEnv, nil)
 	if err != nil {
@@ -30,7 +30,7 @@ func TestIdentifierSimple(t *testing.T) {
 	if inferredType.String() != "String" {
 		t.Errorf("Expected String type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := identifier.Eval(valueEnv, nil)
 	if err != nil {
@@ -43,12 +43,12 @@ func TestIdentifierSimple(t *testing.T) {
 	if stringValue.Value().(string) != "hello" {
 		t.Errorf("Expected 'hello', got %s", stringValue.Value().(string))
 	}
-	
+
 	// Test string representation
 	if identifier.String() != "myVar" {
 		t.Errorf("Expected 'myVar', got %s", identifier.String())
 	}
-	
+
 	// Test children (should be empty)
 	children := identifier.Children()
 	if len(children) != 0 {
@@ -59,14 +59,14 @@ func TestIdentifierSimple(t *testing.T) {
 func TestIdentifierNamespaced(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	identifier := NewNamespacedIdentifier([]string{"task", "output"}, "result", pos)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("task.output.result", types.NewInt(false), nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("task.output.result", values.NewInt(42, false), nil)
-	
+
 	// Test type inference
 	inferredType, err := identifier.InferType(typeEnv, nil)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestIdentifierNamespaced(t *testing.T) {
 	if inferredType.String() != "Int" {
 		t.Errorf("Expected Int type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := identifier.Eval(valueEnv, nil)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestIdentifierNamespaced(t *testing.T) {
 	if intValue.Value().(int64) != 42 {
 		t.Errorf("Expected 42, got %d", intValue.Value().(int64))
 	}
-	
+
 	// Test string representation
 	if identifier.String() != "task.output.result" {
 		t.Errorf("Expected 'task.output.result', got %s", identifier.String())
@@ -98,17 +98,17 @@ func TestIdentifierNamespaced(t *testing.T) {
 func TestIdentifierUnknown(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
 	identifier := NewIdentifier("unknownVar", pos)
-	
+
 	// Empty environments
 	typeEnv := env.NewBindings[types.Base]()
 	valueEnv := env.NewBindings[values.Base]()
-	
+
 	// Test type inference - should fail
 	_, err := identifier.InferType(typeEnv, nil)
 	if err == nil {
 		t.Errorf("Expected type inference to fail for unknown identifier")
 	}
-	
+
 	// Test evaluation - should fail
 	_, err = identifier.Eval(valueEnv, nil)
 	if err == nil {
@@ -120,31 +120,31 @@ func TestIdentifierUnknown(t *testing.T) {
 
 func TestGetAttrStruct(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create person.name
 	personVar := NewIdentifier("person", pos)
 	getAttr := NewGetAttr(personVar, "name", pos)
-	
+
 	// Create struct type and value
 	memberTypes := map[string]types.Base{
 		"name": types.NewString(false),
 		"age":  types.NewInt(false),
 	}
 	structType := types.NewStructInstance("Person", memberTypes, false)
-	
+
 	memberValues := map[string]values.Base{
 		"name": values.NewString("John", false),
 		"age":  values.NewInt(30, false),
 	}
 	structValue := values.NewStruct("Person", memberTypes, memberValues, false)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("person", structType, nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("person", structValue, nil)
-	
+
 	// Test type inference
 	inferredType, err := getAttr.InferType(typeEnv, nil)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestGetAttrStruct(t *testing.T) {
 	if inferredType.String() != "String" {
 		t.Errorf("Expected String type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := getAttr.Eval(valueEnv, nil)
 	if err != nil {
@@ -166,12 +166,12 @@ func TestGetAttrStruct(t *testing.T) {
 	if stringValue.Value().(string) != "John" {
 		t.Errorf("Expected 'John', got %s", stringValue.Value().(string))
 	}
-	
+
 	// Test string representation
 	if getAttr.String() != "person.name" {
 		t.Errorf("Expected 'person.name', got %s", getAttr.String())
 	}
-	
+
 	// Test children
 	children := getAttr.Children()
 	if len(children) != 1 {
@@ -184,23 +184,23 @@ func TestGetAttrStruct(t *testing.T) {
 
 func TestGetAttrPair(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create pair.left
 	pairVar := NewIdentifier("pair", pos)
 	getAttr := NewGetAttr(pairVar, "left", pos)
-	
+
 	// Create pair type and value
 	pairType := types.NewPair(types.NewInt(false), types.NewString(false), false)
-	pairValue := values.NewPair(types.NewInt(false), types.NewString(false), 
+	pairValue := values.NewPair(types.NewInt(false), types.NewString(false),
 		values.NewInt(42, false), values.NewString("test", false), false)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("pair", pairType, nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("pair", pairValue, nil)
-	
+
 	// Test type inference
 	inferredType, err := getAttr.InferType(typeEnv, nil)
 	if err != nil {
@@ -209,7 +209,7 @@ func TestGetAttrPair(t *testing.T) {
 	if inferredType.String() != "Int" {
 		t.Errorf("Expected Int type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := getAttr.Eval(valueEnv, nil)
 	if err != nil {
@@ -226,21 +226,21 @@ func TestGetAttrPair(t *testing.T) {
 
 func TestGetAttrNoSuchMember(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create person.nonexistent
 	personVar := NewIdentifier("person", pos)
 	getAttr := NewGetAttr(personVar, "nonexistent", pos)
-	
+
 	// Create struct type and value
 	memberTypes := map[string]types.Base{
 		"name": types.NewString(false),
 	}
 	structType := types.NewStructInstance("Person", memberTypes, false)
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("person", structType, nil)
-	
+
 	// Test type inference - should fail
 	_, err := getAttr.InferType(typeEnv, nil)
 	if err == nil {
@@ -252,26 +252,26 @@ func TestGetAttrNoSuchMember(t *testing.T) {
 
 func TestGetIndexArray(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create arr[1]
 	arrayVar := NewIdentifier("arr", pos)
 	indexExpr := NewIntLiteral(1, pos)
 	getIndex := NewGetIndex(arrayVar, indexExpr, pos)
-	
+
 	// Create array type and value
 	arrayType := types.NewArray(types.NewString(false), false, false)
 	arrayValue := values.NewArray(types.NewString(false), false, false)
 	arrayValue.Add(values.NewString("first", false))
 	arrayValue.Add(values.NewString("second", false))
 	arrayValue.Add(values.NewString("third", false))
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("arr", arrayType, nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("arr", arrayValue, nil)
-	
+
 	// Test type inference
 	inferredType, err := getIndex.InferType(typeEnv, nil)
 	if err != nil {
@@ -280,7 +280,7 @@ func TestGetIndexArray(t *testing.T) {
 	if inferredType.String() != "String" {
 		t.Errorf("Expected String type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := getIndex.Eval(valueEnv, nil)
 	if err != nil {
@@ -293,12 +293,12 @@ func TestGetIndexArray(t *testing.T) {
 	if stringValue.Value().(string) != "second" {
 		t.Errorf("Expected 'second', got %s", stringValue.Value().(string))
 	}
-	
+
 	// Test string representation
 	if getIndex.String() != "arr[1]" {
 		t.Errorf("Expected 'arr[1]', got %s", getIndex.String())
 	}
-	
+
 	// Test children
 	children := getIndex.Children()
 	if len(children) != 2 {
@@ -308,25 +308,25 @@ func TestGetIndexArray(t *testing.T) {
 
 func TestGetIndexMap(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create dict["key"]
 	mapVar := NewIdentifier("dict", pos)
 	keyExpr := NewStringLiteral("key", pos)
 	getIndex := NewGetIndex(mapVar, keyExpr, pos)
-	
+
 	// Create map type and value
 	mapType := types.NewMap(types.NewString(false), types.NewInt(false), false)
 	mapValue := values.NewMap(types.NewString(false), types.NewInt(false), false)
 	mapValue.Set("key", values.NewInt(42, false))
 	mapValue.Set("other", values.NewInt(100, false))
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("dict", mapType, nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("dict", mapValue, nil)
-	
+
 	// Test type inference
 	inferredType, err := getIndex.InferType(typeEnv, nil)
 	if err != nil {
@@ -335,7 +335,7 @@ func TestGetIndexMap(t *testing.T) {
 	if inferredType.String() != "Int" {
 		t.Errorf("Expected Int type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := getIndex.Eval(valueEnv, nil)
 	if err != nil {
@@ -352,20 +352,20 @@ func TestGetIndexMap(t *testing.T) {
 
 func TestGetIndexOutOfBounds(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create arr[10] (out of bounds)
 	arrayVar := NewIdentifier("arr", pos)
 	indexExpr := NewIntLiteral(10, pos)
 	getIndex := NewGetIndex(arrayVar, indexExpr, pos)
-	
+
 	// Create small array
 	arrayValue := values.NewArray(types.NewString(false), false, false)
 	arrayValue.Add(values.NewString("only", false))
-	
+
 	// Create environments
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("arr", arrayValue, nil)
-	
+
 	// Test evaluation - should fail
 	_, err := getIndex.Eval(valueEnv, nil)
 	if err == nil {
@@ -377,13 +377,13 @@ func TestGetIndexOutOfBounds(t *testing.T) {
 
 func TestSliceBasic(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create arr[1:3]
 	arrayVar := NewIdentifier("arr", pos)
 	startExpr := NewIntLiteral(1, pos)
 	endExpr := NewIntLiteral(3, pos)
 	slice := NewSlice(arrayVar, startExpr, endExpr, pos)
-	
+
 	// Create array type and value
 	arrayType := types.NewArray(types.NewString(false), false, false)
 	arrayValue := values.NewArray(types.NewString(false), false, false)
@@ -391,14 +391,14 @@ func TestSliceBasic(t *testing.T) {
 		arrayValue.Add(values.NewString(str, false))
 		_ = i // suppress unused variable warning
 	}
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("arr", arrayType, nil)
-	
+
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("arr", arrayValue, nil)
-	
+
 	// Test type inference
 	inferredType, err := slice.InferType(typeEnv, nil)
 	if err != nil {
@@ -407,7 +407,7 @@ func TestSliceBasic(t *testing.T) {
 	if inferredType.String() != "Array[String]" {
 		t.Errorf("Expected Array[String] type, got %s", inferredType.String())
 	}
-	
+
 	// Test evaluation
 	value, err := slice.Eval(valueEnv, nil)
 	if err != nil {
@@ -417,12 +417,12 @@ func TestSliceBasic(t *testing.T) {
 	if !ok {
 		t.Errorf("Expected ArrayValue, got %T", value)
 	}
-	
+
 	items := resultArray.Items()
 	if len(items) != 2 { // arr[1:3] should include indices 1 and 2
 		t.Errorf("Expected 2 items in slice, got %d", len(items))
 	}
-	
+
 	// Check values
 	expectedValues := []string{"b", "c"}
 	for i, expected := range expectedValues {
@@ -435,12 +435,12 @@ func TestSliceBasic(t *testing.T) {
 			}
 		}
 	}
-	
+
 	// Test string representation
 	if slice.String() != "arr[1:3]" {
 		t.Errorf("Expected 'arr[1:3]', got %s", slice.String())
 	}
-	
+
 	// Test children
 	children := slice.Children()
 	if len(children) != 3 { // array, start, end
@@ -450,22 +450,22 @@ func TestSliceBasic(t *testing.T) {
 
 func TestSlicePartial(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create arr[1:] (from index 1 to end)
 	arrayVar := NewIdentifier("arr", pos)
 	startExpr := NewIntLiteral(1, pos)
 	slice := NewSlice(arrayVar, startExpr, nil, pos)
-	
+
 	// Create array value
 	arrayValue := values.NewArray(types.NewString(false), false, false)
 	for _, str := range []string{"a", "b", "c"} {
 		arrayValue.Add(values.NewString(str, false))
 	}
-	
+
 	// Create environments
 	valueEnv := env.NewBindings[values.Base]()
 	valueEnv = valueEnv.Bind("arr", arrayValue, nil)
-	
+
 	// Test evaluation
 	value, err := slice.Eval(valueEnv, nil)
 	if err != nil {
@@ -475,12 +475,12 @@ func TestSlicePartial(t *testing.T) {
 	if !ok {
 		t.Errorf("Expected ArrayValue, got %T", value)
 	}
-	
+
 	items := resultArray.Items()
 	if len(items) != 2 { // Should include "b" and "c"
 		t.Errorf("Expected 2 items in slice, got %d", len(items))
 	}
-	
+
 	// Test string representation
 	if slice.String() != "arr[1:]" {
 		t.Errorf("Expected 'arr[1:]', got %s", slice.String())
@@ -491,12 +491,12 @@ func TestSlicePartial(t *testing.T) {
 
 func TestReferenceTypeCheck(t *testing.T) {
 	pos := errors.SourcePosition{URI: "test.wdl", Line: 1, Column: 1}
-	
+
 	// Create environments
 	typeEnv := env.NewBindings[types.Base]()
 	typeEnv = typeEnv.Bind("stringVar", types.NewString(false), nil)
 	typeEnv = typeEnv.Bind("intArray", types.NewArray(types.NewInt(false), false, false), nil)
-	
+
 	tests := []struct {
 		name         string
 		expr         Expr
@@ -522,15 +522,15 @@ func TestReferenceTypeCheck(t *testing.T) {
 			shouldFail:   false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.expr.TypeCheck(tt.expectedType, typeEnv, nil)
-			
+
 			if tt.shouldFail && err == nil {
 				t.Errorf("Expected type check to fail but it succeeded")
 			}
-			
+
 			if !tt.shouldFail && err != nil {
 				t.Errorf("Expected type check to succeed but got error: %v", err)
 			}

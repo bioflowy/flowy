@@ -49,7 +49,7 @@ func (i *Identifier) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib)
 	} else {
 		fullName = strings.Join(i.Namespace, ".") + "." + i.Name
 	}
-	
+
 	value, err := typeEnv.Resolve(fullName)
 	if err != nil {
 		return nil, &errors.UnknownIdentifier{
@@ -74,7 +74,7 @@ func (i *Identifier) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (v
 	} else {
 		fullName = strings.Join(i.Namespace, ".") + "." + i.Name
 	}
-	
+
 	value, err := valueEnv.Resolve(fullName)
 	if err != nil {
 		return nil, &errors.UnknownIdentifier{
@@ -149,14 +149,14 @@ func (g *GetAttr) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (t
 			return obj.RightType(), nil
 		default:
 			return nil, &errors.NoSuchMember{
-			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("no such member: %s", g.Attr)),
-		}
+				ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("no such member: %s", g.Attr)),
+			}
 		}
 
 	default:
 		return nil, &errors.InvalidType{
 			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("not an object: %s", objectType.String())),
-	}
+		}
 	}
 }
 
@@ -186,8 +186,8 @@ func (g *GetAttr) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (valu
 			return obj.Right(), nil
 		default:
 			return nil, &errors.NoSuchMember{
-			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("no such member: %s", g.Attr)),
-		}
+				ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("no such member: %s", g.Attr)),
+			}
 		}
 
 	case *values.ObjectValue:
@@ -201,8 +201,8 @@ func (g *GetAttr) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (valu
 
 	default:
 		return nil, &errors.InvalidType{
-		ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("not an object: %s", objectValue.Type().String())),
-	}
+			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("not an object: %s", objectValue.Type().String())),
+		}
 	}
 }
 
@@ -257,8 +257,8 @@ func (g *GetIndex) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (
 		// Array indexing - index must be Int
 		if err := indexType.Check(types.NewInt(false), true); err != nil {
 			return nil, &errors.InvalidType{
-			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Int", indexType.String())),
-		}
+				ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Int", indexType.String())),
+			}
 		}
 		return obj.ItemType(), nil
 
@@ -266,15 +266,15 @@ func (g *GetIndex) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (
 		// Map lookup - index must coerce to key type
 		if err := indexType.Check(obj.KeyType(), true); err != nil {
 			return nil, &errors.InvalidType{
-		ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("type mismatch: expected %s, got %s", obj.KeyType().String(), indexType.String())),
-	}
+				ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("type mismatch: expected %s, got %s", obj.KeyType().String(), indexType.String())),
+			}
 		}
 		return obj.ValueType(), nil
 
 	default:
 		return nil, &errors.InvalidType{
 			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("not an object: %s", objectType.String())),
-	}
+		}
 	}
 }
 
@@ -323,8 +323,8 @@ func (g *GetIndex) Eval(valueEnv *env.Bindings[values.Base], stdlib StdLib) (val
 
 	default:
 		return nil, &errors.InvalidType{
-		ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("not an object: %s", objectValue.Type().String())),
-	}
+			ValidationError: errors.NewValidationErrorFromPos(g.pos, fmt.Sprintf("not an object: %s", objectValue.Type().String())),
+		}
 	}
 }
 
@@ -373,8 +373,8 @@ func (s *Slice) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (typ
 	// Must be an array type
 	if _, ok := arrayType.(*types.ArrayType); !ok {
 		return nil, &errors.InvalidType{
-		ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Array[T]", arrayType.String())),
-	}
+			ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Array[T]", arrayType.String())),
+		}
 	}
 
 	// Check index types if present
@@ -385,8 +385,8 @@ func (s *Slice) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (typ
 		}
 		if err := startType.Check(types.NewInt(false), true); err != nil {
 			return nil, &errors.InvalidType{
-			ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Int", startType.String())),
-		}
+				ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Int", startType.String())),
+			}
 		}
 	}
 
@@ -397,8 +397,8 @@ func (s *Slice) InferType(typeEnv *env.Bindings[types.Base], stdlib StdLib) (typ
 		}
 		if err := endType.Check(types.NewInt(false), true); err != nil {
 			return nil, &errors.InvalidType{
-			ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Int", endType.String())),
-		}
+				ValidationError: errors.NewValidationErrorFromPos(s.pos, fmt.Sprintf("type mismatch: expected %s, got %s", "Int", endType.String())),
+			}
 		}
 	}
 
