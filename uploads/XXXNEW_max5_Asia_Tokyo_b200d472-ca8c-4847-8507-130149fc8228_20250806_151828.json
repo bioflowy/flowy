@@ -1,0 +1,392 @@
+{
+  "blocks": [
+    {
+      "startTime": "2025-08-03T02:00:00.000Z",
+      "endTime": "2025-08-03T07:00:00.000Z",
+      "actualEndTime": "2025-08-03T06:59:53.736Z",
+      "perModelStats": {
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 145,
+            "outputTokens": 12022,
+            "cacheCreationTokens": 295302,
+            "cacheReadTokens": 8056770,
+            "totalTokens": 12167
+          },
+          "costUSD": 18.525893,
+          "entriesCount": 107
+        },
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 10209,
+            "outputTokens": 68997,
+            "cacheCreationTokens": 1880686,
+            "cacheReadTokens": 62330657,
+            "totalTokens": 79206
+          },
+          "costUSD": 26.817352,
+          "entriesCount": 632
+        }
+      },
+      "totalTokens": 140041,
+      "totalTokensOld": 91373,
+      "costUSD": 45.343244999999996,
+      "entries": 739,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-03T03:13:32.682Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        },
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-03T06:17:26.551Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-03T07:00:00.000Z",
+      "endTime": "2025-08-03T12:00:00.000Z",
+      "actualEndTime": "2025-08-03T08:54:21.049Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 554,
+            "outputTokens": 26220,
+            "cacheCreationTokens": 607498,
+            "cacheReadTokens": 36953462,
+            "totalTokens": 26774
+          },
+          "costUSD": 13.759118,
+          "entriesCount": 343
+        }
+      },
+      "totalTokens": 26774,
+      "totalTokensOld": 26774,
+      "costUSD": 13.759118,
+      "entries": 345,
+      "limits": [
+        {
+          "type": "general_limit",
+          "timestamp": "2025-08-03T08:51:21.567Z",
+          "content": "Claude AI usage limit reached|1754218800",
+          "resetTime": "2025-08-03T11:00:00.000Z"
+        },
+        {
+          "type": "general_limit",
+          "timestamp": "2025-08-03T08:54:21.049Z",
+          "content": "Claude AI usage limit reached|1754218800",
+          "resetTime": "2025-08-03T11:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-03T12:00:00.000Z",
+      "endTime": "2025-08-03T17:00:00.000Z",
+      "actualEndTime": "2025-08-03T14:50:55.163Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 1185,
+            "outputTokens": 29457,
+            "cacheCreationTokens": 1153059,
+            "cacheReadTokens": 43801820,
+            "totalTokens": 30642
+          },
+          "costUSD": 17.909927,
+          "entriesCount": 416
+        },
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 9,
+            "outputTokens": 91,
+            "cacheCreationTokens": 98349,
+            "cacheReadTokens": 98077,
+            "totalTokens": 100
+          },
+          "costUSD": 1.998119,
+          "entriesCount": 2
+        }
+      },
+      "totalTokens": 31142,
+      "totalTokensOld": 30742,
+      "costUSD": 19.908046,
+      "entries": 418,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-03T13:28:50.599Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-03T22:00:00.000Z",
+      "endTime": "2025-08-04T03:00:00.000Z",
+      "actualEndTime": "2025-08-04T02:05:16.621Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 570,
+            "outputTokens": 18563,
+            "cacheCreationTokens": 1513524,
+            "cacheReadTokens": 26052878,
+            "totalTokens": 19133
+          },
+          "costUSD": 13.771733,
+          "entriesCount": 254
+        },
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 131,
+            "outputTokens": 2404,
+            "cacheCreationTokens": 43420,
+            "cacheReadTokens": 1051650,
+            "totalTokens": 2535
+          },
+          "costUSD": 2.573865,
+          "entriesCount": 30
+        }
+      },
+      "totalTokens": 31808,
+      "totalTokensOld": 21668,
+      "costUSD": 16.345598,
+      "entries": 284,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-03T22:54:16.350Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-04T03:00:00.000Z",
+      "endTime": "2025-08-04T08:00:00.000Z",
+      "actualEndTime": "2025-08-04T06:28:37.574Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 1337,
+            "outputTokens": 38594,
+            "cacheCreationTokens": 1318393,
+            "cacheReadTokens": 51662258,
+            "totalTokens": 39931
+          },
+          "costUSD": 21.025572,
+          "entriesCount": 547
+        },
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 4,
+            "outputTokens": 1,
+            "cacheCreationTokens": 81657,
+            "cacheReadTokens": 0,
+            "totalTokens": 5
+          },
+          "costUSD": 1.531204,
+          "entriesCount": 1
+        }
+      },
+      "totalTokens": 39956,
+      "totalTokensOld": 39936,
+      "costUSD": 22.556776,
+      "entries": 548,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-04T03:13:58.534Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-04T12:00:00.000Z",
+      "endTime": "2025-08-04T17:00:00.000Z",
+      "actualEndTime": "2025-08-04T14:51:12.639Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 945,
+            "outputTokens": 34974,
+            "cacheCreationTokens": 1623421,
+            "cacheReadTokens": 31349204,
+            "totalTokens": 35919
+          },
+          "costUSD": 16.020035,
+          "entriesCount": 330
+        },
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 107,
+            "outputTokens": 634,
+            "cacheCreationTokens": 227191,
+            "cacheReadTokens": 1988217,
+            "totalTokens": 741
+          },
+          "costUSD": 7.291312,
+          "entriesCount": 20
+        }
+      },
+      "totalTokens": 39624,
+      "totalTokensOld": 36660,
+      "costUSD": 23.311346999999998,
+      "entries": 350,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-04T12:46:22.521Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-04T21:00:00.000Z",
+      "endTime": "2025-08-05T02:00:00.000Z",
+      "actualEndTime": "2025-08-04T22:27:45.822Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 185,
+            "outputTokens": 4123,
+            "cacheCreationTokens": 365101,
+            "cacheReadTokens": 4501099,
+            "totalTokens": 4308
+          },
+          "costUSD": 2.781858,
+          "entriesCount": 41
+        },
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 55,
+            "outputTokens": 5356,
+            "cacheCreationTokens": 218507,
+            "cacheReadTokens": 2800305,
+            "totalTokens": 5411
+          },
+          "costUSD": 8.699989,
+          "entriesCount": 31
+        }
+      },
+      "totalTokens": 31363,
+      "totalTokensOld": 9719,
+      "costUSD": 11.481847,
+      "entries": 72,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-04T21:55:40.226Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-05T23:00:00.000Z",
+      "endTime": "2025-08-06T04:00:00.000Z",
+      "actualEndTime": "2025-08-06T02:51:26.925Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 1302,
+            "outputTokens": 38136,
+            "cacheCreationTokens": 1568191,
+            "cacheReadTokens": 39725750,
+            "totalTokens": 39438
+          },
+          "costUSD": 18.374387,
+          "entriesCount": 412
+        },
+        "claude-opus-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 153,
+            "outputTokens": 2608,
+            "cacheCreationTokens": 184507,
+            "cacheReadTokens": 4155054,
+            "totalTokens": 2761
+          },
+          "costUSD": 9.889982,
+          "entriesCount": 34
+        }
+      },
+      "totalTokens": 53243,
+      "totalTokensOld": 42199,
+      "costUSD": 28.264369,
+      "entries": 448,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-06T00:18:34.781Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        },
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-06T00:18:34.781Z",
+          "content": "Claude Opus 4 limit reached, now using Sonnet 4",
+          "resetTime": null
+        },
+        {
+          "type": "general_limit",
+          "timestamp": "2025-08-06T02:51:26.925Z",
+          "content": "Claude AI usage limit reached|1754452800",
+          "resetTime": "2025-08-06T04:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "startTime": "2025-08-06T04:00:00.000Z",
+      "endTime": "2025-08-06T09:00:00.000Z",
+      "actualEndTime": "2025-08-06T06:07:21.687Z",
+      "perModelStats": {
+        "claude-sonnet-4-20250514": {
+          "tokenCounts": {
+            "inputTokens": 1454,
+            "outputTokens": 76280,
+            "cacheCreationTokens": 1517964,
+            "cacheReadTokens": 40489774,
+            "totalTokens": 77734
+          },
+          "costUSD": 18.987859,
+          "entriesCount": 451
+        },
+        "claude-opus-4-1-20250805": {
+          "tokenCounts": {
+            "inputTokens": 22,
+            "outputTokens": 2798,
+            "cacheCreationTokens": 173012,
+            "cacheReadTokens": 326384,
+            "totalTokens": 2820
+          },
+          "costUSD": 3.943731,
+          "entriesCount": 4
+        }
+      },
+      "totalTokens": 91834,
+      "totalTokensOld": 80554,
+      "costUSD": 22.93159,
+      "entries": 456,
+      "limits": [
+        {
+          "type": "opus_limit",
+          "timestamp": "2025-08-06T04:21:43.790Z",
+          "content": "Claude Opus limit reached, now using Sonnet 4",
+          "resetTime": null
+        },
+        {
+          "type": "general_limit",
+          "timestamp": "2025-08-06T06:07:21.687Z",
+          "content": "Claude AI usage limit reached|1754470800",
+          "resetTime": "2025-08-06T09:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
