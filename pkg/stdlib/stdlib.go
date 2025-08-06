@@ -1,4 +1,4 @@
-package expr
+package stdlib
 
 import (
 	"fmt"
@@ -7,20 +7,21 @@ import (
 	"strings"
 
 	"github.com/bioflowy/flowy/pkg/errors"
+	"github.com/bioflowy/flowy/pkg/expr"
 	"github.com/bioflowy/flowy/pkg/types"
 	"github.com/bioflowy/flowy/pkg/values"
 )
 
 // StandardLibrary provides a basic implementation of the WDL standard library
 type StandardLibrary struct {
-	functions map[string]*Function
+	functions map[string]*expr.Function
 	operators map[string]bool
 }
 
 // NewStandardLibrary creates a new standard library instance
 func NewStandardLibrary() *StandardLibrary {
 	stdlib := &StandardLibrary{
-		functions: make(map[string]*Function),
+		functions: make(map[string]*expr.Function),
 		operators: make(map[string]bool),
 	}
 
@@ -31,14 +32,14 @@ func NewStandardLibrary() *StandardLibrary {
 
 func (s *StandardLibrary) registerFunctions() {
 	// String functions
-	s.functions["length"] = &Function{
+	s.functions["length"] = &expr.Function{
 		Name:       "length",
 		ParamTypes: []types.Base{types.NewString(false)},
 		ReturnType: types.NewInt(false),
 		Variadic:   false,
 	}
 
-	s.functions["sub"] = &Function{
+	s.functions["sub"] = &expr.Function{
 		Name:       "sub",
 		ParamTypes: []types.Base{types.NewString(false), types.NewString(false), types.NewString(false)},
 		ReturnType: types.NewString(false),
@@ -46,14 +47,14 @@ func (s *StandardLibrary) registerFunctions() {
 	}
 
 	// Array functions
-	s.functions["size"] = &Function{
+	s.functions["size"] = &expr.Function{
 		Name:       "size",
 		ParamTypes: []types.Base{types.NewArray(types.NewAny(false, false), false, false)},
 		ReturnType: types.NewInt(false),
 		Variadic:   false,
 	}
 
-	s.functions["select_first"] = &Function{
+	s.functions["select_first"] = &expr.Function{
 		Name:       "select_first",
 		ParamTypes: []types.Base{types.NewArray(types.NewAny(true, false), false, false)},
 		ReturnType: types.NewAny(false, false),
@@ -61,21 +62,21 @@ func (s *StandardLibrary) registerFunctions() {
 	}
 
 	// Math functions
-	s.functions["floor"] = &Function{
+	s.functions["floor"] = &expr.Function{
 		Name:       "floor",
 		ParamTypes: []types.Base{types.NewFloat(false)},
 		ReturnType: types.NewInt(false),
 		Variadic:   false,
 	}
 
-	s.functions["ceil"] = &Function{
+	s.functions["ceil"] = &expr.Function{
 		Name:       "ceil",
 		ParamTypes: []types.Base{types.NewFloat(false)},
 		ReturnType: types.NewInt(false),
 		Variadic:   false,
 	}
 
-	s.functions["round"] = &Function{
+	s.functions["round"] = &expr.Function{
 		Name:       "round",
 		ParamTypes: []types.Base{types.NewFloat(false)},
 		ReturnType: types.NewInt(false),
@@ -83,21 +84,21 @@ func (s *StandardLibrary) registerFunctions() {
 	}
 
 	// Type conversion functions
-	s.functions["str"] = &Function{
+	s.functions["str"] = &expr.Function{
 		Name:       "str",
 		ParamTypes: []types.Base{types.NewAny(false, false)},
 		ReturnType: types.NewString(false),
 		Variadic:   false,
 	}
 
-	s.functions["int"] = &Function{
+	s.functions["int"] = &expr.Function{
 		Name:       "int",
 		ParamTypes: []types.Base{types.NewString(false)},
 		ReturnType: types.NewInt(false),
 		Variadic:   false,
 	}
 
-	s.functions["float"] = &Function{
+	s.functions["float"] = &expr.Function{
 		Name:       "float",
 		ParamTypes: []types.Base{types.NewString(false)},
 		ReturnType: types.NewFloat(false),
@@ -105,14 +106,14 @@ func (s *StandardLibrary) registerFunctions() {
 	}
 
 	// File functions (basic stubs)
-	s.functions["basename"] = &Function{
+	s.functions["basename"] = &expr.Function{
 		Name:       "basename",
 		ParamTypes: []types.Base{types.NewString(false)},
 		ReturnType: types.NewString(false),
 		Variadic:   false,
 	}
 
-	s.functions["dirname"] = &Function{
+	s.functions["dirname"] = &expr.Function{
 		Name:       "dirname",
 		ParamTypes: []types.Base{types.NewString(false)},
 		ReturnType: types.NewString(false),
@@ -149,7 +150,7 @@ func (s *StandardLibrary) HasFunction(name string) bool {
 }
 
 // GetFunction returns function metadata
-func (s *StandardLibrary) GetFunction(name string) (*Function, error) {
+func (s *StandardLibrary) GetFunction(name string) (*expr.Function, error) {
 	if fn, exists := s.functions[name]; exists {
 		return fn, nil
 	}
@@ -202,7 +203,7 @@ func (s *StandardLibrary) CallOperator(op string, args []values.Base, pos errors
 
 // String functions
 
-func (s *StandardLibrary) length(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) length(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "length", 1)
 	}
@@ -216,7 +217,7 @@ func (s *StandardLibrary) length(args []values.Base, pos errors.SourcePosition) 
 	return values.NewInt(int64(len(str)), false), nil
 }
 
-func (s *StandardLibrary) sub(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) sub(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 3 {
 		return nil, errors.NewWrongArity(nil, "sub", 3)
 	}
@@ -248,7 +249,7 @@ func (s *StandardLibrary) sub(args []values.Base, pos errors.SourcePosition) (va
 
 // Array functions
 
-func (s *StandardLibrary) size(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) size(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "size", 1)
 	}
@@ -261,7 +262,7 @@ func (s *StandardLibrary) size(args []values.Base, pos errors.SourcePosition) (v
 	return values.NewInt(int64(len(arrayValue.Items())), false), nil
 }
 
-func (s *StandardLibrary) selectFirst(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) selectFirst(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "select_first", 1)
 	}
@@ -284,7 +285,7 @@ func (s *StandardLibrary) selectFirst(args []values.Base, pos errors.SourcePosit
 
 // Math functions
 
-func (s *StandardLibrary) floor(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) floor(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "floor", 1)
 	}
@@ -298,7 +299,7 @@ func (s *StandardLibrary) floor(args []values.Base, pos errors.SourcePosition) (
 	return values.NewInt(int64(math.Floor(f)), false), nil
 }
 
-func (s *StandardLibrary) ceil(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) ceil(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "ceil", 1)
 	}
@@ -312,7 +313,7 @@ func (s *StandardLibrary) ceil(args []values.Base, pos errors.SourcePosition) (v
 	return values.NewInt(int64(math.Ceil(f)), false), nil
 }
 
-func (s *StandardLibrary) round(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) round(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "round", 1)
 	}
@@ -328,7 +329,7 @@ func (s *StandardLibrary) round(args []values.Base, pos errors.SourcePosition) (
 
 // Type conversion functions
 
-func (s *StandardLibrary) str(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) str(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "str", 1)
 	}
@@ -343,7 +344,7 @@ func (s *StandardLibrary) str(args []values.Base, pos errors.SourcePosition) (va
 	return strValue, nil
 }
 
-func (s *StandardLibrary) parseInt(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) parseInt(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "int", 1)
 	}
@@ -362,7 +363,7 @@ func (s *StandardLibrary) parseInt(args []values.Base, pos errors.SourcePosition
 	return values.NewInt(intVal, false), nil
 }
 
-func (s *StandardLibrary) parseFloat(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) parseFloat(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "float", 1)
 	}
@@ -383,7 +384,7 @@ func (s *StandardLibrary) parseFloat(args []values.Base, pos errors.SourcePositi
 
 // File functions
 
-func (s *StandardLibrary) basename(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) basename(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "basename", 1)
 	}
@@ -402,7 +403,7 @@ func (s *StandardLibrary) basename(args []values.Base, pos errors.SourcePosition
 	return values.NewString(parts[len(parts)-1], false), nil
 }
 
-func (s *StandardLibrary) dirname(args []values.Base, pos errors.SourcePosition) (values.Base, error) {
+func (s *StandardLibrary) dirname(args []values.Base, _ errors.SourcePosition) (values.Base, error) {
 	if len(args) != 1 {
 		return nil, errors.NewWrongArity(nil, "dirname", 1)
 	}
