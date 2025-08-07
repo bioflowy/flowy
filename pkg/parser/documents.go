@@ -14,10 +14,11 @@ func (p *Parser) parseDocument() (*tree.Document, bool) {
 	p.skipCommentsAndNewlines()
 
 	// Parse optional version
-	var version string
+	// var version string
 	if p.currentTokenIs(TokenVersion) {
-		if v, ok := p.parseVersion(); ok {
-			version = v
+		if _, ok := p.parseVersion(); ok {
+			// version = v
+			// Note: Version is parsed but not stored in tree.Document currently
 		} else {
 			return nil, false
 		}

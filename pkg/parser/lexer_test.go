@@ -2,8 +2,6 @@ package parser
 
 import (
 	"testing"
-
-	"github.com/bioflowy/flowy/pkg/errors"
 )
 
 func TestLexerBasicTokens(t *testing.T) {

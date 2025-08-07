@@ -3,6 +3,7 @@ package parser
 import (
 	"github.com/bioflowy/flowy/pkg/expr"
 	"github.com/bioflowy/flowy/pkg/tree"
+	"github.com/bioflowy/flowy/pkg/values"
 )
 
 // parseTask parses a WDL task according to the grammar:
@@ -259,15 +260,15 @@ func (p *Parser) parseMetaValue() (interface{}, bool) {
 				// Convert expr.Expr to Go value
 				if lit, ok := literal.Literal(); ok {
 					switch v := lit.(type) {
-					case *expr.BooleanValue:
+					case *values.BooleanValue:
 						return v.Value().(bool), true
-					case *expr.IntValue:
+					case *values.IntValue:
 						return v.Value().(int64), true
-					case *expr.FloatValue:
+					case *values.FloatValue:
 						return v.Value().(float64), true
-					case *expr.StringValue:
+					case *values.StringValue:
 						return v.Value().(string), true
-					case *expr.NullValue:
+					case *values.Null:
 						return nil, true
 					default:
 						return lit, true

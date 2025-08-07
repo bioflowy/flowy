@@ -60,11 +60,7 @@ workflow test {
 			continue
 		}
 
-		doc, ok := result.(*tree.Document)
-		if !ok {
-			t.Errorf("Expected Document, got %T for %s", result, test.description)
-			continue
-		}
+		doc := result
 
 		// Check workflow presence
 		hasWorkflow := (doc.Workflow != nil)
@@ -148,23 +144,19 @@ func TestParseImport(t *testing.T) {
 			continue
 		}
 
-		importStmt, ok := result.(*tree.Import)
-		if !ok {
-			t.Errorf("Expected Import, got %T for %s", result, test.description)
-			continue
-		}
+		importStmt := result
 
-		if importStmt.URI() != test.expectedURI {
+		if importStmt.URI != test.expectedURI {
 			t.Errorf("%s: expected URI '%s', got '%s'", 
-				test.description, test.expectedURI, importStmt.URI())
+				test.description, test.expectedURI, importStmt.URI)
 		}
 
-		if importStmt.Namespace() != test.expectedNamespace {
+		if importStmt.Namespace != test.expectedNamespace {
 			t.Errorf("%s: expected namespace '%s', got '%s'", 
-				test.description, test.expectedNamespace, importStmt.Namespace())
+				test.description, test.expectedNamespace, importStmt.Namespace)
 		}
 
-		hasAlias := (importStmt.Alias() != nil)
+		hasAlias := (importStmt.Alias != nil)
 		if hasAlias != test.hasAlias {
 			t.Errorf("%s: expected hasAlias=%t, got hasAlias=%t", 
 				test.description, test.hasAlias, hasAlias)
@@ -416,11 +408,7 @@ workflow main {
 		return
 	}
 
-	doc, ok := result.(*tree.Document)
-	if !ok {
-		t.Errorf("Expected Document, got %T", result)
-		return
-	}
+	doc := result
 
 	// Verify document structure
 	if len(doc.Imports) != 1 {
@@ -439,8 +427,8 @@ workflow main {
 		t.Error("Expected workflow to be present")
 	}
 
-	if doc.Workflow.Name() != "main" {
-		t.Errorf("Expected workflow name 'main', got '%s'", doc.Workflow.Name())
+	if doc.Workflow.Name != "main" {
+		t.Errorf("Expected workflow name 'main', got '%s'", doc.Workflow.Name)
 	}
 }
 
@@ -486,18 +474,14 @@ func TestImportWithAliases(t *testing.T) {
 		return
 	}
 
-	importStmt, ok := result.(*tree.Import)
-	if !ok {
-		t.Errorf("Expected Import, got %T", result)
-		return
+	importStmt := result
+
+	if importStmt.URI != "lib.wdl" {
+		t.Errorf("Expected URI 'lib.wdl', got '%s'", importStmt.URI)
 	}
 
-	if importStmt.URI() != "lib.wdl" {
-		t.Errorf("Expected URI 'lib.wdl', got '%s'", importStmt.URI())
-	}
-
-	if importStmt.Namespace() != "lib" {
-		t.Errorf("Expected namespace 'lib', got '%s'", importStmt.Namespace())
+	if importStmt.Namespace != "lib" {
+		t.Errorf("Expected namespace 'lib', got '%s'", importStmt.Namespace)
 	}
 }
 
@@ -508,8 +492,8 @@ func TestEmptyDocument(t *testing.T) {
 	// An empty document might be valid but should have errors
 	// since WDL requires at least one task or workflow
 	if ok {
-		doc, ok := result.(*tree.Document)
-		if ok {
+		doc := result
+		if doc != nil {
 			if len(doc.Tasks) == 0 && doc.Workflow == nil {
 				// This should trigger a validation error
 				if !parser.HasErrors() {

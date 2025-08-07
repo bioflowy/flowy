@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"github.com/bioflowy/flowy/pkg/errors"
 	"github.com/bioflowy/flowy/pkg/expr"
 )
 
@@ -35,7 +36,7 @@ func (p *Parser) parseExprInfix0() (expr.Expr, bool) {
 			return nil, false
 		}
 
-		left = expr.NewBinaryOp(operator, left, right, pos)
+		left = expr.NewBinaryOp(left, operator, right, pos)
 	}
 
 	return left, true
@@ -60,7 +61,7 @@ func (p *Parser) parseExprInfix1() (expr.Expr, bool) {
 			return nil, false
 		}
 
-		left = expr.NewBinaryOp(operator, left, right, pos)
+		left = expr.NewBinaryOp(left, operator, right, pos)
 	}
 
 	return left, true
@@ -90,7 +91,7 @@ func (p *Parser) parseExprInfix2() (expr.Expr, bool) {
 			return nil, false
 		}
 
-		left = expr.NewBinaryOp(operator, left, right, pos)
+		left = expr.NewBinaryOp(left, operator, right, pos)
 	}
 
 	return left, true
@@ -116,7 +117,7 @@ func (p *Parser) parseExprInfix3() (expr.Expr, bool) {
 			return nil, false
 		}
 
-		left = expr.NewBinaryOp(operator, left, right, pos)
+		left = expr.NewBinaryOp(left, operator, right, pos)
 	}
 
 	return left, true
@@ -143,7 +144,7 @@ func (p *Parser) parseExprInfix4() (expr.Expr, bool) {
 			return nil, false
 		}
 
-		left = expr.NewBinaryOp(operator, left, right, pos)
+		left = expr.NewBinaryOp(left, operator, right, pos)
 	}
 
 	return left, true
@@ -448,7 +449,7 @@ func (p *Parser) parseFunctionApplication(funcName string, pos errors.SourcePosi
 	// Handle empty argument list
 	if p.currentTokenIs(TokenRightParen) {
 		p.nextToken()
-		return expr.NewFunctionCall(funcName, args, pos), true
+		return expr.NewApply(funcName, args, pos), true
 	}
 
 	// Parse first argument
@@ -473,7 +474,7 @@ func (p *Parser) parseFunctionApplication(funcName string, pos errors.SourcePosi
 		return nil, false
 	}
 
-	return expr.NewFunctionCall(funcName, args, pos), true
+	return expr.NewApply(funcName, args, pos), true
 }
 
 // parseStructLiteral parses struct literals
@@ -568,7 +569,7 @@ func (p *Parser) parsePostfixExpression(baseExpr expr.Expr) (expr.Expr, bool) {
 			pos := p.currentPosition()
 			p.nextToken()
 			
-			result = expr.NewMemberAccess(result, memberName, pos)
+			result = expr.NewGetAttr(result, memberName, pos)
 			
 		case TokenLeftBracket:
 			// Array/map indexing: expr_core "[" expr "]"
@@ -584,7 +585,7 @@ func (p *Parser) parsePostfixExpression(baseExpr expr.Expr) (expr.Expr, bool) {
 				return nil, false
 			}
 			
-			result = expr.NewArrayAccess(result, index, pos)
+			result = expr.NewGetIndex(result, index, pos)
 			
 		default:
 			// No more postfix operations

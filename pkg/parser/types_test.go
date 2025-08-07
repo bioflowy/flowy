@@ -183,8 +183,8 @@ func TestParseStructType(t *testing.T) {
 			continue
 		}
 
-		if structType.Name() != test.expected {
-			t.Errorf("Input '%s': expected %s, got %s", test.input, test.expected, structType.Name())
+		if structType.TypeName() != test.expected {
+			t.Errorf("Input '%s': expected %s, got %s", test.input, test.expected, structType.TypeName())
 		}
 	}
 }
@@ -275,7 +275,7 @@ func TestParseQuantifiers(t *testing.T) {
 		}
 
 		// Check if the type has the expected properties
-		isOptional := baseType.Optional().String() != baseType.String()
+		isOptional := baseType.Optional()
 		
 		// For nonempty, we need to check if it's an array type with nonempty constraint
 		isNonempty := false

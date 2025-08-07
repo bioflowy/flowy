@@ -3,7 +3,6 @@ package parser
 import (
 	"github.com/bioflowy/flowy/pkg/expr"
 	"github.com/bioflowy/flowy/pkg/tree"
-	"github.com/bioflowy/flowy/pkg/types"
 )
 
 // parseDeclaration parses any declaration according to WDL grammar:
@@ -12,9 +11,9 @@ func (p *Parser) parseDeclaration() (*tree.Decl, bool) {
 	pos := p.currentPosition()
 
 	// Parse optional env modifier for task declarations
-	isEnv := false
+	// isEnv := false
 	if p.currentTokenIs(TokenEnv) {
-		isEnv = true
+		// isEnv = true
 		p.nextToken()
 		// Note: We'll store this information but pkg/tree doesn't currently 
 		// have a field for env declarations, so this is for future extension
@@ -339,29 +338,4 @@ func (p *Parser) validateDeclarationName(name string) bool {
 	default:
 		return true
 	}
-}
-
-// Placeholder function for expression parsing (to be implemented in expressions.go)
-func (p *Parser) parseExpression() (expr.Expr, bool) {
-	// This is a placeholder - the actual implementation will be in expressions.go
-	// For now, try to parse a literal as a simple expression
-	if p.isLiteralToken() {
-		return p.parseAnyLiteral()
-	}
-	
-	// If it's an identifier, create a simple identifier expression
-	if p.currentTokenIs(TokenIdentifier) {
-		pos := p.currentPosition()
-		name := p.currentToken.Value
-		p.nextToken()
-		return expr.NewIdentifier(name, pos), true
-	}
-	
-	p.addError(NewParseError(
-		p.currentPosition(),
-		"expression parsing not fully implemented yet",
-		[]TokenType{},
-		p.currentToken,
-	))
-	return nil, false
 }

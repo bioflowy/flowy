@@ -110,7 +110,7 @@ func (p *Parser) parseArrayType() (types.Base, bool) {
 		return nil, false
 	}
 
-	return types.NewArray(elementType, false), true
+	return types.NewArray(elementType, false, false), true
 }
 
 // parseMapType parses Map[K,V]
@@ -176,7 +176,7 @@ func (p *Parser) createPrimitiveType(typeName string) (types.Base, bool) {
 		return types.NewDirectory(false), true
 	default:
 		// Assume it's a struct type
-		return types.NewStructInstanceType(typeName, map[string]types.Base{}, false), true
+		return types.NewStructInstance(typeName, map[string]types.Base{}, false), true
 	}
 }
 
@@ -188,14 +188,14 @@ func (p *Parser) applyQuantifiers(baseType types.Base, optional, nonempty bool) 
 	if nonempty {
 		// For arrays, apply nonempty constraint
 		if arrayType, ok := result.(*types.ArrayType); ok {
-			result = types.NewArray(arrayType.ItemType(), true) // nonempty = true
+			result = types.NewArray(arrayType.ItemType(), false, true) // nonempty = true
 		}
 		// Note: nonempty doesn't apply to other types in WDL
 	}
 
 	// Apply optional quantifier if needed
 	if optional {
-		result = result.Optional()
+		result = result.Copy(&optional)
 	}
 
 	return result

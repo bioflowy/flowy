@@ -2,8 +2,6 @@ package parser
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -488,7 +486,7 @@ func (l *Lexer) readNumber() (string, TokenType) {
 
 // readString reads a string literal (either single or double quoted)
 func (l *Lexer) readString(quote byte) string {
-	start := l.position
+	// start := l.position  // unused
 	l.advance() // consume opening quote
 
 	var result strings.Builder

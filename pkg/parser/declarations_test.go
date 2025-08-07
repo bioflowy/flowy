@@ -31,25 +31,25 @@ func TestParseUnboundDeclaration(t *testing.T) {
 			continue
 		}
 
-		decl, ok := result.(*tree.Declaration)
-		if !ok {
-			t.Errorf("Expected Declaration, got %T", result)
+		decl := result
+		if decl == nil {
+			t.Errorf("Expected Declaration, got nil")
 			continue
 		}
 
-		if decl.Type().String() != test.expectedType {
+		if decl.Type.String() != test.expectedType {
 			t.Errorf("Input '%s': expected type '%s', got '%s'", 
-				test.input, test.expectedType, decl.Type().String())
+				test.input, test.expectedType, decl.Type.String())
 		}
 
-		if decl.Name() != test.expectedName {
+		if decl.Name != test.expectedName {
 			t.Errorf("Input '%s': expected name '%s', got '%s'", 
-				test.input, test.expectedName, decl.Name())
+				test.input, test.expectedName, decl.Name)
 		}
 
-		if decl.Value() != nil {
+		if decl.Expr != nil {
 			t.Errorf("Input '%s': unbound declaration should have no value, got %T", 
-				test.input, decl.Value())
+				test.input, decl.Expr)
 		}
 	}
 }
@@ -77,23 +77,23 @@ func TestParseBoundDeclaration(t *testing.T) {
 			continue
 		}
 
-		decl, ok := result.(*tree.Declaration)
-		if !ok {
-			t.Errorf("Expected Declaration, got %T", result)
+		decl := result
+		if decl == nil {
+			t.Errorf("Expected Declaration, got nil")
 			continue
 		}
 
-		if decl.Type().String() != test.expectedType {
+		if decl.Type.String() != test.expectedType {
 			t.Errorf("Input '%s': expected type '%s', got '%s'", 
-				test.input, test.expectedType, decl.Type().String())
+				test.input, test.expectedType, decl.Type.String())
 		}
 
-		if decl.Name() != test.expectedName {
+		if decl.Name != test.expectedName {
 			t.Errorf("Input '%s': expected name '%s', got '%s'", 
-				test.input, test.expectedName, decl.Name())
+				test.input, test.expectedName, decl.Name)
 		}
 
-		if decl.Value() == nil {
+		if decl.Expr == nil {
 			t.Errorf("Input '%s': bound declaration should have a value", test.input)
 		}
 	}
@@ -112,20 +112,20 @@ func TestParseAnyDeclaration(t *testing.T) {
 
 	for _, test := range tests {
 		parser := NewParser(test.input, "test.wdl")
-		result, ok := parser.parseAnyDeclaration()
+		result, ok := parser.parseDeclaration()
 
 		if !ok {
 			t.Errorf("Failed to parse any declaration '%s'", test.input)
 			continue
 		}
 
-		decl, ok := result.(*tree.Declaration)
-		if !ok {
-			t.Errorf("Expected Declaration, got %T", result)
+		decl := result
+		if decl == nil {
+			t.Errorf("Expected Declaration, got nil")
 			continue
 		}
 
-		hasValue := (decl.Value() != nil)
+		hasValue := (decl.Expr != nil)
 		if hasValue != test.hasBound {
 			t.Errorf("Input '%s': expected bound=%t, got bound=%t", 
 				test.input, test.hasBound, hasValue)
@@ -166,20 +166,20 @@ func TestParseStruct(t *testing.T) {
 			continue
 		}
 
-		structDef, ok := result.(*tree.StructTypeDef)
-		if !ok {
-			t.Errorf("Expected StructTypeDef, got %T", result)
+		structDef := result
+		if structDef == nil {
+			t.Errorf("Expected StructTypeDef, got nil")
 			continue
 		}
 
-		if structDef.Name() != test.expectedName {
+		if structDef.Name != test.expectedName {
 			t.Errorf("Input struct: expected name '%s', got '%s'", 
-				test.expectedName, structDef.Name())
+				test.expectedName, structDef.Name)
 		}
 
-		if len(structDef.Members()) != test.expectedFields {
+		if len(structDef.Members) != test.expectedFields {
 			t.Errorf("Input struct: expected %d fields, got %d", 
-				test.expectedFields, len(structDef.Members()))
+				test.expectedFields, len(structDef.Members))
 		}
 	}
 }
@@ -192,9 +192,9 @@ func TestParseStructMember(t *testing.T) {
 		hasBound     bool
 	}{
 		{"String name", "String", "name", false},
-		{"Int age = 25", "Int", "age", true},
+		{"Int age", "Int", "age", false},
 		{"Boolean? active", "Boolean?", "active", false},
-		{"Array[String] tags = []", "Array[String]", "tags", true},
+		{"Array[String] tags", "Array[String]", "tags", false},
 	}
 
 	for _, test := range tests {
@@ -206,26 +206,26 @@ func TestParseStructMember(t *testing.T) {
 			continue
 		}
 
-		member, ok := result.(*tree.Declaration)
-		if !ok {
-			t.Errorf("Expected Declaration, got %T", result)
+		member := result
+		if member == nil {
+			t.Errorf("Expected Declaration, got nil")
 			continue
 		}
 
-		if member.Type().String() != test.expectedType {
+		if member.Type.String() != test.expectedType {
 			t.Errorf("Input '%s': expected type '%s', got '%s'", 
-				test.input, test.expectedType, member.Type().String())
+				test.input, test.expectedType, member.Type.String())
 		}
 
-		if member.Name() != test.expectedName {
+		if member.Name != test.expectedName {
 			t.Errorf("Input '%s': expected name '%s', got '%s'", 
-				test.input, test.expectedName, member.Name())
+				test.input, test.expectedName, member.Name)
 		}
 
-		hasValue := (member.Value() != nil)
-		if hasValue != test.hasBound {
-			t.Errorf("Input '%s': expected bound=%t, got bound=%t", 
-				test.input, test.hasBound, hasValue)
+		// StructMember doesn't support initialization expressions
+		if test.hasBound {
+			t.Errorf("Input '%s': StructMember doesn't support initialization expressions", 
+				test.input)
 		}
 	}
 }
@@ -251,22 +251,22 @@ func TestParseInputSection(t *testing.T) {
 
 	for _, test := range tests {
 		parser := NewParser(test.input, "test.wdl")
-		result, ok := parser.parseInputSection()
+		result, ok := parser.parseInputDeclarations()
 
 		if !ok {
 			t.Errorf("Failed to parse %s", test.description)
 			continue
 		}
 
-		declarations, ok := result.([]*tree.Declaration)
-		if !ok {
-			t.Errorf("Expected []*tree.Declaration, got %T", result)
+		input := result
+		if input == nil {
+			t.Errorf("Expected Input, got nil")
 			continue
 		}
 
-		if len(declarations) != test.expectedDecls {
+		if len(input.Decls) != test.expectedDecls {
 			t.Errorf("%s: expected %d declarations, got %d", 
-				test.description, test.expectedDecls, len(declarations))
+				test.description, test.expectedDecls, len(input.Decls))
 		}
 	}
 }
@@ -290,22 +290,22 @@ func TestParseOutputSection(t *testing.T) {
 
 	for _, test := range tests {
 		parser := NewParser(test.input, "test.wdl")
-		result, ok := parser.parseOutputSection()
+		result, ok := parser.parseOutputDeclarations()
 
 		if !ok {
 			t.Errorf("Failed to parse %s", test.description)
 			continue
 		}
 
-		declarations, ok := result.([]*tree.Declaration)
-		if !ok {
-			t.Errorf("Expected []*tree.Declaration, got %T", result)
+		output := result
+		if output == nil {
+			t.Errorf("Expected Output, got nil")
 			continue
 		}
 
-		if len(declarations) != test.expectedDecls {
+		if len(output.Decls) != test.expectedDecls {
 			t.Errorf("%s: expected %d declarations, got %d", 
-				test.description, test.expectedDecls, len(declarations))
+				test.description, test.expectedDecls, len(output.Decls))
 		}
 	}
 }
@@ -368,12 +368,7 @@ func TestParseMetaSection(t *testing.T) {
 			continue
 		}
 
-		metaMap, ok := result.(map[string]interface{})
-		if !ok {
-			t.Errorf("Expected map[string]interface{}, got %T", result)
-			continue
-		}
-
+		metaMap := result
 		_ = metaMap // Use the variable to avoid unused warning
 	}
 }
@@ -400,12 +395,7 @@ func TestParseParameterMetaSection(t *testing.T) {
 			continue
 		}
 
-		metaMap, ok := result.(map[string]interface{})
-		if !ok {
-			t.Errorf("Expected map[string]interface{}, got %T", result)
-			continue
-		}
-
+		metaMap := result
 		_ = metaMap // Use the variable
 	}
 }
@@ -438,23 +428,26 @@ func TestIsDeclarationStart(t *testing.T) {
 
 func TestValidateDeclaration(t *testing.T) {
 	tests := []struct {
-		declType types.Type
+		declType types.Base
 		name     string
 		valid    bool
 	}{
-		{types.NewIntType(), "valid_name", true},
-		{types.NewStringType(), "validName", true},
-		{types.NewBooleanType(), "_private", true},
-		{types.NewFloatType(), "name123", true},
+		{types.NewInt(false), "valid_name", true},
+		{types.NewString(false), "validName", true},
+		{types.NewBoolean(false), "_private", true},
+		{types.NewFloat(false), "name123", true},
 		{nil, "invalid_type", false},
-		{types.NewIntType(), "", false},
-		{types.NewIntType(), "123invalid", false},
-		{types.NewIntType(), "workflow", false}, // Reserved keyword
+		{types.NewInt(false), "", false},
+		{types.NewInt(false), "123invalid", false},
+		{types.NewInt(false), "workflow", false}, // Reserved keyword
 	}
 
 	for _, test := range tests {
 		parser := NewParser("workflow test {}", "test.wdl")
-		result := parser.validateDeclaration(test.declType, test.name)
+		// Test type validity (nil check) and name validity
+		typeValid := test.declType != nil
+		nameValid := parser.validateDeclarationName(test.name)
+		result := typeValid && nameValid
 
 		if result != test.valid {
 			t.Errorf("Declaration validation for type=%v, name='%s': expected %t, got %t", 
@@ -508,7 +501,13 @@ func TestOptionalDeclaration(t *testing.T) {
 
 	for _, test := range tests {
 		parser := NewParser(test.input, "test.wdl")
-		result := parser.parseOptionalDeclaration()
+		// Try to parse a declaration, return nil if it fails
+		var result *tree.Decl
+		if parser.isDeclarationStart() {
+			if decl, ok := parser.parseDeclaration(); ok {
+				result = decl
+			}
+		}
 
 		hasDeclaration := (result != nil)
 		if hasDeclaration != test.expected {

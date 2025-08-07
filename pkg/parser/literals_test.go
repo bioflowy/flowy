@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bioflowy/flowy/pkg/expr"
+	"github.com/bioflowy/flowy/pkg/values"
 )
 
 func TestParseBooleanLiteral(t *testing.T) {
@@ -31,7 +32,7 @@ func TestParseBooleanLiteral(t *testing.T) {
 		}
 
 		if literal, isLiteral := boolLit.Literal(); isLiteral {
-			if boolValue, ok := literal.(*expr.BooleanValue); ok {
+			if boolValue, ok := literal.(*values.BooleanValue); ok {
 				if boolValue.Value().(bool) != test.expected {
 					t.Errorf("Expected %t, got %t", test.expected, boolValue.Value().(bool))
 				}
@@ -60,7 +61,7 @@ func TestParseNullLiteral(t *testing.T) {
 	}
 
 	if literal, isLiteral := nullLit.Literal(); isLiteral {
-		if _, ok := literal.(*expr.NullValue); !ok {
+		if _, ok := literal.(*values.Null); !ok {
 			t.Errorf("Expected NullValue, got %T", literal)
 		}
 	} else {
@@ -95,7 +96,7 @@ func TestParseIntLiteral(t *testing.T) {
 		}
 
 		if literal, isLiteral := intLit.Literal(); isLiteral {
-			if intValue, ok := literal.(*expr.IntValue); ok {
+			if intValue, ok := literal.(*values.IntValue); ok {
 				if intValue.Value().(int64) != test.expected {
 					t.Errorf("Expected %d, got %d", test.expected, intValue.Value().(int64))
 				}
@@ -136,7 +137,7 @@ func TestParseFloatLiteral(t *testing.T) {
 		}
 
 		if literal, isLiteral := floatLit.Literal(); isLiteral {
-			if floatValue, ok := literal.(*expr.FloatValue); ok {
+			if floatValue, ok := literal.(*values.FloatValue); ok {
 				if floatValue.Value().(float64) != test.expected {
 					t.Errorf("Expected %f, got %f", test.expected, floatValue.Value().(float64))
 				}
@@ -179,7 +180,7 @@ func TestParseStringLiteral(t *testing.T) {
 		}
 
 		if literal, isLiteral := stringLit.Literal(); isLiteral {
-			if stringValue, ok := literal.(*expr.StringValue); ok {
+			if stringValue, ok := literal.(*values.StringValue); ok {
 				if stringValue.Value().(string) != test.expected {
 					t.Errorf("Expected '%s', got '%s'", test.expected, stringValue.Value().(string))
 				}
@@ -221,7 +222,7 @@ func TestParseSignedNumber(t *testing.T) {
 				continue
 			}
 			if literal, isLiteral := intLit.Literal(); isLiteral {
-				if intValue, ok := literal.(*expr.IntValue); ok {
+				if intValue, ok := literal.(*values.IntValue); ok {
 					if intValue.Value().(int64) != test.expectedVal.(int64) {
 						t.Errorf("Expected %d, got %d", test.expectedVal.(int64), intValue.Value().(int64))
 					}
@@ -235,7 +236,7 @@ func TestParseSignedNumber(t *testing.T) {
 				continue
 			}
 			if literal, isLiteral := floatLit.Literal(); isLiteral {
-				if floatValue, ok := literal.(*expr.FloatValue); ok {
+				if floatValue, ok := literal.(*values.FloatValue); ok {
 					if floatValue.Value().(float64) != test.expectedVal.(float64) {
 						t.Errorf("Expected %f, got %f", test.expectedVal.(float64), floatValue.Value().(float64))
 					}

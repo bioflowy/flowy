@@ -47,8 +47,8 @@ func TestParserErrorHandling(t *testing.T) {
 		t.Errorf("Expected 1 error, got %d", len(parser.Errors()))
 	}
 
-	if parser.Errors()[0].Message() != "test error" {
-		t.Errorf("Expected error message 'test error', got '%s'", parser.Errors()[0].Message())
+	if parser.Errors()[0].Message != "test error" {
+		t.Errorf("Expected error message 'test error', got '%s'", parser.Errors()[0].Message)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestParserTokenNavigation(t *testing.T) {
 	}
 
 	// Test peekToken
-	next := parser.peekToken()
+	next := parser.peekToken
 	if next.Type != TokenLeftBrace {
 		t.Errorf("Expected peek to be TokenLeftBrace, got %s", next.Type.String())
 	}
@@ -242,16 +242,16 @@ func TestParseErrorCreation(t *testing.T) {
 
 	err := NewParseError(pos, "test message", expected, actual)
 
-	if err.Position().Line != 5 {
-		t.Errorf("Expected line 5, got %d", err.Position().Line)
+	if err.Pos.Line != 5 {
+		t.Errorf("Expected line 5, got %d", err.Pos.Line)
 	}
 
-	if err.Message() != "test message" {
-		t.Errorf("Expected message 'test message', got '%s'", err.Message())
+	if err.Message != "test message" {
+		t.Errorf("Expected message 'test message', got '%s'", err.Message)
 	}
 
-	if err.ActualToken().Type != TokenIdentifier {
-		t.Errorf("Expected actual token TokenIdentifier, got %s", err.ActualToken().Type.String())
+	if err.Got.Type != TokenIdentifier {
+		t.Errorf("Expected actual token TokenIdentifier, got %s", err.Got.Type.String())
 	}
 }
 
@@ -334,13 +334,13 @@ func TestParserErrorAccumulation(t *testing.T) {
 
 	// Each error should have valid position information
 	for i, err := range errors {
-		if err.Position().Line < 1 {
-			t.Errorf("Error %d: invalid line number %d", i, err.Position().Line)
+		if err.Pos.Line < 1 {
+			t.Errorf("Error %d: invalid line number %d", i, err.Pos.Line)
 		}
-		if err.Position().Column < 1 {
-			t.Errorf("Error %d: invalid column number %d", i, err.Position().Column)
+		if err.Pos.Column < 1 {
+			t.Errorf("Error %d: invalid column number %d", i, err.Pos.Column)
 		}
-		if err.Message() == "" {
+		if err.Message == "" {
 			t.Errorf("Error %d: empty error message", i)
 		}
 	}

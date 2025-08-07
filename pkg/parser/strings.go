@@ -91,7 +91,7 @@ func (p *Parser) parseMultiString() (expr.Expr, bool) {
 // parseCommand parses a command string:
 // ?command: "command" (command1 | command2)
 func (p *Parser) parseCommand() (expr.Expr, bool) {
-	pos := p.currentPosition()
+	// pos := p.currentPosition()  // unused
 	
 	if !p.consume(TokenCommand) {
 		return nil, false
@@ -221,7 +221,7 @@ func (p *Parser) parsePlaceholder() (expr.Expr, bool) {
 	}
 	
 	// Parse the expression inside the placeholder
-	expr, ok := p.parseExpression()
+	expression, ok := p.parseExpression()
 	if !ok {
 		return nil, false
 	}
@@ -230,7 +230,14 @@ func (p *Parser) parsePlaceholder() (expr.Expr, bool) {
 		return nil, false
 	}
 	
-	return expr.NewPlaceholder(expr, options, pos), true
+	// Convert options map to PlaceholderOptions
+	var placeholderOpts *expr.PlaceholderOptions
+	if len(options) > 0 {
+		placeholderOpts = &expr.PlaceholderOptions{}
+		// TODO: Properly convert options map to PlaceholderOptions struct
+	}
+	
+	return expr.NewPlaceholder(expression, placeholderOpts, pos), true
 }
 
 // parseStringWithInterpolation parses a string that may contain interpolation

@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/bioflowy/flowy/pkg/expr"
@@ -69,9 +71,9 @@ func TestParseBinaryOperations(t *testing.T) {
 			continue
 		}
 
-		if binaryOp.Operator() != test.operator {
+		if binaryOp.Operator != test.operator {
 			t.Errorf("Input '%s': expected operator '%s', got '%s'", 
-				test.input, test.operator, binaryOp.Operator())
+				test.input, test.operator, binaryOp.Operator)
 		}
 	}
 }
@@ -129,9 +131,9 @@ func TestParseUnaryOperations(t *testing.T) {
 			continue
 		}
 
-		if unaryOp.Operator() != test.operator {
+		if unaryOp.Operator != test.operator {
 			t.Errorf("Input '%s': expected operator '%s', got '%s'", 
-				test.input, test.operator, unaryOp.Operator())
+				test.input, test.operator, unaryOp.Operator)
 		}
 	}
 }
@@ -164,9 +166,9 @@ func TestParseArrayLiteral(t *testing.T) {
 			continue
 		}
 
-		if len(arrayLit.Elements()) != test.expectedCount {
+		if len(arrayLit.Items) != test.expectedCount {
 			t.Errorf("Input '%s': expected %d elements, got %d", 
-				test.input, test.expectedCount, len(arrayLit.Elements()))
+				test.input, test.expectedCount, len(arrayLit.Items))
 		}
 	}
 }
@@ -198,9 +200,9 @@ func TestParseMapLiteral(t *testing.T) {
 			continue
 		}
 
-		if len(mapLit.Items()) != test.expectedCount {
+		if len(mapLit.Items) != test.expectedCount {
 			t.Errorf("Input '%s': expected %d items, got %d", 
-				test.input, test.expectedCount, len(mapLit.Items()))
+				test.input, test.expectedCount, len(mapLit.Items))
 		}
 	}
 }
@@ -304,20 +306,20 @@ func TestParseFunctionCall(t *testing.T) {
 			continue
 		}
 
-		funcCall, ok := result.(*expr.FunctionCall)
+		funcCall, ok := result.(*expr.Apply)
 		if !ok {
 			t.Errorf("Expected FunctionCall, got %T", result)
 			continue
 		}
 
-		if funcCall.Name() != test.expectedName {
+		if funcCall.Function != test.expectedName {
 			t.Errorf("Input '%s': expected function name '%s', got '%s'", 
-				test.input, test.expectedName, funcCall.Name())
+				test.input, test.expectedName, funcCall.Function)
 		}
 
-		if len(funcCall.Arguments()) != test.expectedArgs {
+		if len(funcCall.Args) != test.expectedArgs {
 			t.Errorf("Input '%s': expected %d arguments, got %d", 
-				test.input, test.expectedArgs, len(funcCall.Arguments()))
+				test.input, test.expectedArgs, len(funcCall.Args))
 		}
 	}
 }
@@ -349,14 +351,14 @@ func TestParseStructLiteral(t *testing.T) {
 			continue
 		}
 
-		if structLit.TypeName() != test.expectedType {
+		if structLit.TypeName != test.expectedType {
 			t.Errorf("Input '%s': expected type '%s', got '%s'", 
-				test.input, test.expectedType, structLit.TypeName())
+				test.input, test.expectedType, structLit.TypeName)
 		}
 
-		if len(structLit.Members()) != test.expectedCount {
+		if len(structLit.Members) != test.expectedCount {
 			t.Errorf("Input '%s': expected %d members, got %d", 
-				test.input, test.expectedCount, len(structLit.Members()))
+				test.input, test.expectedCount, len(structLit.Members))
 		}
 	}
 }
@@ -381,15 +383,15 @@ func TestParseMemberAccess(t *testing.T) {
 			continue
 		}
 
-		memberAccess, ok := result.(*expr.MemberAccess)
+		memberAccess, ok := result.(*expr.GetAttr)
 		if !ok {
 			t.Errorf("Expected MemberAccess, got %T", result)
 			continue
 		}
 
-		if memberAccess.Member() != test.expectedMember {
+		if memberAccess.Attr != test.expectedMember {
 			t.Errorf("Input '%s': expected member '%s', got '%s'", 
-				test.input, test.expectedMember, memberAccess.Member())
+				test.input, test.expectedMember, memberAccess.Attr)
 		}
 	}
 }
@@ -411,7 +413,7 @@ func TestParseArrayAccess(t *testing.T) {
 			continue
 		}
 
-		arrayAccess, ok := result.(*expr.ArrayAccess)
+		arrayAccess, ok := result.(*expr.GetIndex)
 		if !ok {
 			t.Errorf("Expected ArrayAccess, got %T", result)
 		}
@@ -507,40 +509,11 @@ func TestExpressionParseErrors(t *testing.T) {
 
 // Helper function to get the type name of an expression
 func getExpressionType(expr expr.Expr) string {
-	switch expr.(type) {
-	case *expr.BooleanLiteral:
-		return "BooleanLiteral"
-	case *expr.IntLiteral:
-		return "IntLiteral"
-	case *expr.FloatLiteral:
-		return "FloatLiteral"
-	case *expr.StringLiteral:
-		return "StringLiteral"
-	case *expr.NullLiteral:
-		return "NullLiteral"
-	case *expr.Identifier:
-		return "Identifier"
-	case *expr.BinaryOp:
-		return "BinaryOp"
-	case *expr.UnaryOp:
-		return "UnaryOp"
-	case *expr.ArrayLiteral:
-		return "ArrayLiteral"
-	case *expr.MapLiteral:
-		return "MapLiteral"
-	case *expr.PairLiteral:
-		return "PairLiteral"
-	case *expr.StructLiteral:
-		return "StructLiteral"
-	case *expr.FunctionCall:
-		return "FunctionCall"
-	case *expr.MemberAccess:
-		return "MemberAccess"
-	case *expr.ArrayAccess:
-		return "ArrayAccess"
-	case *expr.IfThenElse:
-		return "IfThenElse"
-	default:
-		return "Unknown"
+	// Use string conversion to avoid direct type assertions that cause compilation issues
+	typeStr := fmt.Sprintf("%T", expr)
+	// Extract the type name after the last dot
+	if lastDot := strings.LastIndex(typeStr, "."); lastDot >= 0 {
+		return typeStr[lastDot+1:]
 	}
+	return typeStr
 }

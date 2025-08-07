@@ -15,25 +15,25 @@ func TestParseError(t *testing.T) {
 	err := NewParseError(pos, message, expected, actual)
 
 	// Test Position
-	if err.Position().Line != 10 {
-		t.Errorf("Expected line 10, got %d", err.Position().Line)
+	if err.Pos.Line != 10 {
+		t.Errorf("Expected line 10, got %d", err.Pos.Line)
 	}
 
-	if err.Position().Column != 5 {
-		t.Errorf("Expected column 5, got %d", err.Position().Column)
+	if err.Pos.Column != 5 {
+		t.Errorf("Expected column 5, got %d", err.Pos.Column)
 	}
 
-	if err.Position().URI != "test.wdl" {
-		t.Errorf("Expected URI 'test.wdl', got '%s'", err.Position().URI)
+	if err.Pos.URI != "test.wdl" {
+		t.Errorf("Expected URI 'test.wdl', got '%s'", err.Pos.URI)
 	}
 
 	// Test Message
-	if err.Message() != message {
-		t.Errorf("Expected message '%s', got '%s'", message, err.Message())
+	if err.Message != message {
+		t.Errorf("Expected message '%s', got '%s'", message, err.Message)
 	}
 
 	// Test ExpectedTokens
-	expectedTypes := err.ExpectedTokens()
+	expectedTypes := err.Expected
 	if len(expectedTypes) != 2 {
 		t.Errorf("Expected 2 expected tokens, got %d", len(expectedTypes))
 	}
@@ -43,7 +43,7 @@ func TestParseError(t *testing.T) {
 	}
 
 	// Test ActualToken
-	actualToken := err.ActualToken()
+	actualToken := err.Got
 	if actualToken.Type != TokenIdentifier {
 		t.Errorf("Expected actual token type TokenIdentifier, got %s", actualToken.Type.String())
 	}
@@ -74,7 +74,7 @@ func TestParseErrorFormatting(t *testing.T) {
 	// In a real implementation, you'd test the specific format
 }
 
-func TestTokenTypeString(t *testing.T) {
+func TestTokenTypeStringRepresentation(t *testing.T) {
 	tests := []struct {
 		tokenType TokenType
 		expected  string
@@ -171,17 +171,17 @@ func TestErrorContext(t *testing.T) {
 	err := NewParseError(pos, "expected block", expected, actual)
 
 	// Error should have position
-	if err.Position().Line != 3 {
+	if err.Pos.Line != 3 {
 		t.Error("Error should preserve position")
 	}
 
 	// Error should have expected tokens
-	if len(err.ExpectedTokens()) != 2 {
+	if len(err.Expected) != 2 {
 		t.Error("Error should preserve expected tokens")
 	}
 
 	// Error should have actual token
-	if err.ActualToken().Type != TokenSemicolon {
+	if err.Got.Type != TokenSemicolon {
 		t.Error("Error should preserve actual token")
 	}
 }
@@ -241,14 +241,14 @@ func TestParseErrorChaining(t *testing.T) {
 	err1 := NewParseError(pos, "first error", []TokenType{TokenWorkflow}, Token{Type: TokenEOF})
 	err2 := NewParseError(pos, "second error", []TokenType{TokenTask}, Token{Type: TokenEOF})
 
-	errors := []ParseError{err1, err2}
+	errors := []*ParseError{err1, err2}
 
 	if len(errors) != 2 {
 		t.Error("Should be able to collect multiple errors")
 	}
 
 	for i, err := range errors {
-		if err.Message() == "" {
+		if err.Message == "" {
 			t.Errorf("Error %d should have a message", i)
 		}
 	}

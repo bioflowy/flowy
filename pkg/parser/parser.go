@@ -49,6 +49,7 @@ type Parser struct {
 	currentToken Token
 	peekToken    Token
 	errors       []*ParseError
+	uri          string
 }
 
 // NewParser creates a new WDL parser
@@ -57,6 +58,7 @@ func NewParser(input, uri string) *Parser {
 	parser := &Parser{
 		lexer:  lexer,
 		errors: make([]*ParseError, 0),
+		uri:    uri,
 	}
 
 	// Read first two tokens
