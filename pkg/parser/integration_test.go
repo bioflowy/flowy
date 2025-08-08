@@ -264,3 +264,202 @@ workflow test {
 		}
 	}
 }
+
+// TestParserRequirementsSection tests parsing of task requirements sections
+func TestParserRequirementsSection(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		wantErr        bool
+		expectedKeys   []string
+		desc           string
+	}{
+		{
+			name: "requirements_with_commas",
+			input: `version 1.0
+
+task test {
+	input {
+		String name
+	}
+	
+	requirements {
+		memory: "4G",
+		cpu: 2,
+		disk: "100G"
+	}
+	
+	command {
+		echo "Hello ${name}"
+	}
+	
+	output {
+		String result = stdout()
+	}
+}`,
+			wantErr:      false,
+			expectedKeys: []string{"memory", "cpu", "disk"},
+			desc:         "Requirements section with commas between entries",
+		},
+		{
+			name: "requirements_without_commas",
+			input: `version 1.0
+
+task test {
+	input {
+		String name
+	}
+	
+	requirements {
+		memory: "4G"
+		cpu: 2
+		disk: "100G"
+	}
+	
+	command {
+		echo "Hello ${name}"
+	}
+	
+	output {
+		String result = stdout()
+	}
+}`,
+			wantErr:      false,
+			expectedKeys: []string{"memory", "cpu", "disk"},
+			desc:         "Requirements section without commas between entries",
+		},
+		{
+			name: "requirements_mixed_commas",
+			input: `version 1.0
+
+task test {
+	input {
+		String name
+	}
+	
+	requirements {
+		memory: "4G",
+		cpu: 2
+		disk: "100G",
+		preemptible: true
+	}
+	
+	command {
+		echo "Hello ${name}"
+	}
+	
+	output {
+		String result = stdout()
+	}
+}`,
+			wantErr:      false,
+			expectedKeys: []string{"memory", "cpu", "disk", "preemptible"},
+			desc:         "Requirements section with mixed comma usage",
+		},
+		{
+			name: "requirements_trailing_comma",
+			input: `version 1.0
+
+task test {
+	input {
+		String name
+	}
+	
+	requirements {
+		memory: "4G",
+		cpu: 2,
+	}
+	
+	command {
+		echo "Hello ${name}"
+	}
+	
+	output {
+		String result = stdout()
+	}
+}`,
+			wantErr:      false,
+			expectedKeys: []string{"memory", "cpu"},
+			desc:         "Requirements section with trailing comma",
+		},
+		{
+			name: "runtime_section",
+			input: `version 1.0
+
+task test {
+	input {
+		String name
+	}
+	
+	runtime {
+		memory: "4G"
+		cpu: 2
+	}
+	
+	command {
+		echo "Hello ${name}"
+	}
+	
+	output {
+		String result = stdout()
+	}
+}`,
+			wantErr:      false,
+			expectedKeys: []string{"memory", "cpu"},
+			desc:         "Runtime section (legacy syntax) without commas",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := NewParser(tt.input, "test.wdl")
+			doc, ok := parser.ParseDocumentInternal()
+
+			if tt.wantErr {
+				if ok {
+					t.Errorf("Expected error for %s, but parsing succeeded", tt.desc)
+					return
+				}
+			} else {
+				if !ok {
+					t.Errorf("Failed to parse %s: %v", tt.desc, parser.Errors())
+					return
+				}
+
+				if doc == nil {
+					t.Errorf("Expected document for %s, got nil", tt.desc)
+					return
+				}
+
+				if parser.HasErrors() {
+					t.Errorf("Unexpected errors for %s: %v", tt.desc, parser.Errors())
+					return
+				}
+
+				// Verify that the task was parsed correctly
+				if len(doc.Tasks) != 1 {
+					t.Errorf("Expected 1 task for %s, got %d", tt.desc, len(doc.Tasks))
+					return
+				}
+
+				task := doc.Tasks[0]
+				if task.Runtime == nil {
+					t.Errorf("Expected requirements/runtime section for %s, got nil", tt.desc)
+					return
+				}
+
+				// Check that all expected keys are present
+				for _, key := range tt.expectedKeys {
+					if _, exists := task.Runtime[key]; !exists {
+						t.Errorf("Missing expected key '%s' in requirements for %s", key, tt.desc)
+					}
+				}
+
+				// Verify we have the expected number of requirements
+				if len(task.Runtime) != len(tt.expectedKeys) {
+					t.Errorf("Expected %d requirements for %s, got %d", len(tt.expectedKeys), tt.desc, len(task.Runtime))
+				}
+			}
+		})
+	}
+}

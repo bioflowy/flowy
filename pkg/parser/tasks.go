@@ -386,12 +386,15 @@ func (p *Parser) parseRequirementsSection() (map[string]expr.Expr, bool) {
 	requirements[key] = value
 
 	// Parse remaining key-value pairs
-	for p.currentTokenIs(TokenComma) {
-		p.nextToken() // consume comma
-
-		// Check for trailing comma
-		if p.currentTokenIs(TokenRightBrace) {
-			break
+	// Continue parsing while we haven't reached the end brace
+	for !p.currentTokenIs(TokenRightBrace) {
+		// Skip optional comma
+		if p.currentTokenIs(TokenComma) {
+			p.nextToken() // consume comma
+			// Check for trailing comma
+			if p.currentTokenIs(TokenRightBrace) {
+				break
+			}
 		}
 
 		key, value, ok := p.parseRuntimeKeyValue()
