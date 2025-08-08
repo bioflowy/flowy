@@ -404,7 +404,7 @@ func (l *Lexer) advance() byte {
 func (l *Lexer) skipWhitespace() {
 	for l.position < len(l.input) {
 		ch := l.peek()
-		if ch == ' ' || ch == '\t' || ch == '\r' {
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
 			l.advance()
 		} else {
 			break
@@ -565,10 +565,6 @@ func (l *Lexer) NextToken() Token {
 		ch := l.peek()
 
 		switch ch {
-		case '\n':
-			l.advance()
-			return Token{TokenNewline, "\n", pos}
-
 		case '#':
 			l.skipComment()
 			continue // Skip comments and try next token
@@ -662,14 +658,6 @@ func (l *Lexer) NextToken() Token {
 			l.advance()
 			return Token{TokenPlus, "+", pos}
 		case '-':
-			// Check if this starts a number
-			if unicode.IsDigit(rune(l.peekNext())) {
-				value, tokenType := l.readNumber()
-				if tokenType == TokenError {
-					return Token{TokenError, value, pos}
-				}
-				return Token{tokenType, value, pos}
-			}
 			l.advance()
 			return Token{TokenMinus, "-", pos}
 		case '*':
