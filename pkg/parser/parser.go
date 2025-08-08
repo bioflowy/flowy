@@ -278,7 +278,7 @@ func (p *Parser) isTypeKeyword(token TokenType) bool {
 // isLiteral returns true if token is a literal value
 func (p *Parser) isLiteral(token TokenType) bool {
 	switch token {
-	case TokenInt, TokenFloat, TokenString, TokenBool, TokenNull:
+	case TokenInt, TokenFloat, TokenString, TokenBool, TokenNone:
 		return true
 	default:
 		return false

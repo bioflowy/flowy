@@ -307,7 +307,7 @@ func (p *Parser) parseMetaValue() (interface{}, bool) {
 		p.addError(NewParseError(
 			p.currentPosition(),
 			"expected meta value",
-			[]TokenType{TokenLeftBrace, TokenLeftBracket, TokenString, TokenInt, TokenFloat, TokenBool, TokenNull},
+			[]TokenType{TokenLeftBrace, TokenLeftBracket, TokenString, TokenInt, TokenFloat, TokenBool, TokenNone},
 			p.currentToken,
 		))
 		return nil, false

@@ -18,7 +18,7 @@ func (p *Parser) parseLiteral() (expr.Expr, bool) {
 	switch p.currentToken.Type {
 	case TokenBool:
 		return p.parseBooleanLiteral()
-	case TokenNull:
+	case TokenNone:
 		return p.parseNullLiteral()
 	case TokenInt:
 		return p.parseIntLiteral()
@@ -30,7 +30,7 @@ func (p *Parser) parseLiteral() (expr.Expr, bool) {
 		p.addError(NewParseError(
 			pos,
 			"expected literal value",
-			[]TokenType{TokenBool, TokenNull, TokenInt, TokenFloat, TokenString},
+			[]TokenType{TokenBool, TokenNone, TokenInt, TokenFloat, TokenString},
 			p.currentToken,
 		))
 		return nil, false
@@ -53,8 +53,8 @@ func (p *Parser) parseBooleanLiteral() (expr.Expr, bool) {
 
 // parseNullLiteral parses the None literal
 func (p *Parser) parseNullLiteral() (expr.Expr, bool) {
-	if !p.currentTokenIs(TokenNull) {
-		p.addError(p.expectError(TokenNull))
+	if !p.currentTokenIs(TokenNone) {
+		p.addError(p.expectError(TokenNone))
 		return nil, false
 	}
 
@@ -136,7 +136,7 @@ func (p *Parser) parsePrimitiveLiteral() (expr.Expr, bool) {
 	switch p.currentToken.Type {
 	case TokenBool:
 		return p.parseBooleanLiteral()
-	case TokenNull:
+	case TokenNone:
 		return p.parseNullLiteral()
 	case TokenInt:
 		return p.parseIntLiteral()
@@ -146,7 +146,7 @@ func (p *Parser) parsePrimitiveLiteral() (expr.Expr, bool) {
 		p.addError(NewParseError(
 			pos,
 			"expected primitive literal",
-			[]TokenType{TokenBool, TokenNull, TokenInt, TokenFloat},
+			[]TokenType{TokenBool, TokenNone, TokenInt, TokenFloat},
 			p.currentToken,
 		))
 		return nil, false
@@ -204,7 +204,7 @@ func (p *Parser) parseAnyLiteral() (expr.Expr, bool) {
 		return p.parseSignedNumber()
 	case TokenBool:
 		return p.parseBooleanLiteral()
-	case TokenNull:
+	case TokenNone:
 		return p.parseNullLiteral()
 	case TokenInt:
 		return p.parseIntLiteral()
@@ -217,7 +217,7 @@ func (p *Parser) parseAnyLiteral() (expr.Expr, bool) {
 		p.addError(NewParseError(
 			pos,
 			"expected literal value",
-			[]TokenType{TokenBool, TokenNull, TokenInt, TokenFloat, TokenString, TokenMinus, TokenPlus},
+			[]TokenType{TokenBool, TokenNone, TokenInt, TokenFloat, TokenString, TokenMinus, TokenPlus},
 			p.currentToken,
 		))
 		return nil, false
@@ -236,7 +236,7 @@ func (p *Parser) isBooleanLiteral() bool {
 
 // isNullLiteral returns true if current token is the null literal
 func (p *Parser) isNullLiteral() bool {
-	return p.currentTokenIs(TokenNull)
+	return p.currentTokenIs(TokenNone)
 }
 
 // isStringLiteral returns true if current token is a string literal

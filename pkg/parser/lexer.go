@@ -23,7 +23,6 @@ const (
 	TokenFloat
 	TokenString
 	TokenBool
-	TokenNull
 	TokenIdentifier
 
 	// Keywords
@@ -133,8 +132,6 @@ func (t TokenType) String() string {
 		return "STRING"
 	case TokenBool:
 		return "BOOL"
-	case TokenNull:
-		return "NULL"
 	case TokenIdentifier:
 		return "IDENTIFIER"
 	case TokenVersion:

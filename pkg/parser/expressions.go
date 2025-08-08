@@ -7,6 +7,10 @@ import (
 
 // parseExpression parses a WDL expression according to the grammar:
 // ?expr: expr_infix
+func (p *Parser) ParseExpression() (expr.Expr, bool) {
+	return p.parseExprInfix()
+}
+
 func (p *Parser) parseExpression() (expr.Expr, bool) {
 	return p.parseExprInfix()
 }
@@ -172,50 +176,55 @@ func (p *Parser) parseExprInfix5() (expr.Expr, bool) {
 //           | expr_core "." CNAME -> get_name
 func (p *Parser) parseExprCore() (expr.Expr, bool) {
 	pos := p.currentPosition()
+	var baseExpr expr.Expr
+	var ok bool
 
 	switch p.currentToken.Type {
 	case TokenLeftParen:
-		return p.parseParenthesizedExpression()
+		baseExpr, ok = p.parseParenthesizedExpression()
 	
 	case TokenNot:
-		return p.parseUnaryExpression()
+		baseExpr, ok = p.parseUnaryExpression()
 		
 	case TokenLeftBracket:
-		return p.parseArrayLiteral()
+		baseExpr, ok = p.parseArrayLiteral()
 		
 	case TokenLeftBrace:
-		return p.parseMapLiteral()
+		baseExpr, ok = p.parseMapLiteral()
 		
 	case TokenIf:
-		return p.parseIfThenElse()
+		baseExpr, ok = p.parseIfThenElse()
 		
 	case TokenIdentifier:
-		return p.parseIdentifierExpression()
+		return p.parseIdentifierExpression() // This already handles postfix operations
 		
 	default:
 		// Try to parse as literal
 		if p.isLiteralToken() {
-			return p.parseAnyLiteral()
+			baseExpr, ok = p.parseAnyLiteral()
+		} else if p.isStringStart() {
+			// Try to parse as string
+			baseExpr, ok = p.parseString()
+		} else if p.canBeIdentifier(p.currentToken.Type) {
+			// Try to parse keywords as identifiers in expression context
+			return p.parseKeywordAsIdentifier() // This already handles postfix operations
+		} else {
+			p.addError(NewParseError(
+				pos,
+				"expected expression",
+				[]TokenType{TokenLeftParen, TokenNot, TokenLeftBracket, TokenLeftBrace, TokenIf, TokenIdentifier},
+				p.currentToken,
+			))
+			return nil, false
 		}
-		
-		// Try to parse as string
-		if p.isStringStart() {
-			return p.parseString()
-		}
-		
-		// Try to parse keywords as identifiers in expression context
-		if p.canBeIdentifier(p.currentToken.Type) {
-			return p.parseKeywordAsIdentifier()
-		}
-		
-		p.addError(NewParseError(
-			pos,
-			"expected expression",
-			[]TokenType{TokenLeftParen, TokenNot, TokenLeftBracket, TokenLeftBrace, TokenIf, TokenIdentifier},
-			p.currentToken,
-		))
+	}
+
+	if !ok {
 		return nil, false
 	}
+
+	// Apply postfix operations to the base expression
+	return p.parsePostfixExpression(baseExpr)
 }
 
 // parseParenthesizedExpression parses "(" expr ")"
@@ -454,7 +463,8 @@ func (p *Parser) parseFunctionApplication(funcName string, pos errors.SourcePosi
 	// Handle empty argument list
 	if p.currentTokenIs(TokenRightParen) {
 		p.nextToken()
-		return expr.NewApply(funcName, args, pos), true
+		apply := expr.NewApply(funcName, args, pos)
+		return p.parsePostfixExpression(apply)
 	}
 
 	// Parse first argument
@@ -479,7 +489,9 @@ func (p *Parser) parseFunctionApplication(funcName string, pos errors.SourcePosi
 		return nil, false
 	}
 
-	return expr.NewApply(funcName, args, pos), true
+	// Create function application and check for postfix operations
+	apply := expr.NewApply(funcName, args, pos)
+	return p.parsePostfixExpression(apply)
 }
 
 // parseStructLiteral parses struct literals
