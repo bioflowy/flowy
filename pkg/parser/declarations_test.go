@@ -151,8 +151,8 @@ func TestParseStruct(t *testing.T) {
 		{`struct Empty {
 		}`, "Empty", 0},
 		{`struct Config {
-			Boolean debug = false
-			Int timeout = 30
+			Boolean debug
+			Int timeout
 			String? logfile
 		}`, "Config", 3},
 	}

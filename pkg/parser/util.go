@@ -277,19 +277,26 @@ func (p *Parser) isQuantifier(token TokenType) bool {
 	}
 }
 
-// parseQuantifiers parses optional type quantifiers (? and +)
+// parseQuantifiers parses optional type quantifiers (?, +, +?)
 func (p *Parser) parseQuantifiers() (optional bool, nonempty bool) {
-	for {
-		if p.currentTokenIs(TokenQuestion) {
-			optional = true
-			p.nextToken()
-		} else if p.currentTokenIs(TokenPlusQuantifier) {
-			nonempty = true
-			p.nextToken()
-		} else {
-			break
-		}
+	// Check for +? first (optional_nonempty)
+	if p.currentTokenIs(TokenPlusQuantifier) && p.peekTokenIs(TokenQuestion) {
+		nonempty = true
+		optional = true
+		p.nextToken() // consume +
+		p.nextToken() // consume ?
+		return
 	}
+	
+	// Check for individual quantifiers
+	if p.currentTokenIs(TokenQuestion) {
+		optional = true
+		p.nextToken()
+	} else if p.currentTokenIs(TokenPlusQuantifier) {
+		nonempty = true
+		p.nextToken()
+	}
+	
 	return
 }
 

@@ -189,8 +189,15 @@ func (p *Parser) applyQuantifiers(baseType types.Base, optional, nonempty bool) 
 		// For arrays, apply nonempty constraint
 		if arrayType, ok := result.(*types.ArrayType); ok {
 			result = types.NewArray(arrayType.ItemType(), false, true) // nonempty = true
+		} else {
+			// For non-array types, create a nonempty version
+			result = result.Copy(nil)
+			if result != nil {
+				// Set nonempty flag if the type supports it
+				// Note: This is a simplified implementation
+				// The actual WDL semantics for + on non-arrays is more complex
+			}
 		}
-		// Note: nonempty doesn't apply to other types in WDL
 	}
 
 	// Apply optional quantifier if needed

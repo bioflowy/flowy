@@ -174,6 +174,8 @@ func (p *Parser) parseMetaObject() (map[string]interface{}, bool) {
 		return nil, false
 	}
 
+	p.skipCommentsAndNewlines()
+
 	meta := make(map[string]interface{})
 
 	// Handle empty meta object
@@ -190,20 +192,38 @@ func (p *Parser) parseMetaObject() (map[string]interface{}, bool) {
 	meta[key] = value
 
 	// Parse remaining key-value pairs
-	for p.currentTokenIs(TokenComma) {
-		p.nextToken() // consume comma
-
-		// Check for trailing comma
+	for {
+		p.skipCommentsAndNewlines()
+		
+		// Check if we're done
 		if p.currentTokenIs(TokenRightBrace) {
 			break
 		}
-
-		key, value, ok := p.parseMetaKeyValue()
-		if !ok {
-			return nil, false
+		
+		// Optional comma before next key-value pair
+		if p.currentTokenIs(TokenComma) {
+			p.nextToken() // consume comma
+			p.skipCommentsAndNewlines()
+			
+			// Check for trailing comma
+			if p.currentTokenIs(TokenRightBrace) {
+				break
+			}
 		}
-		meta[key] = value
+		
+		// Try to parse another key-value pair
+		if p.currentTokenIs(TokenIdentifier) || p.canBeMetaKey(p.currentToken.Type) {
+			key, value, ok := p.parseMetaKeyValue()
+			if !ok {
+				return nil, false
+			}
+			meta[key] = value
+		} else {
+			break
+		}
 	}
+
+	p.skipCommentsAndNewlines()
 
 	if !p.consume(TokenRightBrace) {
 		return nil, false
@@ -214,9 +234,16 @@ func (p *Parser) parseMetaObject() (map[string]interface{}, bool) {
 
 // parseMetaKeyValue parses meta_kv: CNAME ":" meta_value
 func (p *Parser) parseMetaKeyValue() (string, interface{}, bool) {
-	// Parse key
-	key, ok := p.parseIdentifier()
-	if !ok {
+	// Parse key - can be identifier or many keywords
+	var key string
+	if p.currentTokenIs(TokenIdentifier) {
+		key = p.currentToken.Value
+		p.nextToken()
+	} else if p.canBeMetaKey(p.currentToken.Type) {
+		key = p.currentToken.Value
+		p.nextToken()
+	} else {
+		p.addError(p.expectError(TokenIdentifier))
 		return "", nil, false
 	}
 
@@ -476,4 +503,17 @@ func (p *Parser) parseTaskList() ([]*tree.Task, bool) {
 	}
 
 	return tasks, true
+}
+
+// canBeMetaKey returns true if a token can be used as a meta key
+func (p *Parser) canBeMetaKey(tokenType TokenType) bool {
+	switch tokenType {
+	case TokenVersion, TokenTask, TokenWorkflow, TokenCall, TokenInput, TokenOutput, 
+		 TokenMeta, TokenStruct, TokenCommand, TokenEnv, TokenFile, TokenDirectory,
+		 TokenStringType, TokenIntType, TokenFloatType, TokenBoolType:
+		// Many keywords can be used as meta keys
+		return true
+	default:
+		return false
+	}
 }

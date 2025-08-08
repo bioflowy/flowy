@@ -203,6 +203,11 @@ func (p *Parser) parseExprCore() (expr.Expr, bool) {
 			return p.parseString()
 		}
 		
+		// Try to parse keywords as identifiers in expression context
+		if p.canBeIdentifier(p.currentToken.Type) {
+			return p.parseKeywordAsIdentifier()
+		}
+		
 		p.addError(NewParseError(
 			pos,
 			"expected expression",
@@ -560,12 +565,16 @@ func (p *Parser) parsePostfixExpression(baseExpr expr.Expr) (expr.Expr, bool) {
 			// Member access: expr_core "." CNAME
 			p.nextToken() // consume dot
 			
-			if !p.currentTokenIs(TokenIdentifier) {
+			var memberName string
+			if p.currentTokenIs(TokenIdentifier) {
+				memberName = p.currentToken.Value
+			} else if p.canBeIdentifier(p.currentToken.Type) {
+				memberName = p.currentToken.Value
+			} else {
 				p.addError(p.expectError(TokenIdentifier))
 				return nil, false
 			}
 			
-			memberName := p.currentToken.Value
 			pos := p.currentPosition()
 			p.nextToken()
 			
@@ -602,4 +611,25 @@ func (p *Parser) isComparisonOperator() bool {
 	default:
 		return false
 	}
+}
+
+// canBeIdentifier returns true if a token can be used as an identifier in expression context
+func (p *Parser) canBeIdentifier(tokenType TokenType) bool {
+	switch tokenType {
+	case TokenTask, TokenWorkflow, TokenCall, TokenInput, TokenOutput, TokenMeta, TokenStruct:
+		// These keywords can be used as identifiers in expressions
+		return true
+	default:
+		return false
+	}
+}
+
+// parseKeywordAsIdentifier parses a keyword token as an identifier
+func (p *Parser) parseKeywordAsIdentifier() (expr.Expr, bool) {
+	pos := p.currentPosition()
+	name := p.currentToken.Value
+	p.nextToken()
+	
+	// Create identifier and check for postfix operations
+	return p.parsePostfixExpression(expr.NewIdentifier(name, pos))
 }

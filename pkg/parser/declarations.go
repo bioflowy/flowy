@@ -100,13 +100,6 @@ func (p *Parser) parseBoundDeclaration() (*tree.Decl, bool) {
 	// Parse initialization expression
 	initExpr, ok := p.parseExpression()
 	if !ok {
-		// For now, create a placeholder since expressions.go isn't implemented yet
-		p.addError(NewParseError(
-			p.currentPosition(),
-			"expression parsing not yet implemented",
-			[]TokenType{},
-			p.currentToken,
-		))
 		return nil, false
 	}
 
