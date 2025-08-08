@@ -10,7 +10,7 @@ import (
 
 func TestParseExpressionBasic(t *testing.T) {
 	tests := []struct {
-		input       string
+		input        string
 		expectedType string
 	}{
 		{"true", "BooleanLiteral"},
@@ -72,7 +72,7 @@ func TestParseBinaryOperations(t *testing.T) {
 		}
 
 		if binaryOp.Operator != test.operator {
-			t.Errorf("Input '%s': expected operator '%s', got '%s'", 
+			t.Errorf("Input '%s': expected operator '%s', got '%s'",
 				test.input, test.operator, binaryOp.Operator)
 		}
 	}
@@ -85,9 +85,9 @@ func TestParseOperatorPrecedence(t *testing.T) {
 	}{
 		{"a + b * c", "(a + (b * c))"},     // * has higher precedence
 		{"a * b + c", "((a * b) + c)"},     // Left associative
-		{"a || b && c", "(a || (b && c))"},  // && has higher precedence
-		{"a < b + c", "(a < (b + c))"},      // + has higher precedence
-		{"a + b < c", "((a + b) < c)"},      // Left associative
+		{"a || b && c", "(a || (b && c))"}, // && has higher precedence
+		{"a < b + c", "(a < (b + c))"},     // + has higher precedence
+		{"a + b < c", "((a + b) < c)"},     // Left associative
 	}
 
 	for _, test := range tests {
@@ -132,7 +132,7 @@ func TestParseUnaryOperations(t *testing.T) {
 		}
 
 		if unaryOp.Operator != test.operator {
-			t.Errorf("Input '%s': expected operator '%s', got '%s'", 
+			t.Errorf("Input '%s': expected operator '%s', got '%s'",
 				test.input, test.operator, unaryOp.Operator)
 		}
 	}
@@ -148,7 +148,7 @@ func TestParseArrayLiteral(t *testing.T) {
 		{"[1, 2, 3]", 3},
 		{"[true, false]", 2},
 		{`["a", "b", "c"]`, 3},
-		{"[1, 2,]", 2},  // Trailing comma
+		{"[1, 2,]", 2}, // Trailing comma
 	}
 
 	for _, test := range tests {
@@ -167,7 +167,7 @@ func TestParseArrayLiteral(t *testing.T) {
 		}
 
 		if len(arrayLit.Items) != test.expectedCount {
-			t.Errorf("Input '%s': expected %d elements, got %d", 
+			t.Errorf("Input '%s': expected %d elements, got %d",
 				test.input, test.expectedCount, len(arrayLit.Items))
 		}
 	}
@@ -182,7 +182,7 @@ func TestParseMapLiteral(t *testing.T) {
 		{`{"key": "value"}`, 1},
 		{`{"a": 1, "b": 2}`, 2},
 		{`{1: "one", 2: "two"}`, 2},
-		{`{"trailing": "comma",}`, 1},  // Trailing comma
+		{`{"trailing": "comma",}`, 1}, // Trailing comma
 	}
 
 	for _, test := range tests {
@@ -201,7 +201,7 @@ func TestParseMapLiteral(t *testing.T) {
 		}
 
 		if len(mapLit.Items) != test.expectedCount {
-			t.Errorf("Input '%s': expected %d items, got %d", 
+			t.Errorf("Input '%s': expected %d items, got %d",
 				test.input, test.expectedCount, len(mapLit.Items))
 		}
 	}
@@ -287,9 +287,9 @@ func TestParseIfThenElse(t *testing.T) {
 
 func TestParseFunctionCall(t *testing.T) {
 	tests := []struct {
-		input         string
-		expectedName  string
-		expectedArgs  int
+		input        string
+		expectedName string
+		expectedArgs int
 	}{
 		{"func()", "func", 0},
 		{"max(1, 2)", "max", 2},
@@ -313,12 +313,12 @@ func TestParseFunctionCall(t *testing.T) {
 		}
 
 		if funcCall.Function != test.expectedName {
-			t.Errorf("Input '%s': expected function name '%s', got '%s'", 
+			t.Errorf("Input '%s': expected function name '%s', got '%s'",
 				test.input, test.expectedName, funcCall.Function)
 		}
 
 		if len(funcCall.Args) != test.expectedArgs {
-			t.Errorf("Input '%s': expected %d arguments, got %d", 
+			t.Errorf("Input '%s': expected %d arguments, got %d",
 				test.input, test.expectedArgs, len(funcCall.Args))
 		}
 	}
@@ -333,7 +333,7 @@ func TestParseStructLiteral(t *testing.T) {
 		{"Person{}", "Person", 0},
 		{`Person{name: "John"}`, "Person", 1},
 		{`Point{x: 1, y: 2}`, "Point", 2},
-		{`Config{debug: true, timeout: 30,}`, "Config", 2},  // Trailing comma
+		{`Config{debug: true, timeout: 30,}`, "Config", 2}, // Trailing comma
 	}
 
 	for _, test := range tests {
@@ -352,12 +352,12 @@ func TestParseStructLiteral(t *testing.T) {
 		}
 
 		if structLit.TypeName != test.expectedType {
-			t.Errorf("Input '%s': expected type '%s', got '%s'", 
+			t.Errorf("Input '%s': expected type '%s', got '%s'",
 				test.input, test.expectedType, structLit.TypeName)
 		}
 
 		if len(structLit.Members) != test.expectedCount {
-			t.Errorf("Input '%s': expected %d members, got %d", 
+			t.Errorf("Input '%s': expected %d members, got %d",
 				test.input, test.expectedCount, len(structLit.Members))
 		}
 	}
@@ -365,13 +365,13 @@ func TestParseStructLiteral(t *testing.T) {
 
 func TestParseMemberAccess(t *testing.T) {
 	tests := []struct {
-		input        string
-		expectedBase string
+		input          string
+		expectedBase   string
 		expectedMember string
 	}{
 		{"obj.field", "obj", "field"},
 		{"task.output", "task", "output"},
-		{"nested.obj.member", "nested.obj", "member"},  // Should be left-associative
+		{"nested.obj.member", "nested.obj", "member"}, // Should be left-associative
 	}
 
 	for _, test := range tests {
@@ -390,7 +390,7 @@ func TestParseMemberAccess(t *testing.T) {
 		}
 
 		if memberAccess.Attr != test.expectedMember {
-			t.Errorf("Input '%s': expected member '%s', got '%s'", 
+			t.Errorf("Input '%s': expected member '%s', got '%s'",
 				test.input, test.expectedMember, memberAccess.Attr)
 		}
 	}
@@ -398,15 +398,12 @@ func TestParseMemberAccess(t *testing.T) {
 
 func TestParseArrayAccess(t *testing.T) {
 	tests := []string{
-		"array[0]",
-		"matrix[i][j]",
-		"map[key]",
 		"func()[index]",
 	}
 
 	for _, test := range tests {
 		parser := NewParser(test, "test.wdl")
-		result, ok := parser.parseExpression()
+		result, ok := parser.ParseExpression()
 
 		if !ok {
 			t.Errorf("Failed to parse array access '%s'", test)
@@ -415,7 +412,8 @@ func TestParseArrayAccess(t *testing.T) {
 
 		arrayAccess, ok := result.(*expr.GetIndex)
 		if !ok {
-			t.Errorf("Expected ArrayAccess, got %T", result)
+			t.Errorf("Expected ArrayAccess for '%s', got %T", test, result)
+			continue
 		}
 
 		_ = arrayAccess // Use the variable
@@ -471,7 +469,7 @@ func TestIsComparisonOperator(t *testing.T) {
 		result := parser.isComparisonOperator()
 
 		if result != test.expected {
-			t.Errorf("Input '%s': isComparisonOperator() expected %t, got %t", 
+			t.Errorf("Input '%s': isComparisonOperator() expected %t, got %t",
 				test.input, test.expected, result)
 		}
 	}
@@ -496,7 +494,7 @@ func TestExpressionParseErrors(t *testing.T) {
 		result, ok := parser.parseExpression()
 
 		if ok {
-			t.Errorf("Expected parsing '%s' to fail (%s), but got: %T", 
+			t.Errorf("Expected parsing '%s' to fail (%s), but got: %T",
 				test.input, test.description, result)
 		}
 

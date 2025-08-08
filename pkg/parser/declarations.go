@@ -117,7 +117,7 @@ func (p *Parser) parseInputDeclarations() (*tree.Input, bool) {
 
 	var declarations []*tree.Decl
 	ok := p.parseBlock(func() bool {
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			if decl, ok := p.parseDeclaration(); ok {
 				declarations = append(declarations, decl)
 			} else {
@@ -158,7 +158,7 @@ func (p *Parser) parseOutputDeclarations() (*tree.Output, bool) {
 
 	var declarations []*tree.Decl
 	ok := p.parseBlock(func() bool {
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			// Output declarations must be bound (have initialization)
 			if decl, ok := p.parseBoundDeclaration(); ok {
 				declarations = append(declarations, decl)
@@ -197,7 +197,7 @@ func (p *Parser) parseStruct() (*tree.StructTypeDef, bool) {
 
 	var members []*tree.StructMember
 	ok = p.parseBlock(func() bool {
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			// Parse struct member (unbound declaration)
 			if member, ok := p.parseStructMember(); ok {
 				members = append(members, member)
@@ -242,7 +242,7 @@ func (p *Parser) parseStructMember() (*tree.StructMember, bool) {
 func (p *Parser) parseDeclarationList(terminator TokenType) ([]*tree.Decl, bool) {
 	var declarations []*tree.Decl
 
-	for !p.currentTokenIs(terminator) && !p.isAtEnd() {
+	for !p.currentTokenIs(terminator) && !p.IsAtEnd() {
 		if decl, ok := p.parseDeclaration(); ok {
 			declarations = append(declarations, decl)
 		} else {
@@ -259,7 +259,7 @@ func (p *Parser) parseDeclarationList(terminator TokenType) ([]*tree.Decl, bool)
 func (p *Parser) parseUnboundDeclarationList(terminator TokenType) ([]*tree.Decl, bool) {
 	var declarations []*tree.Decl
 
-	for !p.currentTokenIs(terminator) && !p.isAtEnd() {
+	for !p.currentTokenIs(terminator) && !p.IsAtEnd() {
 		if decl, ok := p.parseUnboundDeclaration(); ok {
 			declarations = append(declarations, decl)
 		} else {
@@ -276,7 +276,7 @@ func (p *Parser) parseUnboundDeclarationList(terminator TokenType) ([]*tree.Decl
 func (p *Parser) parseBoundDeclarationList(terminator TokenType) ([]*tree.Decl, bool) {
 	var declarations []*tree.Decl
 
-	for !p.currentTokenIs(terminator) && !p.isAtEnd() {
+	for !p.currentTokenIs(terminator) && !p.IsAtEnd() {
 		if decl, ok := p.parseBoundDeclaration(); ok {
 			declarations = append(declarations, decl)
 		} else {
@@ -293,7 +293,7 @@ func (p *Parser) parseBoundDeclarationList(terminator TokenType) ([]*tree.Decl, 
 func (p *Parser) parseStructMemberList(terminator TokenType) ([]*tree.StructMember, bool) {
 	var members []*tree.StructMember
 
-	for !p.currentTokenIs(terminator) && !p.isAtEnd() {
+	for !p.currentTokenIs(terminator) && !p.IsAtEnd() {
 		if member, ok := p.parseStructMember(); ok {
 			members = append(members, member)
 		} else {

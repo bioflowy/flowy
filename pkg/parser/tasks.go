@@ -31,7 +31,7 @@ func (p *Parser) parseTask() (*tree.Task, bool) {
 
 	ok = p.parseBlock(func() bool {
 		// Parse task sections and command
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			p.skipCommentsAndNewlines()
 
 			switch p.currentToken.Type {

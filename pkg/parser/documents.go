@@ -31,10 +31,10 @@ func (p *Parser) parseDocument() (*tree.Document, bool) {
 	var workflows []*tree.Workflow
 	var structs []*tree.StructTypeDef
 
-	for !p.isAtEnd() {
+	for !p.IsAtEnd() {
 		p.skipCommentsAndNewlines()
 		
-		if p.isAtEnd() {
+		if p.IsAtEnd() {
 			break
 		}
 
@@ -248,7 +248,7 @@ func (p *Parser) validateDocumentStructure(doc *tree.Document) bool {
 func (p *Parser) parseDocumentElements() ([]interface{}, bool) {
 	var elements []interface{}
 
-	for p.isDocumentElementStart() && !p.isAtEnd() {
+	for p.isDocumentElementStart() && !p.IsAtEnd() {
 		if element, ok := p.parseDocumentElement(); ok {
 			elements = append(elements, element)
 		} else {

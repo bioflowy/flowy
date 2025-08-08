@@ -52,6 +52,11 @@ type Parser struct {
 	uri          string
 }
 
+// CurrentToken returns the current token
+func (p *Parser) CurrentToken() Token {
+	return p.currentToken
+}
+
 // NewParser creates a new WDL parser
 func NewParser(input, uri string) *Parser {
 	lexer := NewLexer(input, uri)
@@ -69,9 +74,15 @@ func NewParser(input, uri string) *Parser {
 }
 
 // nextToken advances to the next token
-func (p *Parser) nextToken() {
+// NextToken advances to the next token
+func (p *Parser) NextToken() {
 	p.currentToken = p.peekToken
 	p.peekToken = p.lexer.NextToken()
+}
+
+// nextToken is an internal alias for NextToken
+func (p *Parser) nextToken() {
+	p.NextToken()
 }
 
 // Errors returns all parse errors encountered
@@ -173,8 +184,8 @@ func (p *Parser) synchronize() {
 	}
 }
 
-// isAtEnd returns true if we've reached end of input
-func (p *Parser) isAtEnd() bool {
+// IsAtEnd returns true if at end of input
+func (p *Parser) IsAtEnd() bool {
 	return p.currentTokenIs(TokenEOF)
 }
 
@@ -339,7 +350,7 @@ func (p *Parser) isRecoveryPoint() bool {
 func (p *Parser) ParseDocument() (*tree.Document, error) {
 	p.skipCommentsAndNewlines()
 	
-	if p.isAtEnd() {
+	if p.IsAtEnd() {
 		return nil, NewParseError(
 			p.currentPosition(),
 			"empty document",

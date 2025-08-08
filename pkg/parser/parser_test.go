@@ -158,7 +158,7 @@ func TestParserSynchronization(t *testing.T) {
 	parser.synchronize()
 
 	// After synchronization, should be positioned at a recovery point
-	if parser.isAtEnd() {
+	if parser.IsAtEnd() {
 		t.Error("Parser should not be at end after synchronization")
 	}
 }
@@ -200,13 +200,13 @@ func TestParserAtEnd(t *testing.T) {
 	input := "workflow"
 	parser := NewParser(input, "test.wdl")
 
-	if parser.isAtEnd() {
+	if parser.IsAtEnd() {
 		t.Error("Parser should not be at end initially")
 	}
 
 	// Advance to end
 	parser.nextToken() // Move to EOF
-	if !parser.isAtEnd() {
+	if !parser.IsAtEnd() {
 		t.Error("Parser should be at end after reaching EOF")
 	}
 }

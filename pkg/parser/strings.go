@@ -57,7 +57,7 @@ func (p *Parser) parseMultiString() (expr.Expr, bool) {
 	var parts []string
 	var interpolations []expr.Expr
 	
-	for !p.currentTokenIs(TokenMultiStringEnd) && !p.isAtEnd() {
+	for !p.currentTokenIs(TokenMultiStringEnd) && !p.IsAtEnd() {
 		switch p.currentToken.Type {
 		case TokenStringFragment:
 			parts = append(parts, p.currentToken.Value)
@@ -120,7 +120,7 @@ func (p *Parser) parseCommand1() (expr.Expr, bool) {
 	var parts []string
 	var interpolations []expr.Expr
 	
-	for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+	for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 		switch p.currentToken.Type {
 		case TokenCommandFragment:
 			parts = append(parts, p.currentToken.Value)
@@ -158,7 +158,7 @@ func (p *Parser) parseCommand2() (expr.Expr, bool) {
 	var parts []string
 	var interpolations []expr.Expr
 	
-	for !p.currentTokenIs(TokenCommandEnd) && !p.isAtEnd() {
+	for !p.currentTokenIs(TokenCommandEnd) && !p.IsAtEnd() {
 		switch p.currentToken.Type {
 		case TokenCommandFragment:
 			parts = append(parts, p.currentToken.Value)

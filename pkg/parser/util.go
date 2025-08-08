@@ -350,7 +350,7 @@ func (p *Parser) isExpressionStart() bool {
 func (p *Parser) skipUntilRecovery() {
 	depth := 0
 	
-	for !p.isAtEnd() {
+	for !p.IsAtEnd() {
 		switch p.currentToken.Type {
 		case TokenLeftBrace:
 			depth++

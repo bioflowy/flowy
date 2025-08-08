@@ -26,7 +26,7 @@ func (p *Parser) parseWorkflow() (*tree.Workflow, bool) {
 	var body []tree.WorkflowNode
 
 	ok = p.parseBlock(func() bool {
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			p.skipCommentsAndNewlines()
 
 			if element, ok := p.parseWorkflowElement(); ok {
@@ -291,7 +291,7 @@ func (p *Parser) parseScatter() (*tree.Scatter, bool) {
 	var body []tree.WorkflowNode
 
 	ok = p.parseBlock(func() bool {
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			p.skipCommentsAndNewlines()
 
 			if element, ok := p.parseInnerWorkflowElement(); ok {
@@ -341,7 +341,7 @@ func (p *Parser) parseConditional() (*tree.Conditional, bool) {
 	var body []tree.WorkflowNode
 
 	ok = p.parseBlock(func() bool {
-		for !p.currentTokenIs(TokenRightBrace) && !p.isAtEnd() {
+		for !p.currentTokenIs(TokenRightBrace) && !p.IsAtEnd() {
 			p.skipCommentsAndNewlines()
 
 			if element, ok := p.parseInnerWorkflowElement(); ok {

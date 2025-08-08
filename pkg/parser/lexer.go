@@ -275,14 +275,28 @@ func (t TokenType) String() string {
 	}
 }
 
+// LexerMode represents the current mode of the lexer
+type LexerMode int
+
+const (
+	LexerModeNormal LexerMode = iota
+	LexerModeCommand1 // Inside { } command block
+	LexerModeCommand2 // Inside <<< >>> command block
+	LexerModeString   // Inside string with interpolation
+)
+
 // Lexer represents the WDL lexer
 type Lexer struct {
-	input    string
-	position int
-	line     int
-	column   int
-	uri      string
-	keywords map[string]TokenType
+	input      string
+	position   int
+	line       int
+	column     int
+	uri        string
+	keywords   map[string]TokenType
+	mode       LexerMode
+	modeStack  []LexerMode // Stack for nested modes
+	braceDepth int         // Track brace depth for command blocks
+	lastToken  TokenType   // Track the last token for context-sensitive lexing
 }
 
 // NewLexer creates a new WDL lexer
@@ -329,12 +343,15 @@ func NewLexer(input, uri string) *Lexer {
 	}
 
 	return &Lexer{
-		input:    input,
-		position: 0,
-		line:     1,
-		column:   1,
-		uri:      uri,
-		keywords: keywords,
+		input:      input,
+		position:   0,
+		line:       1,
+		column:     1,
+		uri:        uri,
+		keywords:   keywords,
+		mode:       LexerModeNormal,
+		modeStack:  []LexerMode{},
+		braceDepth: 0,
 	}
 }
 
@@ -530,6 +547,13 @@ func (l *Lexer) readString(quote byte) string {
 
 // NextToken returns the next token from the input
 func (l *Lexer) NextToken() Token {
+	// Handle special modes
+	if l.mode == LexerModeCommand1 {
+		return l.nextTokenCommand1()
+	} else if l.mode == LexerModeCommand2 {
+		return l.nextTokenCommand2()
+	}
+
 	for {
 		l.skipWhitespace()
 
@@ -659,9 +683,24 @@ func (l *Lexer) NextToken() Token {
 			return Token{TokenModulo, "%", pos}
 		case '{':
 			l.advance()
+			// Check if this is the start of a command block
+			if l.lastToken == TokenCommand {
+				l.mode = LexerModeCommand1
+				l.braceDepth = 1
+			}
+			l.lastToken = TokenLeftBrace
 			return Token{TokenLeftBrace, "{", pos}
 		case '}':
 			l.advance()
+			// Check if this ends an interpolation and we need to return to command mode
+			if len(l.modeStack) > 0 {
+				// Pop mode from stack
+				l.mode = l.modeStack[len(l.modeStack)-1]
+				l.modeStack = l.modeStack[:len(l.modeStack)-1]
+				l.lastToken = TokenRightBrace
+				return Token{TokenRightBrace, "}", pos}
+			}
+			l.lastToken = TokenRightBrace
 			return Token{TokenRightBrace, "}", pos}
 		case '[':
 			l.advance()
@@ -710,6 +749,12 @@ func (l *Lexer) NextToken() Token {
 			if unicode.IsLetter(rune(ch)) || ch == '_' {
 				value := l.readIdentifier()
 				if tokenType, isKeyword := l.keywords[value]; isKeyword {
+					// Special handling for command keyword
+					if tokenType == TokenCommand {
+						// Store the token but don't change mode yet
+						// Mode will change when we see the opening brace
+						l.lastToken = tokenType
+					}
 					return Token{tokenType, value, pos}
 				}
 				return Token{TokenIdentifier, value, pos}
@@ -720,6 +765,75 @@ func (l *Lexer) NextToken() Token {
 			return Token{TokenError, string(ch), pos}
 		}
 	}
+}
+
+// nextTokenCommand1 handles tokenization inside command { } blocks
+func (l *Lexer) nextTokenCommand1() Token {
+	if l.position >= len(l.input) {
+		return Token{TokenEOF, "", l.currentPosition()}
+	}
+
+	pos := l.currentPosition()
+	
+	// Check for interpolation start
+	if l.peek() == '$' && l.peekNext() == '{' {
+		l.advance()
+		l.advance()
+		// Switch to normal mode for the interpolation
+		l.modeStack = append(l.modeStack, l.mode)
+		l.mode = LexerModeNormal
+		return Token{TokenInterpolationStart, "${", pos}
+	}
+	
+	// Check for closing brace
+	if l.peek() == '}' {
+		// Check if this is the end of the command block
+		if l.braceDepth == 1 {
+			l.advance()
+			l.braceDepth = 0
+			l.mode = LexerModeNormal
+			l.lastToken = TokenRightBrace
+			return Token{TokenRightBrace, "}", pos}
+		}
+	}
+	
+	// Read command fragment until next interpolation or closing brace
+	var fragment strings.Builder
+	for l.position < len(l.input) {
+		ch := l.peek()
+		
+		// Check for special sequences
+		if ch == '$' && l.peekNext() == '{' {
+			break // Start of interpolation
+		}
+		if ch == '}' && l.braceDepth == 1 {
+			break // End of command block
+		}
+		
+		// Include everything else in the fragment
+		fragment.WriteByte(ch)
+		l.advance()
+		
+		// Track newlines for position
+		if ch == '\n' {
+			continue // Include newlines in command fragment
+		}
+	}
+	
+	if fragment.Len() > 0 {
+		return Token{TokenCommandFragment, fragment.String(), pos}
+	}
+	
+	// Should not reach here in normal cases
+	return Token{TokenError, "", pos}
+}
+
+// nextTokenCommand2 handles tokenization inside command <<< >>> blocks
+func (l *Lexer) nextTokenCommand2() Token {
+	// Similar to nextTokenCommand1 but for <<< >>> style
+	// For now, just return to normal mode
+	l.mode = LexerModeNormal
+	return l.NextToken()
 }
 
 // AllTokens returns all tokens from the input (useful for testing)

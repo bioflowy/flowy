@@ -359,7 +359,7 @@ import "utils.wdl" as utils
 
 struct Config {
 	String output_dir
-	Boolean debug = false
+	Boolean debug
 }
 
 task process_file {

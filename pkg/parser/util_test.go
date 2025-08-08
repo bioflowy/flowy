@@ -321,7 +321,7 @@ func TestErrorRecoveryStrategies(t *testing.T) {
 
 		// After synchronization, we should be at a reasonable recovery point
 		// The exact behavior depends on implementation
-		if parser.isAtEnd() && test.expectedRecoveryAt != TokenEOF {
+		if parser.IsAtEnd() && test.expectedRecoveryAt != TokenEOF {
 			t.Errorf("%s: unexpected recovery at EOF", test.description)
 		}
 	}
@@ -338,16 +338,16 @@ func TestUtilityHelpers(t *testing.T) {
 	}
 
 	// Test token advancement helpers
-	if parser.isAtEnd() {
+	if parser.IsAtEnd() {
 		t.Error("Should not be at end initially")
 	}
 
 	// Advance to end
-	for !parser.isAtEnd() {
+	for !parser.IsAtEnd() {
 		parser.nextToken()
 	}
 
-	if !parser.isAtEnd() {
+	if !parser.IsAtEnd() {
 		t.Error("Should be at end after advancing through all tokens")
 	}
 }
