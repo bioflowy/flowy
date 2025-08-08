@@ -202,6 +202,14 @@ func (p *Parser) parseIdentifier() (string, bool) {
 		return value, true
 	}
 	
+	// Allow certain keywords to be used as identifiers
+	// This is common in WDL where section keywords can be variable names
+	if p.canBeIdentifier(p.currentToken.Type) {
+		value := p.currentToken.Value
+		p.nextToken()
+		return value, true
+	}
+	
 	p.addError(p.expectError(TokenIdentifier))
 	return "", false
 }
@@ -274,6 +282,7 @@ func (p *Parser) isKeyword(token TokenType) bool {
 		return false
 	}
 }
+
 
 // isTypeKeyword returns true if token is a WDL type keyword
 func (p *Parser) isTypeKeyword(token TokenType) bool {
@@ -359,7 +368,7 @@ func (p *Parser) ParseDocument() (*tree.Document, error) {
 		)
 	}
 	
-	doc, ok := p.parseDocument()
+	doc, ok := p.ParseDocumentInternal()
 	if !ok {
 		// Return first error if parsing failed
 		if len(p.errors) > 0 {

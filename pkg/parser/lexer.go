@@ -381,6 +381,15 @@ func (l *Lexer) peekNext() byte {
 	return l.input[l.position+1]
 }
 
+// peekAhead returns the character at the given offset from current position
+func (l *Lexer) peekAhead(offset int) byte {
+	pos := l.position + offset
+	if pos >= len(l.input) {
+		return 0
+	}
+	return l.input[pos]
+}
+
 // advance consumes the current character and advances position
 func (l *Lexer) advance() byte {
 	if l.position >= len(l.input) {
@@ -398,6 +407,22 @@ func (l *Lexer) advance() byte {
 	}
 
 	return ch
+}
+
+// pushMode pushes the current mode onto the stack and sets a new mode
+func (l *Lexer) pushMode(newMode LexerMode) {
+	l.modeStack = append(l.modeStack, l.mode)
+	l.mode = newMode
+}
+
+// popMode pops the previous mode from the stack
+func (l *Lexer) popMode() {
+	if len(l.modeStack) > 0 {
+		l.mode = l.modeStack[len(l.modeStack)-1]
+		l.modeStack = l.modeStack[:len(l.modeStack)-1]
+	} else {
+		l.mode = LexerModeNormal // Default fallback
+	}
 }
 
 // skipWhitespace skips whitespace characters
@@ -615,6 +640,7 @@ func (l *Lexer) NextToken() Token {
 				l.advance()
 				l.advance()
 				l.advance()
+				l.pushMode(LexerModeCommand2) // Enter command block mode
 				return Token{TokenCommandStart, "<<<", pos}
 			}
 			l.advance()
@@ -743,6 +769,8 @@ func (l *Lexer) NextToken() Token {
 						// Mode will change when we see the opening brace
 						l.lastToken = tokenType
 					}
+					// Update lastToken for all keywords to prevent mode confusion
+					l.lastToken = tokenType
 					return Token{tokenType, value, pos}
 				}
 				return Token{TokenIdentifier, value, pos}
@@ -818,10 +846,55 @@ func (l *Lexer) nextTokenCommand1() Token {
 
 // nextTokenCommand2 handles tokenization inside command <<< >>> blocks
 func (l *Lexer) nextTokenCommand2() Token {
-	// Similar to nextTokenCommand1 but for <<< >>> style
-	// For now, just return to normal mode
-	l.mode = LexerModeNormal
-	return l.NextToken()
+	pos := l.currentPosition()
+	
+	// Skip initial whitespace
+	l.skipWhitespace()
+	
+	// Check for closing >>>
+	if l.peek() == '>' && l.peekNext() == '>' && l.peekAhead(2) == '>' {
+		l.advance() // >
+		l.advance() // >
+		l.advance() // >
+		l.popMode() // Return to previous mode
+		return Token{TokenCommandEnd, ">>>", pos}
+	}
+	
+	// Check for interpolation start
+	if l.peek() == '$' && l.peekNext() == '{' {
+		l.advance() // $
+		l.advance() // {
+		l.pushMode(LexerModeString) // Enter interpolation mode
+		return Token{TokenInterpolationStart, "${", pos}
+	}
+	
+	// Collect command fragment until >>> or ${
+	fragment := &strings.Builder{}
+	
+	for l.position < len(l.input) {
+		ch := l.peek()
+		
+		// Check for closing >>>
+		if ch == '>' && l.peekNext() == '>' && l.peekAhead(2) == '>' {
+			break
+		}
+		
+		// Check for interpolation
+		if ch == '$' && l.peekNext() == '{' {
+			break
+		}
+		
+		// Include everything else in the fragment
+		fragment.WriteByte(ch)
+		l.advance()
+	}
+	
+	if fragment.Len() > 0 {
+		return Token{TokenCommandFragment, fragment.String(), pos}
+	}
+	
+	// If we get here with no content, there might be an error
+	return Token{TokenError, "unexpected end of command block", pos}
 }
 
 // AllTokens returns all tokens from the input (useful for testing)

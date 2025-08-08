@@ -71,6 +71,17 @@ func (p *Parser) parseUnboundDeclaration() (*tree.Decl, bool) {
 		return nil, false
 	}
 
+	// Unbound declarations should not have assignments
+	if p.currentTokenIs(TokenAssign) {
+		p.addError(NewParseError(
+			p.currentPosition(),
+			"unbound declaration cannot have initialization",
+			[]TokenType{},
+			p.currentToken,
+		))
+		return nil, false
+	}
+
 	// No initialization for unbound declarations
 	return tree.NewDecl(name, declType, nil, pos), true
 }
@@ -324,10 +335,13 @@ func (p *Parser) validateDeclarationName(name string) bool {
 		return false
 	}
 
-	// Check if it conflicts with reserved words
+	// Check if it conflicts with reserved keywords
 	switch name {
 	case "true", "false", "None":
 		return false // These are literal values
+	case "version", "import", "as", "alias", "workflow", "task", 
+		 "scatter", "if", "then", "else", "call", "struct":
+		return false // These are core language keywords that cannot be variable names
 	default:
 		return true
 	}

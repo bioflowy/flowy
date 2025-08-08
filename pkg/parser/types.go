@@ -174,6 +174,15 @@ func (p *Parser) createPrimitiveType(typeName string) (types.Base, bool) {
 		return types.NewFile(false), true
 	case "Directory":
 		return types.NewDirectory(false), true
+	case "Array", "Map", "Pair":
+		// These types require parameters
+		p.addError(NewParseError(
+			p.currentPosition(),
+			"type "+typeName+" requires parameters",
+			[]TokenType{TokenLeftBracket},
+			p.currentToken,
+		))
+		return nil, false
 	default:
 		// Assume it's a struct type
 		return types.NewStructInstance(typeName, map[string]types.Base{}, false), true
@@ -186,17 +195,18 @@ func (p *Parser) applyQuantifiers(baseType types.Base, optional, nonempty bool) 
 
 	// Apply nonempty quantifier if needed
 	if nonempty {
-		// For arrays, apply nonempty constraint
+		// Only Array types support the nonempty quantifier (+)
 		if arrayType, ok := result.(*types.ArrayType); ok {
 			result = types.NewArray(arrayType.ItemType(), false, true) // nonempty = true
 		} else {
-			// For non-array types, create a nonempty version
-			result = result.Copy(nil)
-			if result != nil {
-				// Set nonempty flag if the type supports it
-				// Note: This is a simplified implementation
-				// The actual WDL semantics for + on non-arrays is more complex
-			}
+			// Error: nonempty quantifier not supported on non-array types
+			// But we still continue to process optional quantifier
+			p.addError(NewParseError(
+				p.currentPosition(),
+				"nonempty quantifier (+) can only be applied to Array types",
+				[]TokenType{},
+				p.currentToken,
+			))
 		}
 	}
 

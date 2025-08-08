@@ -53,7 +53,7 @@ workflow test {
 
 	for _, test := range tests {
 		parser := NewParser(test.input, "test.wdl")
-		result, ok := parser.parseDocument()
+		result, ok := parser.ParseDocumentInternal()
 
 		if !ok {
 			t.Errorf("Failed to parse document: %s", test.description)
@@ -401,10 +401,15 @@ workflow main {
 }`
 
 	parser := NewParser(input, "complete.wdl")
-	result, ok := parser.parseDocument()
+	result, ok := parser.ParseDocumentInternal()
 
 	if !ok {
 		t.Errorf("Failed to parse complete WDL document")
+		if parser.HasErrors() {
+			for i, err := range parser.Errors() {
+				t.Errorf("Error %d: %s", i+1, err.Error())
+			}
+		}
 		return
 	}
 
@@ -448,7 +453,7 @@ func TestDocumentParseErrors(t *testing.T) {
 
 	for _, test := range tests {
 		parser := NewParser(test.input, "test.wdl")
-		result, ok := parser.parseDocument()
+		result, ok := parser.ParseDocumentInternal()
 
 		if ok && test.description != "duplicate version" {
 			t.Errorf("Expected parsing '%s' to fail (%s), but got: %T", 
@@ -487,7 +492,7 @@ func TestImportWithAliases(t *testing.T) {
 
 func TestEmptyDocument(t *testing.T) {
 	parser := NewParser("", "empty.wdl")
-	result, ok := parser.parseDocument()
+	result, ok := parser.ParseDocumentInternal()
 
 	// An empty document might be valid but should have errors
 	// since WDL requires at least one task or workflow

@@ -40,9 +40,7 @@ func TestParseTypeWithQuantifiers(t *testing.T) {
 		expected string
 	}{
 		{"Int?", "Int?"},
-		{"String+", "String+"},
-		{"Float+?", "Float+?"},
-		{"Boolean??", "Boolean??"},  // Double optional should still work
+		{"Boolean??", "Boolean?"},  // Double optional collapses to single optional
 	}
 
 	for _, test := range tests {
@@ -196,7 +194,7 @@ func TestParseComplexTypes(t *testing.T) {
 	}{
 		{"Array[Int]?", "Array[Int]?"},
 		{"Map[String,Int]?", "Map[String,Int]?"},
-		{"Pair[Int,String]+", "Pair[Int,String]+"},
+		{"Array[Int]+", "Array[Int]+"},  // Only Array supports + quantifier
 		{"Array[Map[String,Int]]", "Array[Map[String,Int]]"},
 		{"Map[String,Array[Float]]?", "Map[String,Array[Float]]?"},
 	}
@@ -427,6 +425,35 @@ func TestParseTypeErrors(t *testing.T) {
 		if ok && test.description != "invalid type name" {
 			t.Errorf("Expected parsing '%s' to fail (%s), but got: %T", 
 				test.input, test.description, result)
+		}
+	}
+}
+
+func TestParseInvalidQuantifiers(t *testing.T) {
+	tests := []string{
+		"String+",   // nonempty quantifier on primitive type
+		"Int+",      // nonempty quantifier on primitive type  
+		"Boolean+?", // nonempty quantifier on primitive type
+		"Float+",    // nonempty quantifier on primitive type
+	}
+
+	for _, input := range tests {
+		parser := NewParser(input, "test.wdl")
+		result, ok := parser.parseType()
+
+		// Parser should still return a type (the base type without +)
+		// but should record an error
+		if !parser.HasErrors() {
+			t.Errorf("Expected error for invalid quantifier '%s', but no error was recorded", input)
+		}
+
+		// The result should be the base type without the invalid + quantifier
+		if ok && result != nil {
+			resultStr := result.String()
+			if resultStr != "String" && resultStr != "Int" && resultStr != "Boolean" && 
+			   resultStr != "Float" && resultStr != "Boolean?" {
+				t.Errorf("Expected base type for '%s', got '%s'", input, resultStr)
+			}
 		}
 	}
 }

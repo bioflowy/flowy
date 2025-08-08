@@ -8,7 +8,7 @@ import (
 
 // parseDocument parses a complete WDL document according to the grammar:
 // document: version? document_element*
-func (p *Parser) parseDocument() (*tree.Document, bool) {
+func (p *Parser) ParseDocumentInternal() (*tree.Document, bool) {
 	pos := p.currentPosition()
 
 	p.skipCommentsAndNewlines()
@@ -74,9 +74,7 @@ func (p *Parser) parseDocument() (*tree.Document, bool) {
 				[]TokenType{TokenImport, TokenTask, TokenWorkflow, TokenStruct},
 				p.currentToken,
 			))
-			p.synchronize()
-			// Try to continue parsing
-			continue
+			return nil, false
 		}
 
 		p.skipCommentsAndNewlines()
@@ -88,7 +86,15 @@ func (p *Parser) parseDocument() (*tree.Document, bool) {
 		mainWorkflow = workflows[0] // Use first workflow as main
 	}
 
-	return tree.NewDocument(imports, mainWorkflow, tasks, structs, pos), true
+	// Create document
+	doc := tree.NewDocument(imports, mainWorkflow, tasks, structs, pos)
+	
+	// Validate document structure
+	if !p.validateDocumentStructure(doc) {
+		return nil, false
+	}
+
+	return doc, true
 }
 
 // parseVersion parses a version declaration:

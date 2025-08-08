@@ -66,7 +66,7 @@ workflow invalid {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := NewParser(tt.input, "test.wdl")
-			doc, ok := parser.parseDocument()
+			doc, ok := parser.ParseDocumentInternal()
 
 			if tt.wantErr {
 				if ok && !parser.HasErrors() {
@@ -144,7 +144,7 @@ task test {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := NewParser(tt.input, "test.wdl")
-			doc, ok := parser.parseDocument()
+			doc, ok := parser.ParseDocumentInternal()
 
 			if !ok {
 				t.Errorf("Failed to parse %s: %v", tt.desc, parser.Errors())
@@ -205,7 +205,7 @@ workflow test {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := NewParser(tt.input, "test.wdl")
-			doc, ok := parser.parseDocument()
+			doc, ok := parser.ParseDocumentInternal()
 
 			if !ok {
 				t.Errorf("Failed to parse %s: %v", tt.desc, parser.Errors())
@@ -240,7 +240,7 @@ workflow test {
 }`
 
 	parser := NewParser(input, "test.wdl")
-	doc, ok := parser.parseDocument()
+	doc, ok := parser.ParseDocumentInternal()
 
 	// Should have errors but still produce a partial document
 	if !parser.HasErrors() {

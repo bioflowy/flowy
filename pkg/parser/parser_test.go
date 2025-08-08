@@ -179,7 +179,7 @@ func TestParserRecovery(t *testing.T) {
 		parser := NewParser(test.input, "test.wdl")
 
 		// Attempt to parse document (this should trigger errors and recovery)
-		_, ok := parser.parseDocument()
+		_, ok := parser.ParseDocumentInternal()
 
 		hasErrors := parser.HasErrors()
 		if hasErrors != test.expectErrors {
@@ -317,7 +317,7 @@ func TestParserErrorAccumulation(t *testing.T) {
 	parser := NewParser(input, "test.wdl")
 	
 	// Try to parse document - should accumulate multiple errors
-	_, ok := parser.parseDocument()
+	_, ok := parser.ParseDocumentInternal()
 	
 	if ok {
 		t.Error("Expected parsing to fail with multiple errors")
@@ -352,7 +352,7 @@ func TestParserStateReset(t *testing.T) {
 
 	// Parse first input
 	parser := NewParser(input1, "test1.wdl")
-	_, ok1 := parser.parseDocument()
+	_, ok1 := parser.ParseDocumentInternal()
 
 	if !ok1 {
 		t.Error("First parse should succeed")
@@ -360,7 +360,7 @@ func TestParserStateReset(t *testing.T) {
 
 	// Create new parser for second input
 	parser2 := NewParser(input2, "test2.wdl")
-	_, ok2 := parser2.parseDocument()
+	_, ok2 := parser2.ParseDocumentInternal()
 
 	if !ok2 {
 		t.Error("Second parse should succeed")
