@@ -296,271 +296,42 @@ impl ExpressionBase for Expression {
                 let left_val = left.eval(env, stdlib)?;
                 let right_val = right.eval(env, stdlib)?;
                 
-                match op {
-                    BinaryOperator::Add => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::int(a + b))
+                // Convert operator to stdlib function name
+                let function_name = match op {
+                    BinaryOperator::Add => "_add",
+                    BinaryOperator::Subtract => "_subtract",
+                    BinaryOperator::Multiply => "_multiply",
+                    BinaryOperator::Divide => "_divide",
+                    BinaryOperator::Modulo => "_remainder",
+                    BinaryOperator::Equal => "_eq",
+                    BinaryOperator::NotEqual => "_neq",
+                    BinaryOperator::Less => "_lt",
+                    BinaryOperator::LessEqual => "_lte",
+                    BinaryOperator::Greater => "_gt",
+                    BinaryOperator::GreaterEqual => "_gte",
+                    BinaryOperator::And => "_and",
+                    BinaryOperator::Or => "_or",
+                };
+                
+                // Call the stdlib operator function
+                if let Some(function) = stdlib.get_function(function_name) {
+                    function.eval(&[left_val, right_val]).map_err(|e| {
+                        match e {
+                            WdlError::RuntimeError { message } => {
+                                WdlError::validation_error(
+                                    HasSourcePosition::source_position(self).clone(),
+                                    message,
+                                )
                             }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::float(a + b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::float((*a) as f64 + b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::float(a + (*b) as f64))
-                            }
-                            (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::string(format!("{}{}", a, b)))
-                            }
-                            (Value::String { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::string(format!("{}{}", a, b)))
-                            }
-                            (Value::Int { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::string(format!("{}{}", a, b)))
-                            }
-                            (Value::String { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::string(format!("{}{:.6}", a, b)))
-                            }
-                            (Value::Float { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::string(format!("{:.6}{}", a, b)))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Invalid operands for addition".to_string(),
-                            )),
+                            other => other,
                         }
-                    }
-                    BinaryOperator::Subtract => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::int(a - b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::float(a - b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::float((*a) as f64 - b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::float(a - (*b) as f64))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Invalid operands for subtraction".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::Multiply => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::int(a * b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::float(a * b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::float((*a) as f64 * b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::float(a * (*b) as f64))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Invalid operands for multiplication".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::Divide => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                if *b == 0 {
-                                    return Err(WdlError::validation_error(
-                                        HasSourcePosition::source_position(self).clone(),
-                                        "Division by zero".to_string(),
-                                    ));
-                                }
-                                Ok(Value::int(a / b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                if *b == 0.0 {
-                                    return Err(WdlError::validation_error(
-                                        HasSourcePosition::source_position(self).clone(),
-                                        "Division by zero".to_string(),
-                                    ));
-                                }
-                                Ok(Value::float(a / b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                if *b == 0.0 {
-                                    return Err(WdlError::validation_error(
-                                        HasSourcePosition::source_position(self).clone(),
-                                        "Division by zero".to_string(),
-                                    ));
-                                }
-                                Ok(Value::float((*a) as f64 / b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                if *b == 0 {
-                                    return Err(WdlError::validation_error(
-                                        HasSourcePosition::source_position(self).clone(),
-                                        "Division by zero".to_string(),
-                                    ));
-                                }
-                                Ok(Value::float(a / (*b) as f64))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Invalid operands for division".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::Modulo => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                if *b == 0 {
-                                    return Err(WdlError::validation_error(
-                                        HasSourcePosition::source_position(self).clone(),
-                                        "Division by zero".to_string(),
-                                    ));
-                                }
-                                Ok(Value::int(a % b))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Modulo requires integer operands".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::Equal => {
-                        Ok(Value::boolean(left_val.equals(&right_val).unwrap_or(false)))
-                    }
-                    BinaryOperator::NotEqual => {
-                        Ok(Value::boolean(!left_val.equals(&right_val).unwrap_or(true)))
-                    }
-                    BinaryOperator::Less => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(a < b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean(a < b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean((*a as f64) < *b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(*a < (*b as f64)))
-                            }
-                            (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::boolean(a < b))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Cannot compare these types".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::LessEqual => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(a <= b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean(a <= b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean((*a as f64) <= *b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(*a <= (*b as f64)))
-                            }
-                            (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::boolean(a <= b))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Cannot compare these types".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::Greater => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(a > b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean(a > b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean((*a as f64) > *b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(*a > (*b as f64)))
-                            }
-                            (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::boolean(a > b))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Cannot compare these types".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::GreaterEqual => {
-                        match (&left_val, &right_val) {
-                            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(a >= b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean(a >= b))
-                            }
-                            (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => {
-                                Ok(Value::boolean((*a as f64) >= *b))
-                            }
-                            (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => {
-                                Ok(Value::boolean(*a >= (*b as f64)))
-                            }
-                            (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
-                                Ok(Value::boolean(a >= b))
-                            }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "Cannot compare these types".to_string(),
-                            )),
-                        }
-                    }
-                    BinaryOperator::And => {
-                        let left_bool = left_val.as_bool().ok_or_else(|| {
-                            WdlError::validation_error(
-                                HasSourcePosition::source_position(&**left).clone(),
-                                "Left operand must be Boolean".to_string(),
-                            )
-                        })?;
-                        let right_bool = right_val.as_bool().ok_or_else(|| {
-                            WdlError::validation_error(
-                                HasSourcePosition::source_position(&**right).clone(),
-                                "Right operand must be Boolean".to_string(),
-                            )
-                        })?;
-                        Ok(Value::boolean(left_bool && right_bool))
-                    }
-                    BinaryOperator::Or => {
-                        let left_bool = left_val.as_bool().ok_or_else(|| {
-                            WdlError::validation_error(
-                                HasSourcePosition::source_position(&**left).clone(),
-                                "Left operand must be Boolean".to_string(),
-                            )
-                        })?;
-                        let right_bool = right_val.as_bool().ok_or_else(|| {
-                            WdlError::validation_error(
-                                HasSourcePosition::source_position(&**right).clone(),
-                                "Right operand must be Boolean".to_string(),
-                            )
-                        })?;
-                        Ok(Value::boolean(left_bool || right_bool))
-                    }
+                    })
+                } else {
+                    // This should never happen if stdlib is properly initialized
+                    Err(WdlError::validation_error(
+                        HasSourcePosition::source_position(self).clone(),
+                        format!("Binary operator function '{}' not found in stdlib", function_name),
+                    ))
                 }
             }
             
