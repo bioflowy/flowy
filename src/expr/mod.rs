@@ -35,8 +35,8 @@ pub trait ExpressionBase {
     /// Type-check this expression against an expected type
     fn typecheck(&self, expected: &Type) -> Result<(), WdlError>;
     
-    /// Evaluate this expression in the given environment
-    fn eval(&self, env: &Bindings<Value>) -> Result<Value, WdlError>;
+    /// Evaluate this expression in the given environment with standard library
+    fn eval(&self, env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError>;
     
     /// Get all child expressions
     fn children(&self) -> Vec<&Expression>;

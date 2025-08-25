@@ -244,13 +244,13 @@ mod boolean_tests {
         
         // Test true
         let true_expr = Expression::boolean(pos.clone(), true);
-        let result = true_expr.eval(&env).unwrap();
+        let result = true_expr.eval(&env, &stdlib).unwrap();
         assert_eq!(result, Value::boolean(true));
         assert_eq!(format!("{}", result), "true");
         
         // Test false
         let false_expr = Expression::boolean(pos.clone(), false);
-        let result = false_expr.eval(&env).unwrap();
+        let result = false_expr.eval(&env, &stdlib).unwrap();
         assert_eq!(result, Value::boolean(false));
         assert_eq!(format!("{}", result), "false");
     }

@@ -100,8 +100,11 @@ impl WorkflowEngine {
         // Execute workflow body
         self.execute_workflow_body(&workflow, &mut context, run_id)?;
         
+        // Create stdlib for output evaluation
+        let stdlib = crate::stdlib::StdLib::new("1.0");
+        
         // Collect workflow outputs
-        let outputs = self.collect_workflow_outputs(&workflow, &context)?;
+        let outputs = self.collect_workflow_outputs(&workflow, &context, &stdlib)?;
         
         let duration = start_time.elapsed();
         
@@ -187,13 +190,16 @@ impl WorkflowEngine {
         context: &mut WorkflowContext,
         run_id: &str,
     ) -> RuntimeResult<()> {
+        // Create stdlib for expression evaluation
+        let stdlib = crate::stdlib::StdLib::new("1.0");
+        
         // Add workflow inputs to context
         if let Some(ref workflow_inputs) = workflow.inputs {
             for input_decl in workflow_inputs {
                 if let Some(input_expr) = &input_decl.expr {
                     // Evaluate default value if input not provided
                     if !context.bindings.has_binding(&input_decl.name) {
-                        let default_value = input_expr.eval(&context.bindings)
+                        let default_value = input_expr.eval(&context.bindings, &stdlib)
                             .map_err(|e| RuntimeError::run_failed(
                                 format!("Failed to evaluate default input: {}", input_decl.name),
                                 e,
@@ -207,7 +213,7 @@ impl WorkflowEngine {
         
         // Execute workflow body nodes in sequence
         for node in &workflow.body {
-            self.execute_workflow_node(node, context, run_id)?;
+            self.execute_workflow_node(node, context, run_id, &stdlib)?;
         }
         
         Ok(())
@@ -219,21 +225,22 @@ impl WorkflowEngine {
         node: &WorkflowElement,
         context: &mut WorkflowContext,
         run_id: &str,
+        stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         match node {
             WorkflowElement::Call(call) => {
-                self.execute_call(call, context, run_id)?;
+                self.execute_call(call, context, run_id, stdlib)?;
             }
             WorkflowElement::Scatter(scatter) => {
-                self.execute_scatter(scatter, context, run_id)?;
+                self.execute_scatter(scatter, context, run_id, stdlib)?;
             }
             WorkflowElement::Conditional(conditional) => {
-                self.execute_conditional(conditional, context, run_id)?;
+                self.execute_conditional(conditional, context, run_id, stdlib)?;
             }
             WorkflowElement::Declaration(decl) => {
                 // Execute variable declaration
                 if let Some(expr) = &decl.expr {
-                    let value = expr.eval(&context.bindings)
+                    let value = expr.eval(&context.bindings, stdlib)
                         .map_err(|e| RuntimeError::run_failed(
                             format!("Failed to evaluate declaration: {}", decl.name),
                             e,
@@ -252,12 +259,13 @@ impl WorkflowEngine {
         call: &Call,
         context: &mut WorkflowContext,
         run_id: &str,
+        stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate call inputs
         let mut call_inputs = Bindings::new();
         
         for (input_name, input_expr) in &call.inputs {
-            let input_value = input_expr.eval(&context.bindings)
+            let input_value = input_expr.eval(&context.bindings, stdlib)
                 .map_err(|e| RuntimeError::run_failed(
                     format!("Failed to evaluate call input: {}", input_name),
                     e,
@@ -310,9 +318,10 @@ impl WorkflowEngine {
         scatter: &Scatter,
         context: &mut WorkflowContext,
         run_id: &str,
+        stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate scatter collection
-        let collection_value = scatter.expr.eval(&context.bindings)
+        let collection_value = scatter.expr.eval(&context.bindings, stdlib)
             .map_err(|e| RuntimeError::run_failed(
                 "Failed to evaluate scatter collection".to_string(),
                 e,
@@ -349,7 +358,7 @@ impl WorkflowEngine {
             // Execute scatter body
             let scatter_run_id = format!("{}_scatter_{}", run_id, index);
             for node in &scatter.body {
-                self.execute_workflow_node(node, &mut scatter_context, &scatter_run_id)?;
+                self.execute_workflow_node(node, &mut scatter_context, &scatter_run_id, stdlib)?;
             }
             
             // Collect scatter results
@@ -381,9 +390,10 @@ impl WorkflowEngine {
         conditional: &Conditional,
         context: &mut WorkflowContext,
         run_id: &str,
+        stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate condition
-        let condition_value = conditional.expr.eval(&context.bindings)
+        let condition_value = conditional.expr.eval(&context.bindings, stdlib)
             .map_err(|e| RuntimeError::run_failed(
                 "Failed to evaluate conditional condition".to_string(),
                 e,
@@ -407,7 +417,7 @@ impl WorkflowEngine {
         if should_execute {
             // Execute conditional body
             for node in &conditional.body {
-                self.execute_workflow_node(node, context, run_id)?;
+                self.execute_workflow_node(node, context, run_id, stdlib)?;
             }
         }
         
@@ -419,13 +429,14 @@ impl WorkflowEngine {
         &self,
         workflow: &Workflow,
         context: &WorkflowContext,
+        stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<Bindings<Value>> {
         let mut outputs = Bindings::new();
         
         if let Some(ref workflow_outputs) = workflow.outputs {
             for output_decl in workflow_outputs {
                 if let Some(output_expr) = &output_decl.expr {
-                    let output_value = output_expr.eval(&context.bindings)
+                    let output_value = output_expr.eval(&context.bindings, &stdlib)
                         .map_err(|e| RuntimeError::run_failed(
                             format!("Failed to evaluate workflow output: {}", output_decl.name),
                             e,

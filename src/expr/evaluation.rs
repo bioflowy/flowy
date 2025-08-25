@@ -44,7 +44,7 @@ impl ExpressionBase for Expression {
         Ok(())
     }
     
-    fn eval(&self, env: &Bindings<Value>) -> Result<Value, WdlError> {
+    fn eval(&self, env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
         match self {
             Expression::Boolean { value, .. } => Ok(Value::boolean(*value)),
             Expression::Int { value, .. } => Ok(Value::int(*value)),
@@ -55,7 +55,7 @@ impl ExpressionBase for Expression {
                     match part {
                         StringPart::Text(text) => result.push_str(text),
                         StringPart::Placeholder { expr, options } => {
-                            let val = expr.eval(env)?;
+                            let val = expr.eval(env, stdlib)?;
                             if val.is_null() {
                                 if let Some(default) = options.get("default") {
                                     result.push_str(default);
@@ -84,7 +84,7 @@ impl ExpressionBase for Expression {
             Expression::Array { items, .. } => {
                 let mut values = Vec::new();
                 for item in items {
-                    values.push(item.eval(env)?);
+                    values.push(item.eval(env, stdlib)?);
                 }
                 let item_type = if let Some(first) = values.first() {
                     first.wdl_type().clone()
@@ -95,8 +95,8 @@ impl ExpressionBase for Expression {
             }
             
             Expression::Pair { left, right, .. } => {
-                let left_val = left.eval(env)?;
-                let right_val = right.eval(env)?;
+                let left_val = left.eval(env, stdlib)?;
+                let right_val = right.eval(env, stdlib)?;
                 Ok(Value::pair(
                     left_val.wdl_type().clone(),
                     right_val.wdl_type().clone(),
@@ -108,8 +108,8 @@ impl ExpressionBase for Expression {
             Expression::Map { pairs, .. } => {
                 let mut map_pairs = Vec::new();
                 for (k_expr, v_expr) in pairs {
-                    let key = k_expr.eval(env)?;
-                    let value = v_expr.eval(env)?;
+                    let key = k_expr.eval(env, stdlib)?;
+                    let value = v_expr.eval(env, stdlib)?;
                     map_pairs.push((key, value));
                 }
                 
@@ -125,7 +125,7 @@ impl ExpressionBase for Expression {
             Expression::Struct { members, .. } => {
                 let mut member_values = HashMap::new();
                 for (name, expr) in members {
-                    member_values.insert(name.clone(), expr.eval(env)?);
+                    member_values.insert(name.clone(), expr.eval(env, stdlib)?);
                 }
                 
                 let member_types: HashMap<String, Type> = member_values
@@ -199,8 +199,8 @@ impl ExpressionBase for Expression {
                     }
                 }
                 // Normal Get evaluation for arrays and maps
-                let container = expr.eval(env)?;
-                let idx = index.eval(env)?;
+                let container = expr.eval(env, stdlib)?;
+                let idx = index.eval(env, stdlib)?;
                 
                 match (&container, &idx) {
                     (Value::Array { values, .. }, Value::Int { value: i, .. }) => {
@@ -242,12 +242,12 @@ impl ExpressionBase for Expression {
             }
             
             Expression::IfThenElse { condition, true_expr, false_expr, .. } => {
-                let cond_val = condition.eval(env)?;
+                let cond_val = condition.eval(env, stdlib)?;
                 if let Some(cond_bool) = cond_val.as_bool() {
                     if cond_bool {
-                        true_expr.eval(env)
+                        true_expr.eval(env, stdlib)
                     } else {
-                        false_expr.eval(env)
+                        false_expr.eval(env, stdlib)
                     }
                 } else {
                     Err(WdlError::validation_error(
@@ -258,83 +258,43 @@ impl ExpressionBase for Expression {
             }
             
             Expression::Apply { function_name, arguments, .. } => {
-                // Basic function implementations
-                match function_name.as_str() {
-                    "length" => {
-                        if arguments.len() != 1 {
-                            return Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!("length() expects 1 argument, got {}", arguments.len()),
-                            ));
-                        }
-                        let arg = arguments[0].eval(env)?;
-                        match arg {
-                            Value::Array { values, .. } => Ok(Value::int(values.len() as i64)),
-                            Value::String { value, .. } => Ok(Value::int(value.len() as i64)),
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "length() requires Array or String argument".to_string(),
-                            )),
-                        }
-                    }
-                    "defined" => {
-                        if arguments.len() != 1 {
-                            return Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!("defined() expects 1 argument, got {}", arguments.len()),
-                            ));
-                        }
-                        let arg = arguments[0].eval(env)?;
-                        Ok(Value::boolean(!arg.is_null()))
-                    }
-                    "stdout" => {
-                        if arguments.len() != 0 {
-                            return Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!("stdout() expects 0 arguments, got {}", arguments.len()),
-                            ));
-                        }
-                        Value::file("stdout.txt".to_string())
-                    }
-                    "stderr" => {
-                        if arguments.len() != 0 {
-                            return Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!("stderr() expects 0 arguments, got {}", arguments.len()),
-                            ));
-                        }
-                        Value::file("stderr.txt".to_string())
-                    }
-                    "read_string" => {
-                        if arguments.len() != 1 {
-                            return Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!("read_string() expects 1 argument, got {}", arguments.len()),
-                            ));
-                        }
-                        let arg = arguments[0].eval(env)?;
-                        match arg {
-                            Value::File { value, .. } => {
-                                // In a real implementation, we would read the file here
-                                // For now, return placeholder content
-                                Ok(Value::string("Hello, World!\n".to_string()))
+                // Evaluate arguments first
+                let mut eval_args = Vec::new();
+                for arg in arguments {
+                    eval_args.push(arg.eval(env, stdlib)?);
+                }
+                
+                // Look up function in stdlib
+                if let Some(function) = stdlib.get_function(function_name) {
+                    function.eval(&eval_args).map_err(|e| {
+                        // Convert WdlError to include position information
+                        match e {
+                            WdlError::RuntimeError { message } => {
+                                WdlError::validation_error(
+                                    HasSourcePosition::source_position(self).clone(),
+                                    message,
+                                )
                             }
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                "read_string() requires File argument".to_string(),
-                            )),
+                            WdlError::ArgumentCountMismatch { function, expected, actual } => {
+                                WdlError::validation_error(
+                                    HasSourcePosition::source_position(self).clone(),
+                                    format!("{}() expects {} arguments, got {}", function, expected, actual),
+                                )
+                            }
+                            other => other,
                         }
-                    }
-                    _ => Err(WdlError::validation_error(
+                    })
+                } else {
+                    Err(WdlError::validation_error(
                         HasSourcePosition::source_position(self).clone(),
                         format!("Unknown function: {}", function_name),
-                    )),
+                    ))
                 }
             }
             
             Expression::BinaryOp { op, left, right, .. } => {
-                let left_val = left.eval(env)?;
-                let right_val = right.eval(env)?;
+                let left_val = left.eval(env, stdlib)?;
+                let right_val = right.eval(env, stdlib)?;
                 
                 match op {
                     BinaryOperator::Add => {
@@ -605,7 +565,7 @@ impl ExpressionBase for Expression {
             }
             
             Expression::UnaryOp { op, operand, .. } => {
-                let operand_val = operand.eval(env)?;
+                let operand_val = operand.eval(env, stdlib)?;
                 match op {
                     UnaryOperator::Not => {
                         let bool_val = operand_val.as_bool().ok_or_else(|| {

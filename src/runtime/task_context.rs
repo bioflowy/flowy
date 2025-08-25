@@ -166,8 +166,11 @@ impl TaskContext {
         eval_env = eval_env.bind("true".to_string(), Value::Boolean { value: true, wdl_type: Type::boolean(false) }, None);
         eval_env = eval_env.bind("false".to_string(), Value::Boolean { value: false, wdl_type: Type::boolean(false) }, None);
         
+        // Create stdlib for evaluation
+        let stdlib = crate::stdlib::StdLib::new("1.0");
+        
         // Evaluate command expression
-        let command_value = command_expr.eval(&eval_env)
+        let command_value = command_expr.eval(&eval_env, &stdlib)
             .map_err(|e| RuntimeError::run_failed(
                 "Failed to evaluate task command".to_string(),
                 e,
@@ -268,10 +271,11 @@ impl TaskContext {
         
         // Create evaluation environment with inputs for output expressions
         let eval_env = self.inputs.clone();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         for output_decl in &self.task.outputs {
             if let Some(output_expr) = &output_decl.expr {
-                let output_value = output_expr.eval(&eval_env)
+                let output_value = output_expr.eval(&eval_env, &stdlib)
                     .map_err(|e| RuntimeError::run_failed(
                         format!("Failed to evaluate output: {}", output_decl.name),
                         e,
