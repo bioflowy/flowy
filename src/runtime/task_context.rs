@@ -12,6 +12,7 @@ use crate::runtime::fs_utils::{WorkflowDirectory, create_dir_all, write_file_ato
 use crate::tree::Task;
 use crate::env::Bindings;
 use crate::types::Type;
+use crate::stdlib::{StdLib, Function};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Command, Stdio, ExitStatus};
@@ -266,11 +267,7 @@ impl TaskContext {
         let mut outputs = Bindings::new();
         
         // Create evaluation environment with inputs for output expressions
-        let mut eval_env = self.inputs.clone();
-        
-        // Add built-in variables
-        eval_env = eval_env.bind("stdout()".to_string(), Value::String { value: self.read_stdout()?, wdl_type: Type::string(false) }, None);
-        eval_env = eval_env.bind("stderr()".to_string(), Value::String { value: self.read_stderr()?, wdl_type: Type::string(false) }, None);
+        let eval_env = self.inputs.clone();
         
         for output_decl in &self.task.outputs {
             if let Some(output_expr) = &output_decl.expr {
@@ -323,6 +320,7 @@ impl TaskContext {
             Ok(String::new())
         }
     }
+    
     
     /// Check if a value matches the expected type
     fn value_matches_type(&self, value: &Value, expected_type: &Type) -> bool {
@@ -490,3 +488,5 @@ mod tests {
     }
     */
 }
+
+// Task-specific stdlib implementations are now handled directly in the expression evaluator

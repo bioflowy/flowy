@@ -27,6 +27,8 @@ pub struct WorkflowEngine {
     config: Config,
     /// Base workflow directory
     workflow_dir: WorkflowDirectory,
+    /// Document with task definitions (optional)
+    document: Option<Document>,
 }
 
 /// Workflow execution result
@@ -61,6 +63,18 @@ impl WorkflowEngine {
             task_engine,
             config,
             workflow_dir,
+            document: None,
+        }
+    }
+    
+    /// Create a new workflow engine with document
+    pub fn new_with_document(config: Config, workflow_dir: WorkflowDirectory, document: Document) -> Self {
+        let task_engine = TaskEngine::new(config.clone(), workflow_dir.clone());
+        Self {
+            task_engine,
+            config,
+            workflow_dir,
+            document: Some(document),
         }
     }
     
@@ -106,9 +120,16 @@ impl WorkflowEngine {
         inputs: Bindings<Value>,
         run_id: &str,
     ) -> RuntimeResult<WorkflowResult> {
+        // Create engine with document for task resolution
+        let engine_with_doc = Self::new_with_document(
+            self.config.clone(),
+            self.workflow_dir.clone(),
+            document.clone()
+        );
+        
         // Find the main workflow
         if let Some(workflow) = document.workflow {
-            self.execute_workflow(workflow, inputs, run_id)
+            engine_with_doc.execute_workflow(workflow, inputs, run_id)
         } else {
             // If no workflow, try to find a single task to execute
             if document.tasks.len() == 1 {
@@ -245,26 +266,20 @@ impl WorkflowEngine {
             call_inputs = call_inputs.bind(input_name.clone(), input_value, None);
         }
         
-        // Find the task to execute
-        // For now, we assume the task is available in the context
-        // In a full implementation, we would look up the task from the document
-        
-        // Create a dummy task for demonstration
-        let task = crate::tree::Task {
-            pos: call.pos.clone(),
-            name: call.task.clone(),
-            inputs: None, // Would be populated from task definition
-            postinputs: vec![],
-            command: crate::expr::Expression::String {
+        // Find the task definition from the document
+        let task = if let Some(ref document) = self.document {
+            document.tasks.iter()
+                .find(|t| t.name == call.task)
+                .cloned()
+                .ok_or_else(|| RuntimeError::WorkflowValidationError {
+                    message: format!("Task '{}' not found in document", call.task),
+                    pos: call.pos.clone(),
+                })?
+        } else {
+            return Err(RuntimeError::WorkflowValidationError {
+                message: "No document available for task resolution".to_string(),
                 pos: call.pos.clone(),
-                parts: vec![crate::expr::StringPart::Text(format!("echo 'Executing task: {}'", call.task))], 
-                inferred_type: None,
-            },
-            outputs: vec![], // Would be populated from task definition
-            runtime: std::collections::HashMap::new(),
-            parameter_meta: std::collections::HashMap::new(),
-            meta: std::collections::HashMap::new(),
-            effective_wdl_version: "1.0".to_string(),
+            });
         };
         
         // Execute task
