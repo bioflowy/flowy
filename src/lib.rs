@@ -11,6 +11,8 @@ pub mod value;
 pub mod expr;
 pub mod tree;
 pub mod parser;
+pub mod stdlib;
+pub mod runtime;
 
 pub use error::{SourcePosition, WdlError};
 pub use env::{Binding, Bindings};
@@ -18,3 +20,4 @@ pub use types::Type;
 pub use value::{Value, ValueBase};
 pub use expr::{Expression, StringPart, BinaryOperator, UnaryOperator, ExpressionBase};
 pub use tree::{Document, Workflow, Task, Declaration, Call, Scatter, Conditional, ASTNode, WorkflowNode};
+pub use runtime::{Config, RuntimeBuilder, WorkflowResult, TaskResult};

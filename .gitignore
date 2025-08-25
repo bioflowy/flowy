@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target/
+
+# Python virtual environment (if any)
+venv/
+__pycache__/
+*.pyc
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Embedded git repository
+miniwdl/

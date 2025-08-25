@@ -32,6 +32,7 @@ pub enum LexerMode {
 /// Stateful lexer for WDL
 pub struct Lexer {
     mode_stack: Vec<LexerMode>,
+    #[allow(dead_code)]
     version: String,
 }
 

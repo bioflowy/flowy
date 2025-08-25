@@ -402,9 +402,19 @@ impl fmt::Display for Expression {
     }
 }
 
+impl Expression {
+    /// Convenience method to get source position
+    pub fn pos(&self) -> &SourcePosition {
+        HasSourcePosition::source_position(self)
+    }
+}
+
 // Tests module
 #[cfg(test)]
-mod tests {
+pub mod tests;
+
+#[cfg(test)]
+mod basic_tests {
     use super::*;
     use crate::env::Bindings;
     use crate::types::Type;

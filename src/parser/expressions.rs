@@ -2,7 +2,7 @@
 
 use super::token_stream::TokenStream;
 use super::tokens::Token;
-use super::parser_utils::{ParseResult, try_parse, parse_delimited_list};
+use super::parser_utils::{ParseResult, parse_delimited_list};
 use super::literals::{parse_literal, parse_array_literal, parse_map_literal};
 use crate::expr::{Expression, BinaryOperator, UnaryOperator};
 use crate::error::WdlError;
@@ -237,7 +237,7 @@ pub fn parse_primary_expr(stream: &mut TokenStream) -> ParseResult<Expression> {
             Token::LeftParen => {
                 // Could be parenthesized expression or pair literal
                 // Look ahead to distinguish
-                let pos = stream.position();
+                let _pos = stream.position();
                 stream.next(); // consume (
                 
                 let first = parse_expression(stream)?;

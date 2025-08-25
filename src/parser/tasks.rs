@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// Parse metadata section: meta { key: value, ... }
 fn parse_meta_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, serde_json::Value>> {
     // Expect "meta" or "parameter_meta" keyword
-    let keyword = match stream.peek_token() {
+    let _keyword = match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "meta" || kw == "parameter_meta" => {
             let kw = kw.clone();
             stream.next();
@@ -456,7 +456,7 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
     
     // Parse workflow sections
     let mut inputs: Option<Vec<Declaration>> = None;
-    let mut postinputs: Vec<Declaration> = Vec::new();
+    let postinputs: Vec<Declaration> = Vec::new();
     let mut body: Vec<WorkflowElement> = Vec::new();
     let mut outputs: Option<Vec<Declaration>> = None;
     let mut meta: HashMap<String, serde_json::Value> = HashMap::new();

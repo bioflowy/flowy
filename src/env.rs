@@ -62,6 +62,7 @@ where
 {
     binding: Option<Binding<T>>,
     next: Option<Box<Bindings<T>>>,
+    #[allow(dead_code)]
     namespaces_cache: Option<HashSet<String>>,
 }
 

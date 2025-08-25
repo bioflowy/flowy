@@ -30,13 +30,11 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
     }
     
     // Parse task name (could be namespaced like lib.task)
-    let mut task_name = String::new();
-    
-    // Parse first identifier
-    match stream.peek_token() {
+    let mut task_name = match stream.peek_token() {
         Some(Token::Identifier(name)) => {
-            task_name = name.clone();
+            let name = name.clone();
             stream.next();
+            name
         }
         _ => {
             return Err(WdlError::syntax_error(
@@ -46,7 +44,7 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
                 None,
             ));
         }
-    }
+    };
     
     // Check for namespace (lib.task)
     while stream.peek_token() == Some(&Token::Dot) {

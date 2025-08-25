@@ -14,7 +14,7 @@ pub mod tasks;
 pub mod document;
 
 
-use crate::error::{SourcePosition, WdlError};
+use crate::error::WdlError;
 use crate::tree::Document;
 use nom_locate::LocatedSpan;
 

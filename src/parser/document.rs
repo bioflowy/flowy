@@ -4,10 +4,10 @@ use super::token_stream::TokenStream;
 use super::tokens::Token;
 use super::parser_utils::ParseResult;
 use super::tasks::{parse_task, parse_workflow};
-use super::expressions::parse_expression;
+// Note: parse_expression available if needed
 use crate::tree::{Document, Task, Workflow, ImportDoc, StructTypeDef};
 use crate::error::WdlError;
-use crate::types::Type;
+// Note: Type available if needed
 use std::collections::HashMap;
 
 /// Parse a version declaration: version 1.0

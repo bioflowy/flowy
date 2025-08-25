@@ -47,6 +47,20 @@ impl SourcePosition {
     }
 }
 
+impl std::fmt::Display for SourcePosition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.line == self.end_line {
+            if self.column == self.end_column {
+                write!(f, "{}:{}:{}", self.uri, self.line, self.column)
+            } else {
+                write!(f, "{}:{}:{}-{}", self.uri, self.line, self.column, self.end_column)
+            }
+        } else {
+            write!(f, "{}:{}:{}-{}:{}", self.uri, self.line, self.column, self.end_line, self.end_column)
+        }
+    }
+}
+
 /// Main error type for all WDL-related errors.
 #[derive(Error, Debug)]
 pub enum WdlError {
@@ -263,6 +277,27 @@ pub enum WdlError {
     Input {
         message: String,
         more_info: HashMap<String, String>,
+    },
+
+    /// Type mismatch error
+    #[error("Type mismatch: expected {expected:?}, got {actual:?}")]
+    TypeMismatch {
+        expected: crate::types::Type,
+        actual: crate::types::Type,
+    },
+
+    /// Argument count mismatch
+    #[error("Function {function} expects {expected} arguments, got {actual}")]
+    ArgumentCountMismatch {
+        function: String,
+        expected: usize,
+        actual: usize,
+    },
+
+    /// Runtime error
+    #[error("Runtime error: {message}")]
+    RuntimeError {
+        message: String,
     },
 }
 

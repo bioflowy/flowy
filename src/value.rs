@@ -532,6 +532,23 @@ impl Value {
                     a.iter().zip(b.iter()).all(|(x, y)| x.equals(y).unwrap_or(false))
                 }
             }
+            (Value::Pair { left: a_left, right: a_right, .. }, Value::Pair { left: b_left, right: b_right, .. }) => {
+                a_left.equals(b_left).unwrap_or(false) && a_right.equals(b_right).unwrap_or(false)
+            }
+            (Value::Map { pairs: a, .. }, Value::Map { pairs: b, .. }) => {
+                if a.len() != b.len() {
+                    false
+                } else {
+                    // For maps, we need to compare key-value pairs
+                    // Since the order might be different, we need a more sophisticated comparison
+                    // For now, let's do a simple ordered comparison
+                    a.iter().zip(b.iter()).all(|(a_pair, b_pair)| {
+                        let (a_key, a_val) = a_pair;
+                        let (b_key, b_val) = b_pair;
+                        a_key.equals(b_key).unwrap_or(false) && a_val.equals(b_val).unwrap_or(false)
+                    })
+                }
+            }
             _ => false,
         })
     }
