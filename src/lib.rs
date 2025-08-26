@@ -8,13 +8,10 @@
 #![allow(clippy::result_large_err)]
 // Temporarily allow these clippy warnings while focusing on functionality
 #![allow(clippy::approx_constant)]
-#![allow(clippy::needless_borrow)]
 #![allow(clippy::collapsible_match)]
 #![allow(clippy::single_match)]
 #![allow(clippy::redundant_closure)]
-#![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::needless_borrows_for_generic_args)]
-#![allow(clippy::bool_assert_comparison)]
 #![allow(clippy::useless_vec)]
 #![allow(unused_imports)]
 #![allow(clippy::needless_return)]
@@ -27,19 +24,13 @@
 #![allow(clippy::for_kv_map)]
 #![allow(clippy::let_and_return)]
 #![allow(clippy::large_enum_variant)]
-#![allow(clippy::vec_init_then_push)]
 #![allow(clippy::map_clone)]
 #![allow(clippy::unnecessary_map_or)]
 #![allow(clippy::derivable_impls)]
 #![allow(clippy::ptr_arg)]
 #![allow(clippy::only_used_in_recursion)]
-#![allow(clippy::useless_format)]
-#![allow(clippy::len_zero)]
-#![allow(clippy::unneeded_struct_pattern)]
 #![allow(unused_variables)]
 #![allow(clippy::missing_transmute_annotations)]
-#![allow(clippy::unneeded_struct_pattern)]
-#![allow(clippy::len_zero)]
 
 pub mod env;
 pub mod error;

@@ -65,13 +65,13 @@ impl Function for AddOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot add non-numeric values"),
+                        message: "Cannot add non-numeric values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot add non-numeric values"),
+                        message: "Cannot add non-numeric values".to_string(),
                     })?;
                 Ok(Value::float(a_float + b_float))
             }
@@ -113,13 +113,13 @@ impl Function for SubtractOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot subtract non-numeric values"),
+                        message: "Cannot subtract non-numeric values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot subtract non-numeric values"),
+                        message: "Cannot subtract non-numeric values".to_string(),
                     })?;
                 Ok(Value::float(a_float - b_float))
             }
@@ -161,13 +161,13 @@ impl Function for MultiplyOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot multiply non-numeric values"),
+                        message: "Cannot multiply non-numeric values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot multiply non-numeric values"),
+                        message: "Cannot multiply non-numeric values".to_string(),
                     })?;
                 Ok(Value::float(a_float * b_float))
             }
@@ -206,7 +206,7 @@ impl Function for DivideOperator {
             (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
                 if *b == 0 {
                     return Err(WdlError::RuntimeError {
-                        message: format!("Division by zero"),
+                        message: "Division by zero".to_string(),
                     });
                 }
                 Ok(Value::int(a / b))
@@ -216,17 +216,17 @@ impl Function for DivideOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot divide non-numeric values"),
+                        message: "Cannot divide non-numeric values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot divide non-numeric values"),
+                        message: "Cannot divide non-numeric values".to_string(),
                     })?;
                 if b_float == 0.0 {
                     return Err(WdlError::RuntimeError {
-                        message: format!("Division by zero"),
+                        message: "Division by zero".to_string(),
                     });
                 }
                 Ok(Value::float(a_float / b_float))
@@ -254,7 +254,7 @@ impl Function for RemainderOperator {
 
         if !matches!(args[0], Type::Int { .. }) || !matches!(args[1], Type::Int { .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("Remainder operator requires Int arguments"),
+                message: "Remainder operator requires Int arguments".to_string(),
             });
         }
 
@@ -266,13 +266,13 @@ impl Function for RemainderOperator {
             (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
                 if *b == 0 {
                     return Err(WdlError::RuntimeError {
-                        message: format!("Division by zero in remainder"),
+                        message: "Division by zero in remainder".to_string(),
                     });
                 }
                 Ok(Value::int(a % b))
             }
             _ => Err(WdlError::RuntimeError {
-                message: format!("Remainder operator requires Int arguments"),
+                message: "Remainder operator requires Int arguments".to_string(),
             }),
         }
     }
@@ -356,13 +356,13 @@ impl Function for LessThanOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 Ok(Value::boolean(a_float < b_float))
             }
@@ -402,13 +402,13 @@ impl Function for LessThanEqualOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 Ok(Value::boolean(a_float <= b_float))
             }
@@ -446,13 +446,13 @@ impl Function for GreaterThanOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 Ok(Value::boolean(a_float > b_float))
             }
@@ -492,13 +492,13 @@ impl Function for GreaterThanEqualOperator {
                     .as_float()
                     .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 let b_float = args[1]
                     .as_float()
                     .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("Cannot compare non-numeric/string values"),
+                        message: "Cannot compare non-numeric/string values".to_string(),
                     })?;
                 Ok(Value::boolean(a_float >= b_float))
             }
@@ -527,10 +527,10 @@ impl Function for LogicalAndOperator {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let a_bool = args[0].as_bool().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("Logical AND requires Boolean arguments"),
+            message: "Logical AND requires Boolean arguments".to_string(),
         })?;
         let b_bool = args[1].as_bool().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("Logical AND requires Boolean arguments"),
+            message: "Logical AND requires Boolean arguments".to_string(),
         })?;
         Ok(Value::boolean(a_bool && b_bool))
     }
@@ -557,10 +557,10 @@ impl Function for LogicalOrOperator {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let a_bool = args[0].as_bool().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("Logical OR requires Boolean arguments"),
+            message: "Logical OR requires Boolean arguments".to_string(),
         })?;
         let b_bool = args[1].as_bool().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("Logical OR requires Boolean arguments"),
+            message: "Logical OR requires Boolean arguments".to_string(),
         })?;
         Ok(Value::boolean(a_bool || b_bool))
     }
@@ -587,7 +587,7 @@ impl Function for LogicalNotOperator {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let bool_val = args[0].as_bool().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("Logical NOT requires Boolean argument"),
+            message: "Logical NOT requires Boolean argument".to_string(),
         })?;
         Ok(Value::boolean(!bool_val))
     }

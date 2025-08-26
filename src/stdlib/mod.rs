@@ -183,6 +183,6 @@ mod tests {
 
         let eq_fn = stdlib.get_function("_eqeq").unwrap();
         let result = eq_fn.eval(&[Value::int(5), Value::int(5)]).unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+        assert!(result.as_bool().unwrap());
     }
 }

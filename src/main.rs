@@ -157,11 +157,11 @@ fn run(args: Args) -> Result<(), WdlError> {
     eprintln!("Working directory: {}", work_dir.display());
 
     // Build runtime configuration
-    let mut config = miniwdl_rust::runtime::Config::default();
-    config.work_dir = work_dir.clone();
-    if args.debug {
-        config.debug = true;
-    }
+    let config = miniwdl_rust::runtime::Config {
+        work_dir: work_dir.clone(),
+        debug: args.debug,
+        ..miniwdl_rust::runtime::Config::default()
+    };
 
     // Generate run ID
     let run_id = format!("run_{}", chrono::Utc::now().timestamp());
@@ -340,7 +340,7 @@ fn outputs_to_json(outputs: &Bindings<Value>) -> Result<serde_json::Value, WdlEr
 
 fn value_to_json(value: &Value) -> Result<serde_json::Value, WdlError> {
     match value {
-        Value::Null { .. } => Ok(serde_json::Value::Null),
+        Value::Null => Ok(serde_json::Value::Null),
         Value::Boolean { value, .. } => Ok(serde_json::Value::Bool(*value)),
         Value::Int { value, .. } => Ok(serde_json::Value::Number((*value).into())),
         Value::Float { value, .. } => serde_json::Number::from_f64(*value)

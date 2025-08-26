@@ -26,6 +26,6 @@ impl Function for DefinedFunction {
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        Ok(Value::boolean(!matches!(args[0], Value::Null { .. })))
+        Ok(Value::boolean(!matches!(args[0], Value::Null)))
     }
 }

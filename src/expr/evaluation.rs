@@ -71,7 +71,7 @@ impl ExpressionBase for Expression {
                                     Value::String { value, .. }
                                     | Value::File { value, .. }
                                     | Value::Directory { value, .. } => {
-                                        result.push_str(&value);
+                                        result.push_str(value);
                                     }
                                     _ => {
                                         result.push_str(&format!("{}", val));

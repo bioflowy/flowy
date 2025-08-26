@@ -620,8 +620,7 @@ impl SourceNode for Scatter {
     }
 
     fn children(&self) -> Vec<&dyn SourceNode> {
-        let mut children: Vec<&dyn SourceNode> = Vec::new();
-        children.push(&self.expr);
+        let children: Vec<&dyn SourceNode> = vec![&self.expr];
         // TODO: Add body elements as children
         children
     }
@@ -720,8 +719,7 @@ impl SourceNode for Conditional {
     }
 
     fn children(&self) -> Vec<&dyn SourceNode> {
-        let mut children: Vec<&dyn SourceNode> = Vec::new();
-        children.push(&self.expr);
+        let children: Vec<&dyn SourceNode> = vec![&self.expr];
         // TODO: Add body elements as children
         children
     }

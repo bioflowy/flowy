@@ -35,7 +35,7 @@ impl Function for FloorFunction {
             Ok(Value::int(f.floor() as i64))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("floor() expects Float argument"),
+                message: "floor() expects Float argument".to_string(),
             })
         }
     }
@@ -71,7 +71,7 @@ impl Function for CeilFunction {
             Ok(Value::int(f.ceil() as i64))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("ceil() expects Float argument"),
+                message: "ceil() expects Float argument".to_string(),
             })
         }
     }
@@ -108,7 +108,7 @@ impl Function for RoundFunction {
             Ok(Value::int((f + 0.5).floor() as i64))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("round() expects Float argument"),
+                message: "round() expects Float argument".to_string(),
             })
         }
     }
@@ -135,7 +135,7 @@ impl Function for MinFunction {
         let is_numeric = |t: &Type| matches!(t, Type::Int { .. } | Type::Float { .. });
         if !is_numeric(&args[0]) || !is_numeric(&args[1]) {
             return Err(WdlError::RuntimeError {
-                message: format!("min() expects numeric arguments"),
+                message: "min() expects numeric arguments".to_string(),
             });
         }
 
@@ -160,13 +160,13 @@ impl Function for MinFunction {
                     .as_float()
                     .or_else(|| a.as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("min() expects numeric arguments"),
+                        message: "min() expects numeric arguments".to_string(),
                     })?;
                 let b_float = b
                     .as_float()
                     .or_else(|| b.as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("min() expects numeric arguments"),
+                        message: "min() expects numeric arguments".to_string(),
                     })?;
                 Ok(Value::float(a_float.min(b_float)))
             }
@@ -195,7 +195,7 @@ impl Function for MaxFunction {
         let is_numeric = |t: &Type| matches!(t, Type::Int { .. } | Type::Float { .. });
         if !is_numeric(&args[0]) || !is_numeric(&args[1]) {
             return Err(WdlError::RuntimeError {
-                message: format!("max() expects numeric arguments"),
+                message: "max() expects numeric arguments".to_string(),
             });
         }
 
@@ -220,13 +220,13 @@ impl Function for MaxFunction {
                     .as_float()
                     .or_else(|| a.as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("max() expects numeric arguments"),
+                        message: "max() expects numeric arguments".to_string(),
                     })?;
                 let b_float = b
                     .as_float()
                     .or_else(|| b.as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
-                        message: format!("max() expects numeric arguments"),
+                        message: "max() expects numeric arguments".to_string(),
                     })?;
                 Ok(Value::float(a_float.max(b_float)))
             }

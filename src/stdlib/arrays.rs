@@ -25,7 +25,7 @@ impl Function for LengthFunction {
         match &args[0] {
             Type::Array { .. } | Type::String { .. } | Type::Map { .. } => Ok(Type::int(false)),
             _ => Err(WdlError::RuntimeError {
-                message: format!("length() expects Array, String, or Map argument"),
+                message: "length() expects Array, String, or Map argument".to_string(),
             }),
         }
     }
@@ -36,7 +36,7 @@ impl Function for LengthFunction {
             Value::String { value, .. } => Ok(Value::int(value.len() as i64)),
             Value::Map { pairs, .. } => Ok(Value::int(pairs.len() as i64)),
             _ => Err(WdlError::RuntimeError {
-                message: format!("length() expects Array, String, or Map argument"),
+                message: "length() expects Array, String, or Map argument".to_string(),
             }),
         }
     }
@@ -64,7 +64,7 @@ impl Function for SelectFirstFunction {
             Ok(item_type.clone().with_optional(false))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("select_first() expects Array argument"),
+                message: "select_first() expects Array argument".to_string(),
             })
         }
     }
@@ -72,16 +72,16 @@ impl Function for SelectFirstFunction {
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if let Value::Array { values, .. } = &args[0] {
             for value in values {
-                if !matches!(value, Value::Null { .. }) {
+                if !matches!(value, Value::Null) {
                     return Ok(value.clone());
                 }
             }
             Err(WdlError::RuntimeError {
-                message: format!("select_first() found no non-null values"),
+                message: "select_first() found no non-null values".to_string(),
             })
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("select_first() expects Array argument"),
+                message: "select_first() expects Array argument".to_string(),
             })
         }
     }
@@ -113,7 +113,7 @@ impl Function for SelectAllFunction {
             ))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("select_all() expects Array argument"),
+                message: "select_all() expects Array argument".to_string(),
             })
         }
     }
@@ -122,7 +122,7 @@ impl Function for SelectAllFunction {
         if let Value::Array { values, wdl_type } = &args[0] {
             let non_null_values: Vec<Value> = values
                 .iter()
-                .filter(|v| !matches!(v, Value::Null { .. }))
+                .filter(|v| !matches!(v, Value::Null))
                 .cloned()
                 .collect();
 
@@ -136,7 +136,7 @@ impl Function for SelectAllFunction {
             }
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("select_all() expects Array argument"),
+                message: "select_all() expects Array argument".to_string(),
             })
         }
     }
@@ -169,12 +169,12 @@ impl Function for FlattenFunction {
                 Ok(Type::array(*inner_type.clone(), false, false))
             } else {
                 Err(WdlError::RuntimeError {
-                    message: format!("flatten() expects Array[Array[T]] argument"),
+                    message: "flatten() expects Array[Array[T]] argument".to_string(),
                 })
             }
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("flatten() expects Array argument"),
+                message: "flatten() expects Array argument".to_string(),
             })
         }
     }
@@ -188,7 +188,7 @@ impl Function for FlattenFunction {
                     flattened.extend(inner.clone());
                 } else {
                     return Err(WdlError::RuntimeError {
-                        message: format!("flatten() expects Array[Array[T]]"),
+                        message: "flatten() expects Array[Array[T]]".to_string(),
                     });
                 }
             }
@@ -204,11 +204,11 @@ impl Function for FlattenFunction {
             }
 
             Err(WdlError::RuntimeError {
-                message: format!("flatten() type error"),
+                message: "flatten() type error".to_string(),
             })
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("flatten() expects Array argument"),
+                message: "flatten() expects Array argument".to_string(),
             })
         }
     }
@@ -245,7 +245,7 @@ impl Function for RangeFunction {
         if let Some(n) = args[0].as_int() {
             if n < 0 {
                 return Err(WdlError::RuntimeError {
-                    message: format!("range() expects non-negative integer"),
+                    message: "range() expects non-negative integer".to_string(),
                 });
             }
 
@@ -253,7 +253,7 @@ impl Function for RangeFunction {
             Ok(Value::array(Type::int(false), values))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("range() expects Int argument"),
+                message: "range() expects Int argument".to_string(),
             })
         }
     }

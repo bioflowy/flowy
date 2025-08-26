@@ -55,7 +55,7 @@ impl Function for TaskStdoutFunction {
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if args.len() != 0 {
             return Err(WdlError::RuntimeError {
-                message: format!("stdout() takes no arguments"),
+                message: "stdout() takes no arguments".to_string(),
             });
         }
         
@@ -94,7 +94,7 @@ impl Function for TaskStderrFunction {
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if args.len() != 0 {
             return Err(WdlError::RuntimeError {
-                message: format!("stderr() takes no arguments"),
+                message: "stderr() takes no arguments".to_string(),
             });
         }
         

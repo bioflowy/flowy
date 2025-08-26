@@ -14,7 +14,7 @@ impl Function for StdoutFunction {
     }
 
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 0 {
+        if !args.is_empty() {
             return Err(WdlError::ArgumentCountMismatch {
                 function: self.name().to_string(),
                 expected: 0,
@@ -26,9 +26,9 @@ impl Function for StdoutFunction {
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if args.len() != 0 {
+        if !args.is_empty() {
             return Err(WdlError::RuntimeError {
-                message: format!("stdout() takes no arguments"),
+                message: "stdout() takes no arguments".to_string(),
             });
         }
 
@@ -46,7 +46,7 @@ impl Function for StderrFunction {
     }
 
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 0 {
+        if !args.is_empty() {
             return Err(WdlError::ArgumentCountMismatch {
                 function: self.name().to_string(),
                 expected: 0,
@@ -58,9 +58,9 @@ impl Function for StderrFunction {
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if args.len() != 0 {
+        if !args.is_empty() {
             return Err(WdlError::RuntimeError {
-                message: format!("stderr() takes no arguments"),
+                message: "stderr() takes no arguments".to_string(),
             });
         }
 
@@ -89,7 +89,7 @@ impl Function for WriteLinesFunction {
         // Expect Array[String]
         if !matches!(args[0], Type::Array { .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("write_lines() argument must be Array[String]"),
+                message: "write_lines() argument must be Array[String]".to_string(),
             });
         }
 
@@ -98,7 +98,7 @@ impl Function for WriteLinesFunction {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let _array = args[0].as_array().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("write_lines() argument must be Array[String]"),
+            message: "write_lines() argument must be Array[String]".to_string(),
         })?;
 
         // For now, create a temporary file name - runtime should handle actual file creation
@@ -133,7 +133,7 @@ impl Function for ReadLinesFunction {
         // Expect String or File
         if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("read_lines() argument must be String or File"),
+                message: "read_lines() argument must be String or File".to_string(),
             });
         }
 
@@ -146,7 +146,7 @@ impl Function for ReadLinesFunction {
             Value::File { value, .. } => value.clone(),
             _ => {
                 return Err(WdlError::RuntimeError {
-                    message: format!("read_lines() argument must be String or File"),
+                    message: "read_lines() argument must be String or File".to_string(),
                 })
             }
         };

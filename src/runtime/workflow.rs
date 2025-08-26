@@ -474,7 +474,7 @@ impl WorkflowEngine {
             for output_decl in workflow_outputs {
                 if let Some(output_expr) = &output_decl.expr {
                     let output_value =
-                        output_expr.eval(&context.bindings, &stdlib).map_err(|e| {
+                        output_expr.eval(&context.bindings, stdlib).map_err(|e| {
                             RuntimeError::run_failed(
                                 format!("Failed to evaluate workflow output: {}", output_decl.name),
                                 e,
@@ -587,8 +587,8 @@ pub mod utils {
     pub fn create_execution_report(result: &WorkflowResult) -> String {
         let mut report = String::new();
 
-        report.push_str(&format!("Workflow Execution Report\n"));
-        report.push_str(&format!("========================\n"));
+        report.push_str("Workflow Execution Report\n");
+        report.push_str("========================\n");
         report.push_str(&format!("Duration: {:?}\n", result.duration));
         report.push_str(&format!("Tasks executed: {}\n", result.task_results.len()));
         report.push_str(&format!("Outputs: {}\n", result.outputs.len()));

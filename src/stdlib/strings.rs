@@ -27,7 +27,7 @@ impl Function for SubFunction {
             || !matches!(args[2], Type::String { .. })
         {
             return Err(WdlError::RuntimeError {
-                message: format!("sub() expects three String arguments"),
+                message: "sub() expects three String arguments".to_string(),
             });
         }
 
@@ -36,19 +36,19 @@ impl Function for SubFunction {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let input = args[0].as_string().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("sub() first argument must be String"),
+            message: "sub() first argument must be String".to_string(),
         })?;
 
         let pattern = args[1].as_string().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("sub() second argument must be String"),
+            message: "sub() second argument must be String".to_string(),
         })?;
 
         let replacement = args[2].as_string().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("sub() third argument must be String"),
+            message: "sub() third argument must be String".to_string(),
         })?;
 
         // Simple string replacement for now (not full regex)
-        let result = input.replace(&pattern, &replacement);
+        let result = input.replace(&pattern, replacement);
         Ok(Value::string(result))
     }
 }
@@ -62,7 +62,7 @@ impl Function for BasenameFunction {
     }
 
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() < 1 || args.len() > 2 {
+        if args.is_empty() || args.len() > 2 {
             return Err(WdlError::ArgumentCountMismatch {
                 function: self.name().to_string(),
                 expected: 1, // or 2
@@ -72,13 +72,13 @@ impl Function for BasenameFunction {
 
         if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("basename() first argument must be String or File"),
+                message: "basename() first argument must be String or File".to_string(),
             });
         }
 
         if args.len() == 2 && !matches!(args[1], Type::String { optional: true, .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("basename() second argument must be String?"),
+                message: "basename() second argument must be String?".to_string(),
             });
         }
 
@@ -87,10 +87,10 @@ impl Function for BasenameFunction {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let path = args[0].as_string().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("basename() first argument must be String"),
+            message: "basename() first argument must be String".to_string(),
         })?;
 
-        let base = path.rsplit('/').next().unwrap_or(&path);
+        let base = path.rsplit('/').next().unwrap_or(path);
 
         if args.len() == 2 {
             if let Some(suffix) = args[1].as_string() {
@@ -124,13 +124,13 @@ impl Function for SepFunction {
 
         if !matches!(args[0], Type::String { .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("sep() first argument must be String"),
+                message: "sep() first argument must be String".to_string(),
             });
         }
 
         if !matches!(args[1], Type::Array { .. }) {
             return Err(WdlError::RuntimeError {
-                message: format!("sep() second argument must be Array"),
+                message: "sep() second argument must be Array".to_string(),
             });
         }
 
@@ -139,7 +139,7 @@ impl Function for SepFunction {
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let separator = args[0].as_string().ok_or_else(|| WdlError::RuntimeError {
-            message: format!("sep() first argument must be String"),
+            message: "sep() first argument must be String".to_string(),
         })?;
 
         if let Value::Array { values, .. } = &args[1] {
@@ -149,15 +149,15 @@ impl Function for SepFunction {
                     v.as_string()
                         .map(|s| s.to_string())
                         .ok_or_else(|| WdlError::RuntimeError {
-                            message: format!("sep() array elements must be String"),
+                            message: "sep() array elements must be String".to_string(),
                         })
                 })
                 .collect();
 
-            Ok(Value::string(strings?.join(&separator)))
+            Ok(Value::string(strings?.join(separator)))
         } else {
             Err(WdlError::RuntimeError {
-                message: format!("sep() second argument must be Array"),
+                message: "sep() second argument must be Array".to_string(),
             })
         }
     }

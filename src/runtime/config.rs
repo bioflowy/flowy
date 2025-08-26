@@ -355,13 +355,17 @@ mod tests {
         assert!(config.validate().is_ok());
 
         // Invalid max_concurrent_tasks
-        let mut config = Config::default();
-        config.max_concurrent_tasks = 0;
+        let config = Config {
+            max_concurrent_tasks: 0,
+            ..Config::default()
+        };
         assert!(config.validate().is_err());
 
         // Invalid task_timeout
-        let mut config = Config::default();
-        config.task_timeout = Duration::from_secs(0);
+        let config = Config {
+            task_timeout: Duration::from_secs(0),
+            ..Config::default()
+        };
         assert!(config.validate().is_err());
     }
 
