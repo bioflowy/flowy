@@ -76,16 +76,19 @@ fn create_wdl_document(version: &str, tasks: &str, workflow: &str) -> String {
 }
 
 /// Parse and typecheck a document, returning both the document and any typecheck errors
-fn parse_and_typecheck(source: &str, version: &str) -> (Result<Document, WdlError>, Option<WdlError>) {
+fn parse_and_typecheck(
+    source: &str,
+    version: &str,
+) -> (Result<Document, WdlError>, Option<WdlError>) {
     match parse_document_from_str(source, version) {
         Ok(mut doc) => {
             // Try to typecheck
             match doc.typecheck() {
                 Ok(_) => (Ok(doc), None),
-                Err(e) => (Ok(doc), Some(e))
+                Err(e) => (Ok(doc), Some(e)),
             }
-        },
-        Err(e) => (Err(e), None)
+        }
+        Err(e) => (Err(e), None),
     }
 }
 
@@ -105,28 +108,34 @@ mod basic_infrastructure_tests {
         // Test that our test infrastructure compiles and basic functions work
         let pos = test_pos();
         assert_eq!(pos.uri, "test.wdl");
-        
+
         let (_env, stdlib) = create_test_environment();
-        assert!(stdlib.get_function("read_int").is_some() || stdlib.get_function("floor").is_some());
-        
+        assert!(
+            stdlib.get_function("read_int").is_some() || stdlib.get_function("floor").is_some()
+        );
+
         println!("✅ Call test infrastructure setup successful");
     }
 
     #[test]
     fn test_basic_call_document_parsing() {
         // Test parsing a simple document with a call
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             call sum { input: x = 1, y = 2 }
         }
-        "#);
+        "#,
+        );
 
         match parse_document_from_str(&doc_source, "1.0") {
             Ok(doc) => {
                 println!("✅ Successfully parsed document with call");
                 assert_eq!(doc.tasks.len(), 1);
                 assert_eq!(doc.tasks[0].name, "sum");
-                
+
                 if let Some(workflow) = &doc.workflow {
                     assert_eq!(workflow.name, "contrived");
                     println!("✅ Workflow with call parsed correctly");
@@ -147,14 +156,18 @@ mod missing_input_tests {
     #[test]
     fn test_missing_input_incomplete_call() {
         // Test case: call sum without any inputs (should be incomplete)
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             call sum
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(doc) => {
                 if let Some(workflow) = &doc.workflow {
@@ -165,9 +178,12 @@ mod missing_input_tests {
                         println!("⚠️  Call should be incomplete but was marked complete");
                     }
                 }
-                
+
                 if let Some(err) = typecheck_error {
-                    println!("✅ Typecheck correctly failed for incomplete call: {:?}", err);
+                    println!(
+                        "✅ Typecheck correctly failed for incomplete call: {:?}",
+                        err
+                    );
                 }
             }
             Err(e) => {
@@ -179,15 +195,19 @@ mod missing_input_tests {
     #[test]
     fn test_missing_input_partial_call() {
         // Test case: call sum with only one input (should be incomplete)
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             Int x = 5
             call sum { input: x = x }
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(doc) => {
                 if let Some(workflow) = &doc.workflow {
@@ -208,16 +228,20 @@ mod missing_input_tests {
     #[test]
     fn test_complete_call() {
         // Test case: call sum with all required inputs (should be complete)
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             Int w = 3
             Int z = 7
             call sum { input: x = w, y = z }
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(doc) => {
                 if let Some(workflow) = &doc.workflow {
@@ -228,7 +252,7 @@ mod missing_input_tests {
                         println!("⚠️  Complete call should be marked complete but wasn't");
                     }
                 }
-                
+
                 if typecheck_error.is_none() {
                     println!("✅ Complete call passed typecheck");
                 } else {
@@ -249,7 +273,10 @@ mod duplicate_input_tests {
     #[test]
     fn test_duplicate_input_detection() {
         // Test case: call with duplicate input parameters
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             Int x = 5
             call sum { 
@@ -258,10 +285,11 @@ mod duplicate_input_tests {
                     x = x
             }
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, _) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(_) => {
                 println!("⚠️  Duplicate input should have been rejected during parsing");
@@ -273,7 +301,10 @@ mod duplicate_input_tests {
                 if let WdlError::MultipleDefinitions { .. } = e {
                     println!("✅ Correct error type (MultipleDefinitions) for duplicate input");
                 } else {
-                    println!("⚠️  Wrong error type - expected MultipleDefinitions, got: {:?}", e);
+                    println!(
+                        "⚠️  Wrong error type - expected MultipleDefinitions, got: {:?}",
+                        e
+                    );
                 }
             }
         }
@@ -284,25 +315,31 @@ mod duplicate_input_tests {
 mod optional_type_tests {
     use super::*;
 
-    #[test] 
+    #[test]
     fn test_optional_type_mismatch() {
         // Test case: passing optional Int? to required Int parameter
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             Int? x
             call sum { input: x = x }
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(_) => {
                 if let Some(err) = typecheck_error {
                     println!("✅ Optional type mismatch correctly caught: {:?}", err);
                     // Check if it's a type mismatch error
                     if matches!(err, WdlError::StaticTypeMismatch { .. }) {
-                        println!("✅ Correct error type (StaticTypeMismatch) for optional mismatch");
+                        println!(
+                            "✅ Correct error type (StaticTypeMismatch) for optional mismatch"
+                        );
                     }
                 } else {
                     println!("⚠️  Optional type mismatch should have failed typecheck");
@@ -317,21 +354,27 @@ mod optional_type_tests {
     #[test]
     fn test_optional_with_default_value() {
         // Test case: optional Int? with default value
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             Int? x = 0
             call sum { input: x = x }
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(_) => {
                 if let Some(err) = typecheck_error {
                     println!("✅ Optional with default still fails type check: {:?}", err);
                 } else {
-                    println!("⚠️  Optional with default should still fail without check_quant=false");
+                    println!(
+                        "⚠️  Optional with default should still fail without check_quant=false"
+                    );
                 }
             }
             Err(e) => {
@@ -348,21 +391,28 @@ mod collision_detection_tests {
     #[test]
     fn test_valid_call_aliasing() {
         // Test case: valid call aliasing (should work)
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             call sum
             call sum as sum2
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(_) => {
                 if typecheck_error.is_none() {
                     println!("✅ Valid call aliasing works correctly");
                 } else {
-                    println!("⚠️  Valid call aliasing should not fail: {:?}", typecheck_error);
+                    println!(
+                        "⚠️  Valid call aliasing should not fail: {:?}",
+                        typecheck_error
+                    );
                 }
             }
             Err(e) => {
@@ -371,18 +421,22 @@ mod collision_detection_tests {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_duplicate_call_names() {
         // Test case: duplicate call names (should fail)
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             call sum
             call sum
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(_) => {
                 if let Some(err) = typecheck_error {
@@ -404,15 +458,19 @@ mod collision_detection_tests {
     fn test_call_variable_collision() {
         // Test case: call name conflicts with workflow variable
         let tasks = format!("{}\n{}", SUM_TASK, ARRAY_TASK);
-        let doc_source = create_wdl_document("1.0", &tasks, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            &tasks,
+            r#"
         workflow contrived {
             call sum
             call p as sum
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(_) => {
                 if let Some(err) = typecheck_error {
@@ -436,7 +494,10 @@ mod comprehensive_call_tests {
     #[test]
     fn test_miniwdl_call_compatibility_basic() {
         // This test checks basic call compatibility with miniwdl patterns
-        let doc_source = create_wdl_document("1.0", SUM_TASK, r#"
+        let doc_source = create_wdl_document(
+            "1.0",
+            SUM_TASK,
+            r#"
         workflow contrived {
             Int a = 10
             Int b = 20
@@ -446,17 +507,18 @@ mod comprehensive_call_tests {
                 Int result = sum.z
             }
         }
-        "#);
+        "#,
+        );
 
         let (parse_result, typecheck_error) = parse_and_typecheck(&doc_source, "1.0");
-        
+
         match parse_result {
             Ok(doc) => {
                 println!("✅ Basic call workflow parsed successfully");
-                
+
                 if let Some(workflow) = &doc.workflow {
                     assert_eq!(workflow.name, "contrived");
-                    
+
                     if typecheck_error.is_none() {
                         println!("✅ Call workflow typechecked successfully");
                     } else {
@@ -467,7 +529,7 @@ mod comprehensive_call_tests {
             Err(e) => {
                 println!("⚠️  miniwdl call compatibility test failed: {:?}", e);
                 println!("This indicates parser needs more work for full call support");
-                
+
                 eprintln!("❌ PARSER ISSUE DETECTED:");
                 eprintln!("   The WDL parser failed to parse a basic call workflow");
                 eprintln!("   Error: {:?}", e);

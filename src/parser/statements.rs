@@ -1,19 +1,19 @@
 //! Token-based statement parsing for WDL (control flow, calls, etc.)
 
+use super::declarations::parse_declaration;
+use super::expressions::parse_expression;
+use super::parser_utils::ParseResult;
 use super::token_stream::TokenStream;
 use super::tokens::Token;
-use super::parser_utils::ParseResult;
-use super::expressions::parse_expression;
-use super::declarations::parse_declaration;
-use crate::tree::{Call, Scatter, Conditional, WorkflowElement};
 use crate::error::WdlError;
+use crate::tree::{Call, Conditional, Scatter, WorkflowElement};
 use std::collections::HashMap;
 
 /// Parse a call statement
 /// call task_name [as alias] [{ input_mappings }] [after dependencies]
 pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
     let pos = stream.current_position();
-    
+
     // Expect "call" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "call" => {
@@ -28,7 +28,7 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
             ));
         }
     }
-    
+
     // Parse task name (could be namespaced like lib.task)
     let mut task_name = match stream.peek_token() {
         Some(Token::Identifier(name)) => {
@@ -45,7 +45,7 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
             ));
         }
     };
-    
+
     // Check for namespace (lib.task)
     while stream.peek_token() == Some(Token::Dot) {
         stream.next(); // consume dot
@@ -71,11 +71,12 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
             }
         }
     }
-    
+
     // Parse optional alias
     // "as" might be a keyword or identifier depending on WDL version
-    let alias = if matches!(stream.peek_token(), Some(Token::Keyword(s)) if s == "as") ||
-                   matches!(stream.peek_token(), Some(Token::Identifier(s)) if s == "as") {
+    let alias = if matches!(stream.peek_token(), Some(Token::Keyword(s)) if s == "as")
+        || matches!(stream.peek_token(), Some(Token::Identifier(s)) if s == "as")
+    {
         stream.next(); // consume "as"
         match stream.peek_token() {
             Some(Token::Identifier(name)) => {
@@ -95,22 +96,22 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
     } else {
         None
     };
-    
+
     // Parse optional input mappings
     let inputs = if stream.peek_token() == Some(Token::LeftBrace) {
         parse_call_inputs(stream)?
     } else {
         HashMap::new()
     };
-    
+
     // Parse optional after clause (WDL 1.0+)
     // "after" is not a reserved keyword, but a contextual identifier
     let afters = if matches!(stream.peek_token(), Some(Token::Identifier(s)) if s == "after") {
         stream.next(); // consume "after"
-        
+
         // Parse list of dependencies
         let mut deps = Vec::new();
-        
+
         // Parse first dependency
         match stream.peek_token() {
             Some(Token::Identifier(name)) => {
@@ -126,7 +127,7 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
                 ));
             }
         }
-        
+
         // Parse remaining dependencies
         while stream.peek_token() == Some(Token::Comma) {
             stream.next(); // consume comma
@@ -138,58 +139,63 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
                 _ => break, // Allow trailing comma
             }
         }
-        
+
         deps
     } else {
         Vec::new()
     };
-    
+
     Ok(Call::new(pos, task_name, alias, inputs, afters))
 }
 
 /// Parse call input mappings: { [input:] input_name = expression, ... }
-fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, crate::expr::Expression>> {
+fn parse_call_inputs(
+    stream: &mut TokenStream,
+) -> ParseResult<HashMap<String, crate::expr::Expression>> {
     stream.expect(Token::LeftBrace)?;
-    
+
     let mut inputs = HashMap::new();
-    
+
     // Skip whitespace and newlines
-    while stream.peek_token() == Some(Token::Newline) || 
-          matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
+    while stream.peek_token() == Some(Token::Newline)
+        || matches!(stream.peek_token(), Some(Token::Whitespace(_)))
+    {
         stream.next();
     }
-    
+
     // Check for empty inputs
     if stream.peek_token() == Some(Token::RightBrace) {
         stream.next();
         return Ok(inputs);
     }
-    
+
     // Check for optional "input:" keyword
     if matches!(stream.peek_token(), Some(Token::Keyword(kw)) if kw == "input") {
         stream.next(); // consume "input"
         stream.expect(Token::Colon)?; // expect :
-        
+
         // Skip whitespace and newlines after "input:"
-        while stream.peek_token() == Some(Token::Newline) || 
-              matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
+        while stream.peek_token() == Some(Token::Newline)
+            || matches!(stream.peek_token(), Some(Token::Whitespace(_)))
+        {
             stream.next();
         }
     }
-    
+
     // Parse input mappings
     loop {
         // Skip whitespace and newlines
-        while stream.peek_token() == Some(Token::Newline) || 
-              matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
+        while stream.peek_token() == Some(Token::Newline)
+            || matches!(stream.peek_token(), Some(Token::Whitespace(_)))
+        {
             stream.next();
         }
-        
+
         // Check if we've reached the end
         if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
-        
+
         // Parse input name (could be an identifier or keyword used as identifier)
         let name = match stream.peek_token() {
             Some(Token::Identifier(n)) => {
@@ -212,7 +218,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
                 ));
             }
         };
-        
+
         // Check for = or : (both are assignment in call inputs)
         match stream.peek_token() {
             Some(Token::Assign) | Some(Token::Colon) => {
@@ -224,7 +230,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
                 let pos = stream.current_position();
                 let expr = crate::expr::Expression::ident(pos, name.clone());
                 inputs.insert(name, expr);
-                
+
                 // Check for comma or end
                 if stream.peek_token() == Some(Token::Comma) {
                     stream.next(); // consume comma
@@ -234,11 +240,11 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
                 }
             }
         }
-        
+
         // Parse expression
         let expr = parse_expression(stream)?;
         inputs.insert(name, expr);
-        
+
         // Check for comma or end
         if stream.peek_token() == Some(Token::Comma) {
             stream.next(); // consume comma
@@ -246,7 +252,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
             break;
         }
     }
-    
+
     stream.expect(Token::RightBrace)?;
     Ok(inputs)
 }
@@ -255,7 +261,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
 /// scatter (variable in expression) { body }
 pub fn parse_scatter_statement(stream: &mut TokenStream) -> ParseResult<Scatter> {
     let pos = stream.current_position();
-    
+
     // Expect "scatter" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "scatter" => {
@@ -270,10 +276,10 @@ pub fn parse_scatter_statement(stream: &mut TokenStream) -> ParseResult<Scatter>
             ));
         }
     }
-    
+
     // Expect opening paren
     stream.expect(Token::LeftParen)?;
-    
+
     // Parse variable name
     let variable = match stream.peek_token() {
         Some(Token::Identifier(name)) => {
@@ -290,29 +296,30 @@ pub fn parse_scatter_statement(stream: &mut TokenStream) -> ParseResult<Scatter>
             ));
         }
     };
-    
+
     // Expect "in" keyword (might be keyword or identifier)
-    if matches!(stream.peek_token(), Some(Token::Keyword(s)) if s == "in") ||
-       matches!(stream.peek_token(), Some(Token::Identifier(s)) if s == "in") {
+    if matches!(stream.peek_token(), Some(Token::Keyword(s)) if s == "in")
+        || matches!(stream.peek_token(), Some(Token::Identifier(s)) if s == "in")
+    {
         stream.next();
     } else {
-            return Err(WdlError::syntax_error(
-                stream.current_position(),
-                "Expected 'in' keyword in scatter".to_string(),
-                "1.0".to_string(),
-                None,
-            ));
+        return Err(WdlError::syntax_error(
+            stream.current_position(),
+            "Expected 'in' keyword in scatter".to_string(),
+            "1.0".to_string(),
+            None,
+        ));
     }
-    
+
     // Parse expression to iterate over
     let expr = parse_expression(stream)?;
-    
+
     // Expect closing paren
     stream.expect(Token::RightParen)?;
-    
+
     // Parse body
     let body = parse_workflow_body(stream)?;
-    
+
     Ok(Scatter::new(pos, variable, expr, body))
 }
 
@@ -320,7 +327,7 @@ pub fn parse_scatter_statement(stream: &mut TokenStream) -> ParseResult<Scatter>
 /// if (expression) { body }
 pub fn parse_conditional_statement(stream: &mut TokenStream) -> ParseResult<Conditional> {
     let pos = stream.current_position();
-    
+
     // Expect "if" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "if" => {
@@ -335,52 +342,52 @@ pub fn parse_conditional_statement(stream: &mut TokenStream) -> ParseResult<Cond
             ));
         }
     }
-    
+
     // Expect opening paren
     stream.expect(Token::LeftParen)?;
-    
+
     // Parse condition expression
     let expr = parse_expression(stream)?;
-    
+
     // Expect closing paren
     stream.expect(Token::RightParen)?;
-    
+
     // Parse body
     let body = parse_workflow_body(stream)?;
-    
+
     Ok(Conditional::new(pos, expr, body))
 }
 
 /// Parse a workflow body (list of workflow elements)
 pub fn parse_workflow_body(stream: &mut TokenStream) -> ParseResult<Vec<WorkflowElement>> {
     stream.expect(Token::LeftBrace)?;
-    
+
     let mut elements = Vec::new();
-    
+
     // Parse elements until closing brace
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip any newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
-        
+
         // Check if we've reached the end
         if stream.peek_token() == Some(Token::RightBrace) || stream.is_eof() {
             break;
         }
-        
+
         // Parse workflow element
         let element = parse_workflow_element(stream)?;
         elements.push(element);
-        
+
         // Skip any newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
-    
+
     stream.expect(Token::RightBrace)?;
-    
+
     Ok(elements)
 }
 
@@ -403,8 +410,8 @@ pub fn parse_workflow_element(stream: &mut TokenStream) -> ParseResult<WorkflowE
                     Ok(WorkflowElement::Conditional(Box::new(conditional)))
                 }
                 // Type keywords indicate a declaration
-                "String" | "Int" | "Float" | "Boolean" | "File" | "Directory" | 
-                "Array" | "Map" | "Pair" | "Object" => {
+                "String" | "Int" | "Float" | "Boolean" | "File" | "Directory" | "Array" | "Map"
+                | "Pair" | "Object" => {
                     let decl = parse_declaration(stream, "decl")?;
                     Ok(WorkflowElement::Declaration(decl))
                 }
@@ -424,14 +431,12 @@ pub fn parse_workflow_element(stream: &mut TokenStream) -> ParseResult<WorkflowE
             let decl = parse_declaration(stream, "decl")?;
             Ok(WorkflowElement::Declaration(decl))
         }
-        _ => {
-            Err(WdlError::syntax_error(
-                stream.current_position(),
-                "Expected workflow element (declaration, call, scatter, or if)".to_string(),
-                "1.0".to_string(),
-                None,
-            ))
-        }
+        _ => Err(WdlError::syntax_error(
+            stream.current_position(),
+            "Expected workflow element (declaration, call, scatter, or if)".to_string(),
+            "1.0".to_string(),
+            None,
+        )),
     }
 }
 
@@ -439,78 +444,78 @@ pub fn parse_workflow_element(stream: &mut TokenStream) -> ParseResult<WorkflowE
 mod tests {
     use super::*;
     use crate::parser::token_stream::TokenStream;
-    
+
     #[test]
     fn test_parse_simple_call() {
         let mut stream = TokenStream::new("call my_task", "1.0").unwrap();
         let result = parse_call_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let call = result.unwrap();
         assert_eq!(call.task, "my_task");
         assert_eq!(call.alias, None);
         assert!(call.inputs.is_empty());
         assert!(call.afters.is_empty());
     }
-    
+
     #[test]
     fn test_parse_call_with_alias() {
         let mut stream = TokenStream::new("call my_task as task_alias", "1.0").unwrap();
         let result = parse_call_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let call = result.unwrap();
         assert_eq!(call.task, "my_task");
         assert_eq!(call.alias, Some("task_alias".to_string()));
         assert_eq!(call.name(), "task_alias");
     }
-    
+
     #[test]
     fn test_parse_call_with_inputs() {
         let input = r#"call my_task {
             input1: "value1",
             input2: 42
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_call_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let call = result.unwrap();
         assert_eq!(call.task, "my_task");
         assert_eq!(call.inputs.len(), 2);
         assert!(call.inputs.contains_key("input1"));
         assert!(call.inputs.contains_key("input2"));
     }
-    
+
     #[test]
     fn test_parse_call_with_shorthand_inputs() {
         let input = r#"call my_task {
             input1,
             input2: value2
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_call_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let call = result.unwrap();
         assert_eq!(call.inputs.len(), 2);
         assert!(call.inputs.contains_key("input1"));
         assert!(call.inputs.contains_key("input2"));
     }
-    
+
     #[test]
     fn test_parse_call_with_after() {
         let mut stream = TokenStream::new("call my_task after other_task", "1.0").unwrap();
         let result = parse_call_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let call = result.unwrap();
         assert_eq!(call.task, "my_task");
         assert_eq!(call.afters, vec!["other_task"]);
     }
-    
+
     #[test]
     fn test_parse_namespaced_call() {
         let mut stream = TokenStream::new("call lib.task", "1.0").unwrap();
@@ -519,45 +524,48 @@ mod tests {
             eprintln!("Namespaced call error: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         let call = result.unwrap();
         assert_eq!(call.task, "lib.task");
     }
-    
+
     #[test]
     fn test_parse_scatter() {
         let input = r#"scatter (item in items) {
             call process { input: item }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_scatter_statement(&mut stream);
         if let Err(e) = &result {
             eprintln!("Scatter parse error: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         let scatter = result.unwrap();
         assert_eq!(scatter.variable, "item");
         assert_eq!(scatter.body.len(), 1);
         assert!(matches!(scatter.body[0], WorkflowElement::Call(_)));
     }
-    
+
     #[test]
     fn test_parse_conditional() {
         let input = r#"if (flag) {
             String message = "enabled"
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_conditional_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let conditional = result.unwrap();
         assert_eq!(conditional.body.len(), 1);
-        assert!(matches!(conditional.body[0], WorkflowElement::Declaration(_)));
+        assert!(matches!(
+            conditional.body[0],
+            WorkflowElement::Declaration(_)
+        ));
     }
-    
+
     #[test]
     fn test_parse_nested_control_flow() {
         let input = r#"scatter (x in xs) {
@@ -565,16 +573,16 @@ mod tests {
                 call process { input: x }
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_scatter_statement(&mut stream);
         assert!(result.is_ok());
-        
+
         let scatter = result.unwrap();
         assert_eq!(scatter.body.len(), 1);
         assert!(matches!(scatter.body[0], WorkflowElement::Conditional(_)));
     }
-    
+
     #[test]
     fn test_parse_workflow_body() {
         let input = r#"{
@@ -584,11 +592,11 @@ mod tests {
                 call task2 { input: x }
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_workflow_body(&mut stream);
         assert!(result.is_ok());
-        
+
         let body = result.unwrap();
         assert_eq!(body.len(), 3);
         assert!(matches!(body[0], WorkflowElement::Declaration(_)));

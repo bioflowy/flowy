@@ -7,7 +7,10 @@ use crate::error::{SourcePosition, WdlError};
 use crate::expr::{Expression, StringPart};
 
 /// Parse a raw command block with heredoc syntax <<<...>>>
-pub fn parse_raw_heredoc_command(input: &str, pos: &SourcePosition) -> Result<Expression, WdlError> {
+pub fn parse_raw_heredoc_command(
+    input: &str,
+    pos: &SourcePosition,
+) -> Result<Expression, WdlError> {
     // Find the opening <<<
     let start_idx = input.find("<<<").ok_or_else(|| {
         WdlError::syntax_error(
@@ -17,7 +20,7 @@ pub fn parse_raw_heredoc_command(input: &str, pos: &SourcePosition) -> Result<Ex
             None,
         )
     })?;
-    
+
     // Find the closing >>>
     let end_idx = input.find(">>>").ok_or_else(|| {
         WdlError::syntax_error(
@@ -27,13 +30,13 @@ pub fn parse_raw_heredoc_command(input: &str, pos: &SourcePosition) -> Result<Ex
             None,
         )
     })?;
-    
+
     // Extract command content between <<< and >>>
     let command_content = &input[start_idx + 3..end_idx];
-    
+
     // Parse the command content for placeholders
     let parts = parse_command_content(command_content)?;
-    
+
     Ok(Expression::string(pos.clone(), parts))
 }
 
@@ -42,7 +45,7 @@ fn parse_command_content(content: &str) -> Result<Vec<StringPart>, WdlError> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut chars = content.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         match ch {
             '~' | '$' => {
@@ -53,13 +56,13 @@ fn parse_command_content(content: &str) -> Result<Vec<StringPart>, WdlError> {
                         parts.push(StringPart::Text(current.clone()));
                         current.clear();
                     }
-                    
+
                     chars.next(); // consume '{'
-                    
+
                     // Find the matching }
                     let mut placeholder_content = String::new();
                     let mut depth = 1;
-                    
+
                     while depth > 0 {
                         match chars.next() {
                             Some('{') => {
@@ -82,11 +85,14 @@ fn parse_command_content(content: &str) -> Result<Vec<StringPart>, WdlError> {
                             }
                         }
                     }
-                    
+
                     // For now, treat placeholder as raw text
                     // In a full implementation, we'd parse the expression
                     let placeholder_marker = if ch == '~' { "~" } else { "$" };
-                    parts.push(StringPart::Text(format!("{}{{{}}}", placeholder_marker, placeholder_content)));
+                    parts.push(StringPart::Text(format!(
+                        "{}{{{}}}",
+                        placeholder_marker, placeholder_content
+                    )));
                 } else {
                     // Not a placeholder, just regular text
                     current.push(ch);
@@ -97,17 +103,17 @@ fn parse_command_content(content: &str) -> Result<Vec<StringPart>, WdlError> {
             }
         }
     }
-    
+
     // Add any remaining text
     if !current.is_empty() {
         parts.push(StringPart::Text(current));
     }
-    
+
     // If no parts, add empty string
     if parts.is_empty() {
         parts.push(StringPart::Text(String::new()));
     }
-    
+
     Ok(parts)
 }
 
@@ -122,11 +128,11 @@ pub fn parse_raw_command_block(input: &str, pos: &SourcePosition) -> Result<Expr
             None,
         )
     })?;
-    
+
     // Find matching closing } (accounting for nesting)
     let mut depth = 0;
     let mut end_idx = None;
-    
+
     for (i, ch) in input[start_idx..].char_indices() {
         match ch {
             '{' => depth += 1,
@@ -140,7 +146,7 @@ pub fn parse_raw_command_block(input: &str, pos: &SourcePosition) -> Result<Expr
             _ => {}
         }
     }
-    
+
     let end_idx = end_idx.ok_or_else(|| {
         WdlError::syntax_error(
             pos.clone(),
@@ -149,12 +155,12 @@ pub fn parse_raw_command_block(input: &str, pos: &SourcePosition) -> Result<Expr
             None,
         )
     })?;
-    
+
     // Extract command content
     let command_content = &input[start_idx + 1..end_idx];
-    
+
     // Parse the command content for placeholders
     let parts = parse_command_content(command_content)?;
-    
+
     Ok(Expression::string(pos.clone(), parts))
 }

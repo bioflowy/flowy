@@ -3,12 +3,12 @@
 //! This module provides comprehensive error handling for WDL document processing,
 //! including syntax errors, validation errors, and runtime errors.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use thiserror::Error;
 
 /// Source position information for AST nodes and errors.
-/// 
+///
 /// Contains both the original URI/filename and resolved absolute path,
 /// along with one-based line and column positions.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -53,10 +53,18 @@ impl std::fmt::Display for SourcePosition {
             if self.column == self.end_column {
                 write!(f, "{}:{}:{}", self.uri, self.line, self.column)
             } else {
-                write!(f, "{}:{}:{}-{}", self.uri, self.line, self.column, self.end_column)
+                write!(
+                    f,
+                    "{}:{}:{}-{}",
+                    self.uri, self.line, self.column, self.end_column
+                )
             }
         } else {
-            write!(f, "{}:{}:{}-{}:{}", self.uri, self.line, self.column, self.end_line, self.end_column)
+            write!(
+                f,
+                "{}:{}:{}-{}:{}",
+                self.uri, self.line, self.column, self.end_line, self.end_column
+            )
         }
     }
 }
@@ -296,9 +304,7 @@ pub enum WdlError {
 
     /// Runtime error
     #[error("Runtime error: {message}")]
-    RuntimeError {
-        message: String,
-    },
+    RuntimeError { message: String },
 }
 
 impl WdlError {
@@ -379,7 +385,7 @@ impl WdlError {
     ) -> Self {
         let enhanced_message = if message.is_empty() {
             let mut msg = format!("Expected {} instead of {}", expected, actual);
-            
+
             // Add helpful hints similar to Python version
             if expected == "Int" && actual == "Float" {
                 msg += "; perhaps try floor() or round()";
@@ -404,13 +410,11 @@ impl WdlError {
     /// Combine multiple validation errors into one.
     pub fn multiple_validation_errors(mut exceptions: Vec<WdlError>) -> Self {
         // Sort exceptions by source position
-        exceptions.sort_by(|a, b| {
-            match (a.source_position(), b.source_position()) {
-                (Some(pos_a), Some(pos_b)) => pos_a.cmp(pos_b),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            }
+        exceptions.sort_by(|a, b| match (a.source_position(), b.source_position()) {
+            (Some(pos_a), Some(pos_b)) => pos_a.cmp(pos_b),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
         });
 
         let count = exceptions.len();
@@ -424,7 +428,7 @@ impl WdlError {
 }
 
 /// Context for collecting multiple validation errors.
-/// 
+///
 /// This allows validation to continue after encountering errors,
 /// collecting them all before reporting.
 #[derive(Default)]
@@ -493,10 +497,10 @@ pub trait HasSourcePosition {
 pub trait SourceNode: HasSourcePosition {
     /// Get the parent node, if any.
     fn parent(&self) -> Option<&dyn SourceNode>;
-    
+
     /// Set the parent node.
     fn set_parent(&mut self, parent: Option<&dyn SourceNode>);
-    
+
     /// Get all direct children of this node.
     fn children(&self) -> Vec<&dyn SourceNode> {
         Vec::new()
@@ -528,7 +532,8 @@ mod tests {
     #[test]
     fn test_source_position_ordering() {
         let pos1 = SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 1, 1, 1, 5);
-        let pos2 = SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 1, 6, 1, 10);
+        let pos2 =
+            SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 1, 6, 1, 10);
         let pos3 = SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 2, 1, 2, 5);
 
         assert!(pos1 < pos2);
@@ -568,7 +573,11 @@ mod tests {
         let error = WdlError::import_error(pos.clone(), "missing.wdl".to_string(), None);
 
         match error {
-            WdlError::Import { pos: error_pos, message, .. } => {
+            WdlError::Import {
+                pos: error_pos,
+                message,
+                ..
+            } => {
                 assert_eq!(error_pos, pos);
                 assert_eq!(message, "Failed to import missing.wdl");
             }
@@ -602,7 +611,7 @@ mod tests {
 
         let pos = SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 1, 1, 1, 5);
         ctx.append(WdlError::validation_error(pos, "error 1".to_string()));
-        
+
         let pos2 = SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 2, 1, 2, 5);
         ctx.append(WdlError::validation_error(pos2, "error 2".to_string()));
 
@@ -623,7 +632,7 @@ mod tests {
     fn test_source_position_from_error() {
         let pos = SourcePosition::new("test.wdl".to_string(), "/test.wdl".to_string(), 1, 1, 1, 5);
         let error = WdlError::validation_error(pos.clone(), "test error".to_string());
-        
+
         assert_eq!(error.source_position(), Some(&pos));
     }
 }

@@ -59,10 +59,10 @@ mod basic_infrastructure_tests {
         // Test that our test infrastructure compiles and basic functions work
         let pos = test_pos();
         assert_eq!(pos.uri, "test.wdl");
-        
+
         let (_env, stdlib) = create_test_environment();
         assert!(stdlib.get_function("floor").is_some());
-        
+
         println!("✅ Test infrastructure setup successful");
     }
 
@@ -80,11 +80,20 @@ mod basic_infrastructure_tests {
 
         match parse_document_from_str(simple_doc, "1.0") {
             Ok(doc) => {
-                println!("✅ Successfully parsed simple document with {} tasks", doc.tasks.len());
-                assert!(!doc.tasks.is_empty(), "Document should have at least one task");
+                println!(
+                    "✅ Successfully parsed simple document with {} tasks",
+                    doc.tasks.len()
+                );
+                assert!(
+                    !doc.tasks.is_empty(),
+                    "Document should have at least one task"
+                );
             }
             Err(e) => {
-                println!("⚠️  Simple document parsing failed (may be expected): {:?}", e);
+                println!(
+                    "⚠️  Simple document parsing failed (may be expected): {:?}",
+                    e
+                );
                 // This might fail if parser is not fully implemented, which is OK for now
             }
         }
@@ -97,17 +106,18 @@ mod basic_infrastructure_tests {
         use std::collections::HashMap;
 
         let pos = test_pos();
-        let command_expr = Expression::string(pos.clone(), vec![
-            crate::expr::StringPart::Text("echo Hello".to_string())
-        ]);
-        
+        let command_expr = Expression::string(
+            pos.clone(),
+            vec![crate::expr::StringPart::Text("echo Hello".to_string())],
+        );
+
         let task = Task::new(
             pos.clone(),
             "test_task".to_string(),
-            None, // no inputs
+            None,   // no inputs
             vec![], // no postinputs
             command_expr,
-            vec![], // no outputs
+            vec![],         // no outputs
             HashMap::new(), // no parameter_meta
             HashMap::new(), // no runtime
             HashMap::new(), // no meta
@@ -117,7 +127,7 @@ mod basic_infrastructure_tests {
         assert_eq!(task.effective_wdl_version, "1.0");
         assert!(task.inputs.is_none());
         assert_eq!(task.outputs.len(), 0);
-        
+
         println!("✅ Successfully created Task structure directly");
     }
 
@@ -125,7 +135,7 @@ mod basic_infrastructure_tests {
     fn test_document_structure_creation() {
         // Test that we can create Document structures directly
         let pos = test_pos();
-        
+
         let doc = Document::new(
             pos.clone(),
             Some("1.0".to_string()),
@@ -140,7 +150,7 @@ mod basic_infrastructure_tests {
         assert!(!doc.effective_wdl_version.is_empty());
         assert_eq!(doc.tasks.len(), 0);
         assert!(doc.workflow.is_none());
-        
+
         println!("✅ Successfully created Document structure directly");
     }
 }
@@ -170,7 +180,7 @@ mod parser_integration_tests {
                 println!("✅ Successfully parsed hello world document");
                 assert_eq!(doc.tasks.len(), 1);
                 assert_eq!(doc.tasks[0].name, "hello");
-                
+
                 // Check outputs
                 if !doc.tasks[0].outputs.is_empty() {
                     assert_eq!(doc.tasks[0].outputs[0].name, "message");
@@ -179,7 +189,7 @@ mod parser_integration_tests {
             Err(e) => {
                 println!("⚠️  Hello world parsing failed: {:?}", e);
                 println!("This indicates the parser needs more implementation");
-                
+
                 // For now, this is expected - we're testing what works
                 // When tests fail, we'll report to the user as requested
             }
@@ -210,7 +220,7 @@ mod parser_integration_tests {
                 assert_eq!(doc.tasks.len(), 1);
                 let task = &doc.tasks[0];
                 assert_eq!(task.name, "echo_input");
-                
+
                 // Check inputs if they exist
                 if let Some(inputs) = &task.inputs {
                     if !inputs.is_empty() {
@@ -226,7 +236,7 @@ mod parser_integration_tests {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_workflow_parsing() {
         let doc_source = r#"
         version 1.0
@@ -253,7 +263,7 @@ mod parser_integration_tests {
                 println!("✅ Successfully parsed document with workflow");
                 assert_eq!(doc.tasks.len(), 1);
                 assert!(doc.workflow.is_some());
-                
+
                 let workflow = doc.workflow.as_ref().unwrap();
                 assert_eq!(workflow.name, "main");
                 println!("✅ Workflow parsing works correctly");
@@ -279,7 +289,6 @@ mod error_detection_tests {
                 command { echo "test" }
             }
             "#,
-            
             // Invalid task syntax
             r#"
             version 1.0
@@ -287,7 +296,6 @@ mod error_detection_tests {
                 command { echo "test" }
             }
             "#,
-            
             // Incomplete task
             r#"
             version 1.0
@@ -328,7 +336,7 @@ mod error_detection_tests {
             Ok(doc) => {
                 println!("✅ Document with various types parsed successfully");
                 let task = &doc.tasks[0];
-                
+
                 if let Some(inputs) = &task.inputs {
                     println!("Task has {} inputs", inputs.len());
                     for (i, input) in inputs.iter().enumerate() {
@@ -352,7 +360,7 @@ mod comprehensive_tests {
     fn test_miniwdl_compatibility_basic() {
         // This test checks basic compatibility with miniwdl test patterns
         // We'll expand this as the parser implementation improves
-        
+
         let wc_task = r#"
         version 1.0
         task wc {
@@ -371,32 +379,32 @@ mod comprehensive_tests {
         match parse_document_from_str(wc_task, "1.0") {
             Ok(doc) => {
                 println!("✅ Basic miniwdl-style task parsed successfully");
-                
+
                 let task = &doc.tasks[0];
                 assert_eq!(task.name, "wc");
-                
+
                 // Verify structure matches expected miniwdl behavior
                 if let Some(inputs) = &task.inputs {
                     assert_eq!(inputs.len(), 1);
                     assert_eq!(inputs[0].name, "in");
                 }
-                
+
                 assert_eq!(task.outputs.len(), 1);
                 assert_eq!(task.outputs[0].name, "ans");
-                
+
                 println!("✅ Task structure matches miniwdl expectations");
             }
             Err(e) => {
                 println!("⚠️  miniwdl compatibility test failed: {:?}", e);
                 println!("This indicates parser needs more work for full miniwdl compatibility");
-                
+
                 // As requested, when tests fail, we report the issue
                 eprintln!("❌ PARSER ISSUE DETECTED:");
                 eprintln!("   The WDL parser failed to parse a basic task structure");
                 eprintln!("   Error: {:?}", e);
                 eprintln!("   This suggests the parser implementation is incomplete");
                 eprintln!("   Recommended fix: Implement missing parser components for:");
-                eprintln!("   - Task input sections");  
+                eprintln!("   - Task input sections");
                 eprintln!("   - Command sections with interpolation");
                 eprintln!("   - Output sections");
             }

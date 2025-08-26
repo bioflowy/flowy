@@ -3,17 +3,17 @@
 //! This module provides workflow-level execution capabilities, coordinating
 //! task execution and managing data flow between tasks.
 
+use crate::env::Bindings;
 use crate::error::SourcePosition;
-use crate::value::{Value, ValueBase};
 use crate::expr::ExpressionBase;
 use crate::runtime::config::Config;
 use crate::runtime::error::{RuntimeError, RuntimeResult};
 use crate::runtime::fs_utils::WorkflowDirectory;
 use crate::runtime::task::TaskEngine;
 use crate::runtime::task_context::TaskResult;
-use crate::tree::{Workflow, Call, Scatter, Conditional, WorkflowElement, Document};
-use crate::env::Bindings;
+use crate::tree::{Call, Conditional, Document, Scatter, Workflow, WorkflowElement};
 use crate::types::Type;
+use crate::value::{Value, ValueBase};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -66,9 +66,13 @@ impl WorkflowEngine {
             document: None,
         }
     }
-    
+
     /// Create a new workflow engine with document
-    pub fn new_with_document(config: Config, workflow_dir: WorkflowDirectory, document: Document) -> Self {
+    pub fn new_with_document(
+        config: Config,
+        workflow_dir: WorkflowDirectory,
+        document: Document,
+    ) -> Self {
         let task_engine = TaskEngine::new(config.clone(), workflow_dir.clone());
         Self {
             task_engine,
@@ -77,7 +81,7 @@ impl WorkflowEngine {
             document: Some(document),
         }
     }
-    
+
     /// Execute a workflow
     pub fn execute_workflow(
         &self,
@@ -86,28 +90,28 @@ impl WorkflowEngine {
         run_id: &str,
     ) -> RuntimeResult<WorkflowResult> {
         let start_time = Instant::now();
-        
+
         // Validate workflow inputs
         self.validate_workflow_inputs(&workflow, &inputs)?;
-        
+
         // Create execution context
         let mut context = WorkflowContext {
             bindings: inputs,
             task_results: HashMap::new(),
             start_time,
         };
-        
+
         // Execute workflow body
         self.execute_workflow_body(&workflow, &mut context, run_id)?;
-        
+
         // Create stdlib for output evaluation
         let stdlib = crate::stdlib::StdLib::new("1.0");
-        
+
         // Collect workflow outputs
         let outputs = self.collect_workflow_outputs(&workflow, &context, &stdlib)?;
-        
+
         let duration = start_time.elapsed();
-        
+
         Ok(WorkflowResult {
             outputs,
             duration,
@@ -115,7 +119,7 @@ impl WorkflowEngine {
             work_dir: self.workflow_dir.work.clone(),
         })
     }
-    
+
     /// Execute a complete WDL document
     pub fn execute_document(
         &self,
@@ -127,9 +131,9 @@ impl WorkflowEngine {
         let engine_with_doc = Self::new_with_document(
             self.config.clone(),
             self.workflow_dir.clone(),
-            document.clone()
+            document.clone(),
         );
-        
+
         // Find the main workflow
         if let Some(workflow) = document.workflow {
             engine_with_doc.execute_workflow(workflow, inputs, run_id)
@@ -137,16 +141,19 @@ impl WorkflowEngine {
             // If no workflow, try to find a single task to execute
             if document.tasks.len() == 1 {
                 let task = document.tasks.into_iter().next().unwrap();
-                let task_result = self.task_engine.execute_task_default(task, inputs, run_id)?;
-                
+                let task_result = self
+                    .task_engine
+                    .execute_task_default(task, inputs, run_id)?;
+
                 let mut outputs = Bindings::new();
                 for binding in task_result.outputs.iter() {
-                    outputs = outputs.bind(binding.name().to_string(), binding.value().clone(), None);
+                    outputs =
+                        outputs.bind(binding.name().to_string(), binding.value().clone(), None);
                 }
-                
+
                 let mut task_results = HashMap::new();
                 task_results.insert("main".to_string(), task_result);
-                
+
                 Ok(WorkflowResult {
                     outputs,
                     duration: Duration::default(),
@@ -155,13 +162,14 @@ impl WorkflowEngine {
                 })
             } else {
                 Err(RuntimeError::WorkflowValidationError {
-                    message: "Document must contain either a workflow or exactly one task".to_string(),
+                    message: "Document must contain either a workflow or exactly one task"
+                        .to_string(),
                     pos: SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
                 })
             }
         }
     }
-    
+
     /// Validate workflow inputs
     pub fn validate_workflow_inputs(
         &self,
@@ -170,10 +178,14 @@ impl WorkflowEngine {
     ) -> RuntimeResult<()> {
         if let Some(ref workflow_inputs) = workflow.inputs {
             for input_decl in workflow_inputs {
-                if input_decl.expr.is_none() { // Required input
+                if input_decl.expr.is_none() {
+                    // Required input
                     if !inputs.has_binding(&input_decl.name) {
                         return Err(RuntimeError::WorkflowValidationError {
-                            message: format!("Missing required workflow input: {}", input_decl.name),
+                            message: format!(
+                                "Missing required workflow input: {}",
+                                input_decl.name
+                            ),
                             pos: input_decl.pos.clone(),
                         });
                     }
@@ -182,7 +194,7 @@ impl WorkflowEngine {
         }
         Ok(())
     }
-    
+
     /// Execute the workflow body (sequence of nodes)
     fn execute_workflow_body(
         &self,
@@ -192,33 +204,41 @@ impl WorkflowEngine {
     ) -> RuntimeResult<()> {
         // Create stdlib for expression evaluation
         let stdlib = crate::stdlib::StdLib::new("1.0");
-        
+
         // Add workflow inputs to context
         if let Some(ref workflow_inputs) = workflow.inputs {
             for input_decl in workflow_inputs {
                 if let Some(input_expr) = &input_decl.expr {
                     // Evaluate default value if input not provided
                     if !context.bindings.has_binding(&input_decl.name) {
-                        let default_value = input_expr.eval(&context.bindings, &stdlib)
-                            .map_err(|e| RuntimeError::run_failed(
-                                format!("Failed to evaluate default input: {}", input_decl.name),
-                                e,
-                                Some(input_decl.pos.clone()),
-                            ))?;
-                        context.bindings = context.bindings.bind(input_decl.name.clone(), default_value, None);
+                        let default_value =
+                            input_expr.eval(&context.bindings, &stdlib).map_err(|e| {
+                                RuntimeError::run_failed(
+                                    format!(
+                                        "Failed to evaluate default input: {}",
+                                        input_decl.name
+                                    ),
+                                    e,
+                                    Some(input_decl.pos.clone()),
+                                )
+                            })?;
+                        context.bindings =
+                            context
+                                .bindings
+                                .bind(input_decl.name.clone(), default_value, None);
                     }
                 }
             }
         }
-        
+
         // Execute workflow body nodes in sequence
         for node in &workflow.body {
             self.execute_workflow_node(node, context, run_id, &stdlib)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Execute a single workflow node
     fn execute_workflow_node(
         &self,
@@ -240,19 +260,20 @@ impl WorkflowEngine {
             WorkflowElement::Declaration(decl) => {
                 // Execute variable declaration
                 if let Some(expr) = &decl.expr {
-                    let value = expr.eval(&context.bindings, stdlib)
-                        .map_err(|e| RuntimeError::run_failed(
+                    let value = expr.eval(&context.bindings, stdlib).map_err(|e| {
+                        RuntimeError::run_failed(
                             format!("Failed to evaluate declaration: {}", decl.name),
                             e,
                             Some(decl.pos.clone()),
-                        ))?;
+                        )
+                    })?;
                     context.bindings = context.bindings.bind(decl.name.clone(), value, None);
                 }
             }
         }
         Ok(())
     }
-    
+
     /// Execute a task call
     fn execute_call(
         &self,
@@ -263,20 +284,23 @@ impl WorkflowEngine {
     ) -> RuntimeResult<()> {
         // Evaluate call inputs
         let mut call_inputs = Bindings::new();
-        
+
         for (input_name, input_expr) in &call.inputs {
-            let input_value = input_expr.eval(&context.bindings, stdlib)
-                .map_err(|e| RuntimeError::run_failed(
+            let input_value = input_expr.eval(&context.bindings, stdlib).map_err(|e| {
+                RuntimeError::run_failed(
                     format!("Failed to evaluate call input: {}", input_name),
                     e,
                     Some(input_expr.pos().clone()),
-                ))?;
+                )
+            })?;
             call_inputs = call_inputs.bind(input_name.clone(), input_value, None);
         }
-        
+
         // Find the task definition from the document
         let task = if let Some(ref document) = self.document {
-            document.tasks.iter()
+            document
+                .tasks
+                .iter()
                 .find(|t| t.name == call.task)
                 .cloned()
                 .ok_or_else(|| RuntimeError::WorkflowValidationError {
@@ -289,29 +313,29 @@ impl WorkflowEngine {
                 pos: call.pos.clone(),
             });
         };
-        
+
         // Execute task
         let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
         let unique_run_id = format!("{}_{}", run_id, call_name);
-        
-        let task_result = self.task_engine.execute_task_default(
-            task,
-            call_inputs,
-            &unique_run_id,
-        )?;
-        
+
+        let task_result =
+            self.task_engine
+                .execute_task_default(task, call_inputs, &unique_run_id)?;
+
         // Add task outputs to workflow context
         for binding in task_result.outputs.iter() {
             let qualified_name = format!("{}.{}", call_name, binding.name());
-            context.bindings = context.bindings.bind(qualified_name, binding.value().clone(), None);
+            context.bindings = context
+                .bindings
+                .bind(qualified_name, binding.value().clone(), None);
         }
-        
+
         // Store task result
         context.task_results.insert(call_name, task_result);
-        
+
         Ok(())
     }
-    
+
     /// Execute a scatter block
     fn execute_scatter(
         &self,
@@ -321,13 +345,14 @@ impl WorkflowEngine {
         stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate scatter collection
-        let collection_value = scatter.expr.eval(&context.bindings, stdlib)
-            .map_err(|e| RuntimeError::run_failed(
+        let collection_value = scatter.expr.eval(&context.bindings, stdlib).map_err(|e| {
+            RuntimeError::run_failed(
                 "Failed to evaluate scatter collection".to_string(),
                 e,
                 Some(scatter.expr.pos().clone()),
-            ))?;
-        
+            )
+        })?;
+
         // Extract array values
         let array_values = match collection_value {
             Value::Array { values, .. } => values,
@@ -340,10 +365,10 @@ impl WorkflowEngine {
                 });
             }
         };
-        
+
         // Execute scatter body for each array element
         let mut scatter_results = Vec::new();
-        
+
         for (index, item_value) in array_values.iter().enumerate() {
             // Create new context with scatter variable
             let mut scatter_context = WorkflowContext {
@@ -351,39 +376,47 @@ impl WorkflowEngine {
                 task_results: HashMap::new(),
                 start_time: context.start_time,
             };
-            
+
             // Add scatter item to context
-            scatter_context.bindings = scatter_context.bindings.bind(scatter.variable.clone(), item_value.clone(), None);
-            
+            scatter_context.bindings =
+                scatter_context
+                    .bindings
+                    .bind(scatter.variable.clone(), item_value.clone(), None);
+
             // Execute scatter body
             let scatter_run_id = format!("{}_scatter_{}", run_id, index);
             for node in &scatter.body {
                 self.execute_workflow_node(node, &mut scatter_context, &scatter_run_id, stdlib)?;
             }
-            
+
             // Collect scatter results
             scatter_results.push(scatter_context.bindings.clone());
-            
+
             // Merge task results
             for (name, result) in scatter_context.task_results {
                 let indexed_name = format!("{}_{}", name, index);
                 context.task_results.insert(indexed_name, result);
             }
         }
-        
+
         // TODO: Aggregate scatter outputs properly
         // For now, we just take the last result
         if let Some(last_result) = scatter_results.last() {
             for binding in last_result.iter() {
-                if !binding.name().contains('.') { // Don't override qualified task outputs
-                    context.bindings = context.bindings.bind(binding.name().to_string(), binding.value().clone(), None);
+                if !binding.name().contains('.') {
+                    // Don't override qualified task outputs
+                    context.bindings = context.bindings.bind(
+                        binding.name().to_string(),
+                        binding.value().clone(),
+                        None,
+                    );
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Execute a conditional block
     fn execute_conditional(
         &self,
@@ -393,13 +426,17 @@ impl WorkflowEngine {
         stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate condition
-        let condition_value = conditional.expr.eval(&context.bindings, stdlib)
-            .map_err(|e| RuntimeError::run_failed(
-                "Failed to evaluate conditional condition".to_string(),
-                e,
-                Some(conditional.expr.pos().clone()),
-            ))?;
-        
+        let condition_value = conditional
+            .expr
+            .eval(&context.bindings, stdlib)
+            .map_err(|e| {
+                RuntimeError::run_failed(
+                    "Failed to evaluate conditional condition".to_string(),
+                    e,
+                    Some(conditional.expr.pos().clone()),
+                )
+            })?;
+
         // Check if condition is true
         let should_execute = match condition_value {
             Value::Boolean { value, .. } => value,
@@ -413,17 +450,17 @@ impl WorkflowEngine {
                 });
             }
         };
-        
+
         if should_execute {
             // Execute conditional body
             for node in &conditional.body {
                 self.execute_workflow_node(node, context, run_id, stdlib)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Collect workflow outputs
     fn collect_workflow_outputs(
         &self,
@@ -432,48 +469,65 @@ impl WorkflowEngine {
         stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<Bindings<Value>> {
         let mut outputs = Bindings::new();
-        
+
         if let Some(ref workflow_outputs) = workflow.outputs {
             for output_decl in workflow_outputs {
                 if let Some(output_expr) = &output_decl.expr {
-                    let output_value = output_expr.eval(&context.bindings, &stdlib)
-                        .map_err(|e| RuntimeError::run_failed(
-                            format!("Failed to evaluate workflow output: {}", output_decl.name),
-                            e,
-                            Some(output_expr.pos().clone()),
-                        ))?;
+                    let output_value =
+                        output_expr.eval(&context.bindings, &stdlib).map_err(|e| {
+                            RuntimeError::run_failed(
+                                format!("Failed to evaluate workflow output: {}", output_decl.name),
+                                e,
+                                Some(output_expr.pos().clone()),
+                            )
+                        })?;
                     outputs = outputs.bind(output_decl.name.clone(), output_value, None);
                 } else {
                     return Err(RuntimeError::WorkflowValidationError {
-                        message: format!("Workflow output missing expression: {}", output_decl.name),
+                        message: format!(
+                            "Workflow output missing expression: {}",
+                            output_decl.name
+                        ),
                         pos: output_decl.pos.clone(),
                     });
                 }
             }
         }
-        
+
         Ok(outputs)
     }
-    
+
     /// Get workflow input requirements
     pub fn get_workflow_inputs(&self, workflow: &Workflow) -> Vec<(String, Type, bool)> {
-        workflow.inputs
+        workflow
+            .inputs
             .as_ref()
-            .map(|inputs| inputs.iter().map(|decl| {
-                let required = decl.expr.is_none();
-                (decl.name.clone(), decl.decl_type.clone(), required)
-            }).collect())
+            .map(|inputs| {
+                inputs
+                    .iter()
+                    .map(|decl| {
+                        let required = decl.expr.is_none();
+                        (decl.name.clone(), decl.decl_type.clone(), required)
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
-    
+
     /// Get workflow output types
     pub fn get_workflow_outputs(&self, workflow: &Workflow) -> Vec<(String, Type)> {
-        workflow.outputs
+        workflow
+            .outputs
             .as_ref()
-            .map(|outputs| outputs.iter().map(|decl| (decl.name.clone(), decl.decl_type.clone())).collect())
+            .map(|outputs| {
+                outputs
+                    .iter()
+                    .map(|decl| (decl.name.clone(), decl.decl_type.clone()))
+                    .collect()
+            })
             .unwrap_or_default()
     }
-    
+
     /// Validate a workflow before execution
     pub fn validate_workflow(&self, workflow: &Workflow) -> RuntimeResult<()> {
         // Check that workflow has inputs and outputs
@@ -485,24 +539,27 @@ impl WorkflowEngine {
                 pos: workflow.pos.clone(),
             });
         }
-        
+
         // Validate that all outputs have expressions
         if let Some(outputs) = &workflow.outputs {
             for output_decl in outputs {
                 if output_decl.expr.is_none() {
                     return Err(RuntimeError::WorkflowValidationError {
-                        message: format!("Workflow output missing expression: {}", output_decl.name),
+                        message: format!(
+                            "Workflow output missing expression: {}",
+                            output_decl.name
+                        ),
                         pos: output_decl.pos.clone(),
                     });
                 }
             }
         }
-        
+
         // TODO: Add more sophisticated validation
         // - Check that all referenced tasks exist
         // - Validate data flow between tasks
         // - Check for circular dependencies
-        
+
         Ok(())
     }
 }
@@ -525,43 +582,48 @@ pub struct WorkflowExecutionStats {
 /// Utilities for workflow execution
 pub mod utils {
     use super::*;
-    
+
     /// Create a simple workflow execution report
     pub fn create_execution_report(result: &WorkflowResult) -> String {
         let mut report = String::new();
-        
+
         report.push_str(&format!("Workflow Execution Report\n"));
         report.push_str(&format!("========================\n"));
         report.push_str(&format!("Duration: {:?}\n", result.duration));
         report.push_str(&format!("Tasks executed: {}\n", result.task_results.len()));
         report.push_str(&format!("Outputs: {}\n", result.outputs.len()));
         report.push_str(&format!("Work directory: {}\n", result.work_dir.display()));
-        
+
         if !result.task_results.is_empty() {
             report.push_str("\nTask Results:\n");
             for (task_name, task_result) in &result.task_results {
-                report.push_str(&format!("  {}: {:?} ({} outputs)\n", 
-                    task_name, 
+                report.push_str(&format!(
+                    "  {}: {:?} ({} outputs)\n",
+                    task_name,
                     task_result.duration,
                     task_result.outputs.len()
                 ));
             }
         }
-        
+
         if !result.outputs.is_empty() {
             report.push_str("\nOutputs:\n");
             for binding in result.outputs.iter() {
-                report.push_str(&format!("  {}: {:?}\n", binding.name(), binding.value().wdl_type()));
+                report.push_str(&format!(
+                    "  {}: {:?}\n",
+                    binding.name(),
+                    binding.value().wdl_type()
+                ));
             }
         }
-        
+
         report
     }
-    
+
     /// Extract file outputs from workflow result
     pub fn extract_file_outputs(result: &WorkflowResult) -> Vec<(String, PathBuf)> {
         let mut files = Vec::new();
-        
+
         for binding in result.outputs.iter() {
             let name = binding.name();
             let value = binding.value();
@@ -575,7 +637,7 @@ pub mod utils {
                 }
             }
         }
-        
+
         files
     }
 }
@@ -589,7 +651,7 @@ mod tests {
     use crate::tree::*;
     use crate::expr::*;
     use tempfile::tempdir;
-    
+
     fn create_simple_workflow() -> Workflow {
         Workflow {
             pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10),
@@ -642,89 +704,89 @@ mod tests {
             meta: None,
         }
     }
-    
+
     #[test]
     fn test_workflow_engine_creation() {
         let config = Config::default();
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
-        
+
         let engine = WorkflowEngine::new(config, workflow_dir);
         assert_eq!(engine.config.max_concurrent_tasks, 1);
     }
-    
+
     #[test]
     fn test_workflow_input_validation() {
         let config = Config::default();
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
         let engine = WorkflowEngine::new(config, workflow_dir);
-        
+
         let workflow = create_simple_workflow();
-        
+
         // Valid inputs
         let mut inputs = Env::Bindings::new();
         inputs.insert("message".to_string(), Value::String("Hello".to_string()));
         assert!(engine.validate_workflow_inputs(&workflow, &inputs).is_ok());
-        
+
         // Missing required input
         let empty_inputs = Env::Bindings::new();
         let result = engine.validate_workflow_inputs(&workflow, &empty_inputs);
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_get_workflow_inputs() {
         let config = Config::default();
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
         let engine = WorkflowEngine::new(config, workflow_dir);
-        
+
         let workflow = create_simple_workflow();
         let inputs = engine.get_workflow_inputs(&workflow);
-        
+
         assert_eq!(inputs.len(), 1);
         assert_eq!(inputs[0].0, "message");
         assert_eq!(inputs[0].1, Type::String);
         assert!(inputs[0].2); // Required
     }
-    
+
     #[test]
     fn test_get_workflow_outputs() {
         let config = Config::default();
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
         let engine = WorkflowEngine::new(config, workflow_dir);
-        
+
         let workflow = create_simple_workflow();
         let outputs = engine.get_workflow_outputs(&workflow);
-        
+
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].0, "result");
         assert_eq!(outputs[0].1, Type::String);
     }
-    
+
     #[test]
     fn test_workflow_validation() {
         let config = Config::default();
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
         let engine = WorkflowEngine::new(config, workflow_dir);
-        
+
         let workflow = create_simple_workflow();
         assert!(engine.validate_workflow(&workflow).is_ok());
-        
+
         // Test workflow with missing output expression
         let mut invalid_workflow = workflow.clone();
         invalid_workflow.outputs[0].expr = None;
         let result = engine.validate_workflow(&invalid_workflow);
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_execution_report_creation() {
         use super::utils::create_execution_report;
-        
+
         let temp_dir = tempdir().unwrap();
         let result = WorkflowResult {
             outputs: {
@@ -736,17 +798,17 @@ mod tests {
             task_results: HashMap::new(),
             work_dir: temp_dir.path().to_path_buf(),
         };
-        
+
         let report = create_execution_report(&result);
         assert!(report.contains("Workflow Execution Report"));
         assert!(report.contains("Duration: 10s"));
         assert!(report.contains("Outputs: 1"));
     }
-    
+
     #[test]
     fn test_extract_file_outputs() {
         use super::utils::extract_file_outputs;
-        
+
         let temp_dir = tempdir().unwrap();
         let result = WorkflowResult {
             outputs: {
@@ -762,7 +824,7 @@ mod tests {
             task_results: HashMap::new(),
             work_dir: temp_dir.path().to_path_buf(),
         };
-        
+
         let files = extract_file_outputs(&result);
         assert_eq!(files.len(), 3);
         assert_eq!(files[0].0, "output_file");

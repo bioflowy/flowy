@@ -1,16 +1,18 @@
 //! Binary and unary operators for WDL standard library
 
+use super::Function;
 use crate::error::WdlError;
 use crate::types::Type;
 use crate::value::Value;
-use super::Function;
 
 /// Addition operator (+)
 pub struct AddOperator;
 
 impl Function for AddOperator {
-    fn name(&self) -> &str { "_add" }
-    
+    fn name(&self) -> &str {
+        "_add"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -19,7 +21,7 @@ impl Function for AddOperator {
                 actual: args.len(),
             });
         }
-        
+
         match (&args[0], &args[1]) {
             (Type::Int { .. }, Type::Int { .. }) => Ok(Type::int(false)),
             (Type::Float { .. }, _) | (_, Type::Float { .. }) => Ok(Type::float(false)),
@@ -29,20 +31,20 @@ impl Function for AddOperator {
             }),
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::int(a + b))
-            }
+            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => Ok(Value::int(a + b)),
             (Value::String { value: a, .. }, b) => {
                 let b_str = match b {
                     Value::String { value, .. } => value.clone(),
                     Value::Int { value, .. } => value.to_string(),
                     Value::Float { value, .. } => format!("{:.6}", value),
-                    _ => return Err(WdlError::RuntimeError {
-                        message: format!("Cannot concatenate String with {:?}", b),
-                    }),
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: format!("Cannot concatenate String with {:?}", b),
+                        })
+                    }
                 };
                 Ok(Value::string(format!("{}{}", a, b_str)))
             }
@@ -50,18 +52,24 @@ impl Function for AddOperator {
                 let a_str = match a {
                     Value::Int { value, .. } => value.to_string(),
                     Value::Float { value, .. } => format!("{:.6}", value),
-                    _ => return Err(WdlError::RuntimeError {
-                        message: format!("Cannot concatenate {:?} with String", a),
-                    }),
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: format!("Cannot concatenate {:?} with String", a),
+                        })
+                    }
                 };
                 Ok(Value::string(format!("{}{}", a_str, b)))
             }
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot add non-numeric values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot add non-numeric values"),
                     })?;
@@ -75,8 +83,10 @@ impl Function for AddOperator {
 pub struct SubtractOperator;
 
 impl Function for SubtractOperator {
-    fn name(&self) -> &str { "_sub" }
-    
+    fn name(&self) -> &str {
+        "_sub"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -85,7 +95,7 @@ impl Function for SubtractOperator {
                 actual: args.len(),
             });
         }
-        
+
         match (&args[0], &args[1]) {
             (Type::Int { .. }, Type::Int { .. }) => Ok(Type::int(false)),
             (Type::Float { .. }, _) | (_, Type::Float { .. }) => Ok(Type::float(false)),
@@ -94,18 +104,20 @@ impl Function for SubtractOperator {
             }),
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::int(a - b))
-            }
+            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => Ok(Value::int(a - b)),
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot subtract non-numeric values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot subtract non-numeric values"),
                     })?;
@@ -119,8 +131,10 @@ impl Function for SubtractOperator {
 pub struct MultiplyOperator;
 
 impl Function for MultiplyOperator {
-    fn name(&self) -> &str { "_mul" }
-    
+    fn name(&self) -> &str {
+        "_mul"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -129,7 +143,7 @@ impl Function for MultiplyOperator {
                 actual: args.len(),
             });
         }
-        
+
         match (&args[0], &args[1]) {
             (Type::Int { .. }, Type::Int { .. }) => Ok(Type::int(false)),
             (Type::Float { .. }, _) | (_, Type::Float { .. }) => Ok(Type::float(false)),
@@ -138,18 +152,20 @@ impl Function for MultiplyOperator {
             }),
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::int(a * b))
-            }
+            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => Ok(Value::int(a * b)),
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot multiply non-numeric values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot multiply non-numeric values"),
                     })?;
@@ -163,8 +179,10 @@ impl Function for MultiplyOperator {
 pub struct DivideOperator;
 
 impl Function for DivideOperator {
-    fn name(&self) -> &str { "_div" }
-    
+    fn name(&self) -> &str {
+        "_div"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -173,7 +191,7 @@ impl Function for DivideOperator {
                 actual: args.len(),
             });
         }
-        
+
         match (&args[0], &args[1]) {
             (Type::Int { .. }, Type::Int { .. }) => Ok(Type::int(false)),
             (Type::Float { .. }, _) | (_, Type::Float { .. }) => Ok(Type::float(false)),
@@ -182,7 +200,7 @@ impl Function for DivideOperator {
             }),
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
             (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
@@ -194,11 +212,15 @@ impl Function for DivideOperator {
                 Ok(Value::int(a / b))
             }
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot divide non-numeric values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot divide non-numeric values"),
                     })?;
@@ -217,8 +239,10 @@ impl Function for DivideOperator {
 pub struct RemainderOperator;
 
 impl Function for RemainderOperator {
-    fn name(&self) -> &str { "_rem" }
-    
+    fn name(&self) -> &str {
+        "_rem"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -227,16 +251,16 @@ impl Function for RemainderOperator {
                 actual: args.len(),
             });
         }
-        
+
         if !matches!(args[0], Type::Int { .. }) || !matches!(args[1], Type::Int { .. }) {
             return Err(WdlError::RuntimeError {
                 message: format!("Remainder operator requires Int arguments"),
             });
         }
-        
+
         Ok(Type::int(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
             (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
@@ -258,8 +282,10 @@ impl Function for RemainderOperator {
 pub struct EqualOperator;
 
 impl Function for EqualOperator {
-    fn name(&self) -> &str { "_eqeq" }
-    
+    fn name(&self) -> &str {
+        "_eqeq"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -270,7 +296,7 @@ impl Function for EqualOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         Ok(Value::boolean(args[0] == args[1]))
     }
@@ -280,8 +306,10 @@ impl Function for EqualOperator {
 pub struct NotEqualOperator;
 
 impl Function for NotEqualOperator {
-    fn name(&self) -> &str { "_neq" }
-    
+    fn name(&self) -> &str {
+        "_neq"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -292,7 +320,7 @@ impl Function for NotEqualOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         Ok(Value::boolean(args[0] != args[1]))
     }
@@ -302,8 +330,10 @@ impl Function for NotEqualOperator {
 pub struct LessThanOperator;
 
 impl Function for LessThanOperator {
-    fn name(&self) -> &str { "_lt" }
-    
+    fn name(&self) -> &str {
+        "_lt"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -314,21 +344,23 @@ impl Function for LessThanOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::boolean(a < b))
-            }
+            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => Ok(Value::boolean(a < b)),
             (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
                 Ok(Value::boolean(a < b))
             }
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
@@ -342,8 +374,10 @@ impl Function for LessThanOperator {
 pub struct LessThanEqualOperator;
 
 impl Function for LessThanEqualOperator {
-    fn name(&self) -> &str { "_lte" }
-    
+    fn name(&self) -> &str {
+        "_lte"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -354,7 +388,7 @@ impl Function for LessThanEqualOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
             (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
@@ -364,11 +398,15 @@ impl Function for LessThanEqualOperator {
                 Ok(Value::boolean(a <= b))
             }
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
@@ -382,8 +420,10 @@ impl Function for LessThanEqualOperator {
 pub struct GreaterThanOperator;
 
 impl Function for GreaterThanOperator {
-    fn name(&self) -> &str { "_gt" }
-    
+    fn name(&self) -> &str {
+        "_gt"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -394,21 +434,23 @@ impl Function for GreaterThanOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::boolean(a > b))
-            }
+            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => Ok(Value::boolean(a > b)),
             (Value::String { value: a, .. }, Value::String { value: b, .. }) => {
                 Ok(Value::boolean(a > b))
             }
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
@@ -422,8 +464,10 @@ impl Function for GreaterThanOperator {
 pub struct GreaterThanEqualOperator;
 
 impl Function for GreaterThanEqualOperator {
-    fn name(&self) -> &str { "_gte" }
-    
+    fn name(&self) -> &str {
+        "_gte"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -434,7 +478,7 @@ impl Function for GreaterThanEqualOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match (&args[0], &args[1]) {
             (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
@@ -444,11 +488,15 @@ impl Function for GreaterThanEqualOperator {
                 Ok(Value::boolean(a >= b))
             }
             _ => {
-                let a_float = args[0].as_float().or_else(|| args[0].as_int().map(|i| i as f64))
+                let a_float = args[0]
+                    .as_float()
+                    .or_else(|| args[0].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
-                let b_float = args[1].as_float().or_else(|| args[1].as_int().map(|i| i as f64))
+                let b_float = args[1]
+                    .as_float()
+                    .or_else(|| args[1].as_int().map(|i| i as f64))
                     .ok_or_else(|| WdlError::RuntimeError {
                         message: format!("Cannot compare non-numeric/string values"),
                     })?;
@@ -462,8 +510,10 @@ impl Function for GreaterThanEqualOperator {
 pub struct LogicalAndOperator;
 
 impl Function for LogicalAndOperator {
-    fn name(&self) -> &str { "_and" }
-    
+    fn name(&self) -> &str {
+        "_and"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -474,7 +524,7 @@ impl Function for LogicalAndOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let a_bool = args[0].as_bool().ok_or_else(|| WdlError::RuntimeError {
             message: format!("Logical AND requires Boolean arguments"),
@@ -490,8 +540,10 @@ impl Function for LogicalAndOperator {
 pub struct LogicalOrOperator;
 
 impl Function for LogicalOrOperator {
-    fn name(&self) -> &str { "_or" }
-    
+    fn name(&self) -> &str {
+        "_or"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -502,7 +554,7 @@ impl Function for LogicalOrOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let a_bool = args[0].as_bool().ok_or_else(|| WdlError::RuntimeError {
             message: format!("Logical OR requires Boolean arguments"),
@@ -518,8 +570,10 @@ impl Function for LogicalOrOperator {
 pub struct LogicalNotOperator;
 
 impl Function for LogicalNotOperator {
-    fn name(&self) -> &str { "_not" }
-    
+    fn name(&self) -> &str {
+        "_not"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -530,7 +584,7 @@ impl Function for LogicalNotOperator {
         }
         Ok(Type::boolean(false))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         let bool_val = args[0].as_bool().ok_or_else(|| WdlError::RuntimeError {
             message: format!("Logical NOT requires Boolean argument"),

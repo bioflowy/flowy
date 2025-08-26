@@ -4,8 +4,8 @@
 //! breaks the normal WDL tokenizer. We extract commands first, then
 //! tokenize the rest normally.
 
-use std::collections::HashMap;
 use crate::error::WdlError;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct CommandBlock {
@@ -26,34 +26,44 @@ pub fn preprocess_commands(source: &str) -> Result<PreprocessorResult, WdlError>
     let mut processed_source = String::new();
     let mut command_blocks = HashMap::new();
     let mut command_counter = 0;
-    
+
     // Simple regex-based approach to find command blocks
     let mut current_pos = 0;
-    
+
     while current_pos < source.len() {
         // Look for "command" keyword
         if let Some(cmd_start) = source[current_pos..].find("command") {
             let abs_cmd_start = current_pos + cmd_start;
-            
+
             // Check if this is actually the keyword (not part of another identifier)
-            let before_ok = abs_cmd_start == 0 || 
-                          !source.chars().nth(abs_cmd_start - 1).unwrap_or(' ').is_alphanumeric();
+            let before_ok = abs_cmd_start == 0
+                || !source
+                    .chars()
+                    .nth(abs_cmd_start - 1)
+                    .unwrap_or(' ')
+                    .is_alphanumeric();
             let after_idx = abs_cmd_start + 7; // "command".len()
-            let after_ok = after_idx >= source.len() || 
-                          !source.chars().nth(after_idx).unwrap_or(' ').is_alphanumeric();
-            
+            let after_ok = after_idx >= source.len()
+                || !source
+                    .chars()
+                    .nth(after_idx)
+                    .unwrap_or(' ')
+                    .is_alphanumeric();
+
             if before_ok && after_ok {
                 // Add everything up to "command"
                 processed_source.push_str(&source[current_pos..abs_cmd_start]);
                 processed_source.push_str("command");
-                
+
                 // Skip whitespace after "command"
                 let mut scan_pos = after_idx;
-                while scan_pos < source.len() && source.chars().nth(scan_pos).unwrap().is_whitespace() {
+                while scan_pos < source.len()
+                    && source.chars().nth(scan_pos).unwrap().is_whitespace()
+                {
                     processed_source.push(source.chars().nth(scan_pos).unwrap());
                     scan_pos += 1;
                 }
-                
+
                 // Check for { or <<<
                 if scan_pos < source.len() {
                     let remaining = &source[scan_pos..];
@@ -67,13 +77,13 @@ pub fn preprocess_commands(source: &str) -> Result<PreprocessorResult, WdlError>
                                 start_pos: scan_pos,
                                 end_pos: scan_pos + end_pos + 1,
                             };
-                            
+
                             let placeholder_id = format!("__COMMAND_BLOCK_{}__", command_counter);
                             command_counter += 1;
-                            
+
                             processed_source.push_str(&placeholder_id);
                             command_blocks.insert(placeholder_id, block);
-                            
+
                             current_pos = scan_pos + end_pos + 1; // Skip past }
                         } else {
                             return Err(WdlError::RuntimeError {
@@ -90,13 +100,13 @@ pub fn preprocess_commands(source: &str) -> Result<PreprocessorResult, WdlError>
                                 start_pos: scan_pos,
                                 end_pos: scan_pos + end_pos + 3,
                             };
-                            
+
                             let placeholder_id = format!("__COMMAND_BLOCK_{}__", command_counter);
                             command_counter += 1;
-                            
+
                             processed_source.push_str(&placeholder_id);
                             command_blocks.insert(placeholder_id, block);
-                            
+
                             current_pos = scan_pos + end_pos + 3; // Skip past >>>
                         } else {
                             return Err(WdlError::RuntimeError {
@@ -123,7 +133,7 @@ pub fn preprocess_commands(source: &str) -> Result<PreprocessorResult, WdlError>
             break;
         }
     }
-    
+
     Ok(PreprocessorResult {
         processed_source,
         command_blocks,
@@ -133,7 +143,7 @@ pub fn preprocess_commands(source: &str) -> Result<PreprocessorResult, WdlError>
 /// Find the matching closing brace, handling nesting
 fn find_matching_brace(source: &str) -> Option<usize> {
     let mut depth = 0;
-    
+
     for (i, ch) in source.char_indices() {
         match ch {
             '{' => depth += 1,
@@ -146,15 +156,14 @@ fn find_matching_brace(source: &str) -> Option<usize> {
             _ => {}
         }
     }
-    
+
     None
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_brace_command_extraction() {
         let source = r#"
@@ -164,15 +173,15 @@ mod tests {
             }
         }
         "#;
-        
+
         let result = preprocess_commands(source).unwrap();
         assert!(!result.command_blocks.is_empty());
-        
+
         let block = result.command_blocks.values().next().unwrap();
         assert!(!block.is_heredoc);
         assert!(block.content.contains("echo $(( ~{x} + ~{y} ))"));
     }
-    
+
     #[test]
     fn test_heredoc_command_extraction() {
         let source = r#"
@@ -182,10 +191,10 @@ mod tests {
             >>>
         }
         "#;
-        
+
         let result = preprocess_commands(source).unwrap();
         assert!(!result.command_blocks.is_empty());
-        
+
         let block = result.command_blocks.values().next().unwrap();
         assert!(block.is_heredoc);
         assert!(block.content.contains("echo $(( ~{x} + ~{y} ))"));

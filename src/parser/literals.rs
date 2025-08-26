@@ -1,16 +1,16 @@
 //! Token-based literal parsing for WDL
 
+use super::expressions::parse_expression;
+use super::parser_utils::ParseResult;
 use super::token_stream::TokenStream;
 use super::tokens::Token;
-use super::parser_utils::ParseResult;
-use super::expressions::parse_expression;
-use crate::expr::{Expression, StringPart, ExpressionBase};
 use crate::error::WdlError;
+use crate::expr::{Expression, ExpressionBase, StringPart};
 
 /// Parse an integer literal
 pub fn parse_int_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
-    
+
     match stream.peek_token() {
         Some(Token::IntLiteral(n)) => {
             let value = n;
@@ -22,14 +22,14 @@ pub fn parse_int_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
             "Expected integer literal".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
 /// Parse a float literal
 pub fn parse_float_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
-    
+
     match stream.peek_token() {
         Some(Token::FloatLiteral(n)) => {
             let value = n;
@@ -41,14 +41,14 @@ pub fn parse_float_literal(stream: &mut TokenStream) -> ParseResult<Expression> 
             "Expected float literal".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
 /// Parse a boolean literal
 pub fn parse_bool_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
-    
+
     match stream.peek_token() {
         Some(Token::BoolLiteral(b)) => {
             let value = b;
@@ -65,14 +65,14 @@ pub fn parse_bool_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
             "Expected boolean literal".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
 /// Parse None literal
 pub fn parse_none_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
-    
+
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "None" => {
             stream.next();
@@ -83,7 +83,7 @@ pub fn parse_none_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
             "Expected None literal".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
@@ -92,12 +92,12 @@ pub fn parse_none_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
 /// as the lexer has already handled escape sequences and basic structure
 pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
-    
+
     match stream.peek_token() {
         Some(Token::StringLiteral(s)) => {
             let content = s.clone();
             stream.next();
-            
+
             // For now, treat as simple string without interpolation
             // TODO: Parse string interpolation if needed
             let parts = vec![StringPart::Text(content)];
@@ -108,7 +108,7 @@ pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression>
             "Expected string literal".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
@@ -147,30 +147,30 @@ pub fn parse_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
 pub fn parse_array_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
     stream.expect(Token::LeftBracket)?;
-    
+
     let mut elements = Vec::new();
-    
+
     // Check for empty array
     if stream.peek_token() == Some(Token::RightBracket) {
         stream.next();
         return Ok(Expression::array(pos, elements));
     }
-    
+
     // Parse first element
     elements.push(parse_expression(stream)?);
-    
+
     // Parse remaining elements
     while stream.peek_token() == Some(Token::Comma) {
         stream.next(); // consume comma
-        
+
         // Allow trailing comma
         if stream.peek_token() == Some(Token::RightBracket) {
             break;
         }
-        
+
         elements.push(parse_expression(stream)?);
     }
-    
+
     stream.expect(Token::RightBracket)?;
     Ok(Expression::array(pos, elements))
 }
@@ -179,36 +179,36 @@ pub fn parse_array_literal(stream: &mut TokenStream) -> ParseResult<Expression> 
 pub fn parse_map_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
     stream.expect(Token::LeftBrace)?;
-    
+
     let mut pairs = Vec::new();
-    
+
     // Check for empty map
     if stream.peek_token() == Some(Token::RightBrace) {
         stream.next();
         return Ok(Expression::map(pos, pairs));
     }
-    
+
     // Parse first pair
     let key = parse_expression(stream)?;
     stream.expect(Token::Colon)?;
     let value = parse_expression(stream)?;
     pairs.push((key, value));
-    
+
     // Parse remaining pairs
     while stream.peek_token() == Some(Token::Comma) {
         stream.next(); // consume comma
-        
+
         // Allow trailing comma
         if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
-        
+
         let key = parse_expression(stream)?;
         stream.expect(Token::Colon)?;
         let value = parse_expression(stream)?;
         pairs.push((key, value));
     }
-    
+
     stream.expect(Token::RightBrace)?;
     Ok(Expression::map(pos, pairs))
 }
@@ -217,27 +217,26 @@ pub fn parse_map_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
 pub fn parse_pair_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
     stream.expect(Token::LeftParen)?;
-    
+
     let left = parse_expression(stream)?;
     stream.expect(Token::Comma)?;
     let right = parse_expression(stream)?;
-    
+
     stream.expect(Token::RightParen)?;
     Ok(Expression::pair(pos, left, right))
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parser::token_stream::TokenStream;
-    
+
     #[test]
     fn test_parse_int_literal() {
         let mut stream = TokenStream::new("42", "1.0").unwrap();
         let result = parse_int_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         let expr = result.unwrap();
         if let Some(value) = expr.literal() {
             assert_eq!(value.as_int(), Some(42));
@@ -245,13 +244,13 @@ mod tests {
             panic!("Expected literal expression");
         }
     }
-    
+
     #[test]
     fn test_parse_float_literal() {
         let mut stream = TokenStream::new("3.14", "1.0").unwrap();
         let result = parse_float_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         let expr = result.unwrap();
         if let Some(value) = expr.literal() {
             assert_eq!(value.as_float(), Some(3.14));
@@ -259,13 +258,13 @@ mod tests {
             panic!("Expected literal expression");
         }
     }
-    
+
     #[test]
     fn test_parse_bool_literal() {
         let mut stream = TokenStream::new("true", "1.0").unwrap();
         let result = parse_bool_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         let expr = result.unwrap();
         if let Some(value) = expr.literal() {
             assert_eq!(value.as_bool(), Some(true));
@@ -273,13 +272,13 @@ mod tests {
             panic!("Expected literal expression");
         }
     }
-    
+
     #[test]
     fn test_parse_array_literal() {
         let mut stream = TokenStream::new("[1, 2, 3]", "1.0").unwrap();
         let result = parse_array_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         let expr = result.unwrap();
         if let Expression::Array { items, .. } = expr {
             assert_eq!(items.len(), 3);
@@ -287,13 +286,13 @@ mod tests {
             panic!("Expected array expression");
         }
     }
-    
+
     #[test]
     fn test_parse_empty_array() {
         let mut stream = TokenStream::new("[]", "1.0").unwrap();
         let result = parse_array_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         let expr = result.unwrap();
         if let Expression::Array { items, .. } = expr {
             assert_eq!(items.len(), 0);
@@ -301,24 +300,24 @@ mod tests {
             panic!("Expected array expression");
         }
     }
-    
+
     #[test]
     fn test_parse_literal_auto() {
         // Test integer
         let mut stream = TokenStream::new("42", "1.0").unwrap();
         let result = parse_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         // Test float
         let mut stream = TokenStream::new("3.14", "1.0").unwrap();
         let result = parse_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         // Test boolean
         let mut stream = TokenStream::new("true", "1.0").unwrap();
         let result = parse_literal(&mut stream);
         assert!(result.is_ok());
-        
+
         // Test string
         let mut stream = TokenStream::new("'hello'", "1.0").unwrap();
         let result = parse_literal(&mut stream);

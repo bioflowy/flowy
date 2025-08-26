@@ -1,14 +1,14 @@
 //! Token-based task and workflow parsing for WDL
 
+use super::declarations::{parse_input_section, parse_output_section};
+use super::expressions::parse_expression;
+use super::parser_utils::ParseResult;
+use super::statements::parse_workflow_element;
 use super::token_stream::TokenStream;
 use super::tokens::Token;
-use super::parser_utils::ParseResult;
-use super::declarations::{parse_input_section, parse_output_section};
-use super::statements::parse_workflow_element;
-use super::expressions::parse_expression;
-use crate::tree::{Task, Workflow, WorkflowElement, Declaration};
-use crate::expr::{Expression, ExpressionBase};
 use crate::error::WdlError;
+use crate::expr::{Expression, ExpressionBase};
+use crate::tree::{Declaration, Task, Workflow, WorkflowElement};
 use std::collections::HashMap;
 
 /// Parse metadata section: meta { key: value, ... }
@@ -29,22 +29,22 @@ fn parse_meta_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, s
             ));
         }
     };
-    
+
     stream.expect(Token::LeftBrace)?;
-    
+
     let mut meta = HashMap::new();
-    
+
     // Parse key-value pairs
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
-        
+
         if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
-        
+
         // Parse key (identifier or keyword)
         let key = match stream.peek_token() {
             Some(Token::Identifier(k)) | Some(Token::Keyword(k)) => {
@@ -61,30 +61,30 @@ fn parse_meta_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, s
                 ));
             }
         };
-        
+
         stream.expect(Token::Colon)?;
-        
+
         // Parse value - for now, parse as expression and convert to JSON
         // In a real implementation, we'd parse JSON-like values directly
         let value_expr = parse_expression(stream)?;
-        
+
         // Convert expression to JSON value (simplified)
         let json_value = expression_to_json(&value_expr);
         meta.insert(key, json_value);
-        
+
         // Optional comma
         if stream.peek_token() == Some(Token::Comma) {
             stream.next();
         }
-        
+
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
-    
+
     stream.expect(Token::RightBrace)?;
-    
+
     Ok(meta)
 }
 
@@ -104,22 +104,22 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
             ));
         }
     }
-    
+
     stream.expect(Token::LeftBrace)?;
-    
+
     let mut runtime = HashMap::new();
-    
+
     // Parse key-value pairs
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
-        
+
         if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
-        
+
         // Parse key
         let key = match stream.peek_token() {
             Some(Token::Identifier(k)) | Some(Token::Keyword(k)) => {
@@ -136,26 +136,26 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
                 ));
             }
         };
-        
+
         stream.expect(Token::Colon)?;
-        
+
         // Parse value expression
         let value = parse_expression(stream)?;
         runtime.insert(key, value);
-        
+
         // Optional comma or newline
         if stream.peek_token() == Some(Token::Comma) {
             stream.next();
         }
-        
+
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
-    
+
     stream.expect(Token::RightBrace)?;
-    
+
     Ok(runtime)
 }
 
@@ -163,7 +163,7 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
 /// This method handles both regular commands and preprocessed placeholders
 fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
-    
+
     // Expect "command" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "command" => {
@@ -178,37 +178,40 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
             ));
         }
     }
-    
+
     // Check for command placeholder (from preprocessing) or regular command
     match stream.peek_token() {
         Some(Token::CommandPlaceholder(placeholder_id)) => {
             // This is a preprocessed command block
             let placeholder = placeholder_id.clone();
             stream.next();
-            
+
             // For now, just treat the placeholder as the command content
             // In a full implementation, we'd look up the actual command content
             // from the preprocessor result and parse it properly
-            Ok(Expression::string_literal(pos, format!("PLACEHOLDER: {}", placeholder)))
+            Ok(Expression::string_literal(
+                pos,
+                format!("PLACEHOLDER: {}", placeholder),
+            ))
         }
         Some(Token::LeftBrace) => {
             stream.next();
-            
+
             // Use special command-mode parsing
             let command_text = parse_command_block_with_mode(stream)?;
-            
+
             stream.expect(Token::RightBrace)?;
-            
+
             Ok(Expression::string_literal(pos, command_text))
         }
         Some(Token::HeredocStart) => {
             stream.next();
-            
+
             // Use special command-mode parsing for heredoc
             let command_text = parse_heredoc_with_mode(stream)?;
-            
+
             stream.expect(Token::HeredocEnd)?;
-            
+
             Ok(Expression::string_literal(pos, command_text))
         }
         _ => {
@@ -226,7 +229,7 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
 fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut depth = 1;
-    
+
     while !stream.is_eof() && depth > 0 {
         match stream.peek_token() {
             Some(Token::LeftBrace) => {
@@ -281,14 +284,14 @@ fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String
             None => break,
         }
     }
-    
+
     Ok(content)
 }
 
 /// Parse heredoc content using command-mode tokenization
 fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
-    
+
     while !stream.is_eof() {
         match stream.peek_token() {
             Some(Token::HeredocEnd) => {
@@ -337,7 +340,7 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
             }
         }
     }
-    
+
     Ok(content)
 }
 
@@ -346,7 +349,7 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
 fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut buffer = String::new();
-    
+
     while !stream.is_eof() {
         match stream.peek_token() {
             Some(Token::HeredocEnd) => {
@@ -357,13 +360,13 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
                 // Start of placeholder - for now just record it
                 content.push_str(&buffer);
                 buffer.clear();
-                
+
                 let placeholder_type = stream.peek_token().unwrap().clone();
                 stream.next();
-                
+
                 // Parse placeholder content until }
                 let placeholder_text = parse_placeholder_content(stream)?;
-                
+
                 // For now, just include placeholder as literal text
                 match placeholder_type {
                     Token::TildeBrace => content.push_str(&format!("~{{{}}}", placeholder_text)),
@@ -395,7 +398,7 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
             }
         }
     }
-    
+
     content.push_str(&buffer);
     Ok(content)
 }
@@ -404,7 +407,7 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
 fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut depth = 1;
-    
+
     while !stream.is_eof() && depth > 0 {
         match stream.peek_token() {
             Some(Token::LeftBrace) | Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
@@ -426,7 +429,7 @@ fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
             None => break,
         }
     }
-    
+
     Ok(content)
 }
 
@@ -435,7 +438,7 @@ fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
 fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut depth = 1;
-    
+
     while !stream.is_eof() && depth > 0 {
         match stream.peek_token() {
             Some(Token::LeftBrace) => {
@@ -456,10 +459,10 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
                 // Start of placeholder
                 let placeholder_type = stream.peek_token().unwrap().clone();
                 stream.next();
-                
+
                 // Parse placeholder content until }
                 let placeholder_text = parse_placeholder_content(stream)?;
-                
+
                 // For now, just include placeholder as literal text
                 match placeholder_type {
                     Token::TildeBrace => content.push_str(&format!("~{{{}}}", placeholder_text)),
@@ -483,7 +486,7 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
             None => break,
         }
     }
-    
+
     Ok(content)
 }
 
@@ -509,7 +512,8 @@ fn expression_to_json(expr: &Expression) -> serde_json::Value {
         match expr {
             Expression::String { parts, .. } => {
                 // Join string parts
-                let s: String = parts.iter()
+                let s: String = parts
+                    .iter()
                     .filter_map(|part| {
                         if let crate::expr::StringPart::Text(text) = part {
                             Some(text.clone())
@@ -528,7 +532,7 @@ fn expression_to_json(expr: &Expression) -> serde_json::Value {
 /// Parse a task definition
 pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
     let pos = stream.current_position();
-    
+
     // Expect "task" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "task" => {
@@ -543,7 +547,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
             ));
         }
     }
-    
+
     // Parse task name
     let name = match stream.peek_token() {
         Some(Token::Identifier(n)) => {
@@ -560,9 +564,9 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
             ));
         }
     };
-    
+
     stream.expect(Token::LeftBrace)?;
-    
+
     // Parse task sections
     let mut inputs: Option<Vec<Declaration>> = None;
     let mut postinputs: Vec<Declaration> = Vec::new();
@@ -571,18 +575,18 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
     let mut runtime: HashMap<String, Expression> = HashMap::new();
     let mut meta: HashMap<String, serde_json::Value> = HashMap::new();
     let mut parameter_meta: HashMap<String, serde_json::Value> = HashMap::new();
-    
+
     // Parse task body
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
-        
+
         if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
-        
+
         match stream.peek_token() {
             Some(Token::Keyword(kw)) => {
                 match kw.as_str() {
@@ -605,8 +609,8 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
                         parameter_meta = parse_meta_section(stream)?;
                     }
                     // Type keywords indicate a declaration
-                    "String" | "Int" | "Float" | "Boolean" | "File" | "Directory" |
-                    "Array" | "Map" | "Pair" | "Object" => {
+                    "String" | "Int" | "Float" | "Boolean" | "File" | "Directory" | "Array"
+                    | "Map" | "Pair" | "Object" => {
                         let decl = super::declarations::parse_declaration(stream, "decl")?;
                         postinputs.push(decl);
                     }
@@ -635,15 +639,15 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
                 ));
             }
         }
-        
+
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
-    
+
     stream.expect(Token::RightBrace)?;
-    
+
     // Command is required
     let command = command.ok_or_else(|| {
         WdlError::syntax_error(
@@ -653,7 +657,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
             None,
         )
     })?;
-    
+
     Ok(Task::new(
         pos,
         name,
@@ -670,7 +674,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
 /// Parse a workflow definition
 pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
     let pos = stream.current_position();
-    
+
     // Expect "workflow" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "workflow" => {
@@ -685,7 +689,7 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
             ));
         }
     }
-    
+
     // Parse workflow name
     let name = match stream.peek_token() {
         Some(Token::Identifier(n)) => {
@@ -702,9 +706,9 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
             ));
         }
     };
-    
+
     stream.expect(Token::LeftBrace)?;
-    
+
     // Parse workflow sections
     let mut inputs: Option<Vec<Declaration>> = None;
     let postinputs: Vec<Declaration> = Vec::new();
@@ -712,18 +716,18 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
     let mut outputs: Option<Vec<Declaration>> = None;
     let mut meta: HashMap<String, serde_json::Value> = HashMap::new();
     let mut parameter_meta: HashMap<String, serde_json::Value> = HashMap::new();
-    
+
     // Parse workflow body
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
-        
+
         if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
-        
+
         match stream.peek_token() {
             Some(Token::Keyword(kw)) => {
                 match kw.as_str() {
@@ -760,15 +764,15 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
                 ));
             }
         }
-        
+
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
-    
+
     stream.expect(Token::RightBrace)?;
-    
+
     Ok(Workflow::new(
         pos,
         name,
@@ -785,7 +789,7 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
 mod tests {
     use super::*;
     use crate::parser::token_stream::TokenStream;
-    
+
     #[test]
     fn test_parse_simple_task() {
         let input = r#"task hello {
@@ -796,17 +800,17 @@ mod tests {
                 String message = "done"
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_task(&mut stream);
         assert!(result.is_ok());
-        
+
         let task = result.unwrap();
         assert_eq!(task.name, "hello");
         assert!(task.inputs.is_none());
         assert_eq!(task.outputs.len(), 1);
     }
-    
+
     #[test]
     fn test_parse_task_with_inputs() {
         let input = r#"task process {
@@ -821,20 +825,20 @@ mod tests {
                 File result = "output.txt"
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_task(&mut stream);
         if let Err(e) = &result {
             eprintln!("Task with inputs parse error: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         let task = result.unwrap();
         assert_eq!(task.name, "process");
         assert!(task.inputs.is_some());
         assert_eq!(task.inputs.as_ref().unwrap().len(), 2);
     }
-    
+
     #[test]
     fn test_parse_task_with_runtime() {
         let input = r#"task run {
@@ -847,18 +851,18 @@ mod tests {
                 cpu: 2
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_task(&mut stream);
         assert!(result.is_ok());
-        
+
         let task = result.unwrap();
         assert_eq!(task.runtime.len(), 3);
         assert!(task.runtime.contains_key("docker"));
         assert!(task.runtime.contains_key("memory"));
         assert!(task.runtime.contains_key("cpu"));
     }
-    
+
     #[test]
     fn test_parse_simple_workflow() {
         let input = r#"workflow my_workflow {
@@ -870,14 +874,14 @@ mod tests {
                 String result = "done"
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_workflow(&mut stream);
         if let Err(e) = &result {
             eprintln!("Workflow parse error: {:?}", e);
         }
         assert!(result.is_ok());
-        
+
         let workflow = result.unwrap();
         assert_eq!(workflow.name, "my_workflow");
         assert!(workflow.inputs.is_some());
@@ -885,7 +889,7 @@ mod tests {
         assert!(matches!(workflow.body[0], WorkflowElement::Call(_)));
         assert!(workflow.outputs.is_some());
     }
-    
+
     #[test]
     fn test_parse_workflow_with_scatter() {
         let input = r#"workflow batch_process {
@@ -899,11 +903,11 @@ mod tests {
                 Array[File] results = process.result
             }
         }"#;
-        
+
         let mut stream = TokenStream::new(input, "1.0").unwrap();
         let result = parse_workflow(&mut stream);
         assert!(result.is_ok());
-        
+
         let workflow = result.unwrap();
         assert_eq!(workflow.name, "batch_process");
         assert_eq!(workflow.body.len(), 1);

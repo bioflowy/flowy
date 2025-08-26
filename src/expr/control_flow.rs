@@ -13,7 +13,7 @@ impl Expression {
             inferred_type: None,
         }
     }
-    
+
     /// Create a new conditional expression
     pub fn if_then_else(
         pos: SourcePosition,
@@ -29,7 +29,7 @@ impl Expression {
             inferred_type: None,
         }
     }
-    
+
     /// Create a new array/map access expression
     pub fn get(pos: SourcePosition, expr: Expression, index: Expression) -> Self {
         Expression::Get {

@@ -1,16 +1,18 @@
 //! Array manipulation functions for WDL standard library
 
+use super::Function;
 use crate::error::WdlError;
 use crate::types::Type;
 use crate::value::Value;
-use super::Function;
 
 /// Length function - returns the length of arrays, strings, or maps
 pub struct LengthFunction;
 
 impl Function for LengthFunction {
-    fn name(&self) -> &str { "length" }
-    
+    fn name(&self) -> &str {
+        "length"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -19,7 +21,7 @@ impl Function for LengthFunction {
                 actual: args.len(),
             });
         }
-        
+
         match &args[0] {
             Type::Array { .. } | Type::String { .. } | Type::Map { .. } => Ok(Type::int(false)),
             _ => Err(WdlError::RuntimeError {
@@ -27,7 +29,7 @@ impl Function for LengthFunction {
             }),
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         match &args[0] {
             Value::Array { values, .. } => Ok(Value::int(values.len() as i64)),
@@ -44,8 +46,10 @@ impl Function for LengthFunction {
 pub struct SelectFirstFunction;
 
 impl Function for SelectFirstFunction {
-    fn name(&self) -> &str { "select_first" }
-    
+    fn name(&self) -> &str {
+        "select_first"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -54,7 +58,7 @@ impl Function for SelectFirstFunction {
                 actual: args.len(),
             });
         }
-        
+
         if let Type::Array { item_type, .. } = &args[0] {
             // Return the non-optional version of the item type
             Ok(item_type.clone().with_optional(false))
@@ -64,7 +68,7 @@ impl Function for SelectFirstFunction {
             })
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if let Value::Array { values, .. } = &args[0] {
             for value in values {
@@ -87,8 +91,10 @@ impl Function for SelectFirstFunction {
 pub struct SelectAllFunction;
 
 impl Function for SelectAllFunction {
-    fn name(&self) -> &str { "select_all" }
-    
+    fn name(&self) -> &str {
+        "select_all"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -97,17 +103,21 @@ impl Function for SelectAllFunction {
                 actual: args.len(),
             });
         }
-        
+
         if let Type::Array { item_type, .. } = &args[0] {
             // Return array of non-optional items
-            Ok(Type::array(item_type.clone().with_optional(false), false, true))
+            Ok(Type::array(
+                item_type.clone().with_optional(false),
+                false,
+                true,
+            ))
         } else {
             Err(WdlError::RuntimeError {
                 message: format!("select_all() expects Array argument"),
             })
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if let Value::Array { values, wdl_type } = &args[0] {
             let non_null_values: Vec<Value> = values
@@ -115,7 +125,7 @@ impl Function for SelectAllFunction {
                 .filter(|v| !matches!(v, Value::Null { .. }))
                 .cloned()
                 .collect();
-            
+
             if let Type::Array { item_type, .. } = wdl_type {
                 Ok(Value::array(
                     item_type.clone().with_optional(false),
@@ -136,8 +146,10 @@ impl Function for SelectAllFunction {
 pub struct FlattenFunction;
 
 impl Function for FlattenFunction {
-    fn name(&self) -> &str { "flatten" }
-    
+    fn name(&self) -> &str {
+        "flatten"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -146,9 +158,13 @@ impl Function for FlattenFunction {
                 actual: args.len(),
             });
         }
-        
+
         if let Type::Array { item_type, .. } = &args[0] {
-            if let Type::Array { item_type: inner_type, .. } = item_type.as_ref() {
+            if let Type::Array {
+                item_type: inner_type,
+                ..
+            } = item_type.as_ref()
+            {
                 // Array[Array[T]] -> Array[T]
                 Ok(Type::array(*inner_type.clone(), false, false))
             } else {
@@ -162,11 +178,11 @@ impl Function for FlattenFunction {
             })
         }
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if let Value::Array { values, wdl_type } = &args[0] {
             let mut flattened = Vec::new();
-            
+
             for value in values {
                 if let Value::Array { values: inner, .. } = value {
                     flattened.extend(inner.clone());
@@ -176,13 +192,17 @@ impl Function for FlattenFunction {
                     });
                 }
             }
-            
+
             if let Type::Array { item_type, .. } = wdl_type {
-                if let Type::Array { item_type: inner_type, .. } = item_type.as_ref() {
+                if let Type::Array {
+                    item_type: inner_type,
+                    ..
+                } = item_type.as_ref()
+                {
                     return Ok(Value::array(*inner_type.clone(), flattened));
                 }
             }
-            
+
             Err(WdlError::RuntimeError {
                 message: format!("flatten() type error"),
             })
@@ -198,8 +218,10 @@ impl Function for FlattenFunction {
 pub struct RangeFunction;
 
 impl Function for RangeFunction {
-    fn name(&self) -> &str { "range" }
-    
+    fn name(&self) -> &str {
+        "range"
+    }
+
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::ArgumentCountMismatch {
@@ -208,17 +230,17 @@ impl Function for RangeFunction {
                 actual: args.len(),
             });
         }
-        
+
         if !matches!(args[0], Type::Int { .. }) {
             return Err(WdlError::TypeMismatch {
                 expected: Type::int(false),
                 actual: args[0].clone(),
             });
         }
-        
+
         Ok(Type::array(Type::int(false), false, true))
     }
-    
+
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
         if let Some(n) = args[0].as_int() {
             if n < 0 {
@@ -226,7 +248,7 @@ impl Function for RangeFunction {
                     message: format!("range() expects non-negative integer"),
                 });
             }
-            
+
             let values: Vec<Value> = (0..n).map(Value::int).collect();
             Ok(Value::array(Type::int(false), values))
         } else {

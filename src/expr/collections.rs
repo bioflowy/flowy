@@ -12,7 +12,7 @@ impl Expression {
             inferred_type: None,
         }
     }
-    
+
     /// Create a new Pair expression
     pub fn pair(pos: SourcePosition, left: Expression, right: Expression) -> Self {
         Expression::Pair {
@@ -22,7 +22,7 @@ impl Expression {
             inferred_type: None,
         }
     }
-    
+
     /// Create a new Map expression
     pub fn map(pos: SourcePosition, pairs: Vec<(Expression, Expression)>) -> Self {
         Expression::Map {
@@ -31,7 +31,7 @@ impl Expression {
             inferred_type: None,
         }
     }
-    
+
     /// Create a new Struct expression
     pub fn struct_expr(pos: SourcePosition, members: Vec<(String, Expression)>) -> Self {
         Expression::Struct {

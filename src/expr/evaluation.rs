@@ -1,8 +1,8 @@
 //! Expression evaluation logic
 
-use super::{Expression, ExpressionBase, StringPart, BinaryOperator, UnaryOperator};
-use crate::error::{SourcePosition, WdlError, HasSourcePosition};
+use super::{BinaryOperator, Expression, ExpressionBase, StringPart, UnaryOperator};
 use crate::env::Bindings;
+use crate::error::{HasSourcePosition, SourcePosition, WdlError};
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
 use std::collections::HashMap;
@@ -11,12 +11,12 @@ impl ExpressionBase for Expression {
     fn source_position(&self) -> &SourcePosition {
         HasSourcePosition::source_position(self)
     }
-    
+
     fn infer_type(&mut self, type_env: &Bindings<Type>) -> Result<Type, WdlError> {
         // Delegate to the implementation in type_inference module
         Expression::infer_type(self, type_env)
     }
-    
+
     fn get_type(&self) -> Option<&Type> {
         match self {
             Expression::Boolean { inferred_type, .. } => inferred_type.as_ref(),
@@ -36,15 +36,19 @@ impl ExpressionBase for Expression {
             Expression::UnaryOp { inferred_type, .. } => inferred_type.as_ref(),
         }
     }
-    
+
     fn typecheck(&self, expected: &Type) -> Result<(), WdlError> {
         if let Some(actual) = self.get_type() {
             actual.check_coercion(expected, true)?;
         }
         Ok(())
     }
-    
-    fn eval(&self, env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+
+    fn eval(
+        &self,
+        env: &Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         match self {
             Expression::Boolean { value, .. } => Ok(Value::boolean(*value)),
             Expression::Int { value, .. } => Ok(Value::int(*value)),
@@ -64,9 +68,9 @@ impl ExpressionBase for Expression {
                             } else {
                                 // For string interpolation, extract the raw value without quotes
                                 match &val {
-                                    Value::String { value, .. } |
-                                    Value::File { value, .. } |
-                                    Value::Directory { value, .. } => {
+                                    Value::String { value, .. }
+                                    | Value::File { value, .. }
+                                    | Value::Directory { value, .. } => {
                                         result.push_str(&value);
                                     }
                                     _ => {
@@ -80,7 +84,7 @@ impl ExpressionBase for Expression {
                 Ok(Value::string(result))
             }
             Expression::Null { .. } => Ok(Value::null()),
-            
+
             Expression::Array { items, .. } => {
                 let mut values = Vec::new();
                 for item in items {
@@ -93,7 +97,7 @@ impl ExpressionBase for Expression {
                 };
                 Ok(Value::array(item_type, values))
             }
-            
+
             Expression::Pair { left, right, .. } => {
                 let left_val = left.eval(env, stdlib)?;
                 let right_val = right.eval(env, stdlib)?;
@@ -104,7 +108,7 @@ impl ExpressionBase for Expression {
                     right_val,
                 ))
             }
-            
+
             Expression::Map { pairs, .. } => {
                 let mut map_pairs = Vec::new();
                 for (k_expr, v_expr) in pairs {
@@ -112,43 +116,47 @@ impl ExpressionBase for Expression {
                     let value = v_expr.eval(env, stdlib)?;
                     map_pairs.push((key, value));
                 }
-                
+
                 let (key_type, value_type) = if let Some((k, v)) = map_pairs.first() {
                     (k.wdl_type().clone(), v.wdl_type().clone())
                 } else {
                     (Type::any(), Type::any())
                 };
-                
+
                 Ok(Value::map(key_type, value_type, map_pairs))
             }
-            
+
             Expression::Struct { members, .. } => {
                 let mut member_values = HashMap::new();
                 for (name, expr) in members {
                     member_values.insert(name.clone(), expr.eval(env, stdlib)?);
                 }
-                
+
                 let member_types: HashMap<String, Type> = member_values
                     .iter()
                     .map(|(k, v)| (k.clone(), v.wdl_type().clone()))
                     .collect();
-                
-                Ok(Value::struct_value(Type::object(member_types), member_values, None))
+
+                Ok(Value::struct_value(
+                    Type::object(member_types),
+                    member_values,
+                    None,
+                ))
             }
-            
+
             Expression::Ident { name, .. } => {
                 // First try direct resolution
                 if let Some(value) = env.resolve(name) {
                     return Ok(value.clone());
                 }
-                
+
                 // If not found and contains dot, try to resolve as member access
                 if name.contains('.') {
                     let parts: Vec<&str> = name.splitn(2, '.').collect();
                     if parts.len() == 2 {
                         let prefix = parts[0];
                         let member = parts[1];
-                        
+
                         // Try to resolve the prefix
                         if let Some(container_value) = env.resolve(prefix) {
                             match container_value {
@@ -162,17 +170,21 @@ impl ExpressionBase for Expression {
                         }
                     }
                 }
-                
+
                 Err(WdlError::validation_error(
                     HasSourcePosition::source_position(self).clone(),
                     format!("Unknown identifier: {}", name),
                 ))
             }
-            
+
             Expression::Get { expr, index, .. } => {
                 // Special case: If this is a member access like hello.message,
                 // try to resolve it as a qualified name first
-                if let Expression::Ident { name: container_name, .. } = expr.as_ref() {
+                if let Expression::Ident {
+                    name: container_name,
+                    ..
+                } = expr.as_ref()
+                {
                     // Try to extract member name from index
                     let member_name = match index.as_ref() {
                         Expression::Ident { name, .. } => Some(name.clone()),
@@ -190,7 +202,7 @@ impl ExpressionBase for Expression {
                         }
                         _ => None,
                     };
-                    
+
                     if let Some(member) = member_name {
                         let qualified_name = format!("{}.{}", container_name, member);
                         if let Some(value) = env.resolve(&qualified_name) {
@@ -201,14 +213,16 @@ impl ExpressionBase for Expression {
                 // Normal Get evaluation for arrays and maps
                 let container = expr.eval(env, stdlib)?;
                 let idx = index.eval(env, stdlib)?;
-                
+
                 match (&container, &idx) {
                     (Value::Array { values, .. }, Value::Int { value: i, .. }) => {
                         let index = *i as usize;
                         if index < values.len() {
                             Ok(values[index].clone())
                         } else {
-                            Err(WdlError::OutOfBounds { pos: HasSourcePosition::source_position(self).clone() })
+                            Err(WdlError::OutOfBounds {
+                                pos: HasSourcePosition::source_position(self).clone(),
+                            })
                         }
                     }
                     (Value::Map { pairs, .. }, Value::String { value: key, .. }) => {
@@ -240,8 +254,13 @@ impl ExpressionBase for Expression {
                     )),
                 }
             }
-            
-            Expression::IfThenElse { condition, true_expr, false_expr, .. } => {
+
+            Expression::IfThenElse {
+                condition,
+                true_expr,
+                false_expr,
+                ..
+            } => {
                 let cond_val = condition.eval(env, stdlib)?;
                 if let Some(cond_bool) = cond_val.as_bool() {
                     if cond_bool {
@@ -256,31 +275,38 @@ impl ExpressionBase for Expression {
                     ))
                 }
             }
-            
-            Expression::Apply { function_name, arguments, .. } => {
+
+            Expression::Apply {
+                function_name,
+                arguments,
+                ..
+            } => {
                 // Evaluate arguments first
                 let mut eval_args = Vec::new();
                 for arg in arguments {
                     eval_args.push(arg.eval(env, stdlib)?);
                 }
-                
+
                 // Look up function in stdlib
                 if let Some(function) = stdlib.get_function(function_name) {
                     function.eval(&eval_args).map_err(|e| {
                         // Convert WdlError to include position information
                         match e {
-                            WdlError::RuntimeError { message } => {
-                                WdlError::validation_error(
-                                    HasSourcePosition::source_position(self).clone(),
-                                    message,
-                                )
-                            }
-                            WdlError::ArgumentCountMismatch { function, expected, actual } => {
-                                WdlError::validation_error(
-                                    HasSourcePosition::source_position(self).clone(),
-                                    format!("{}() expects {} arguments, got {}", function, expected, actual),
-                                )
-                            }
+                            WdlError::RuntimeError { message } => WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                message,
+                            ),
+                            WdlError::ArgumentCountMismatch {
+                                function,
+                                expected,
+                                actual,
+                            } => WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                format!(
+                                    "{}() expects {} arguments, got {}",
+                                    function, expected, actual
+                                ),
+                            ),
                             other => other,
                         }
                     })
@@ -291,11 +317,13 @@ impl ExpressionBase for Expression {
                     ))
                 }
             }
-            
-            Expression::BinaryOp { op, left, right, .. } => {
+
+            Expression::BinaryOp {
+                op, left, right, ..
+            } => {
                 let left_val = left.eval(env, stdlib)?;
                 let right_val = right.eval(env, stdlib)?;
-                
+
                 // Convert operator to stdlib function name
                 let function_name = match op {
                     BinaryOperator::Add => "_add",
@@ -312,29 +340,28 @@ impl ExpressionBase for Expression {
                     BinaryOperator::And => "_and",
                     BinaryOperator::Or => "_or",
                 };
-                
+
                 // Call the stdlib operator function
                 if let Some(function) = stdlib.get_function(function_name) {
-                    function.eval(&[left_val, right_val]).map_err(|e| {
-                        match e {
-                            WdlError::RuntimeError { message } => {
-                                WdlError::validation_error(
-                                    HasSourcePosition::source_position(self).clone(),
-                                    message,
-                                )
-                            }
-                            other => other,
-                        }
+                    function.eval(&[left_val, right_val]).map_err(|e| match e {
+                        WdlError::RuntimeError { message } => WdlError::validation_error(
+                            HasSourcePosition::source_position(self).clone(),
+                            message,
+                        ),
+                        other => other,
                     })
                 } else {
                     // This should never happen if stdlib is properly initialized
                     Err(WdlError::validation_error(
                         HasSourcePosition::source_position(self).clone(),
-                        format!("Binary operator function '{}' not found in stdlib", function_name),
+                        format!(
+                            "Binary operator function '{}' not found in stdlib",
+                            function_name
+                        ),
                     ))
                 }
             }
-            
+
             Expression::UnaryOp { op, operand, .. } => {
                 let operand_val = operand.eval(env, stdlib)?;
                 match op {
@@ -347,24 +374,22 @@ impl ExpressionBase for Expression {
                         })?;
                         Ok(Value::boolean(!bool_val))
                     }
-                    UnaryOperator::Negate => {
-                        match operand_val {
-                            Value::Int { value, .. } => Ok(Value::int(-value)),
-                            Value::Float { value, .. } => Ok(Value::float(-value)),
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(&**operand).clone(),
-                                "Operand must be numeric".to_string(),
-                            )),
-                        }
-                    }
+                    UnaryOperator::Negate => match operand_val {
+                        Value::Int { value, .. } => Ok(Value::int(-value)),
+                        Value::Float { value, .. } => Ok(Value::float(-value)),
+                        _ => Err(WdlError::validation_error(
+                            HasSourcePosition::source_position(&**operand).clone(),
+                            "Operand must be numeric".to_string(),
+                        )),
+                    },
                 }
             }
         }
     }
-    
+
     fn children(&self) -> Vec<&Expression> {
         let mut children = Vec::new();
-        
+
         match self {
             Expression::String { parts, .. } => {
                 for part in parts {
@@ -397,7 +422,12 @@ impl ExpressionBase for Expression {
                 children.push(expr.as_ref());
                 children.push(index.as_ref());
             }
-            Expression::IfThenElse { condition, true_expr, false_expr, .. } => {
+            Expression::IfThenElse {
+                condition,
+                true_expr,
+                false_expr,
+                ..
+            } => {
                 children.push(condition.as_ref());
                 children.push(true_expr.as_ref());
                 children.push(false_expr.as_ref());
@@ -416,10 +446,10 @@ impl ExpressionBase for Expression {
             }
             _ => {} // Literals have no children
         }
-        
+
         children
     }
-    
+
     fn literal(&self) -> Option<Value> {
         match self {
             Expression::Boolean { value, .. } => Some(Value::boolean(*value)),

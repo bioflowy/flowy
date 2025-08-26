@@ -4,21 +4,21 @@
 //! workflows, declarations, calls, and control flow sections. The AST is typically
 //! constructed by the parser and used for type checking and execution.
 
-use crate::error::{SourcePosition, WdlError, SourceNode, HasSourcePosition};
 use crate::env::Bindings;
-use crate::types::Type;
+use crate::error::{HasSourcePosition, SourceNode, SourcePosition, WdlError};
 use crate::expr::Expression;
-use std::collections::HashMap;
+use crate::types::Type;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // Re-export submodules
-pub mod document;
-pub mod workflow;
-pub mod task;
-pub mod declarations;
 pub mod control_flow;
-pub mod validation;
+pub mod declarations;
+pub mod document;
+pub mod task;
 pub mod traversal;
+pub mod validation;
+pub mod workflow;
 
 #[cfg(test)]
 mod doc_tests;
@@ -30,7 +30,7 @@ mod call_tests;
 pub trait ASTNode: SourceNode {
     /// Get the children of this AST node
     fn children(&self) -> Vec<&dyn SourceNode>;
-    
+
     /// Accept a visitor for AST traversal
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError>;
 }
@@ -51,13 +51,13 @@ pub trait ASTVisitor<T> {
 pub trait WorkflowNode: ASTNode {
     /// Get the unique workflow node ID
     fn workflow_node_id(&self) -> &str;
-    
+
     /// Get the dependencies of this workflow node
     fn workflow_node_dependencies(&self) -> Vec<String>;
-    
+
     /// Get the scatter depth of this node
     fn scatter_depth(&self) -> u32;
-    
+
     /// Set the scatter depth (used during scatter analysis)
     fn set_scatter_depth(&mut self, depth: u32);
 }
@@ -85,11 +85,12 @@ impl StructTypeDef {
             imported,
         }
     }
-    
+
     /// Get a canonical type ID for this struct
     pub fn type_id(&self) -> String {
         // Create a canonical representation of member types
-        let mut member_strs: Vec<String> = self.members
+        let mut member_strs: Vec<String> = self
+            .members
             .iter()
             .map(|(name, ty)| format!("{}:{}", name, ty))
             .collect();
@@ -102,7 +103,7 @@ impl HasSourcePosition for StructTypeDef {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -112,11 +113,11 @@ impl SourceNode for StructTypeDef {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         Vec::new() // Struct definitions don't have AST children
     }
@@ -152,7 +153,7 @@ impl Declaration {
             decor: HashMap::new(),
         }
     }
-    
+
     /// Add this declaration to a type environment
     pub fn add_to_type_env(
         &self,
@@ -174,11 +175,11 @@ impl Declaration {
                 ));
             }
         }
-        
+
         // TODO: Resolve struct types
         Ok(type_env.bind(self.name.clone(), self.decl_type.clone(), None))
     }
-    
+
     /// Type check this declaration
     pub fn typecheck(&mut self, type_env: &Bindings<Type>) -> Result<(), WdlError> {
         if let Some(ref mut expr) = self.expr {
@@ -193,7 +194,7 @@ impl HasSourcePosition for Declaration {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -203,11 +204,11 @@ impl SourceNode for Declaration {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         if let Some(ref expr) = self.expr {
             vec![expr]
@@ -221,16 +222,16 @@ impl WorkflowNode for Declaration {
     fn workflow_node_id(&self) -> &str {
         &self.workflow_node_id
     }
-    
+
     fn workflow_node_dependencies(&self) -> Vec<String> {
         // TODO: Extract dependencies from expression
         Vec::new()
     }
-    
+
     fn scatter_depth(&self) -> u32 {
         self.scatter_depth
     }
-    
+
     fn set_scatter_depth(&mut self, depth: u32) {
         self.scatter_depth = depth;
     }
@@ -240,7 +241,7 @@ impl ASTNode for Declaration {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_declaration(self)
     }
@@ -286,28 +287,28 @@ impl Task {
             effective_wdl_version: "1.0".to_string(),
         }
     }
-    
+
     /// Get available inputs for this task
     pub fn available_inputs(&self) -> Bindings<&Declaration> {
         let mut bindings = Bindings::new();
-        
+
         let declarations = if let Some(ref inputs) = self.inputs {
             inputs
         } else {
             &self.postinputs
         };
-        
+
         for decl in declarations.iter().rev() {
             bindings = bindings.bind(decl.name.clone(), decl, None);
         }
-        
+
         bindings
     }
-    
+
     /// Get required inputs for this task (unbound and non-optional)
     pub fn required_inputs(&self) -> Bindings<&Declaration> {
         let mut bindings = Bindings::new();
-        
+
         let available = self.available_inputs();
         for binding in available.iter() {
             let name = binding.name();
@@ -316,7 +317,7 @@ impl Task {
                 bindings = bindings.bind(name.to_string(), *decl, None);
             }
         }
-        
+
         bindings
     }
 }
@@ -325,7 +326,7 @@ impl HasSourcePosition for Task {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -335,34 +336,34 @@ impl SourceNode for Task {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
-        
+
         if let Some(ref inputs) = self.inputs {
             for input in inputs {
                 children.push(input);
             }
         }
-        
+
         for postinput in &self.postinputs {
             children.push(postinput);
         }
-        
+
         children.push(&self.command);
-        
+
         for output in &self.outputs {
             children.push(output);
         }
-        
+
         for (_, expr) in &self.runtime {
             children.push(expr);
         }
-        
+
         children
     }
 }
@@ -371,7 +372,7 @@ impl ASTNode for Task {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_task(self)
     }
@@ -397,11 +398,8 @@ impl Call {
         inputs: HashMap<String, Expression>,
         afters: Vec<String>,
     ) -> Self {
-        let workflow_node_id = format!(
-            "call-{}",
-            alias.as_ref().unwrap_or(&task)
-        );
-        
+        let workflow_node_id = format!("call-{}", alias.as_ref().unwrap_or(&task));
+
         Self {
             pos,
             workflow_node_id,
@@ -412,7 +410,7 @@ impl Call {
             afters,
         }
     }
-    
+
     /// Get the effective name of this call (alias if present, otherwise task name)
     pub fn name(&self) -> &str {
         self.alias.as_ref().unwrap_or(&self.task)
@@ -423,7 +421,7 @@ impl HasSourcePosition for Call {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -433,11 +431,11 @@ impl SourceNode for Call {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
         for (_, expr) in &self.inputs {
@@ -451,17 +449,17 @@ impl WorkflowNode for Call {
     fn workflow_node_id(&self) -> &str {
         &self.workflow_node_id
     }
-    
+
     fn workflow_node_dependencies(&self) -> Vec<String> {
         let deps = self.afters.clone();
         // TODO: Add dependencies from input expressions
         deps
     }
-    
+
     fn scatter_depth(&self) -> u32 {
         self.scatter_depth
     }
-    
+
     fn set_scatter_depth(&mut self, depth: u32) {
         self.scatter_depth = depth;
     }
@@ -471,7 +469,7 @@ impl ASTNode for Call {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_call(self)
     }
@@ -488,13 +486,9 @@ pub struct Gather {
 }
 
 impl Gather {
-    pub fn new(
-        pos: SourcePosition,
-        section: String,
-        final_type: Type,
-    ) -> Self {
+    pub fn new(pos: SourcePosition, section: String, final_type: Type) -> Self {
         let workflow_node_id = format!("gather-{}", section);
-        
+
         Self {
             pos,
             workflow_node_id,
@@ -509,7 +503,7 @@ impl HasSourcePosition for Gather {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -519,11 +513,11 @@ impl SourceNode for Gather {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         Vec::new() // Gather nodes don't have direct children
     }
@@ -533,15 +527,15 @@ impl WorkflowNode for Gather {
     fn workflow_node_id(&self) -> &str {
         &self.workflow_node_id
     }
-    
+
     fn workflow_node_dependencies(&self) -> Vec<String> {
         vec![self.section.clone()]
     }
-    
+
     fn scatter_depth(&self) -> u32 {
         self.scatter_depth
     }
-    
+
     fn set_scatter_depth(&mut self, depth: u32) {
         self.scatter_depth = depth;
     }
@@ -551,7 +545,7 @@ impl ASTNode for Gather {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_gather(self)
     }
@@ -570,7 +564,7 @@ pub enum WorkflowElement {
 pub trait WorkflowSection: WorkflowNode {
     /// Get the body elements of this section
     fn body(&self) -> &[WorkflowElement];
-    
+
     /// Get the mutable body elements of this section
     fn body_mut(&mut self) -> &mut Vec<WorkflowElement>;
 }
@@ -594,7 +588,7 @@ impl Scatter {
         body: Vec<WorkflowElement>,
     ) -> Self {
         let workflow_node_id = format!("scatter-{}", variable);
-        
+
         Self {
             pos,
             workflow_node_id,
@@ -610,7 +604,7 @@ impl HasSourcePosition for Scatter {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -620,11 +614,11 @@ impl SourceNode for Scatter {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
         children.push(&self.expr);
@@ -637,16 +631,16 @@ impl WorkflowNode for Scatter {
     fn workflow_node_id(&self) -> &str {
         &self.workflow_node_id
     }
-    
+
     fn workflow_node_dependencies(&self) -> Vec<String> {
         // TODO: Extract dependencies from scatter expression
         Vec::new()
     }
-    
+
     fn scatter_depth(&self) -> u32 {
         self.scatter_depth
     }
-    
+
     fn set_scatter_depth(&mut self, depth: u32) {
         self.scatter_depth = depth;
         // Increment scatter depth for all body elements
@@ -665,7 +659,7 @@ impl WorkflowSection for Scatter {
     fn body(&self) -> &[WorkflowElement] {
         &self.body
     }
-    
+
     fn body_mut(&mut self) -> &mut Vec<WorkflowElement> {
         &mut self.body
     }
@@ -675,7 +669,7 @@ impl ASTNode for Scatter {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_scatter(self)
     }
@@ -692,14 +686,10 @@ pub struct Conditional {
 }
 
 impl Conditional {
-    pub fn new(
-        pos: SourcePosition,
-        expr: Expression,
-        body: Vec<WorkflowElement>,
-    ) -> Self {
+    pub fn new(pos: SourcePosition, expr: Expression, body: Vec<WorkflowElement>) -> Self {
         // Create a unique ID for this conditional
         let workflow_node_id = format!("if-{}", pos.line);
-        
+
         Self {
             pos,
             workflow_node_id,
@@ -714,7 +704,7 @@ impl HasSourcePosition for Conditional {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -724,11 +714,11 @@ impl SourceNode for Conditional {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
         children.push(&self.expr);
@@ -741,16 +731,16 @@ impl WorkflowNode for Conditional {
     fn workflow_node_id(&self) -> &str {
         &self.workflow_node_id
     }
-    
+
     fn workflow_node_dependencies(&self) -> Vec<String> {
         // TODO: Extract dependencies from conditional expression
         Vec::new()
     }
-    
+
     fn scatter_depth(&self) -> u32 {
         self.scatter_depth
     }
-    
+
     fn set_scatter_depth(&mut self, depth: u32) {
         self.scatter_depth = depth;
         // Set scatter depth for all body elements (same depth, not incremented)
@@ -769,7 +759,7 @@ impl WorkflowSection for Conditional {
     fn body(&self) -> &[WorkflowElement] {
         &self.body
     }
-    
+
     fn body_mut(&mut self) -> &mut Vec<WorkflowElement> {
         &mut self.body
     }
@@ -779,7 +769,7 @@ impl ASTNode for Conditional {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_conditional(self)
     }
@@ -830,7 +820,7 @@ impl HasSourcePosition for Workflow {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -840,32 +830,32 @@ impl SourceNode for Workflow {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
-        
+
         if let Some(ref inputs) = self.inputs {
             for input in inputs {
                 children.push(input);
             }
         }
-        
+
         for postinput in &self.postinputs {
             children.push(postinput);
         }
-        
+
         // TODO: Add body elements as children
-        
+
         if let Some(ref outputs) = self.outputs {
             for output in outputs {
                 children.push(output);
             }
         }
-        
+
         children
     }
 }
@@ -874,7 +864,7 @@ impl ASTNode for Workflow {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_workflow(self)
     }
@@ -912,7 +902,7 @@ impl Document {
         workflow: Option<Workflow>,
     ) -> Self {
         let effective_version = version.clone().unwrap_or_else(|| "draft-2".to_string());
-        
+
         Self {
             pos,
             version,
@@ -923,7 +913,7 @@ impl Document {
             effective_wdl_version: effective_version,
         }
     }
-    
+
     /// Type check this document
     pub fn typecheck(&mut self) -> Result<(), WdlError> {
         // For now, just return success - a full implementation would:
@@ -931,13 +921,13 @@ impl Document {
         // 2. Type check workflow if present
         // 3. Validate call completeness
         // 4. Check for name collisions
-        
+
         if let Some(ref mut workflow) = self.workflow {
             // Set complete_calls based on a simple heuristic
             // In a full implementation, this would check if all calls have their required inputs
             workflow.complete_calls = Some(true);
         }
-        
+
         Ok(())
     }
 }
@@ -946,7 +936,7 @@ impl HasSourcePosition for Document {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -956,26 +946,26 @@ impl SourceNode for Document {
     fn parent(&self) -> Option<&dyn SourceNode> {
         None
     }
-    
+
     fn set_parent(&mut self, _parent: Option<&dyn SourceNode>) {
         // Not implemented for simplicity
     }
-    
+
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
-        
+
         for typedef in &self.struct_typedefs {
             children.push(typedef);
         }
-        
+
         for task in &self.tasks {
             children.push(task);
         }
-        
+
         if let Some(ref workflow) = self.workflow {
             children.push(workflow);
         }
-        
+
         children
     }
 }
@@ -984,7 +974,7 @@ impl ASTNode for Document {
     fn children(&self) -> Vec<&dyn SourceNode> {
         SourceNode::children(self)
     }
-    
+
     fn accept<T>(&self, visitor: &mut dyn ASTVisitor<T>) -> Result<T, WdlError> {
         visitor.visit_document(self)
     }
@@ -994,7 +984,7 @@ impl HasSourcePosition for ImportDoc {
     fn source_position(&self) -> &SourcePosition {
         &self.pos
     }
-    
+
     fn set_source_position(&mut self, new_pos: SourcePosition) {
         self.pos = new_pos;
     }
@@ -1016,13 +1006,13 @@ mod tests {
             Some(Expression::int(pos.clone(), 42)),
             "decl",
         );
-        
+
         assert_eq!(decl.name, "x");
         assert_eq!(decl.decl_type, Type::int(false));
         assert_eq!(decl.workflow_node_id, "decl-x");
         assert!(decl.expr.is_some());
     }
-    
+
     #[test]
     fn test_task_creation() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -1037,14 +1027,14 @@ mod tests {
             HashMap::new(),
             HashMap::new(),
         );
-        
+
         assert_eq!(task.name, "my_task");
         assert_eq!(task.effective_wdl_version, "1.0");
         assert!(task.inputs.is_none());
         assert!(task.postinputs.is_empty());
         assert!(task.outputs.is_empty());
     }
-    
+
     #[test]
     fn test_call_creation() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -1055,13 +1045,13 @@ mod tests {
             HashMap::new(),
             Vec::new(),
         );
-        
+
         assert_eq!(call.task, "my_task");
         assert_eq!(call.alias, Some("alias_name".to_string()));
         assert_eq!(call.name(), "alias_name");
         assert_eq!(call.workflow_node_id, "call-alias_name");
     }
-    
+
     #[test]
     fn test_workflow_creation() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -1075,14 +1065,14 @@ mod tests {
             HashMap::new(),
             HashMap::new(),
         );
-        
+
         assert_eq!(workflow.name, "my_workflow");
         assert_eq!(workflow.effective_wdl_version, "1.0");
         assert!(workflow.inputs.is_none());
         assert!(workflow.body.is_empty());
         assert!(workflow.outputs.is_none());
     }
-    
+
     #[test]
     fn test_document_creation() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -1094,14 +1084,14 @@ mod tests {
             Vec::new(),
             None,
         );
-        
+
         assert_eq!(doc.version, Some("1.0".to_string()));
         assert_eq!(doc.effective_wdl_version, "1.0");
         assert!(doc.imports.is_empty());
         assert!(doc.tasks.is_empty());
         assert!(doc.workflow.is_none());
     }
-    
+
     #[test]
     fn test_scatter_creation() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -1111,13 +1101,13 @@ mod tests {
             Expression::ident(pos.clone(), "items".to_string()),
             Vec::new(),
         );
-        
+
         assert_eq!(scatter.variable, "item");
         assert_eq!(scatter.workflow_node_id, "scatter-item");
         assert_eq!(scatter.scatter_depth, 0);
         assert!(scatter.body.is_empty());
     }
-    
+
     #[test]
     fn test_conditional_creation() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -1126,7 +1116,7 @@ mod tests {
             Expression::boolean(pos.clone(), true),
             Vec::new(),
         );
-        
+
         assert_eq!(conditional.workflow_node_id, "if-1");
         assert_eq!(conditional.scatter_depth, 0);
         assert!(conditional.body.is_empty());

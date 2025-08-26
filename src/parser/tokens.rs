@@ -8,23 +8,23 @@ use std::fmt;
 pub enum Token {
     // Keywords (version-specific)
     Keyword(String),
-    
+
     // Identifiers
     Identifier(String),
-    
+
     // Literals
     IntLiteral(i64),
     FloatLiteral(f64),
     BoolLiteral(bool),
     StringLiteral(String), // Raw string for now, will be parsed later
-    
+
     // Operators - Arithmetic
     Plus,
     Minus,
     Star,
     Slash,
     Percent,
-    
+
     // Operators - Comparison
     Equal,
     NotEqual,
@@ -32,15 +32,15 @@ pub enum Token {
     LessEqual,
     Greater,
     GreaterEqual,
-    
+
     // Operators - Logical
     And,
     Or,
     Not,
-    
+
     // Operators - Assignment
     Assign,
-    
+
     // Delimiters
     LeftParen,
     RightParen,
@@ -48,40 +48,40 @@ pub enum Token {
     RightBracket,
     LeftBrace,
     RightBrace,
-    
+
     // Punctuation
     Comma,
     Dot,
     Colon,
     Question,
     PlusQuestion, // +?
-    
+
     // Special markers for commands and strings
-    CommandStart,      // { after command keyword
-    CommandEnd,        // } closing command block
-    HeredocStart,      // <<< for heredoc command
-    HeredocEnd,        // >>> for heredoc command  
-    DollarBrace,       // ${ placeholder start
-    TildeBrace,        // ~{ placeholder start
-    PlaceholderEnd,    // } closing placeholder
-    
+    CommandStart,   // { after command keyword
+    CommandEnd,     // } closing command block
+    HeredocStart,   // <<< for heredoc command
+    HeredocEnd,     // >>> for heredoc command
+    DollarBrace,    // ${ placeholder start
+    TildeBrace,     // ~{ placeholder start
+    PlaceholderEnd, // } closing placeholder
+
     // String quotes
     SingleQuote,
     DoubleQuote,
-    
+
     // Command content (raw text in command blocks)
     CommandText(String),
-    
+
     // Command block placeholder (from preprocessing)
     CommandPlaceholder(String),
-    
+
     // Whitespace (preserved in certain contexts)
     Whitespace(String),
     Newline,
-    
+
     // Comments (preserved for documentation)
     Comment(String),
-    
+
     // End of file
     Eof,
 }
@@ -91,12 +91,12 @@ impl Token {
     pub fn is_keyword(&self) -> bool {
         matches!(self, Token::Keyword(_))
     }
-    
+
     /// Check if this token is an identifier
     pub fn is_identifier(&self) -> bool {
         matches!(self, Token::Identifier(_))
     }
-    
+
     /// Check if this token is a literal
     pub fn is_literal(&self) -> bool {
         matches!(
@@ -108,7 +108,7 @@ impl Token {
                 | Token::CommandText(_)
         )
     }
-    
+
     /// Check if this token is an operator
     pub fn is_operator(&self) -> bool {
         matches!(
@@ -141,39 +141,39 @@ impl fmt::Display for Token {
             Token::FloatLiteral(n) => write!(f, "{}", n),
             Token::BoolLiteral(b) => write!(f, "{}", b),
             Token::StringLiteral(s) => write!(f, "\"{}\"", s),
-            
+
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
             Token::Percent => write!(f, "%"),
-            
+
             Token::Equal => write!(f, "=="),
             Token::NotEqual => write!(f, "!="),
             Token::Less => write!(f, "<"),
             Token::LessEqual => write!(f, "<="),
             Token::Greater => write!(f, ">"),
             Token::GreaterEqual => write!(f, ">="),
-            
+
             Token::And => write!(f, "&&"),
             Token::Or => write!(f, "||"),
             Token::Not => write!(f, "!"),
-            
+
             Token::Assign => write!(f, "="),
-            
+
             Token::LeftParen => write!(f, "("),
             Token::RightParen => write!(f, ")"),
             Token::LeftBracket => write!(f, "["),
             Token::RightBracket => write!(f, "]"),
             Token::LeftBrace => write!(f, "{{"),
             Token::RightBrace => write!(f, "}}"),
-            
+
             Token::Comma => write!(f, ","),
             Token::Dot => write!(f, "."),
             Token::Colon => write!(f, ":"),
             Token::Question => write!(f, "?"),
             Token::PlusQuestion => write!(f, "+?"),
-            
+
             Token::CommandStart => write!(f, "{{"),
             Token::CommandEnd => write!(f, "}}"),
             Token::HeredocStart => write!(f, "<<<"),
@@ -181,17 +181,17 @@ impl fmt::Display for Token {
             Token::DollarBrace => write!(f, "${{"),
             Token::TildeBrace => write!(f, "~{{"),
             Token::PlaceholderEnd => write!(f, "}}"),
-            
+
             Token::SingleQuote => write!(f, "'"),
             Token::DoubleQuote => write!(f, "\""),
-            
+
             Token::CommandText(s) => write!(f, "{}", s),
             Token::CommandPlaceholder(s) => write!(f, "{}", s),
-            
+
             Token::Whitespace(s) => write!(f, "{}", s),
             Token::Newline => write!(f, "\\n"),
             Token::Comment(s) => write!(f, "#{}", s),
-            
+
             Token::Eof => write!(f, "EOF"),
         }
     }
@@ -213,7 +213,7 @@ impl LocatedToken {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_token_display() {
         assert_eq!(Token::Plus.to_string(), "+");
@@ -221,14 +221,14 @@ mod tests {
         assert_eq!(Token::IntLiteral(42).to_string(), "42");
         assert_eq!(Token::Keyword("task".to_string()).to_string(), "task");
     }
-    
+
     #[test]
     fn test_token_classification() {
         assert!(Token::Keyword("task".to_string()).is_keyword());
         assert!(Token::Identifier("foo".to_string()).is_identifier());
         assert!(Token::IntLiteral(42).is_literal());
         assert!(Token::Plus.is_operator());
-        
+
         assert!(!Token::Plus.is_keyword());
         assert!(!Token::Comma.is_operator());
     }

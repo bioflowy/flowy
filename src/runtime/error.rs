@@ -21,7 +21,7 @@ pub enum RuntimeError {
         /// Source position if available
         pos: Option<SourcePosition>,
     },
-    
+
     /// Command execution failed
     CommandFailed {
         /// Command that failed
@@ -35,7 +35,7 @@ pub enum RuntimeError {
         /// Working directory
         working_dir: String,
     },
-    
+
     /// Task was terminated by signal
     Terminated {
         /// Signal that terminated the task
@@ -43,13 +43,13 @@ pub enum RuntimeError {
         /// Task command
         command: String,
     },
-    
+
     /// Task was interrupted by user
     Interrupted {
         /// Reason for interruption
         reason: String,
     },
-    
+
     /// Task timeout
     TaskTimeout {
         /// Timeout duration
@@ -59,7 +59,7 @@ pub enum RuntimeError {
         /// Command that timed out
         command: String,
     },
-    
+
     /// Output validation failed
     OutputError {
         /// Error message
@@ -71,7 +71,7 @@ pub enum RuntimeError {
         /// Source position
         pos: Option<SourcePosition>,
     },
-    
+
     /// File system operation failed
     FileSystemError {
         /// Error message
@@ -81,7 +81,7 @@ pub enum RuntimeError {
         /// Underlying IO error
         io_error: io::Error,
     },
-    
+
     /// Download failed (placeholder for future implementation)
     DownloadFailed {
         /// URL that failed to download
@@ -91,7 +91,7 @@ pub enum RuntimeError {
         /// HTTP status code if applicable
         status_code: Option<u16>,
     },
-    
+
     /// Container operation failed (placeholder for future implementation)
     ContainerError {
         /// Error message
@@ -101,7 +101,7 @@ pub enum RuntimeError {
         /// Underlying error
         cause: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
-    
+
     /// Cache operation failed (placeholder for future implementation)
     CacheError {
         /// Error message
@@ -111,7 +111,7 @@ pub enum RuntimeError {
         /// Underlying error
         cause: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
-    
+
     /// Workflow validation failed at runtime
     WorkflowValidationError {
         /// Error message
@@ -119,7 +119,7 @@ pub enum RuntimeError {
         /// Source position
         pos: SourcePosition,
     },
-    
+
     /// Resource limit exceeded
     ResourceLimitExceeded {
         /// Resource that was exceeded
@@ -129,7 +129,7 @@ pub enum RuntimeError {
         /// Actual usage
         usage: String,
     },
-    
+
     /// Configuration error
     ConfigurationError {
         /// Error message
@@ -189,10 +189,7 @@ impl fmt::Display for RuntimeError {
                 actual,
                 pos,
             } => {
-                let pos_str = pos
-                    .as_ref()
-                    .map(|p| format!("{}: ", p))
-                    .unwrap_or_default();
+                let pos_str = pos.as_ref().map(|p| format!("{}: ", p)).unwrap_or_default();
                 write!(
                     f,
                     "{}Output error: {} (expected {}, got {})",
@@ -205,7 +202,11 @@ impl fmt::Display for RuntimeError {
                 io_error,
             } => {
                 if let Some(path) = path {
-                    write!(f, "File system error at {}: {} ({})", path, message, io_error)
+                    write!(
+                        f,
+                        "File system error at {}: {} ({})",
+                        path, message, io_error
+                    )
                 } else {
                     write!(f, "File system error: {} ({})", message, io_error)
                 }
@@ -233,9 +234,7 @@ impl fmt::Display for RuntimeError {
                 }
             }
             RuntimeError::CacheError {
-                message,
-                cache_key,
-                ..
+                message, cache_key, ..
             } => {
                 if let Some(key) = cache_key {
                     write!(f, "Cache error ({}): {}", key, message)
@@ -271,10 +270,18 @@ impl fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            RuntimeError::RunFailed { cause, .. } => Some(cause.as_ref() as &(dyn std::error::Error + 'static)),
-            RuntimeError::FileSystemError { io_error, .. } => Some(io_error as &(dyn std::error::Error + 'static)),
-            RuntimeError::ContainerError { cause, .. } => cause.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
-            RuntimeError::CacheError { cause, .. } => cause.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
+            RuntimeError::RunFailed { cause, .. } => {
+                Some(cause.as_ref() as &(dyn std::error::Error + 'static))
+            }
+            RuntimeError::FileSystemError { io_error, .. } => {
+                Some(io_error as &(dyn std::error::Error + 'static))
+            }
+            RuntimeError::ContainerError { cause, .. } => cause
+                .as_ref()
+                .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
+            RuntimeError::CacheError { cause, .. } => cause
+                .as_ref()
+                .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
             _ => None,
         }
     }
@@ -293,7 +300,7 @@ impl RuntimeError {
             pos,
         }
     }
-    
+
     /// Create a command failed error
     pub fn command_failed(
         command: String,
@@ -310,7 +317,7 @@ impl RuntimeError {
             working_dir,
         }
     }
-    
+
     /// Create a task timeout error
     pub fn task_timeout(timeout: Duration, task_name: String, command: String) -> Self {
         Self::TaskTimeout {
@@ -319,7 +326,7 @@ impl RuntimeError {
             command,
         }
     }
-    
+
     /// Create an output error
     pub fn output_error(
         message: String,
@@ -334,7 +341,7 @@ impl RuntimeError {
             pos,
         }
     }
-    
+
     /// Create a file system error
     pub fn filesystem_error(message: String, path: Option<String>, io_error: io::Error) -> Self {
         Self::FileSystemError {
@@ -343,17 +350,17 @@ impl RuntimeError {
             io_error,
         }
     }
-    
+
     /// Create a configuration error
     pub fn configuration_error(message: String, key: Option<String>) -> Self {
         Self::ConfigurationError { message, key }
     }
-    
+
     /// Create a workflow validation error
     pub fn workflow_validation_error(message: String, pos: SourcePosition) -> Self {
         Self::WorkflowValidationError { message, pos }
     }
-    
+
     /// Convert to WdlError for compatibility
     pub fn into_wdl_error(self) -> WdlError {
         match self {
@@ -371,7 +378,7 @@ impl RuntimeError {
             },
         }
     }
-    
+
     /// Get source position if available
     pub fn source_position(&self) -> Option<&SourcePosition> {
         match self {
@@ -396,7 +403,7 @@ impl<T> IntoRuntimeError<T> for Result<T, io::Error> {
     fn runtime_context(self, message: &str) -> RuntimeResult<T> {
         self.map_err(|e| RuntimeError::filesystem_error(message.to_string(), None, e))
     }
-    
+
     fn runtime_context_with_path(self, message: &str, path: &str) -> RuntimeResult<T> {
         self.map_err(|e| {
             RuntimeError::filesystem_error(message.to_string(), Some(path.to_string()), e)
@@ -409,7 +416,7 @@ mod tests {
     use super::*;
     use std::io::{Error, ErrorKind};
     use std::os::unix::process::ExitStatusExt;
-    
+
     #[test]
     fn test_runtime_error_display() {
         let error = RuntimeError::command_failed(
@@ -419,13 +426,13 @@ mod tests {
             "error message".to_string(),
             "/tmp".to_string(),
         );
-        
+
         let display = format!("{}", error);
         assert!(display.contains("Command failed: echo hello"));
         assert!(display.contains("in directory: /tmp"));
         assert!(display.contains("Stderr: error message"));
     }
-    
+
     #[test]
     fn test_task_timeout_error() {
         let error = RuntimeError::task_timeout(
@@ -433,13 +440,13 @@ mod tests {
             "test_task".to_string(),
             "sleep 60".to_string(),
         );
-        
+
         let display = format!("{}", error);
         assert!(display.contains("Task 'test_task' timed out"));
         assert!(display.contains("30s"));
         assert!(display.contains("sleep 60"));
     }
-    
+
     #[test]
     fn test_output_error() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
@@ -449,12 +456,12 @@ mod tests {
             "Int".to_string(),
             Some(pos),
         );
-        
+
         let display = format!("{}", error);
         assert!(display.contains("Output error: Invalid output"));
         assert!(display.contains("expected String, got Int"));
     }
-    
+
     #[test]
     fn test_filesystem_error() {
         let io_error = Error::new(ErrorKind::NotFound, "File not found");
@@ -463,21 +470,21 @@ mod tests {
             Some("/path/to/file".to_string()),
             io_error,
         );
-        
+
         let display = format!("{}", error);
         assert!(display.contains("File system error at /path/to/file"));
         assert!(display.contains("Cannot read file"));
         assert!(display.contains("File not found"));
     }
-    
+
     #[test]
     fn test_into_runtime_error_extension() {
         let io_error = Error::new(ErrorKind::PermissionDenied, "Permission denied");
         let result: Result<(), _> = Err(io_error);
-        
+
         let runtime_result = result.runtime_context_with_path("Failed to write", "/tmp/test");
         assert!(runtime_result.is_err());
-        
+
         if let Err(RuntimeError::FileSystemError { message, path, .. }) = runtime_result {
             assert_eq!(message, "Failed to write");
             assert_eq!(path.as_deref(), Some("/tmp/test"));
@@ -485,18 +492,20 @@ mod tests {
             panic!("Expected FileSystemError");
         }
     }
-    
+
     #[test]
     fn test_error_conversion() {
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10);
-        let runtime_error = RuntimeError::workflow_validation_error(
-            "Invalid workflow".to_string(),
-            pos.clone(),
-        );
-        
+        let runtime_error =
+            RuntimeError::workflow_validation_error("Invalid workflow".to_string(), pos.clone());
+
         let wdl_error = runtime_error.into_wdl_error();
         match wdl_error {
-            WdlError::Validation { message, pos: error_pos, .. } => {
+            WdlError::Validation {
+                message,
+                pos: error_pos,
+                ..
+            } => {
                 assert_eq!(message, "Invalid workflow");
                 assert_eq!(error_pos, pos);
             }

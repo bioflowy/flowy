@@ -1,6 +1,6 @@
 //! Binary and unary operation expressions
 
-use super::{Expression, BinaryOperator, UnaryOperator};
+use super::{BinaryOperator, Expression, UnaryOperator};
 use crate::error::SourcePosition;
 
 impl Expression {
@@ -19,13 +19,9 @@ impl Expression {
             inferred_type: None,
         }
     }
-    
+
     /// Create a new unary operation
-    pub fn unary_op(
-        pos: SourcePosition,
-        op: UnaryOperator,
-        operand: Expression,
-    ) -> Self {
+    pub fn unary_op(pos: SourcePosition, op: UnaryOperator, operand: Expression) -> Self {
         Expression::UnaryOp {
             pos,
             op,

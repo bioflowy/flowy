@@ -1,10 +1,10 @@
 //! Token-based type parsing for WDL
 
+use super::parser_utils::{parse_separated, ParseResult};
 use super::token_stream::TokenStream;
 use super::tokens::Token;
-use super::parser_utils::{ParseResult, parse_separated};
-use crate::types::Type;
 use crate::error::WdlError;
+use crate::types::Type;
 
 /// Parse a primitive type
 pub fn parse_primitive_type(stream: &mut TokenStream) -> ParseResult<Type> {
@@ -45,7 +45,7 @@ pub fn parse_primitive_type(stream: &mut TokenStream) -> ParseResult<Type> {
                     format!("Unknown primitive type: {}", type_name),
                     "1.0".to_string(),
                     None,
-                ))
+                )),
             }
         }
         _ => Err(WdlError::syntax_error(
@@ -53,7 +53,7 @@ pub fn parse_primitive_type(stream: &mut TokenStream) -> ParseResult<Type> {
             "Expected type name".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
@@ -73,11 +73,11 @@ pub fn parse_array_type(stream: &mut TokenStream) -> ParseResult<Type> {
             ));
         }
     }
-    
+
     stream.expect(Token::LeftBracket)?;
     let inner_type = parse_type(stream)?;
     stream.expect(Token::RightBracket)?;
-    
+
     // Check for non-empty array marker (+)
     let nonempty = if stream.peek_token() == Some(Token::Plus) {
         stream.next();
@@ -85,7 +85,7 @@ pub fn parse_array_type(stream: &mut TokenStream) -> ParseResult<Type> {
     } else {
         false
     };
-    
+
     Ok(Type::array(inner_type, false, nonempty))
 }
 
@@ -105,13 +105,13 @@ pub fn parse_map_type(stream: &mut TokenStream) -> ParseResult<Type> {
             ));
         }
     }
-    
+
     stream.expect(Token::LeftBracket)?;
     let key_type = parse_type(stream)?;
     stream.expect(Token::Comma)?;
     let value_type = parse_type(stream)?;
     stream.expect(Token::RightBracket)?;
-    
+
     Ok(Type::map(key_type, value_type, false))
 }
 
@@ -131,13 +131,13 @@ pub fn parse_pair_type(stream: &mut TokenStream) -> ParseResult<Type> {
             ));
         }
     }
-    
+
     stream.expect(Token::LeftBracket)?;
     let left_type = parse_type(stream)?;
     stream.expect(Token::Comma)?;
     let right_type = parse_type(stream)?;
     stream.expect(Token::RightBracket)?;
-    
+
     Ok(Type::pair(left_type, right_type, false))
 }
 
@@ -186,7 +186,7 @@ pub fn parse_struct_type(stream: &mut TokenStream) -> ParseResult<Type> {
             "Expected struct type name".to_string(),
             "1.0".to_string(),
             None,
-        ))
+        )),
     }
 }
 
@@ -219,11 +219,11 @@ pub fn parse_type(stream: &mut TokenStream) -> ParseResult<Type> {
             ));
         }
     };
-    
+
     // Check for optional suffix (?)
     if stream.peek_token() == Some(Token::Question) {
         stream.next();
-        
+
         // Set optional flag on the type
         let optional_type = match base_type {
             Type::Boolean { .. } => Type::boolean(true),
@@ -232,21 +232,45 @@ pub fn parse_type(stream: &mut TokenStream) -> ParseResult<Type> {
             Type::String { .. } => Type::string(true),
             Type::File { .. } => Type::file(true),
             Type::Directory { .. } => Type::directory(true),
-            Type::Array { item_type, nonempty, .. } => {
-                Type::Array { item_type, optional: true, nonempty }
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => Type::Array {
+                item_type,
+                optional: true,
+                nonempty,
             },
-            Type::Map { key_type, value_type, literal_keys, .. } => {
-                Type::Map { key_type, value_type, optional: true, literal_keys }
+            Type::Map {
+                key_type,
+                value_type,
+                literal_keys,
+                ..
+            } => Type::Map {
+                key_type,
+                value_type,
+                optional: true,
+                literal_keys,
             },
-            Type::Pair { left_type, right_type, .. } => {
-                Type::Pair { left_type, right_type, optional: true }
+            Type::Pair {
+                left_type,
+                right_type,
+                ..
+            } => Type::Pair {
+                left_type,
+                right_type,
+                optional: true,
             },
-            Type::StructInstance { type_name, members, .. } => {
-                Type::StructInstance { type_name, members, optional: true }
+            Type::StructInstance {
+                type_name, members, ..
+            } => Type::StructInstance {
+                type_name,
+                members,
+                optional: true,
             },
             _ => base_type,
         };
-        
+
         Ok(optional_type)
     } else {
         Ok(base_type)
@@ -262,7 +286,7 @@ pub fn parse_type_list(stream: &mut TokenStream) -> ParseResult<Vec<Type>> {
 mod tests {
     use super::*;
     use crate::parser::token_stream::TokenStream;
-    
+
     #[test]
     fn test_parse_primitive_types() {
         let test_cases = vec![
@@ -272,7 +296,7 @@ mod tests {
             ("Boolean", "Boolean"),
             ("File", "File"),
         ];
-        
+
         for (input_str, expected_name) in test_cases {
             let mut stream = TokenStream::new(input_str, "1.0").unwrap();
             let result = parse_primitive_type(&mut stream);
@@ -281,7 +305,7 @@ mod tests {
             assert_eq!(type_.to_string(), expected_name);
         }
     }
-    
+
     #[test]
     fn test_parse_array_type() {
         let mut stream = TokenStream::new("Array[String]", "1.0").unwrap();
@@ -289,7 +313,7 @@ mod tests {
         assert!(result.is_ok());
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Array[String]");
-        
+
         // Nested array
         let mut stream = TokenStream::new("Array[Array[Int]]", "1.0").unwrap();
         let result = parse_type(&mut stream);
@@ -297,7 +321,7 @@ mod tests {
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Array[Array[Int]]");
     }
-    
+
     #[test]
     fn test_parse_map_type() {
         let mut stream = TokenStream::new("Map[String, Int]", "1.0").unwrap();
@@ -305,13 +329,13 @@ mod tests {
         assert!(result.is_ok());
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Map[String,Int]");
-        
+
         // Without spaces
         let mut stream = TokenStream::new("Map[String,Int]", "1.0").unwrap();
         let result = parse_map_type(&mut stream);
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_parse_pair_type() {
         let mut stream = TokenStream::new("Pair[String, Float]", "1.0").unwrap();
@@ -320,7 +344,7 @@ mod tests {
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Pair[String,Float]");
     }
-    
+
     #[test]
     fn test_parse_optional_type() {
         let mut stream = TokenStream::new("String?", "1.0").unwrap();
@@ -328,7 +352,7 @@ mod tests {
         assert!(result.is_ok());
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "String?");
-        
+
         // Optional array
         let mut stream = TokenStream::new("Array[Int]?", "1.0").unwrap();
         let result = parse_type(&mut stream);
@@ -336,7 +360,7 @@ mod tests {
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Array[Int]?");
     }
-    
+
     #[test]
     fn test_parse_complex_types() {
         // Map with array values
@@ -345,7 +369,7 @@ mod tests {
         assert!(result.is_ok());
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Map[String,Array[File]]");
-        
+
         // Optional map with optional values
         let mut stream = TokenStream::new("Map[String, Int?]?", "1.0").unwrap();
         let result = parse_type(&mut stream);
@@ -353,7 +377,7 @@ mod tests {
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "Map[String,Int?]?");
     }
-    
+
     #[test]
     fn test_parse_struct_type() {
         let mut stream = TokenStream::new("MyStruct", "1.0").unwrap();
@@ -361,7 +385,7 @@ mod tests {
         assert!(result.is_ok());
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "MyStruct");
-        
+
         // Optional struct
         let mut stream = TokenStream::new("MyStruct?", "1.0").unwrap();
         let result = parse_type(&mut stream);
@@ -369,7 +393,7 @@ mod tests {
         let type_ = result.unwrap();
         assert_eq!(type_.to_string(), "MyStruct?");
     }
-    
+
     #[test]
     fn test_parse_type_list() {
         let mut stream = TokenStream::new("String, Int, Array[File]", "1.0").unwrap();

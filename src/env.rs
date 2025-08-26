@@ -3,13 +3,13 @@
 //! This module provides immutable linked-list environments for binding names to values,
 //! supporting namespace operations and efficient shadowing semantics.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
-use serde::{Deserialize, Serialize};
 
 /// An individual binding of a name to a value with optional metadata.
 ///
-/// Generic over `T` which is typically a `Value` (for value environments) 
+/// Generic over `T` which is typically a `Value` (for value environments)
 /// or `Type` (for type environments).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Binding<T> {
@@ -108,11 +108,11 @@ where
     }
 
     /// Return a new environment with a binding added.
-    /// 
+    ///
     /// Any existing binding with the same name is shadowed.
     pub fn bind(&self, name: String, value: T, info: Option<String>) -> Self {
         assert!(!name.is_empty() && !name.starts_with('.') && !name.ends_with('.'));
-        
+
         let binding = Binding::new(name, value, info);
         Self::new_with_binding(binding, Some(Box::new((*self).clone())))
     }
@@ -148,33 +148,33 @@ where
     }
 
     /// Transform each binding with a function, filtering out None results.
-    pub fn map<U, F>(&self, f: F) -> Bindings<U> 
+    pub fn map<U, F>(&self, f: F) -> Bindings<U>
     where
         U: Clone,
         F: Fn(&Binding<T>) -> Option<Binding<U>>,
     {
         let mut result = Bindings::new();
         let mut bindings = Vec::new();
-        
+
         // Collect all bindings first
         for binding in self.iter() {
             if let Some(mapped) = f(binding) {
                 bindings.push(mapped);
             }
         }
-        
+
         // Add them in reverse order to maintain original ordering
         for binding in bindings.into_iter().rev() {
             let Binding { name, value, info } = binding;
             result = result.bind(name, value, info);
         }
-        
+
         result
     }
 
     /// Filter bindings by a predicate.
     pub fn filter<F>(&self, pred: F) -> Self
-    where 
+    where
         F: Fn(&Binding<T>) -> bool,
         T: Clone,
     {
@@ -191,11 +191,11 @@ where
     }
 
     /// Get all namespaces in this environment.
-    /// 
+    ///
     /// Returns dot-separated prefixes of binding names, each ending with a dot.
     pub fn namespaces(&self) -> HashSet<String> {
         let mut namespaces = HashSet::new();
-        
+
         for binding in self.iter() {
             let parts: Vec<&str> = binding.name().split('.').collect();
             if parts.len() > 1 {
@@ -205,7 +205,7 @@ where
                 }
             }
         }
-        
+
         namespaces
     }
 
@@ -216,7 +216,7 @@ where
         } else {
             format!("{}.", namespace)
         };
-        
+
         self.namespaces().contains(&ns)
     }
 
@@ -248,25 +248,29 @@ where
         T: Clone,
     {
         let ns = if namespace.ends_with('.') {
-            namespace.to_string()  
+            namespace.to_string()
         } else {
             format!("{}.", namespace)
         };
 
         let mut result = Bindings::new();
         let mut bindings = Vec::new();
-        
+
         for binding in self.iter() {
             let new_name = format!("{}{}", ns, binding.name());
-            bindings.push(Binding::new(new_name, binding.value().clone(), binding.info().cloned()));
+            bindings.push(Binding::new(
+                new_name,
+                binding.value().clone(),
+                binding.info().cloned(),
+            ));
         }
-        
+
         // Add in reverse to maintain order
         for binding in bindings.into_iter().rev() {
             let Binding { name, value, info } = binding;
             result = result.bind(name, value, info);
         }
-        
+
         result
     }
 
@@ -292,7 +296,7 @@ impl<'a, T: Clone> Iterator for BindingIterator<'a, T> {
         while let Some(env) = self.current {
             if let Some(ref binding) = env.binding {
                 self.current = env.next.as_deref();
-                
+
                 if !self.seen.contains(binding.name()) {
                     self.seen.insert(binding.name().to_string());
                     return Some(binding);
@@ -306,8 +310,8 @@ impl<'a, T: Clone> Iterator for BindingIterator<'a, T> {
 }
 
 /// Merge multiple environments into one.
-/// 
-/// When the same name appears in multiple environments, 
+///
+/// When the same name appears in multiple environments,
 /// the first (leftmost) occurrence takes precedence.
 pub fn merge<T>(environments: &[&Bindings<T>]) -> Bindings<T>
 where
@@ -316,10 +320,10 @@ where
     if environments.is_empty() {
         return Bindings::new();
     }
-    
+
     // Start with the last (rightmost) environment
     let mut result = (*environments.last().unwrap()).clone();
-    
+
     // Process environments from right to left, but skip the last one we already used
     for &env in environments.iter().rev().skip(1) {
         for binding in env.iter() {
@@ -331,7 +335,7 @@ where
             );
         }
     }
-    
+
     result
 }
 
@@ -359,14 +363,16 @@ mod tests {
 
     #[test]
     fn test_multiple_bindings() {
-        let env = Bindings::new()
-            .bind("x".to_string(), 42, None)
-            .bind("y".to_string(), 100, Some("test".to_string()));
+        let env = Bindings::new().bind("x".to_string(), 42, None).bind(
+            "y".to_string(),
+            100,
+            Some("test".to_string()),
+        );
 
         assert_eq!(env.len(), 2);
         assert_eq!(env.resolve("x"), Some(&42));
         assert_eq!(env.resolve("y"), Some(&100));
-        
+
         let y_binding = env.resolve_binding("y").unwrap();
         assert_eq!(y_binding.info(), Some(&"test".to_string()));
     }
@@ -490,9 +496,9 @@ mod tests {
         let env3 = Bindings::new().bind("d".to_string(), 4, None);
 
         let merged = merge(&[&env1, &env2, &env3]);
-        
+
         assert_eq!(merged.resolve("a"), Some(&1)); // From env1
-        assert_eq!(merged.resolve("b"), Some(&2)); // From env1 (shadows env2)  
+        assert_eq!(merged.resolve("b"), Some(&2)); // From env1 (shadows env2)
         assert_eq!(merged.resolve("c"), Some(&3)); // From env2
         assert_eq!(merged.resolve("d"), Some(&4)); // From env3
     }
@@ -507,7 +513,7 @@ mod tests {
             Some(Binding::new(
                 b.name().to_string(),
                 b.value() * 2,
-                b.info().cloned()
+                b.info().cloned(),
             ))
         });
 
@@ -519,7 +525,7 @@ mod tests {
     fn test_get_with_default() {
         let env = Bindings::new().bind("x".to_string(), 42, None);
         let default_val = 999;
-        
+
         assert_eq!(env.get("x", Some(&default_val)), Some(&42));
         assert_eq!(env.get("missing", Some(&default_val)), Some(&default_val));
         assert_eq!(env.get("missing", None), None);

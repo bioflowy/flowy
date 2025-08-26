@@ -28,9 +28,12 @@ where
 }
 
 /// Parse one of several alternatives
-pub fn parse_alt<T>(stream: &mut TokenStream, parsers: &[&dyn Fn(&mut TokenStream) -> ParseResult<T>]) -> ParseResult<T> {
+pub fn parse_alt<T>(
+    stream: &mut TokenStream,
+    parsers: &[&dyn Fn(&mut TokenStream) -> ParseResult<T>],
+) -> ParseResult<T> {
     let pos = stream.position();
-    
+
     for parser in parsers {
         match parser(stream) {
             Ok(result) => return Ok(result),
@@ -39,7 +42,7 @@ pub fn parse_alt<T>(stream: &mut TokenStream, parsers: &[&dyn Fn(&mut TokenStrea
             }
         }
     }
-    
+
     Err(WdlError::syntax_error(
         stream.current_position(),
         "No matching alternative found".to_string(),
@@ -58,17 +61,17 @@ where
     F: Fn(&mut TokenStream) -> ParseResult<T>,
 {
     let mut items = Vec::new();
-    
+
     // Try to parse first item
     if let Some(first) = try_parse(stream, &parser) {
         items.push(first);
-        
+
         // Parse remaining items
         while stream.try_consume(&delimiter).is_some() {
             items.push(parser(stream)?);
         }
     }
-    
+
     Ok(items)
 }
 
@@ -84,30 +87,30 @@ where
     F: Fn(&mut TokenStream) -> ParseResult<T>,
 {
     stream.expect(open)?;
-    
+
     let mut items = Vec::new();
-    
+
     // Check for empty list
     if stream.peek_token() == Some(close.clone()) {
         stream.expect(close)?;
         return Ok(items);
     }
-    
+
     // Parse first item
     items.push(parser(stream)?);
-    
+
     // Parse remaining items
     while stream.peek_token() != Some(close.clone()) {
         stream.expect(separator.clone())?;
-        
+
         // Allow trailing separator
         if stream.peek_token() == Some(close.clone()) {
             break;
         }
-        
+
         items.push(parser(stream)?);
     }
-    
+
     stream.expect(close)?;
     Ok(items)
 }
@@ -126,11 +129,11 @@ where
     F: Fn(&mut TokenStream) -> ParseResult<T>,
 {
     let mut items = Vec::new();
-    
+
     while let Some(item) = try_parse(stream, &parser) {
         items.push(item);
     }
-    
+
     Ok(items)
 }
 
@@ -141,11 +144,11 @@ where
 {
     let first = parser(stream)?;
     let mut items = vec![first];
-    
+
     while let Some(item) = try_parse(stream, &parser) {
         items.push(item);
     }
-    
+
     Ok(items)
 }
 
@@ -190,71 +193,67 @@ pub fn parse_identifier(stream: &mut TokenStream) -> ParseResult<String> {
 mod tests {
     use super::*;
     use crate::parser::token_stream::TokenStream;
-    
+
     #[test]
     fn test_try_parse() {
         let source = "foo bar";
         let mut stream = TokenStream::new(source, "1.0").unwrap();
-        
+
         // Successful parse
         let result = try_parse(&mut stream, |s| parse_identifier(s));
         assert_eq!(result, Some("foo".to_string()));
-        
+
         // Failed parse (not at identifier)
-        let result = try_parse(&mut stream, |s| {
-            s.expect(Token::Plus)
-                .map(|_| ())
-        });
+        let result = try_parse(&mut stream, |s| s.expect(Token::Plus).map(|_| ()));
         assert!(result.is_none());
-        
+
         // Should still be at "bar"
         let result = parse_identifier(&mut stream).unwrap();
         assert_eq!(result, "bar");
     }
-    
+
     #[test]
     fn test_parse_separated() {
         let source = "a, b, c";
         let mut stream = TokenStream::new(source, "1.0").unwrap();
-        
+
         let result = parse_separated(&mut stream, Token::Comma, parse_identifier).unwrap();
         assert_eq!(result, vec!["a", "b", "c"]);
     }
-    
+
     #[test]
     fn test_parse_delimited_list() {
         let source = "[1, 2, 3]";
         let mut stream = TokenStream::new(source, "1.0").unwrap();
-        
+
         let result = parse_delimited_list(
             &mut stream,
             Token::LeftBracket,
             Token::RightBracket,
             Token::Comma,
-            |s| {
-                match s.peek_token() {
-                    Some(Token::IntLiteral(n)) => {
-                        s.next();
-                        Ok(n)
-                    }
-                    _ => Err(WdlError::syntax_error(
-                        s.current_position(),
-                        "Expected integer".to_string(),
-                        "1.0".to_string(),
-                        None,
-                    ))
+            |s| match s.peek_token() {
+                Some(Token::IntLiteral(n)) => {
+                    s.next();
+                    Ok(n)
                 }
+                _ => Err(WdlError::syntax_error(
+                    s.current_position(),
+                    "Expected integer".to_string(),
+                    "1.0".to_string(),
+                    None,
+                )),
             },
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         assert_eq!(result, vec![1, 2, 3]);
     }
-    
+
     #[test]
     fn test_parse_many() {
         let source = "foo bar baz";
         let mut stream = TokenStream::new(source, "1.0").unwrap();
-        
+
         let result = parse_many(&mut stream, parse_identifier).unwrap();
         assert_eq!(result, vec!["foo", "bar", "baz"]);
         assert!(stream.is_eof());
