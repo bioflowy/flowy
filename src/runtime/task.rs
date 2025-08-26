@@ -23,7 +23,7 @@ pub struct TaskEngine {
 }
 
 /// Task execution options
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TaskExecutionOptions {
     /// Override default task timeout
     pub timeout_override: Option<std::time::Duration>,
@@ -33,17 +33,6 @@ pub struct TaskExecutionOptions {
     pub copy_inputs: Option<bool>,
     /// Enable verbose logging
     pub verbose: bool,
-}
-
-impl Default for TaskExecutionOptions {
-    fn default() -> Self {
-        Self {
-            timeout_override: None,
-            env_vars: std::collections::HashMap::new(),
-            copy_inputs: None,
-            verbose: false,
-        }
-    }
 }
 
 impl TaskEngine {
@@ -322,15 +311,12 @@ pub mod utils {
         use std::io::Write;
 
         let temp_dir = std::env::temp_dir();
-        let filename = format!(
-            "wdl_temp_{}{}",
-            std::process::id(),
-            if suffix.starts_with('.') {
-                suffix
-            } else {
-                &format!(".{}", suffix)
-            }
-        );
+        let formatted_suffix = if suffix.starts_with('.') {
+            suffix.to_string()
+        } else {
+            format!(".{}", suffix)
+        };
+        let filename = format!("wdl_temp_{}{}", std::process::id(), formatted_suffix);
         let temp_file = temp_dir.join(filename);
 
         let mut file = std::fs::File::create(&temp_file).map_err(|e| {

@@ -156,13 +156,10 @@ impl ExpressionBase for Expression {
                     if let (Some(prefix), Some(member)) = (parts.next(), parts.next()) {
                         // Try to resolve the prefix
                         if let Some(container_value) = env.resolve(prefix) {
-                            match container_value {
-                                Value::Struct { members, .. } => {
-                                    if let Some(member_value) = members.get(member) {
-                                        return Ok(member_value.clone());
-                                    }
+                            if let Value::Struct { members, .. } = container_value {
+                                if let Some(member_value) = members.get(member) {
+                                    return Ok(member_value.clone());
                                 }
-                                _ => {}
                             }
                         }
                     }

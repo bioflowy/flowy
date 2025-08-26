@@ -65,7 +65,7 @@ pub enum ContainerBackend {
 }
 
 /// Cache configuration (placeholder)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CacheConfig {
     /// Enable caching
     pub enabled: bool,
@@ -115,16 +115,6 @@ impl Default for ContainerConfig {
             enabled: false, // Direct execution by default
             backend: ContainerBackend::None,
             options: HashMap::new(),
-        }
-    }
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false, // No caching initially
-            dir: None,
-            size_limit: None,
         }
     }
 }

@@ -451,9 +451,8 @@ impl WorkflowNode for Call {
     }
 
     fn workflow_node_dependencies(&self) -> Vec<String> {
-        let deps = self.afters.clone();
         // TODO: Add dependencies from input expressions
-        deps
+        self.afters.clone()
     }
 
     fn scatter_depth(&self) -> u32 {

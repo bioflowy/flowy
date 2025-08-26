@@ -224,7 +224,7 @@ impl TokenStream {
     /// Consume a specific token type, returning an error if it doesn't match
     pub fn expect(&mut self, expected: Token) -> Result<LocatedToken, WdlError> {
         // Get current token info for error messages
-        let current_token = self.peek_token().map(|t| t.clone());
+        let current_token = self.peek_token();
         let current_pos = self.peek().map(|t| t.pos.clone());
 
         match current_token {
