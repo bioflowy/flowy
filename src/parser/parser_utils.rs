@@ -200,7 +200,7 @@ mod tests {
         let mut stream = TokenStream::new(source, "1.0").unwrap();
 
         // Successful parse
-        let result = try_parse(&mut stream, |s| parse_identifier(s));
+        let result = try_parse(&mut stream, parse_identifier);
         assert_eq!(result, Some("foo".to_string()));
 
         // Failed parse (not at identifier)

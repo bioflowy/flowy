@@ -152,11 +152,8 @@ impl ExpressionBase for Expression {
 
                 // If not found and contains dot, try to resolve as member access
                 if name.contains('.') {
-                    let parts: Vec<&str> = name.splitn(2, '.').collect();
-                    if parts.len() == 2 {
-                        let prefix = parts[0];
-                        let member = parts[1];
-
+                    let mut parts = name.splitn(2, '.');
+                    if let (Some(prefix), Some(member)) = (parts.next(), parts.next()) {
                         // Try to resolve the prefix
                         if let Some(container_value) = env.resolve(prefix) {
                             match container_value {

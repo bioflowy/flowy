@@ -199,7 +199,7 @@ impl Value {
                 let item_type = values
                     .first()
                     .map(|v| v.wdl_type().clone())
-                    .unwrap_or_else(|| Type::any());
+                    .unwrap_or_else(Type::any);
                 Value::array(item_type, values)
             }
             JsonValue::Object(obj) => {

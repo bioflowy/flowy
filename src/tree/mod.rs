@@ -360,7 +360,7 @@ impl SourceNode for Task {
             children.push(output);
         }
 
-        for (_, expr) in &self.runtime {
+        for expr in self.runtime.values() {
             children.push(expr);
         }
 
@@ -438,7 +438,7 @@ impl SourceNode for Call {
 
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
-        for (_, expr) in &self.inputs {
+        for expr in self.inputs.values() {
             children.push(expr);
         }
         children

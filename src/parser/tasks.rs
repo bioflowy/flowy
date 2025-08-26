@@ -214,14 +214,12 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
 
             Ok(Expression::string_literal(pos, command_text))
         }
-        _ => {
-            return Err(WdlError::syntax_error(
-                stream.current_position(),
-                "Expected '{', '<<<', or command placeholder after 'command' keyword".to_string(),
-                "1.0".to_string(),
-                None,
-            ));
-        }
+        _ => Err(WdlError::syntax_error(
+            stream.current_position(),
+            "Expected '{', '<<<', or command placeholder after 'command' keyword".to_string(),
+            "1.0".to_string(),
+            None,
+        )),
     }
 }
 

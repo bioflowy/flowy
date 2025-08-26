@@ -67,10 +67,10 @@ impl Lexer {
 
     /// Check if whitespace should be preserved in the current mode
     pub fn preserve_whitespace(&self) -> bool {
-        match self.current_mode() {
-            LexerMode::Command | LexerMode::StringLiteral => true,
-            _ => false,
-        }
+        matches!(
+            self.current_mode(),
+            LexerMode::Command | LexerMode::StringLiteral
+        )
     }
 }
 

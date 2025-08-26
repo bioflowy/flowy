@@ -150,14 +150,12 @@ pub fn parse_object_type(stream: &mut TokenStream) -> ParseResult<Type> {
             use std::collections::HashMap;
             Ok(Type::object(HashMap::new()))
         }
-        _ => {
-            return Err(WdlError::syntax_error(
-                stream.current_position(),
-                "Expected 'Object' keyword".to_string(),
-                "1.0".to_string(),
-                None,
-            ));
-        }
+        _ => Err(WdlError::syntax_error(
+            stream.current_position(),
+            "Expected 'Object' keyword".to_string(),
+            "1.0".to_string(),
+            None,
+        )),
     }
 }
 

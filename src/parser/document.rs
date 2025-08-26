@@ -49,14 +49,12 @@ fn parse_version(stream: &mut TokenStream) -> ParseResult<String> {
             stream.next();
             Ok(version)
         }
-        _ => {
-            return Err(WdlError::syntax_error(
-                stream.current_position(),
-                "Expected version number or string".to_string(),
-                "1.0".to_string(),
-                None,
-            ));
-        }
+        _ => Err(WdlError::syntax_error(
+            stream.current_position(),
+            "Expected version number or string".to_string(),
+            "1.0".to_string(),
+            None,
+        )),
     }
 }
 

@@ -92,8 +92,8 @@ impl Expression {
             }
 
             Expression::Pair { left, right, .. } => {
-                let left_type = left.get_type().cloned().unwrap_or_else(|| Type::any());
-                let right_type = right.get_type().cloned().unwrap_or_else(|| Type::any());
+                let left_type = left.get_type().cloned().unwrap_or_else(Type::any);
+                let right_type = right.get_type().cloned().unwrap_or_else(Type::any);
                 Type::pair(left_type, right_type, false)
             }
 
@@ -116,7 +116,7 @@ impl Expression {
                 let member_types: HashMap<String, Type> = members
                     .iter()
                     .map(|(name, expr)| {
-                        let ty = expr.get_type().cloned().unwrap_or_else(|| Type::any());
+                        let ty = expr.get_type().cloned().unwrap_or_else(Type::any);
                         (name.clone(), ty)
                     })
                     .collect();
@@ -161,11 +161,8 @@ impl Expression {
                 }
 
                 // Unify true and false branch types
-                let true_type = true_expr.get_type().cloned().unwrap_or_else(|| Type::any());
-                let false_type = false_expr
-                    .get_type()
-                    .cloned()
-                    .unwrap_or_else(|| Type::any());
+                let true_type = true_expr.get_type().cloned().unwrap_or_else(Type::any);
+                let false_type = false_expr.get_type().cloned().unwrap_or_else(Type::any);
                 crate::types::unify_types(vec![&true_type, &false_type], true, false)
             }
 
@@ -182,8 +179,8 @@ impl Expression {
             Expression::BinaryOp {
                 op, left, right, ..
             } => {
-                let left_type = left.get_type().cloned().unwrap_or_else(|| Type::any());
-                let right_type = right.get_type().cloned().unwrap_or_else(|| Type::any());
+                let left_type = left.get_type().cloned().unwrap_or_else(Type::any);
+                let right_type = right.get_type().cloned().unwrap_or_else(Type::any);
 
                 match op {
                     BinaryOperator::Add
@@ -219,7 +216,7 @@ impl Expression {
             Expression::UnaryOp { op, operand, .. } => match op {
                 UnaryOperator::Not => Type::boolean(false),
                 UnaryOperator::Negate => {
-                    let operand_type = operand.get_type().cloned().unwrap_or_else(|| Type::any());
+                    let operand_type = operand.get_type().cloned().unwrap_or_else(Type::any);
                     if operand_type.coerces(&Type::int(false), true) {
                         Type::int(false)
                     } else {
