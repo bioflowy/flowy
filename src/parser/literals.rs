@@ -13,7 +13,7 @@ pub fn parse_int_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     
     match stream.peek_token() {
         Some(Token::IntLiteral(n)) => {
-            let value = *n;
+            let value = n;
             stream.next();
             Ok(Expression::int(pos, value))
         }
@@ -32,7 +32,7 @@ pub fn parse_float_literal(stream: &mut TokenStream) -> ParseResult<Expression> 
     
     match stream.peek_token() {
         Some(Token::FloatLiteral(n)) => {
-            let value = *n;
+            let value = n;
             stream.next();
             Ok(Expression::float(pos, value))
         }
@@ -51,7 +51,7 @@ pub fn parse_bool_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     
     match stream.peek_token() {
         Some(Token::BoolLiteral(b)) => {
-            let value = *b;
+            let value = b;
             stream.next();
             Ok(Expression::boolean(pos, value))
         }
@@ -123,12 +123,15 @@ pub fn parse_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
             Token::StringLiteral(_) => parse_string_literal(stream),
             Token::Keyword(kw) if kw == "true" || kw == "false" => parse_bool_literal(stream),
             Token::Keyword(kw) if kw == "None" => parse_none_literal(stream),
-            _ => Err(WdlError::syntax_error(
-                stream.current_position(),
-                format!("Expected literal, found {:?}", token),
-                "1.0".to_string(),
-                None,
-            ))
+            _ => {
+                let pos = stream.current_position();
+                Err(WdlError::syntax_error(
+                    pos,
+                    format!("Expected literal, found {:?}", token),
+                    "1.0".to_string(),
+                    None,
+                ))
+            }
         }
     } else {
         Err(WdlError::syntax_error(
@@ -148,7 +151,7 @@ pub fn parse_array_literal(stream: &mut TokenStream) -> ParseResult<Expression> 
     let mut elements = Vec::new();
     
     // Check for empty array
-    if stream.peek_token() == Some(&Token::RightBracket) {
+    if stream.peek_token() == Some(Token::RightBracket) {
         stream.next();
         return Ok(Expression::array(pos, elements));
     }
@@ -157,11 +160,11 @@ pub fn parse_array_literal(stream: &mut TokenStream) -> ParseResult<Expression> 
     elements.push(parse_expression(stream)?);
     
     // Parse remaining elements
-    while stream.peek_token() == Some(&Token::Comma) {
+    while stream.peek_token() == Some(Token::Comma) {
         stream.next(); // consume comma
         
         // Allow trailing comma
-        if stream.peek_token() == Some(&Token::RightBracket) {
+        if stream.peek_token() == Some(Token::RightBracket) {
             break;
         }
         
@@ -180,7 +183,7 @@ pub fn parse_map_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let mut pairs = Vec::new();
     
     // Check for empty map
-    if stream.peek_token() == Some(&Token::RightBrace) {
+    if stream.peek_token() == Some(Token::RightBrace) {
         stream.next();
         return Ok(Expression::map(pos, pairs));
     }
@@ -192,11 +195,11 @@ pub fn parse_map_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     pairs.push((key, value));
     
     // Parse remaining pairs
-    while stream.peek_token() == Some(&Token::Comma) {
+    while stream.peek_token() == Some(Token::Comma) {
         stream.next(); // consume comma
         
         // Allow trailing comma
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         

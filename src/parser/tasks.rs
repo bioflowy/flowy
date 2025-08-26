@@ -35,13 +35,13 @@ fn parse_meta_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, s
     let mut meta = HashMap::new();
     
     // Parse key-value pairs
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         
@@ -73,12 +73,12 @@ fn parse_meta_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, s
         meta.insert(key, json_value);
         
         // Optional comma
-        if stream.peek_token() == Some(&Token::Comma) {
+        if stream.peek_token() == Some(Token::Comma) {
             stream.next();
         }
         
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
@@ -110,13 +110,13 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
     let mut runtime = HashMap::new();
     
     // Parse key-value pairs
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         
@@ -144,12 +144,12 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
         runtime.insert(key, value);
         
         // Optional comma or newline
-        if stream.peek_token() == Some(&Token::Comma) {
+        if stream.peek_token() == Some(Token::Comma) {
             stream.next();
         }
         
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
@@ -245,7 +245,7 @@ fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String
                 }
             }
             Some(Token::CommandText(text)) => {
-                content.push_str(text);
+                content.push_str(&text);
                 stream.next();
             }
             Some(Token::TildeBrace) => {
@@ -269,9 +269,9 @@ fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String
             Some(token) => {
                 // Handle other tokens (whitespace, newlines, etc.)
                 match token {
-                    Token::Whitespace(s) => content.push_str(s),
+                    Token::Whitespace(s) => content.push_str(&s),
                     Token::Newline => content.push('\n'),
-                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(s),
+                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(&s),
                     Token::IntLiteral(n) => content.push_str(&n.to_string()),
                     Token::FloatLiteral(f) => content.push_str(&f.to_string()),
                     _ => content.push_str(&format!("{}", token)),
@@ -296,7 +296,7 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
                 break;
             }
             Some(Token::CommandText(text)) => {
-                content.push_str(text);
+                content.push_str(&text);
                 stream.next();
             }
             Some(Token::TildeBrace) => {
@@ -318,9 +318,9 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
             Some(token) => {
                 // Handle other tokens (whitespace, newlines, etc.)
                 match token {
-                    Token::Whitespace(s) => content.push_str(s),
+                    Token::Whitespace(s) => content.push_str(&s),
                     Token::Newline => content.push('\n'),
-                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(s),
+                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(&s),
                     Token::IntLiteral(n) => content.push_str(&n.to_string()),
                     Token::FloatLiteral(f) => content.push_str(&f.to_string()),
                     _ => content.push_str(&format!("{}", token)),
@@ -342,6 +342,7 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
 }
 
 /// Parse heredoc content until >>>
+#[allow(dead_code)]
 fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut buffer = String::new();
@@ -374,12 +375,12 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
                 // Accumulate other tokens as text
                 // In a real parser, we'd preserve the exact text representation
                 match token {
-                    Token::Whitespace(s) => buffer.push_str(s),
+                    Token::Whitespace(s) => buffer.push_str(&s),
                     Token::Newline => buffer.push('\n'),
-                    Token::Identifier(s) | Token::Keyword(s) => buffer.push_str(s),
+                    Token::Identifier(s) | Token::Keyword(s) => buffer.push_str(&s),
                     Token::IntLiteral(n) => buffer.push_str(&n.to_string()),
                     Token::FloatLiteral(f) => buffer.push_str(&f.to_string()),
-                    Token::StringLiteral(s) => buffer.push_str(s),
+                    Token::StringLiteral(s) => buffer.push_str(&s),
                     _ => buffer.push_str(&format!("{}", token)),
                 }
                 stream.next();
@@ -430,6 +431,7 @@ fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
 }
 
 /// Parse command block content (simplified)
+#[allow(dead_code)]
 fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut depth = 1;
@@ -468,12 +470,12 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
             Some(token) => {
                 // Add token to content
                 match token {
-                    Token::Whitespace(s) => content.push_str(s),
+                    Token::Whitespace(s) => content.push_str(&s),
                     Token::Newline => content.push('\n'),
-                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(s),
+                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(&s),
                     Token::IntLiteral(n) => content.push_str(&n.to_string()),
                     Token::FloatLiteral(f) => content.push_str(&f.to_string()),
-                    Token::StringLiteral(s) => content.push_str(s),
+                    Token::StringLiteral(s) => content.push_str(&s),
                     _ => content.push_str(&format!("{}", token)),
                 }
                 stream.next();
@@ -571,13 +573,13 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
     let mut parameter_meta: HashMap<String, serde_json::Value> = HashMap::new();
     
     // Parse task body
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         
@@ -609,8 +611,9 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
                         postinputs.push(decl);
                     }
                     _ => {
+                        let pos = stream.current_position();
                         return Err(WdlError::syntax_error(
-                            stream.current_position(),
+                            pos,
                             format!("Unexpected keyword in task: {}", kw),
                             "1.0".to_string(),
                             None,
@@ -634,7 +637,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
         }
         
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
@@ -711,13 +714,13 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
     let mut parameter_meta: HashMap<String, serde_json::Value> = HashMap::new();
     
     // Parse workflow body
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         
@@ -759,7 +762,7 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
         }
         
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }

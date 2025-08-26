@@ -88,7 +88,7 @@ where
     let mut items = Vec::new();
     
     // Check for empty list
-    if stream.peek_token() == Some(&close) {
+    if stream.peek_token() == Some(close.clone()) {
         stream.expect(close)?;
         return Ok(items);
     }
@@ -97,11 +97,11 @@ where
     items.push(parser(stream)?);
     
     // Parse remaining items
-    while stream.peek_token() != Some(&close) {
+    while stream.peek_token() != Some(close.clone()) {
         stream.expect(separator.clone())?;
         
         // Allow trailing separator
-        if stream.peek_token() == Some(&close) {
+        if stream.peek_token() == Some(close.clone()) {
             break;
         }
         
@@ -234,7 +234,6 @@ mod tests {
             |s| {
                 match s.peek_token() {
                     Some(Token::IntLiteral(n)) => {
-                        let n = *n;
                         s.next();
                         Ok(n)
                     }

@@ -28,7 +28,7 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
     let preprocessed = command_preprocessor::preprocess_commands(source)?;
     
     // Parse the processed source (without problematic command content)
-    let mut doc = document::parse_document(&preprocessed.processed_source, version)?;
+    let doc = document::parse_document(&preprocessed.processed_source, version)?;
     
     // TODO: Re-inject command blocks into the parsed AST
     // For now, we'll just parse with placeholders

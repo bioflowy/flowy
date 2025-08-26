@@ -79,7 +79,7 @@ pub fn parse_array_type(stream: &mut TokenStream) -> ParseResult<Type> {
     stream.expect(Token::RightBracket)?;
     
     // Check for non-empty array marker (+)
-    let nonempty = if stream.peek_token() == Some(&Token::Plus) {
+    let nonempty = if stream.peek_token() == Some(Token::Plus) {
         stream.next();
         true
     } else {
@@ -168,12 +168,13 @@ pub fn parse_struct_type(stream: &mut TokenStream) -> ParseResult<Type> {
         Some(Token::Identifier(name)) => {
             // Check if it starts with uppercase
             if name.chars().next().map_or(false, |c| c.is_uppercase()) {
-                let type_name = name.clone();
+                let type_name = name.clone(); // We need to clone here since we'll consume the token
                 stream.next();
                 Ok(Type::struct_instance(type_name, false))
             } else {
+                let pos = stream.current_position();
                 Err(WdlError::syntax_error(
-                    stream.current_position(),
+                    pos,
                     format!("Struct type names must start with uppercase: {}", name),
                     "1.0".to_string(),
                     None,
@@ -220,7 +221,7 @@ pub fn parse_type(stream: &mut TokenStream) -> ParseResult<Type> {
     };
     
     // Check for optional suffix (?)
-    if stream.peek_token() == Some(&Token::Question) {
+    if stream.peek_token() == Some(Token::Question) {
         stream.next();
         
         // Set optional flag on the type

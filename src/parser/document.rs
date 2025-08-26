@@ -122,17 +122,17 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
     
     // Parse optional aliases
     let mut aliases = HashMap::new();
-    if stream.peek_token() == Some(&Token::LeftBrace) {
+    if stream.peek_token() == Some(Token::LeftBrace) {
         stream.next(); // consume {
         
         // Parse alias mappings
-        while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+        while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
             // Skip newlines
-            while stream.peek_token() == Some(&Token::Newline) {
+            while stream.peek_token() == Some(Token::Newline) {
                 stream.next();
             }
             
-            if stream.peek_token() == Some(&Token::RightBrace) {
+            if stream.peek_token() == Some(Token::RightBrace) {
                 break;
             }
             
@@ -175,12 +175,12 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
             aliases.insert(alias_name, target_name);
             
             // Optional comma
-            if stream.peek_token() == Some(&Token::Comma) {
+            if stream.peek_token() == Some(Token::Comma) {
                 stream.next();
             }
             
             // Skip newlines
-            while stream.peek_token() == Some(&Token::Newline) {
+            while stream.peek_token() == Some(Token::Newline) {
                 stream.next();
             }
         }
@@ -238,13 +238,13 @@ fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
     let mut members = HashMap::new();
     
     // Parse struct members
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         
@@ -271,7 +271,7 @@ fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
         members.insert(member_name, member_type);
         
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
@@ -295,7 +295,7 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
     // Parse document elements
     while !stream.is_eof() {
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
@@ -323,8 +323,9 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
                     }
                     "workflow" => {
                         if workflow.is_some() {
+                            let workflow_pos = stream.current_position();
                             return Err(WdlError::syntax_error(
-                                stream.current_position(),
+                                workflow_pos,
                                 "Multiple workflow definitions not allowed".to_string(),
                                 version.to_string(),
                                 None,
@@ -333,8 +334,9 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
                         workflow = Some(parse_workflow(&mut stream)?);
                     }
                     _ => {
+                        let pos = stream.current_position();
                         return Err(WdlError::syntax_error(
-                            stream.current_position(),
+                            pos,
                             format!("Unexpected keyword at top level: {}", kw),
                             version.to_string(),
                             None,
@@ -353,7 +355,7 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
         }
         
         // Skip newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }

@@ -8,7 +8,6 @@ use crate::error::{SourcePosition, WdlError};
 use crate::parser;
 use crate::stdlib::StdLib;
 use crate::tree::*;
-use crate::types::Type;
 use crate::value::Value;
 
 /// Create a test source position

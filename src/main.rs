@@ -3,7 +3,7 @@
 //! Command-line interface for executing WDL workflows and tasks.
 
 use miniwdl_rust::{
-    parser, runtime, Bindings, RuntimeBuilder, Value, WdlError, Type,
+    parser, runtime, Bindings, Value, WdlError, Type,
 };
 use std::fs;
 use std::path::{Path, PathBuf};

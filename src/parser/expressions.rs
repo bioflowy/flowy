@@ -186,7 +186,7 @@ pub fn parse_binary_expr(stream: &mut TokenStream, min_precedence: u8) -> ParseR
     
     loop {
         // Check for binary operator
-        let precedence = match stream.peek_token() {
+        let precedence = match stream.peek_token().as_ref() {
             Some(token) => match get_precedence(token) {
                 Some(prec) if prec >= min_precedence => prec,
                 _ => break,
@@ -194,7 +194,7 @@ pub fn parse_binary_expr(stream: &mut TokenStream, min_precedence: u8) -> ParseR
             None => break,
         };
         
-        let op = match stream.peek_token().and_then(token_to_binary_op) {
+        let op = match stream.peek_token().as_ref().and_then(token_to_binary_op) {
             Some(op) => {
                 stream.next();
                 op
@@ -215,7 +215,7 @@ pub fn parse_ternary_expr(stream: &mut TokenStream) -> ParseResult<Expression> {
     let condition = parse_binary_expr(stream, 1)?;
     
     // Check for ternary operator
-    if stream.peek_token() == Some(&Token::Question) {
+    if stream.peek_token() == Some(Token::Question) {
         let pos = stream.current_position();
         stream.next(); // consume ?
         
@@ -242,12 +242,13 @@ pub fn parse_primary_expr(stream: &mut TokenStream) -> ParseResult<Expression> {
                 
                 let first = parse_expression(stream)?;
                 
-                if stream.peek_token() == Some(&Token::Comma) {
+                if stream.peek_token() == Some(Token::Comma) {
                     // It's a pair literal
                     stream.next(); // consume ,
                     let second = parse_expression(stream)?;
                     stream.expect(Token::RightParen)?;
-                    Ok(Expression::pair(stream.current_position(), first, second))
+                    let pair_pos = stream.current_position();
+                    Ok(Expression::pair(pair_pos, first, second))
                 } else {
                     // It's a parenthesized expression
                     stream.expect(Token::RightParen)?;
@@ -262,12 +263,15 @@ pub fn parse_primary_expr(stream: &mut TokenStream) -> ParseResult<Expression> {
             Token::Keyword(kw) if kw == "true" || kw == "false" || kw == "None" => {
                 parse_literal(stream)
             }
-            _ => Err(WdlError::syntax_error(
-                stream.current_position(),
-                format!("Unexpected token in expression: {:?}", token),
-                "1.0".to_string(),
-                None,
-            ))
+            _ => {
+                let pos = stream.current_position();
+                Err(WdlError::syntax_error(
+                    pos,
+                    format!("Unexpected token in expression: {:?}", token),
+                    "1.0".to_string(),
+                    None,
+                ))
+            }
         }
     } else {
         Err(WdlError::syntax_error(
@@ -288,7 +292,6 @@ pub fn parse_expression(stream: &mut TokenStream) -> ParseResult<Expression> {
 mod tests {
     use super::*;
     use crate::parser::token_stream::TokenStream;
-    use crate::expr::ExpressionBase;
     
     #[test]
     fn test_parse_identifier() {

@@ -47,18 +47,18 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
     };
     
     // Check for namespace (lib.task)
-    while stream.peek_token() == Some(&Token::Dot) {
+    while stream.peek_token() == Some(Token::Dot) {
         stream.next(); // consume dot
         match stream.peek_token() {
             Some(Token::Identifier(name)) => {
                 task_name.push('.');
-                task_name.push_str(name);
+                task_name.push_str(&name);
                 stream.next();
             }
             Some(Token::Keyword(kw)) => {
                 // Allow keywords after dot in namespaced calls
                 task_name.push('.');
-                task_name.push_str(kw);
+                task_name.push_str(&kw);
                 stream.next();
             }
             _ => {
@@ -97,7 +97,7 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
     };
     
     // Parse optional input mappings
-    let inputs = if stream.peek_token() == Some(&Token::LeftBrace) {
+    let inputs = if stream.peek_token() == Some(Token::LeftBrace) {
         parse_call_inputs(stream)?
     } else {
         HashMap::new()
@@ -128,7 +128,7 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
         }
         
         // Parse remaining dependencies
-        while stream.peek_token() == Some(&Token::Comma) {
+        while stream.peek_token() == Some(Token::Comma) {
             stream.next(); // consume comma
             match stream.peek_token() {
                 Some(Token::Identifier(name)) => {
@@ -154,13 +154,13 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
     let mut inputs = HashMap::new();
     
     // Skip whitespace and newlines
-    while stream.peek_token() == Some(&Token::Newline) || 
+    while stream.peek_token() == Some(Token::Newline) || 
           matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
         stream.next();
     }
     
     // Check for empty inputs
-    if stream.peek_token() == Some(&Token::RightBrace) {
+    if stream.peek_token() == Some(Token::RightBrace) {
         stream.next();
         return Ok(inputs);
     }
@@ -171,7 +171,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
         stream.expect(Token::Colon)?; // expect :
         
         // Skip whitespace and newlines after "input:"
-        while stream.peek_token() == Some(&Token::Newline) || 
+        while stream.peek_token() == Some(Token::Newline) || 
               matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
             stream.next();
         }
@@ -180,13 +180,13 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
     // Parse input mappings
     loop {
         // Skip whitespace and newlines
-        while stream.peek_token() == Some(&Token::Newline) || 
+        while stream.peek_token() == Some(Token::Newline) || 
               matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
             stream.next();
         }
         
         // Check if we've reached the end
-        if stream.peek_token() == Some(&Token::RightBrace) {
+        if stream.peek_token() == Some(Token::RightBrace) {
             break;
         }
         
@@ -226,7 +226,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
                 inputs.insert(name, expr);
                 
                 // Check for comma or end
-                if stream.peek_token() == Some(&Token::Comma) {
+                if stream.peek_token() == Some(Token::Comma) {
                     stream.next(); // consume comma
                     continue;
                 } else {
@@ -240,7 +240,7 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
         inputs.insert(name, expr);
         
         // Check for comma or end
-        if stream.peek_token() == Some(&Token::Comma) {
+        if stream.peek_token() == Some(Token::Comma) {
             stream.next(); // consume comma
         } else {
             break;
@@ -358,14 +358,14 @@ pub fn parse_workflow_body(stream: &mut TokenStream) -> ParseResult<Vec<Workflow
     let mut elements = Vec::new();
     
     // Parse elements until closing brace
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip any newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
         // Check if we've reached the end
-        if stream.peek_token() == Some(&Token::RightBrace) || stream.is_eof() {
+        if stream.peek_token() == Some(Token::RightBrace) || stream.is_eof() {
             break;
         }
         
@@ -374,7 +374,7 @@ pub fn parse_workflow_body(stream: &mut TokenStream) -> ParseResult<Vec<Workflow
         elements.push(element);
         
         // Skip any newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }
@@ -409,8 +409,9 @@ pub fn parse_workflow_element(stream: &mut TokenStream) -> ParseResult<WorkflowE
                     Ok(WorkflowElement::Declaration(decl))
                 }
                 _ => {
+                    let pos = stream.current_position();
                     Err(WdlError::syntax_error(
-                        stream.current_position(),
+                        pos,
                         format!("Unexpected keyword in workflow body: {}", kw),
                         "1.0".to_string(),
                         None,

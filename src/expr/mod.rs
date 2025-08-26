@@ -7,8 +7,8 @@
 
 use crate::error::{SourcePosition, WdlError, HasSourcePosition, SourceNode};
 use crate::env::Bindings;
-use crate::types::Type;
 use crate::stdlib::StdLib;
+use crate::types::Type;
 use crate::value::Value;
 use std::collections::HashMap;
 use std::fmt;

@@ -33,7 +33,7 @@ pub fn parse_declaration(stream: &mut TokenStream, id_prefix: &str) -> ParseResu
     };
     
     // Check for assignment
-    let expr = if stream.peek_token() == Some(&Token::Assign) {
+    let expr = if stream.peek_token() == Some(Token::Assign) {
         stream.next(); // consume =
         Some(parse_expression(stream)?)
     } else {
@@ -64,14 +64,14 @@ pub fn parse_declaration_list(stream: &mut TokenStream, id_prefix: &str) -> Pars
     let mut declarations = Vec::new();
     
     // Parse declarations until we hit a closing brace or EOF
-    while stream.peek_token() != Some(&Token::RightBrace) && !stream.is_eof() {
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip any newlines
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
         
         // Check if we've reached the end
-        if stream.peek_token() == Some(&Token::RightBrace) || stream.is_eof() {
+        if stream.peek_token() == Some(Token::RightBrace) || stream.is_eof() {
             break;
         }
         
@@ -80,7 +80,7 @@ pub fn parse_declaration_list(stream: &mut TokenStream, id_prefix: &str) -> Pars
         declarations.push(decl);
         
         // Consume optional newlines after declaration
-        while stream.peek_token() == Some(&Token::Newline) {
+        while stream.peek_token() == Some(Token::Newline) {
             stream.next();
         }
     }

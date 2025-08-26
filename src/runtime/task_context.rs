@@ -12,7 +12,6 @@ use crate::runtime::fs_utils::{WorkflowDirectory, create_dir_all, write_file_ato
 use crate::tree::Task;
 use crate::env::Bindings;
 use crate::types::Type;
-use crate::stdlib::{StdLib, Function};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Command, Stdio, ExitStatus};
@@ -306,6 +305,7 @@ impl TaskContext {
     }
     
     /// Read stdout from command execution
+    #[allow(dead_code)]
     fn read_stdout(&self) -> RuntimeResult<String> {
         let stdout_path = self.task_dir.join("stdout");
         if stdout_path.exists() {
@@ -316,6 +316,7 @@ impl TaskContext {
     }
     
     /// Read stderr from command execution  
+    #[allow(dead_code)]
     fn read_stderr(&self) -> RuntimeResult<String> {
         let stderr_path = self.task_dir.join("stderr");
         if stderr_path.exists() {
