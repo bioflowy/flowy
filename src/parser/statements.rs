@@ -147,11 +147,17 @@ pub fn parse_call_statement(stream: &mut TokenStream) -> ParseResult<Call> {
     Ok(Call::new(pos, task_name, alias, inputs, afters))
 }
 
-/// Parse call input mappings: { input_name: expression, ... }
+/// Parse call input mappings: { [input:] input_name = expression, ... }
 fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, crate::expr::Expression>> {
     stream.expect(Token::LeftBrace)?;
     
     let mut inputs = HashMap::new();
+    
+    // Skip whitespace and newlines
+    while stream.peek_token() == Some(&Token::Newline) || 
+          matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
+        stream.next();
+    }
     
     // Check for empty inputs
     if stream.peek_token() == Some(&Token::RightBrace) {
@@ -159,8 +165,31 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
         return Ok(inputs);
     }
     
+    // Check for optional "input:" keyword
+    if matches!(stream.peek_token(), Some(Token::Keyword(kw)) if kw == "input") {
+        stream.next(); // consume "input"
+        stream.expect(Token::Colon)?; // expect :
+        
+        // Skip whitespace and newlines after "input:"
+        while stream.peek_token() == Some(&Token::Newline) || 
+              matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
+            stream.next();
+        }
+    }
+    
     // Parse input mappings
     loop {
+        // Skip whitespace and newlines
+        while stream.peek_token() == Some(&Token::Newline) || 
+              matches!(stream.peek_token(), Some(Token::Whitespace(_))) {
+            stream.next();
+        }
+        
+        // Check if we've reached the end
+        if stream.peek_token() == Some(&Token::RightBrace) {
+            break;
+        }
+        
         // Parse input name (could be an identifier or keyword used as identifier)
         let name = match stream.peek_token() {
             Some(Token::Identifier(n)) => {
@@ -168,33 +197,30 @@ fn parse_call_inputs(stream: &mut TokenStream) -> ParseResult<HashMap<String, cr
                 stream.next();
                 name
             }
-            Some(Token::Keyword(kw)) => {
-                // Allow keywords to be used as input names in call blocks
+            Some(Token::Keyword(kw)) if kw != "input" => {
+                // Allow keywords to be used as input names in call blocks (except "input")
                 let name = kw.clone();
                 stream.next();
                 name
             }
             _ => {
-                // Check if we've reached the end
-                if stream.peek_token() == Some(&Token::RightBrace) {
-                    break;
-                }
                 return Err(WdlError::syntax_error(
                     stream.current_position(),
-                    "Expected input name".to_string(),
+                    "Expected input parameter name".to_string(),
                     "1.0".to_string(),
                     None,
                 ));
             }
         };
         
-        // Check for : or = (both are allowed)
+        // Check for = or : (both are assignment in call inputs)
         match stream.peek_token() {
-            Some(Token::Colon) | Some(Token::Assign) => {
-                stream.next(); // consume : or =
+            Some(Token::Assign) | Some(Token::Colon) => {
+                stream.next(); // consume = or :
             }
             _ => {
-                // Shorthand: input_name is both the key and refers to a variable
+                // WDL 1.1+ allows shorthand: input_name without = expr
+                // This means input_name = input_name (references a variable with same name)
                 let pos = stream.current_position();
                 let expr = crate::expr::Expression::ident(pos, name.clone());
                 inputs.insert(name, expr);

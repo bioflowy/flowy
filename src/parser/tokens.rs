@@ -57,14 +57,23 @@ pub enum Token {
     PlusQuestion, // +?
     
     // Special markers for commands and strings
-    CommandStart,      // { or <<<
-    CommandEnd,        // } or >>>
-    PlaceholderStart,  // ${ or ~{
-    PlaceholderEnd,    // }
+    CommandStart,      // { after command keyword
+    CommandEnd,        // } closing command block
+    HeredocStart,      // <<< for heredoc command
+    HeredocEnd,        // >>> for heredoc command  
+    DollarBrace,       // ${ placeholder start
+    TildeBrace,        // ~{ placeholder start
+    PlaceholderEnd,    // } closing placeholder
     
     // String quotes
     SingleQuote,
     DoubleQuote,
+    
+    // Command content (raw text in command blocks)
+    CommandText(String),
+    
+    // Command block placeholder (from preprocessing)
+    CommandPlaceholder(String),
     
     // Whitespace (preserved in certain contexts)
     Whitespace(String),
@@ -96,6 +105,7 @@ impl Token {
                 | Token::FloatLiteral(_)
                 | Token::BoolLiteral(_)
                 | Token::StringLiteral(_)
+                | Token::CommandText(_)
         )
     }
     
@@ -164,13 +174,19 @@ impl fmt::Display for Token {
             Token::Question => write!(f, "?"),
             Token::PlusQuestion => write!(f, "+?"),
             
-            Token::CommandStart => write!(f, "command{{"),
+            Token::CommandStart => write!(f, "{{"),
             Token::CommandEnd => write!(f, "}}"),
-            Token::PlaceholderStart => write!(f, "${{/~{{"),
+            Token::HeredocStart => write!(f, "<<<"),
+            Token::HeredocEnd => write!(f, ">>>"),
+            Token::DollarBrace => write!(f, "${{"),
+            Token::TildeBrace => write!(f, "~{{"),
             Token::PlaceholderEnd => write!(f, "}}"),
             
             Token::SingleQuote => write!(f, "'"),
             Token::DoubleQuote => write!(f, "\""),
+            
+            Token::CommandText(s) => write!(f, "{}", s),
+            Token::CommandPlaceholder(s) => write!(f, "{}", s),
             
             Token::Whitespace(s) => write!(f, "{}", s),
             Token::Newline => write!(f, "\\n"),

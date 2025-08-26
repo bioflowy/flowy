@@ -1,7 +1,7 @@
 //! Token stream for parsing WDL
 
 use super::tokens::{Token, LocatedToken};
-use super::lexer::{Span, normal_token};
+use super::lexer::{Span, normal_token, stateful_token, Lexer, LexerMode};
 use crate::error::{SourcePosition, WdlError};
 use nom::multi::many0;
 
@@ -11,17 +11,67 @@ pub struct TokenStream {
     tokens: Vec<LocatedToken>,
     position: usize,
     version: String,
+    lexer: Lexer,
+    source: String, // Keep original source for re-tokenizing
 }
 
 impl TokenStream {
     /// Create a new token stream from source text
     pub fn new(source: &str, version: &str) -> Result<Self, WdlError> {
         let tokens = tokenize(source, version)?;
+        let lexer = Lexer::new(version);
         Ok(TokenStream {
             tokens,
             position: 0,
             version: version.to_string(),
+            lexer,
+            source: source.to_string(),
         })
+    }
+    
+    /// Switch to command mode for parsing command blocks
+    pub fn enter_command_mode(&mut self) {
+        self.lexer.push_mode(LexerMode::Command);
+    }
+    
+    /// Exit command mode back to normal mode
+    pub fn exit_command_mode(&mut self) {
+        self.lexer.pop_mode();
+    }
+    
+    /// Get current lexer mode
+    pub fn current_mode(&self) -> LexerMode {
+        self.lexer.current_mode()
+    }
+    
+    /// Parse command content using command-mode tokenization
+    /// This method allows re-tokenizing specific content with command-mode rules
+    pub fn parse_command_content(&self, command_text: &str) -> Result<Vec<LocatedToken>, WdlError> {
+        let mut command_lexer = Lexer::new(&self.version);
+        command_lexer.push_mode(LexerMode::Command);
+        
+        let input = Span::new(command_text);
+        let tokenizer = stateful_token(&command_lexer);
+        
+        // Parse all tokens in command mode
+        let result = many0(tokenizer)(input);
+        
+        match result {
+            Ok((_remaining, tokens)) => {
+                // It's OK if we don't consume all input in command mode
+                // since command content can contain arbitrary shell syntax
+                Ok(tokens)
+            }
+            Err(e) => {
+                let pos = SourcePosition::new("".to_string(), "".to_string(), 1, 1, 1, 1);
+                Err(WdlError::syntax_error(
+                    pos,
+                    format!("Command tokenization error: {:?}", e),
+                    self.version.clone(),
+                    None,
+                ))
+            }
+        }
     }
     
     /// Peek at the current token without consuming it

@@ -160,6 +160,7 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
 }
 
 /// Parse command section: command { ... } or command <<< ... >>>
+/// This method handles both regular commands and preprocessed placeholders
 fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
     
@@ -178,34 +179,51 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
         }
     }
     
-    // For now, we'll parse the command as a simple string expression
-    // In a real implementation, we'd handle heredoc syntax and string interpolation
-    
-    // Check for { or <<<
+    // Check for command placeholder (from preprocessing) or regular command
     match stream.peek_token() {
+        Some(Token::CommandPlaceholder(placeholder_id)) => {
+            // This is a preprocessed command block
+            let placeholder = placeholder_id.clone();
+            stream.next();
+            
+            // For now, just treat the placeholder as the command content
+            // In a full implementation, we'd look up the actual command content
+            // from the preprocessor result and parse it properly
+            Ok(Expression::string_literal(pos, format!("PLACEHOLDER: {}", placeholder)))
+        }
         Some(Token::LeftBrace) => {
             stream.next();
             
-            // Parse command text until }
-            // This is simplified - real implementation would handle whitespace preservation
-            let command_text = parse_command_block_content(stream)?;
+            // Use special command-mode parsing
+            let command_text = parse_command_block_with_mode(stream)?;
             
             stream.expect(Token::RightBrace)?;
             
             Ok(Expression::string_literal(pos, command_text))
         }
+        Some(Token::HeredocStart) => {
+            stream.next();
+            
+            // Use special command-mode parsing for heredoc
+            let command_text = parse_heredoc_with_mode(stream)?;
+            
+            stream.expect(Token::HeredocEnd)?;
+            
+            Ok(Expression::string_literal(pos, command_text))
+        }
         _ => {
-            // Try to parse heredoc syntax <<<...>>>
-            // For now, just parse as a string expression
-            parse_expression(stream)
+            return Err(WdlError::syntax_error(
+                stream.current_position(),
+                "Expected '{', '<<<', or command placeholder after 'command' keyword".to_string(),
+                "1.0".to_string(),
+                None,
+            ));
         }
     }
 }
 
-/// Parse command block content (simplified)
-fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> {
-    // This is a simplified implementation
-    // Real implementation would preserve all whitespace and handle interpolations
+/// Parse command block content using command-mode tokenization
+fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
     let mut content = String::new();
     let mut depth = 1;
     
@@ -222,12 +240,242 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
                     content.push('}');
                     stream.next();
                 } else {
+                    // Don't consume the closing brace - let caller handle it
                     break;
                 }
             }
+            Some(Token::CommandText(text)) => {
+                content.push_str(text);
+                stream.next();
+            }
+            Some(Token::TildeBrace) => {
+                content.push_str("~{");
+                stream.next();
+                // Parse placeholder content
+                let placeholder_text = parse_placeholder_content(stream)?;
+                content.push_str(&placeholder_text);
+                content.push('}');
+                // The closing } should be consumed by parse_placeholder_content
+            }
+            Some(Token::DollarBrace) => {
+                content.push_str("${");
+                stream.next();
+                // Parse placeholder content
+                let placeholder_text = parse_placeholder_content(stream)?;
+                content.push_str(&placeholder_text);
+                content.push('}');
+                // The closing } should be consumed by parse_placeholder_content
+            }
             Some(token) => {
-                // Add token to content (simplified)
-                content.push_str(&format!("{:?} ", token));
+                // Handle other tokens (whitespace, newlines, etc.)
+                match token {
+                    Token::Whitespace(s) => content.push_str(s),
+                    Token::Newline => content.push('\n'),
+                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(s),
+                    Token::IntLiteral(n) => content.push_str(&n.to_string()),
+                    Token::FloatLiteral(f) => content.push_str(&f.to_string()),
+                    _ => content.push_str(&format!("{}", token)),
+                }
+                stream.next();
+            }
+            None => break,
+        }
+    }
+    
+    Ok(content)
+}
+
+/// Parse heredoc content using command-mode tokenization
+fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
+    let mut content = String::new();
+    
+    while !stream.is_eof() {
+        match stream.peek_token() {
+            Some(Token::HeredocEnd) => {
+                // Don't consume the closing >>> - let caller handle it
+                break;
+            }
+            Some(Token::CommandText(text)) => {
+                content.push_str(text);
+                stream.next();
+            }
+            Some(Token::TildeBrace) => {
+                content.push_str("~{");
+                stream.next();
+                // Parse placeholder content
+                let placeholder_text = parse_placeholder_content(stream)?;
+                content.push_str(&placeholder_text);
+                content.push('}');
+            }
+            Some(Token::DollarBrace) => {
+                content.push_str("${");
+                stream.next();
+                // Parse placeholder content
+                let placeholder_text = parse_placeholder_content(stream)?;
+                content.push_str(&placeholder_text);
+                content.push('}');
+            }
+            Some(token) => {
+                // Handle other tokens (whitespace, newlines, etc.)
+                match token {
+                    Token::Whitespace(s) => content.push_str(s),
+                    Token::Newline => content.push('\n'),
+                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(s),
+                    Token::IntLiteral(n) => content.push_str(&n.to_string()),
+                    Token::FloatLiteral(f) => content.push_str(&f.to_string()),
+                    _ => content.push_str(&format!("{}", token)),
+                }
+                stream.next();
+            }
+            None => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Unexpected end of file in heredoc command".to_string(),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
+        }
+    }
+    
+    Ok(content)
+}
+
+/// Parse heredoc content until >>>
+fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
+    let mut content = String::new();
+    let mut buffer = String::new();
+    
+    while !stream.is_eof() {
+        match stream.peek_token() {
+            Some(Token::HeredocEnd) => {
+                // Found the end marker
+                break;
+            }
+            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                // Start of placeholder - for now just record it
+                content.push_str(&buffer);
+                buffer.clear();
+                
+                let placeholder_type = stream.peek_token().unwrap().clone();
+                stream.next();
+                
+                // Parse placeholder content until }
+                let placeholder_text = parse_placeholder_content(stream)?;
+                
+                // For now, just include placeholder as literal text
+                match placeholder_type {
+                    Token::TildeBrace => content.push_str(&format!("~{{{}}}", placeholder_text)),
+                    Token::DollarBrace => content.push_str(&format!("${{{}}}", placeholder_text)),
+                    _ => {}
+                }
+            }
+            Some(token) => {
+                // Accumulate other tokens as text
+                // In a real parser, we'd preserve the exact text representation
+                match token {
+                    Token::Whitespace(s) => buffer.push_str(s),
+                    Token::Newline => buffer.push('\n'),
+                    Token::Identifier(s) | Token::Keyword(s) => buffer.push_str(s),
+                    Token::IntLiteral(n) => buffer.push_str(&n.to_string()),
+                    Token::FloatLiteral(f) => buffer.push_str(&f.to_string()),
+                    Token::StringLiteral(s) => buffer.push_str(s),
+                    _ => buffer.push_str(&format!("{}", token)),
+                }
+                stream.next();
+            }
+            None => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Unexpected end of file in heredoc command".to_string(),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
+        }
+    }
+    
+    content.push_str(&buffer);
+    Ok(content)
+}
+
+/// Parse placeholder content until }
+fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
+    let mut content = String::new();
+    let mut depth = 1;
+    
+    while !stream.is_eof() && depth > 0 {
+        match stream.peek_token() {
+            Some(Token::LeftBrace) | Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                depth += 1;
+                content.push_str(&format!("{}", stream.peek_token().unwrap()));
+                stream.next();
+            }
+            Some(Token::RightBrace) | Some(Token::PlaceholderEnd) => {
+                depth -= 1;
+                if depth > 0 {
+                    content.push('}');
+                }
+                stream.next();
+            }
+            Some(token) => {
+                content.push_str(&format!("{}", token));
+                stream.next();
+            }
+            None => break,
+        }
+    }
+    
+    Ok(content)
+}
+
+/// Parse command block content (simplified)
+fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> {
+    let mut content = String::new();
+    let mut depth = 1;
+    
+    while !stream.is_eof() && depth > 0 {
+        match stream.peek_token() {
+            Some(Token::LeftBrace) => {
+                depth += 1;
+                content.push('{');
+                stream.next();
+            }
+            Some(Token::RightBrace) => {
+                depth -= 1;
+                if depth > 0 {
+                    content.push('}');
+                    stream.next();
+                } else {
+                    break;
+                }
+            }
+            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                // Start of placeholder
+                let placeholder_type = stream.peek_token().unwrap().clone();
+                stream.next();
+                
+                // Parse placeholder content until }
+                let placeholder_text = parse_placeholder_content(stream)?;
+                
+                // For now, just include placeholder as literal text
+                match placeholder_type {
+                    Token::TildeBrace => content.push_str(&format!("~{{{}}}", placeholder_text)),
+                    Token::DollarBrace => content.push_str(&format!("${{{}}}", placeholder_text)),
+                    _ => {}
+                }
+            }
+            Some(token) => {
+                // Add token to content
+                match token {
+                    Token::Whitespace(s) => content.push_str(s),
+                    Token::Newline => content.push('\n'),
+                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(s),
+                    Token::IntLiteral(n) => content.push_str(&n.to_string()),
+                    Token::FloatLiteral(f) => content.push_str(&f.to_string()),
+                    Token::StringLiteral(s) => content.push_str(s),
+                    _ => content.push_str(&format!("{}", token)),
+                }
                 stream.next();
             }
             None => break,

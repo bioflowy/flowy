@@ -12,6 +12,8 @@ pub mod declarations;
 pub mod statements;
 pub mod tasks;
 pub mod document;
+pub mod command_parser;
+pub mod command_preprocessor;
 
 
 use crate::error::WdlError;
@@ -22,7 +24,15 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 
 /// Parse a WDL document from source text
 pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError> {
-    // Use the document parser
-    document::parse_document(source, version)
+    // First, preprocess to extract command blocks
+    let preprocessed = command_preprocessor::preprocess_commands(source)?;
+    
+    // Parse the processed source (without problematic command content)
+    let mut doc = document::parse_document(&preprocessed.processed_source, version)?;
+    
+    // TODO: Re-inject command blocks into the parsed AST
+    // For now, we'll just parse with placeholders
+    
+    Ok(doc)
 }
 

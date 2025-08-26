@@ -30,6 +30,7 @@ pub enum LexerMode {
 }
 
 /// Stateful lexer for WDL
+#[derive(Debug, Clone)]
 pub struct Lexer {
     mode_stack: Vec<LexerMode>,
     #[allow(dead_code)]
@@ -179,6 +180,18 @@ pub fn string_literal(input: Span) -> IResult<Span, Token> {
     ))(input)
 }
 
+/// Parse command placeholder tokens (from preprocessing)
+pub fn command_placeholder(input: Span) -> IResult<Span, Token> {
+    map(
+        recognize(tuple((
+            tag("__COMMAND_BLOCK_"),
+            digit1,
+            tag("__")
+        ))),
+        |s: Span| Token::CommandPlaceholder(s.fragment().to_string())
+    )(input)
+}
+
 /// Parse an identifier or keyword
 pub fn identifier_or_keyword(version: &str) -> impl Fn(Span) -> IResult<Span, Token> + '_ {
     move |input: Span| {
@@ -194,6 +207,100 @@ pub fn identifier_or_keyword(version: &str) -> impl Fn(Span) -> IResult<Span, To
         } else {
             Ok((input, Token::Identifier(word.to_string())))
         }
+    }
+}
+
+/// Parse special command/heredoc tokens in normal mode
+pub fn command_tokens(input: Span) -> IResult<Span, Token> {
+    alt((
+        value(Token::HeredocStart, tag("<<<")),
+        value(Token::HeredocEnd, tag(">>>")),
+        value(Token::TildeBrace, tag("~{")),
+        value(Token::DollarBrace, tag("${")),
+        // Note: ${ must come after ~{ due to ordering
+    ))(input)
+}
+
+/// Parse text content in command mode (allows shell syntax like $( but recognizes ${)
+pub fn command_mode_text(input: Span) -> IResult<Span, Token> {
+    // This follows miniwdl's pattern:
+    // COMMAND1_CHAR: /[^~$}]/ | /\$(?=[^{])/ | /~(?=[^{])/
+    
+    use nom::bytes::complete::take_while1;
+    use nom::combinator::recognize;
+    
+    // Take characters that are safe in command mode
+    let (input, text) = recognize(
+        take_while1(|c: char| {
+            match c {
+                // Never consume these - they have special meaning
+                '}' => false,
+                
+                // Don't consume ~ or $ here - they're handled separately
+                '~' | '$' => false,
+                
+                // Allow everything else
+                _ => true,
+            }
+        })
+    )(input)?;
+    
+    Ok((input, Token::CommandText(text.fragment().to_string())))
+}
+
+/// Parse $ or ~ with lookahead in command mode
+pub fn command_mode_special_chars(input: Span) -> IResult<Span, Token> {
+    alt((
+        // ${  -> DollarBrace token
+        value(Token::DollarBrace, tag("${")),
+        
+        // ~{  -> TildeBrace token
+        value(Token::TildeBrace, tag("~{")),
+        
+        // $ not followed by { -> part of shell syntax, treat as text
+        map(
+            recognize(tuple((
+                char('$'),
+                nom::combinator::not(char('{')), // negative lookahead
+                nom::combinator::peek(nom::character::complete::anychar), // must have next char
+            ))),
+            |s: Span| Token::CommandText(s.fragment().chars().take(1).collect()) // just the $
+        ),
+        
+        // ~ not followed by { -> regular text
+        map(
+            recognize(tuple((
+                char('~'),
+                nom::combinator::not(char('{')), // negative lookahead
+                nom::combinator::peek(nom::character::complete::anychar), // must have next char
+            ))),
+            |s: Span| Token::CommandText(s.fragment().chars().take(1).collect()) // just the ~
+        ),
+    ))(input)
+}
+
+/// Parse a single token in command mode
+pub fn command_mode_token(_version: &str) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
+    move |input: Span| {
+        let pos = span_to_position(input);
+        let (input, token) = alt((
+            // Check for closing command delimiters first
+            value(Token::RightBrace, char('}')),
+            value(Token::HeredocEnd, tag(">>>")),
+            
+            // Handle special characters with lookahead
+            command_mode_special_chars,
+            
+            // Handle regular text
+            command_mode_text,
+            
+            // Handle whitespace and newlines (preserve in command mode)
+            whitespace,
+            newline,
+            comment,
+        ))(input)?;
+        
+        Ok((input, LocatedToken::new(token, pos)))
     }
 }
 
@@ -244,11 +351,31 @@ pub fn punctuation(input: Span) -> IResult<Span, Token> {
     ))(input)
 }
 
+/// Parse a single token based on lexer mode (stateful)
+pub fn stateful_token(lexer: &Lexer) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
+    move |input: Span| {
+        match lexer.current_mode() {
+            LexerMode::Normal => normal_token(&lexer.version)(input),
+            LexerMode::Command => command_mode_token(&lexer.version)(input),
+            LexerMode::StringLiteral => {
+                // TODO: Implement string literal mode if needed
+                normal_token(&lexer.version)(input)
+            }
+            LexerMode::Placeholder => {
+                // TODO: Implement placeholder mode if needed
+                normal_token(&lexer.version)(input)
+            }
+        }
+    }
+}
+
 /// Parse a single token in normal mode
 pub fn normal_token(version: &str) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
     move |input: Span| {
         let pos = span_to_position(input);
         let (input, token) = alt((
+            command_placeholder,  // Must come before identifiers (has underscores)
+            command_tokens,  // Must come before operators due to overlaps
             string_literal,  // Must come before other literals
             float_literal,  // Must come before int_literal
             int_literal,
