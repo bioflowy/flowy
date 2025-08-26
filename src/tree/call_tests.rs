@@ -59,6 +59,7 @@ task p {
 "#;
 
 /// Task with no outputs for collision testing  
+#[allow(dead_code)]
 const NO_OUTPUT_TASK: &str = r#"
 task p {
     input {

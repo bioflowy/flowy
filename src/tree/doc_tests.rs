@@ -21,17 +21,20 @@ fn parse_document_from_str(source: &str, version: &str) -> Result<Document, WdlE
 }
 
 /// Parse tasks from a WDL document string
+#[allow(dead_code)]
 fn parse_tasks_from_str(source: &str, version: &str) -> Result<Vec<Task>, WdlError> {
     let doc = parse_document_from_str(source, version)?;
     Ok(doc.tasks)
 }
 
 /// Helper to create a minimal task wrapper for standalone task parsing
+#[allow(dead_code)]
 fn wrap_task_for_parsing(task_source: &str, version: &str) -> String {
     format!("version {}\n{}", version, task_source)
 }
 
 /// Parse a single task from source (wraps in minimal document)
+#[allow(dead_code)]
 fn parse_single_task(task_source: &str, version: &str) -> Result<Task, WdlError> {
     let wrapped = wrap_task_for_parsing(task_source, version);
     let mut tasks = parse_tasks_from_str(&wrapped, version)?;
@@ -282,7 +285,7 @@ mod error_detection_tests {
 
     #[test]
     fn test_invalid_syntax_detection() {
-        let invalid_sources = vec![
+        let invalid_sources = [
             // Missing version
             r#"
             task hello {

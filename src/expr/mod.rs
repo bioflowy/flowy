@@ -7,7 +7,6 @@
 
 use crate::env::Bindings;
 use crate::error::{HasSourcePosition, SourceNode, SourcePosition, WdlError};
-use crate::stdlib::StdLib;
 use crate::types::Type;
 use crate::value::Value;
 use serde::{Deserialize, Serialize};
@@ -448,6 +447,7 @@ pub mod tests;
 mod basic_tests {
     use super::*;
     use crate::env::Bindings;
+    use crate::stdlib::StdLib;
     use crate::types::Type;
     use crate::value::Value;
     use std::collections::HashMap;

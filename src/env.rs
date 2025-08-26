@@ -119,12 +119,7 @@ where
 
     /// Look up a binding by name.
     pub fn resolve_binding(&self, name: &str) -> Option<&Binding<T>> {
-        for binding in self.iter() {
-            if binding.name() == name {
-                return Some(binding);
-            }
-        }
-        None
+        self.iter().find(|&binding| binding.name() == name)
     }
 
     /// Look up a value by name.

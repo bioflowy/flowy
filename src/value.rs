@@ -633,8 +633,8 @@ mod tests {
         let int_val = Value::int(42);
         assert_eq!(int_val.as_int(), Some(42));
 
-        let float_val = Value::float(3.14);
-        assert_eq!(float_val.as_float(), Some(3.14));
+        let float_val = Value::float(std::f64::consts::PI);
+        assert_eq!(float_val.as_float(), Some(std::f64::consts::PI));
 
         let str_val = Value::string("hello".to_string());
         assert_eq!(str_val.as_string(), Some("hello"));

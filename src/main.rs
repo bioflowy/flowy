@@ -2,6 +2,11 @@
 //!
 //! Command-line interface for executing WDL workflows and tasks.
 
+#![allow(clippy::result_large_err)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::missing_transmute_annotations)]
+#![allow(clippy::unneeded_struct_pattern)]
+
 use miniwdl_rust::{parser, runtime, Bindings, Type, Value, WdlError};
 use std::fs;
 use std::path::{Path, PathBuf};

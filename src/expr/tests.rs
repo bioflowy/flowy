@@ -14,12 +14,13 @@ fn test_pos() -> SourcePosition {
 }
 
 /// Helper to parse and evaluate an expression
+#[allow(dead_code)]
 fn parse_and_eval(
     expr_str: &str,
-    env: &Bindings<Value>,
-    stdlib: &StdLib,
+    _env: &Bindings<Value>,
+    _stdlib: &StdLib,
 ) -> Result<Value, WdlError> {
-    let doc = parser::parse_document(
+    let _doc = parser::parse_document(
         &format!(
             "version 1.0\ntask test {{ command {{}} output {{ Int x = {} }}}}",
             expr_str
@@ -940,8 +941,8 @@ mod stdlib_function_tests {
 
     #[test]
     fn test_length_function() {
-        let pos = test_pos();
-        let env: Bindings<Value> = Bindings::new();
+        let _pos = test_pos();
+        let _env: Bindings<Value> = Bindings::new();
         let stdlib = StdLib::new("1.0");
 
         // Test array length
