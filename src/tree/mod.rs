@@ -20,6 +20,9 @@ pub mod control_flow;
 pub mod validation;
 pub mod traversal;
 
+#[cfg(test)]
+mod doc_tests;
+
 /// Base trait for WDL AST nodes
 pub trait ASTNode: SourceNode {
     /// Get the children of this AST node

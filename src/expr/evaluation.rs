@@ -299,11 +299,11 @@ impl ExpressionBase for Expression {
                 // Convert operator to stdlib function name
                 let function_name = match op {
                     BinaryOperator::Add => "_add",
-                    BinaryOperator::Subtract => "_subtract",
-                    BinaryOperator::Multiply => "_multiply",
-                    BinaryOperator::Divide => "_divide",
-                    BinaryOperator::Modulo => "_remainder",
-                    BinaryOperator::Equal => "_eq",
+                    BinaryOperator::Subtract => "_sub",
+                    BinaryOperator::Multiply => "_mul",
+                    BinaryOperator::Divide => "_div",
+                    BinaryOperator::Modulo => "_rem",
+                    BinaryOperator::Equal => "_eqeq",
                     BinaryOperator::NotEqual => "_neq",
                     BinaryOperator::Less => "_lt",
                     BinaryOperator::LessEqual => "_lte",

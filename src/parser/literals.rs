@@ -4,7 +4,7 @@ use super::token_stream::TokenStream;
 use super::tokens::Token;
 use super::parser_utils::ParseResult;
 use super::expressions::parse_expression;
-use crate::expr::{Expression, StringPart};
+use crate::expr::{Expression, StringPart, ExpressionBase};
 use crate::error::WdlError;
 
 /// Parse an integer literal

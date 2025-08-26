@@ -408,6 +408,7 @@ impl<T> IntoRuntimeError<T> for Result<T, io::Error> {
 mod tests {
     use super::*;
     use std::io::{Error, ErrorKind};
+    use std::os::unix::process::ExitStatusExt;
     
     #[test]
     fn test_runtime_error_display() {

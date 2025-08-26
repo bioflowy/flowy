@@ -275,6 +275,7 @@ mod logic_tests {
     fn test_logic_operations() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         // Test AND operations
         let test_cases = vec![
@@ -291,7 +292,7 @@ mod logic_tests {
                 Expression::boolean(pos.clone(), a),
                 Expression::boolean(pos.clone(), b),
             );
-            let result = expr.eval(&env).unwrap();
+            let result = expr.eval(&env, &stdlib).unwrap();
             assert_eq!(result, Value::boolean(expected));
         }
         
@@ -310,7 +311,7 @@ mod logic_tests {
                 Expression::boolean(pos.clone(), a),
                 Expression::boolean(pos.clone(), b),
             );
-            let result = expr.eval(&env).unwrap();
+            let result = expr.eval(&env, &stdlib).unwrap();
             assert_eq!(result, Value::boolean(expected));
         }
         
@@ -320,14 +321,14 @@ mod logic_tests {
             UnaryOperator::Not,
             Expression::boolean(pos.clone(), true),
         );
-        assert_eq!(not_true.eval(&env).unwrap(), Value::boolean(false));
+        assert_eq!(not_true.eval(&env, &stdlib).unwrap(), Value::boolean(false));
         
         let not_false = Expression::unary_op(
             pos.clone(),
             UnaryOperator::Not,
             Expression::boolean(pos.clone(), false),
         );
-        assert_eq!(not_false.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(not_false.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         // Test double NOT
         let not_not_true = Expression::unary_op(
@@ -339,7 +340,7 @@ mod logic_tests {
                 Expression::boolean(pos.clone(), true),
             ),
         );
-        assert_eq!(not_not_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(not_not_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
     }
 }
 
@@ -351,6 +352,7 @@ mod arithmetic_tests {
     fn test_arithmetic_operations() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         // Test integer addition
         let add_expr = Expression::binary_op(
@@ -359,7 +361,7 @@ mod arithmetic_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(add_expr.eval(&env).unwrap(), Value::int(2));
+        assert_eq!(add_expr.eval(&env, &stdlib).unwrap(), Value::int(2));
         
         // Test subtraction
         let sub_expr = Expression::binary_op(
@@ -368,7 +370,7 @@ mod arithmetic_tests {
             Expression::int(pos.clone(), 0),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(sub_expr.eval(&env).unwrap(), Value::int(-1));
+        assert_eq!(sub_expr.eval(&env, &stdlib).unwrap(), Value::int(-1));
         
         // Test multiplication
         let mul_expr = Expression::binary_op(
@@ -377,7 +379,7 @@ mod arithmetic_tests {
             Expression::int(pos.clone(), 2),
             Expression::int(pos.clone(), 3),
         );
-        assert_eq!(mul_expr.eval(&env).unwrap(), Value::int(6));
+        assert_eq!(mul_expr.eval(&env, &stdlib).unwrap(), Value::int(6));
         
         // Test division
         let div_expr = Expression::binary_op(
@@ -386,7 +388,7 @@ mod arithmetic_tests {
             Expression::int(pos.clone(), 6),
             Expression::int(pos.clone(), 3),
         );
-        assert_eq!(div_expr.eval(&env).unwrap(), Value::int(2));
+        assert_eq!(div_expr.eval(&env, &stdlib).unwrap(), Value::int(2));
         
         // Test remainder
         let rem_expr = Expression::binary_op(
@@ -395,7 +397,7 @@ mod arithmetic_tests {
             Expression::int(pos.clone(), 4),
             Expression::int(pos.clone(), 3),
         );
-        assert_eq!(rem_expr.eval(&env).unwrap(), Value::int(1));
+        assert_eq!(rem_expr.eval(&env, &stdlib).unwrap(), Value::int(1));
         
         // Test order of operations: 2*3+4 should be 10
         let complex_expr = Expression::binary_op(
@@ -409,7 +411,7 @@ mod arithmetic_tests {
             ),
             Expression::int(pos.clone(), 4),
         );
-        assert_eq!(complex_expr.eval(&env).unwrap(), Value::int(10));
+        assert_eq!(complex_expr.eval(&env, &stdlib).unwrap(), Value::int(10));
         
         // Test with parentheses: 2*(3+4) should be 14
         let paren_expr = Expression::binary_op(
@@ -423,20 +425,21 @@ mod arithmetic_tests {
                 Expression::int(pos.clone(), 4),
             ),
         );
-        assert_eq!(paren_expr.eval(&env).unwrap(), Value::int(14));
+        assert_eq!(paren_expr.eval(&env, &stdlib).unwrap(), Value::int(14));
     }
     
     #[test]
     fn test_unary_minus() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let neg_expr = Expression::unary_op(
             pos.clone(),
             UnaryOperator::Negate,
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(neg_expr.eval(&env).unwrap(), Value::int(-1));
+        assert_eq!(neg_expr.eval(&env, &stdlib).unwrap(), Value::int(-1));
     }
 }
 
@@ -448,6 +451,7 @@ mod comparison_tests {
     fn test_integer_comparisons() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         // Test equality
         let eq_true = Expression::binary_op(
@@ -456,7 +460,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(eq_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(eq_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         let eq_false = Expression::binary_op(
             pos.clone(),
@@ -464,7 +468,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 0),
         );
-        assert_eq!(eq_false.eval(&env).unwrap(), Value::boolean(false));
+        assert_eq!(eq_false.eval(&env, &stdlib).unwrap(), Value::boolean(false));
         
         // Test inequality
         let ne_false = Expression::binary_op(
@@ -473,7 +477,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(ne_false.eval(&env).unwrap(), Value::boolean(false));
+        assert_eq!(ne_false.eval(&env, &stdlib).unwrap(), Value::boolean(false));
         
         let ne_true = Expression::binary_op(
             pos.clone(),
@@ -481,7 +485,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 0),
         );
-        assert_eq!(ne_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(ne_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         // Test less than
         let lt_false = Expression::binary_op(
@@ -490,7 +494,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(lt_false.eval(&env).unwrap(), Value::boolean(false));
+        assert_eq!(lt_false.eval(&env, &stdlib).unwrap(), Value::boolean(false));
         
         let lt_true = Expression::binary_op(
             pos.clone(),
@@ -498,7 +502,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 2),
         );
-        assert_eq!(lt_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(lt_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         // Test less than or equal
         let le_true = Expression::binary_op(
@@ -507,7 +511,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(le_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(le_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         // Test greater than
         let gt_false = Expression::binary_op(
@@ -516,7 +520,7 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 2),
         );
-        assert_eq!(gt_false.eval(&env).unwrap(), Value::boolean(false));
+        assert_eq!(gt_false.eval(&env, &stdlib).unwrap(), Value::boolean(false));
         
         // Test greater than or equal
         let ge_true = Expression::binary_op(
@@ -525,24 +529,25 @@ mod comparison_tests {
             Expression::int(pos.clone(), 1),
             Expression::int(pos.clone(), 0),
         );
-        assert_eq!(ge_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(ge_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
     }
     
     #[test]
     fn test_string_comparisons() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let a = Expression::string(pos.clone(), vec![StringPart::Text("a".to_string())]);
         let b = Expression::string(pos.clone(), vec![StringPart::Text("b".to_string())]);
         
         // "a" < "b" should be true
         let lt_expr = Expression::binary_op(pos.clone(), BinaryOperator::Less, a.clone(), b.clone());
-        assert_eq!(lt_expr.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(lt_expr.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         // "b" >= "a" should be true
         let ge_expr = Expression::binary_op(pos.clone(), BinaryOperator::GreaterEqual, b.clone(), a.clone());
-        assert_eq!(ge_expr.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(ge_expr.eval(&env, &stdlib).unwrap(), Value::boolean(true));
     }
 }
 
@@ -554,9 +559,10 @@ mod string_tests {
     fn test_string_literals() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let str_expr = Expression::string(pos.clone(), vec![StringPart::Text("true".to_string())]);
-        let result = str_expr.eval(&env).unwrap();
+        let result = str_expr.eval(&env, &stdlib).unwrap();
         assert_eq!(result, Value::string("true".to_string()));
         assert_eq!(format!("{}", result), r#""true""#);
     }
@@ -565,6 +571,7 @@ mod string_tests {
     fn test_string_concatenation() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         // "foo" + "bar" = "foobar"
         let concat_expr = Expression::binary_op(
@@ -573,7 +580,7 @@ mod string_tests {
             Expression::string(pos.clone(), vec![StringPart::Text("foo".to_string())]),
             Expression::string(pos.clone(), vec![StringPart::Text("bar".to_string())]),
         );
-        assert_eq!(concat_expr.eval(&env).unwrap(), Value::string("foobar".to_string()));
+        assert_eq!(concat_expr.eval(&env, &stdlib).unwrap(), Value::string("foobar".to_string()));
         
         // "foo" + 1 = "foo1"
         let str_int_expr = Expression::binary_op(
@@ -582,7 +589,7 @@ mod string_tests {
             Expression::string(pos.clone(), vec![StringPart::Text("foo".to_string())]),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(str_int_expr.eval(&env).unwrap(), Value::string("foo1".to_string()));
+        assert_eq!(str_int_expr.eval(&env, &stdlib).unwrap(), Value::string("foo1".to_string()));
         
         // 17 + "42" = "1742"
         let int_str_expr = Expression::binary_op(
@@ -591,7 +598,7 @@ mod string_tests {
             Expression::int(pos.clone(), 17),
             Expression::string(pos.clone(), vec![StringPart::Text("42".to_string())]),
         );
-        assert_eq!(int_str_expr.eval(&env).unwrap(), Value::string("1742".to_string()));
+        assert_eq!(int_str_expr.eval(&env, &stdlib).unwrap(), Value::string("1742".to_string()));
     }
     
     #[test]
@@ -599,6 +606,7 @@ mod string_tests {
         let pos = test_pos();
         let env = Bindings::new()
             .bind("name".to_string(), Value::string("World".to_string()), None);
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let interp_expr = Expression::string(pos.clone(), vec![
             StringPart::Text("Hello, ".to_string()),
@@ -609,7 +617,7 @@ mod string_tests {
             StringPart::Text("!".to_string()),
         ]);
         
-        let result = interp_expr.eval(&env).unwrap();
+        let result = interp_expr.eval(&env, &stdlib).unwrap();
         assert_eq!(result, Value::string("Hello, World!".to_string()));
     }
 }
@@ -622,6 +630,7 @@ mod compound_equality_tests {
     fn test_array_equality() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let arr1 = Expression::array(pos.clone(), vec![
             Expression::int(pos.clone(), 1),
@@ -643,17 +652,18 @@ mod compound_equality_tests {
         
         // [1,2,3] == [1,2,3] should be true
         let eq_true = Expression::binary_op(pos.clone(), BinaryOperator::Equal, arr1.clone(), arr2.clone());
-        assert_eq!(eq_true.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(eq_true.eval(&env, &stdlib).unwrap(), Value::boolean(true));
         
         // [1,2,3] == [2,1,3] should be false
         let eq_false = Expression::binary_op(pos.clone(), BinaryOperator::Equal, arr1.clone(), arr3.clone());
-        assert_eq!(eq_false.eval(&env).unwrap(), Value::boolean(false));
+        assert_eq!(eq_false.eval(&env, &stdlib).unwrap(), Value::boolean(false));
     }
     
     #[test]
     fn test_map_equality() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let map1 = Expression::map(pos.clone(), vec![
             (
@@ -679,13 +689,14 @@ mod compound_equality_tests {
         
         // Maps with same key-value pairs should be equal
         let eq_expr = Expression::binary_op(pos.clone(), BinaryOperator::Equal, map1.clone(), map2.clone());
-        assert_eq!(eq_expr.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(eq_expr.eval(&env, &stdlib).unwrap(), Value::boolean(true));
     }
     
     #[test]
     fn test_pair_equality() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         let pair1 = Expression::pair(
             pos.clone(),
@@ -701,7 +712,7 @@ mod compound_equality_tests {
         
         // (0,1) == (0,1) should be true
         let eq_expr = Expression::binary_op(pos.clone(), BinaryOperator::Equal, pair1.clone(), pair2.clone());
-        assert_eq!(eq_expr.eval(&env).unwrap(), Value::boolean(true));
+        assert_eq!(eq_expr.eval(&env, &stdlib).unwrap(), Value::boolean(true));
     }
 }
 
@@ -713,6 +724,7 @@ mod if_then_else_tests {
     fn test_if_then_else() {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         // if false then 0 else 1 should return 1
         let if_false = Expression::if_then_else(
@@ -721,7 +733,7 @@ mod if_then_else_tests {
             Expression::int(pos.clone(), 0),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(if_false.eval(&env).unwrap(), Value::int(1));
+        assert_eq!(if_false.eval(&env, &stdlib).unwrap(), Value::int(1));
         
         // if true then 0 else 1 should return 0
         let if_true = Expression::if_then_else(
@@ -730,7 +742,7 @@ mod if_then_else_tests {
             Expression::int(pos.clone(), 0),
             Expression::int(pos.clone(), 1),
         );
-        assert_eq!(if_true.eval(&env).unwrap(), Value::int(0));
+        assert_eq!(if_true.eval(&env, &stdlib).unwrap(), Value::int(0));
         
         // if false then 0 else 1+2 should return 3
         let if_complex = Expression::if_then_else(
@@ -744,7 +756,7 @@ mod if_then_else_tests {
                 Expression::int(pos.clone(), 2),
             ),
         );
-        assert_eq!(if_complex.eval(&env).unwrap(), Value::int(3));
+        assert_eq!(if_complex.eval(&env, &stdlib).unwrap(), Value::int(3));
         
         // Nested if: if 1>0 then if true then 1 else 2 else 3 should return 1
         let if_nested = Expression::if_then_else(
@@ -763,7 +775,7 @@ mod if_then_else_tests {
             ),
             Expression::int(pos.clone(), 3),
         );
-        assert_eq!(if_nested.eval(&env).unwrap(), Value::int(1));
+        assert_eq!(if_nested.eval(&env, &stdlib).unwrap(), Value::int(1));
     }
     
     #[test]
@@ -771,6 +783,7 @@ mod if_then_else_tests {
         let pos = test_pos();
         let env: Bindings<Value> = Bindings::new();
         let type_env: Bindings<Type> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.0");
         
         // if true then 1 else 2.0 should coerce to Float
         let mut if_coerce = Expression::if_then_else(
@@ -784,7 +797,7 @@ mod if_then_else_tests {
         assert_eq!(inferred_type, Type::float(false));
         
         // When evaluated, should return Float value
-        let result = if_coerce.eval(&env).unwrap();
+        let result = if_coerce.eval(&env, &stdlib).unwrap();
         // The integer 1 should be coerced to 1.0
         // Note: This depends on how the implementation handles coercion
         // For now, we'll check that it doesn't error

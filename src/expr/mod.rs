@@ -8,6 +8,7 @@
 use crate::error::{SourcePosition, WdlError, HasSourcePosition, SourceNode};
 use crate::env::Bindings;
 use crate::types::Type;
+use crate::stdlib::StdLib;
 use crate::value::Value;
 use std::collections::HashMap;
 use std::fmt;
@@ -454,7 +455,7 @@ mod basic_tests {
         
         // Test identifier resolution
         let ident_expr = Expression::ident(pos.clone(), "x".to_string());
-        let result = ident_expr.eval(&env).unwrap();
+        let result = ident_expr.eval(&env, &StdLib::new("1.0")).unwrap();
         assert_eq!(result.as_int(), Some(10));
         
         // Test binary operation
@@ -465,7 +466,7 @@ mod basic_tests {
             Expression::ident(pos.clone(), "x".to_string()),
         );
         
-        let result = add_expr.eval(&env).unwrap();
+        let result = add_expr.eval(&env, &StdLib::new("1.0")).unwrap();
         assert_eq!(result.as_int(), Some(15));
     }
     
@@ -480,7 +481,7 @@ mod basic_tests {
             Expression::int(pos.clone(), 3),
         ]);
         
-        let result = array_expr.eval(&env).unwrap();
+        let result = array_expr.eval(&env, &StdLib::new("1.0")).unwrap();
         if let Some(values) = result.as_array() {
             assert_eq!(values.len(), 3);
             assert_eq!(values[0].as_int(), Some(1));
@@ -503,7 +504,7 @@ mod basic_tests {
             Expression::int(pos.clone(), 2),
         );
         
-        let result = if_expr.eval(&env).unwrap();
+        let result = if_expr.eval(&env, &StdLib::new("1.0")).unwrap();
         assert_eq!(result.as_int(), Some(1));
         
         let if_expr_false = Expression::if_then_else(
@@ -513,7 +514,7 @@ mod basic_tests {
             Expression::int(pos.clone(), 2),
         );
         
-        let result = if_expr_false.eval(&env).unwrap();
+        let result = if_expr_false.eval(&env, &StdLib::new("1.0")).unwrap();
         assert_eq!(result.as_int(), Some(2));
     }
     
@@ -531,7 +532,7 @@ mod basic_tests {
             ])],
         );
         
-        let result = length_expr.eval(&env).unwrap();
+        let result = length_expr.eval(&env, &StdLib::new("1.0")).unwrap();
         assert_eq!(result.as_int(), Some(2));
     }
     
@@ -566,7 +567,7 @@ mod basic_tests {
             StringPart::Text("!".to_string()),
         ]);
         
-        let result = string_expr.eval(&env).unwrap();
+        let result = string_expr.eval(&env, &StdLib::new("1.0")).unwrap();
         assert_eq!(result.as_string(), Some("Hello world!"));
     }
 
