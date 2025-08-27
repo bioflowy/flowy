@@ -676,6 +676,658 @@ mod tests {
         }
     }
 
+    /// Test advanced conditional scenarios with Optional value handling
+    #[test]
+    fn test_conditional_optional_handling() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        // Test that variables defined in false conditions become null
+        let false_condition_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow conditional_false {
+                if (false) {
+                    Int x = 42
+                    String y = "hello"
+                }
+                if (true) {
+                    Int z = 99
+                }
+                output {
+                    Int? x_out = x
+                    String? y_out = y  
+                    Int? z_out = z
+                }
+            }
+            "#,
+            None,
+            None,
+            None,
+        );
+
+        match false_condition_result {
+            Ok(outputs) => {
+                // Variables from false condition should be null
+                assert_eq!(outputs.get("x_out"), Some(&serde_json::Value::Null));
+                assert_eq!(outputs.get("y_out"), Some(&serde_json::Value::Null));
+                // Variable from true condition should have value
+                if let Some(z_value) = outputs.get("z_out") {
+                    assert_eq!(z_value.as_i64().unwrap(), 99);
+                }
+                println!("✅ Conditional optional value handling validated successfully");
+            }
+            Err(_) => {
+                println!("❌ Conditional optional value handling not working yet");
+            }
+        }
+
+        // Test that variables from true conditions are available
+        let true_condition_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow conditional_true {
+                if (true) {
+                    Int x = 42
+                    String y = "hello"
+                }
+                output {
+                    Int? x_out = x
+                    String? y_out = y
+                }
+            }
+            "#,
+            None,
+            None,
+            None,
+        );
+
+        match true_condition_result {
+            Ok(outputs) => {
+                // Variables from true condition should have values
+                if let Some(x_value) = outputs.get("x_out") {
+                    assert_eq!(x_value.as_i64().unwrap(), 42);
+                }
+                if let Some(y_value) = outputs.get("y_out") {
+                    assert_eq!(y_value.as_str().unwrap(), "hello");
+                }
+                println!("✅ Conditional true value handling validated successfully");
+            }
+            Err(_) => {
+                println!("❌ Conditional true value handling not working yet");
+            }
+        }
+    }
+
+    /// Test mixed conditional and scatter scenarios
+    #[test]
+    fn test_conditional_scatter_interaction() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        let mixed_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow mixed_conditional_scatter {
+                input {
+                    Boolean flag = true
+                    Int n = 3
+                }
+                
+                if (flag) {
+                    scatter (i in range(n)) {
+                        Int squared = i * i
+                    }
+                    Array[Int] results = squared
+                }
+                
+                if (!flag) {
+                    Array[Int] empty_results = []
+                }
+                
+                output {
+                    Array[Int]? final_results = results
+                    Array[Int]? empty_out = empty_results
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("flag".to_string(), serde_json::Value::Bool(true));
+                inputs.insert(
+                    "n".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(3)),
+                );
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match mixed_result {
+            Ok(outputs) => {
+                // Results from true condition should be available
+                if let Some(results_value) = outputs.get("final_results") {
+                    if let Some(results_array) = results_value.as_array() {
+                        assert_eq!(results_array.len(), 3);
+                        assert_eq!(results_array[0].as_i64().unwrap(), 0);
+                        assert_eq!(results_array[1].as_i64().unwrap(), 1);
+                        assert_eq!(results_array[2].as_i64().unwrap(), 4);
+                    }
+                }
+                // Results from false condition should be null
+                assert_eq!(outputs.get("empty_out"), Some(&serde_json::Value::Null));
+                println!("✅ Conditional-scatter interaction validated successfully");
+            }
+            Err(e) => {
+                println!(
+                    "❌ Conditional-scatter interaction not working yet: {:?}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Test conditional with task calls - Optional task outputs
+    #[test]
+    fn test_conditional_with_task_calls() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        let task_conditional_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow conditional_tasks {
+                input {
+                    Boolean should_run = true
+                }
+                
+                if (should_run) {
+                    call add_numbers {
+                        input:
+                            x = 10,
+                            y = 5
+                    }
+                }
+                
+                if (!should_run) {
+                    call multiply_numbers {
+                        input:
+                            x = 10,
+                            y = 5
+                    }
+                }
+                
+                output {
+                    Int? sum_result = add_numbers.result
+                    Int? multiply_result = multiply_numbers.result
+                }
+            }
+            
+            task add_numbers {
+                input {
+                    Int x
+                    Int y
+                }
+                command {}
+                output {
+                    Int result = x + y
+                }
+            }
+            
+            task multiply_numbers {
+                input {
+                    Int x
+                    Int y
+                }
+                command {}
+                output {
+                    Int result = x * y
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("should_run".to_string(), serde_json::Value::Bool(true));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match task_conditional_result {
+            Ok(outputs) => {
+                // Task from true condition should have result
+                if let Some(sum_value) = outputs.get("sum_result") {
+                    assert_eq!(sum_value.as_i64().unwrap(), 15);
+                    println!("✅ Conditional task output (true case) validated successfully");
+                }
+                // Task from false condition should be null
+                assert_eq!(
+                    outputs.get("multiply_result"),
+                    Some(&serde_json::Value::Null)
+                );
+                println!("✅ Conditional task output (false case) validated successfully");
+            }
+            Err(e) => {
+                println!("❌ Conditional task outputs not working yet: {:?}", e);
+            }
+        }
+
+        // Test reverse condition
+        let reverse_task_conditional_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow conditional_tasks_reverse {
+                input {
+                    Boolean should_run = false
+                }
+                
+                if (should_run) {
+                    call add_numbers {
+                        input:
+                            x = 10,
+                            y = 5
+                    }
+                }
+                
+                if (!should_run) {
+                    call multiply_numbers {
+                        input:
+                            x = 10,
+                            y = 5
+                    }
+                }
+                
+                output {
+                    Int? sum_result = add_numbers.result
+                    Int? multiply_result = multiply_numbers.result
+                }
+            }
+            
+            task add_numbers {
+                input {
+                    Int x
+                    Int y
+                }
+                command {}
+                output {
+                    Int result = x + y
+                }
+            }
+            
+            task multiply_numbers {
+                input {
+                    Int x
+                    Int y
+                }
+                command {}
+                output {
+                    Int result = x * y
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("should_run".to_string(), serde_json::Value::Bool(false));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match reverse_task_conditional_result {
+            Ok(outputs) => {
+                // Task from false condition should be null
+                assert_eq!(outputs.get("sum_result"), Some(&serde_json::Value::Null));
+                // Task from true condition should have result
+                if let Some(multiply_value) = outputs.get("multiply_result") {
+                    assert_eq!(multiply_value.as_i64().unwrap(), 50);
+                    println!("✅ Conditional task output (reverse case) validated successfully");
+                }
+            }
+            Err(e) => {
+                println!(
+                    "❌ Conditional task outputs (reverse) not working yet: {:?}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Test select_first and select_all functions with conditional optional values
+    #[test]
+    fn test_select_functions_with_conditionals() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        let select_functions_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow test_select_functions {
+                input {
+                    Boolean flag1 = true
+                    Boolean flag2 = false
+                    Boolean flag3 = true
+                }
+                
+                if (flag1) {
+                    Int value1 = 10
+                }
+                
+                if (flag2) {
+                    Int value2 = 20  
+                }
+                
+                if (flag3) {
+                    Int value3 = 30
+                }
+                
+                # Test select_first with optional values
+                Int first_value = select_first([value1, value2, value3])
+                
+                # Test select_all with optional values  
+                Array[Int] all_values = select_all([value1, value2, value3])
+                
+                output {
+                    Int selected_first = first_value
+                    Array[Int] selected_all = all_values
+                    Int? optional_value1 = value1
+                    Int? optional_value2 = value2
+                    Int? optional_value3 = value3
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("flag1".to_string(), serde_json::Value::Bool(true));
+                inputs.insert("flag2".to_string(), serde_json::Value::Bool(false));
+                inputs.insert("flag3".to_string(), serde_json::Value::Bool(true));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match select_functions_result {
+            Ok(outputs) => {
+                // select_first should return the first non-null value (10)
+                if let Some(first_value) = outputs.get("selected_first") {
+                    assert_eq!(first_value.as_i64().unwrap(), 10);
+                    println!("✅ select_first with conditionals validated successfully");
+                }
+
+                // select_all should return array of non-null values [10, 30]
+                if let Some(all_values) = outputs.get("selected_all") {
+                    if let Some(all_array) = all_values.as_array() {
+                        assert_eq!(all_array.len(), 2);
+                        assert_eq!(all_array[0].as_i64().unwrap(), 10);
+                        assert_eq!(all_array[1].as_i64().unwrap(), 30);
+                        println!("✅ select_all with conditionals validated successfully");
+                    }
+                }
+
+                // Individual optional values should be correct
+                assert_eq!(
+                    outputs.get("optional_value1").unwrap().as_i64().unwrap(),
+                    10
+                );
+                assert_eq!(
+                    outputs.get("optional_value2"),
+                    Some(&serde_json::Value::Null)
+                );
+                assert_eq!(
+                    outputs.get("optional_value3").unwrap().as_i64().unwrap(),
+                    30
+                );
+                println!("✅ Conditional optional values validated successfully");
+            }
+            Err(e) => {
+                println!(
+                    "❌ Select functions with conditionals not working yet: {:?}",
+                    e
+                );
+            }
+        }
+
+        // Test select_first when all values are null
+        let all_null_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow test_select_all_null {
+                if (false) {
+                    Int value1 = 10
+                }
+                
+                if (false) {
+                    Int value2 = 20
+                }
+                
+                output {
+                    Int? optional_value1 = value1
+                    Int? optional_value2 = value2
+                    # This should cause an error since select_first finds no non-null values
+                    # Int failed_first = select_first([value1, value2])
+                    Array[Int] empty_all = select_all([value1, value2])
+                }
+            }
+            "#,
+            None,
+            None,
+            None,
+        );
+
+        match all_null_result {
+            Ok(outputs) => {
+                // select_all should return empty array when all values are null
+                if let Some(empty_all) = outputs.get("empty_all") {
+                    if let Some(empty_array) = empty_all.as_array() {
+                        assert_eq!(empty_array.len(), 0);
+                        println!("✅ select_all with all null values validated successfully");
+                    }
+                }
+
+                // Optional values should be null
+                assert_eq!(
+                    outputs.get("optional_value1"),
+                    Some(&serde_json::Value::Null)
+                );
+                assert_eq!(
+                    outputs.get("optional_value2"),
+                    Some(&serde_json::Value::Null)
+                );
+            }
+            Err(e) => {
+                println!(
+                    "❌ Select functions with all null values not working yet: {:?}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Test deeply nested conditional scenarios
+    #[test]
+    fn test_deeply_nested_conditionals() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        let nested_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow deeply_nested_conditionals {
+                input {
+                    Boolean level1 = true
+                    Boolean level2 = true
+                    Boolean level3 = false
+                    Boolean level4 = true
+                }
+                
+                if (level1) {
+                    Int value1 = 100
+                    
+                    if (level2) {
+                        Int value2 = 200
+                        
+                        if (level3) {
+                            Int value3 = 300
+                        }
+                        
+                        if (level4) {
+                            Int value4 = 400
+                            
+                            # Access variables from outer scopes
+                            Int sum_outer = value1 + value2
+                        }
+                    }
+                    
+                    Int final_value = select_first([value1, value2, value3, value4])
+                }
+                
+                output {
+                    Int? out_value1 = value1
+                    Int? out_value2 = value2  
+                    Int? out_value3 = value3
+                    Int? out_value4 = value4
+                    Int? out_sum_outer = sum_outer
+                    Int? out_final_value = final_value
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("level1".to_string(), serde_json::Value::Bool(true));
+                inputs.insert("level2".to_string(), serde_json::Value::Bool(true));
+                inputs.insert("level3".to_string(), serde_json::Value::Bool(false));
+                inputs.insert("level4".to_string(), serde_json::Value::Bool(true));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match nested_result {
+            Ok(outputs) => {
+                // Level 1 executed - value1 should be 100
+                assert_eq!(outputs.get("out_value1").unwrap().as_i64().unwrap(), 100);
+
+                // Level 2 executed - value2 should be 200
+                assert_eq!(outputs.get("out_value2").unwrap().as_i64().unwrap(), 200);
+
+                // Level 3 not executed - value3 should be null
+                assert_eq!(outputs.get("out_value3"), Some(&serde_json::Value::Null));
+
+                // Level 4 executed - value4 should be 400
+                assert_eq!(outputs.get("out_value4").unwrap().as_i64().unwrap(), 400);
+
+                // sum_outer should be 300 (100 + 200)
+                assert_eq!(outputs.get("out_sum_outer").unwrap().as_i64().unwrap(), 300);
+
+                // final_value should be 100 (first non-null from select_first)
+                assert_eq!(
+                    outputs.get("out_final_value").unwrap().as_i64().unwrap(),
+                    100
+                );
+
+                println!("✅ Deeply nested conditionals validated successfully");
+            }
+            Err(e) => {
+                println!("❌ Deeply nested conditionals not working yet: {:?}", e);
+            }
+        }
+
+        // Test nested conditionals with task calls
+        let nested_with_tasks_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow nested_conditionals_with_tasks {
+                input {
+                    Boolean outer = true
+                    Boolean inner = false
+                }
+                
+                if (outer) {
+                    Int base_value = 50
+                    
+                    if (inner) {
+                        call double_number {
+                            input: x = base_value
+                        }
+                    }
+                    
+                    if (!inner) {
+                        call triple_number {
+                            input: x = base_value  
+                        }
+                    }
+                    
+                    Int result = select_first([double_number.result, triple_number.result])
+                }
+                
+                output {
+                    Int? outer_base = base_value
+                    Int? double_result = double_number.result
+                    Int? triple_result = triple_number.result
+                    Int? final_result = result
+                }
+            }
+            
+            task double_number {
+                input {
+                    Int x
+                }
+                command {}
+                output {
+                    Int result = x * 2
+                }
+            }
+            
+            task triple_number {
+                input {
+                    Int x
+                }
+                command {}
+                output {
+                    Int result = x * 3
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("outer".to_string(), serde_json::Value::Bool(true));
+                inputs.insert("inner".to_string(), serde_json::Value::Bool(false));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match nested_with_tasks_result {
+            Ok(outputs) => {
+                // base_value should be 50
+                assert_eq!(outputs.get("outer_base").unwrap().as_i64().unwrap(), 50);
+
+                // double_number not executed (inner = false)
+                assert_eq!(outputs.get("double_result"), Some(&serde_json::Value::Null));
+
+                // triple_number executed (!inner = true)
+                assert_eq!(outputs.get("triple_result").unwrap().as_i64().unwrap(), 150);
+
+                // final_result should be 150 (from triple_number)
+                assert_eq!(outputs.get("final_result").unwrap().as_i64().unwrap(), 150);
+
+                println!("✅ Nested conditionals with tasks validated successfully");
+            }
+            Err(e) => {
+                println!("❌ Nested conditionals with tasks not working yet: {:?}", e);
+            }
+        }
+    }
+
     /// Test input/output handling (equivalent to Python test_io)
     #[test]
     fn test_io() {

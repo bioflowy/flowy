@@ -565,14 +565,260 @@ impl WorkflowEngine {
             }
         };
 
+        // Collect all potential variables defined in this conditional
+        let potential_variables = self.collect_conditional_variables(conditional);
+
         if should_execute {
+            // Create isolated context for conditional execution
+            let mut conditional_context = WorkflowContext {
+                bindings: context.bindings.clone(),
+                task_results: HashMap::new(),
+                start_time: context.start_time,
+            };
+
             // Execute conditional body
             for node in &conditional.body {
-                self.execute_workflow_node(node, context, run_id, stdlib)?;
+                self.execute_workflow_node(node, &mut conditional_context, run_id, stdlib)?;
+            }
+
+            // Aggregate conditional results as optional values
+            self.aggregate_conditional_outputs(
+                conditional,
+                &conditional_context,
+                context,
+                &potential_variables,
+                true,
+            )?;
+
+            // Merge task results
+            for (name, result) in conditional_context.task_results {
+                context.task_results.insert(name, result);
+            }
+        } else {
+            // Condition is false - create null values for all potential variables
+            self.aggregate_conditional_outputs(
+                conditional,
+                &WorkflowContext {
+                    bindings: context.bindings.clone(),
+                    task_results: HashMap::new(),
+                    start_time: context.start_time,
+                },
+                context,
+                &potential_variables,
+                false,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Collect all variables that could potentially be defined in a conditional block
+    fn collect_conditional_variables(&self, conditional: &Conditional) -> Vec<String> {
+        let mut variables = Vec::new();
+
+        for element in &conditional.body {
+            match element {
+                WorkflowElement::Declaration(decl) => {
+                    variables.push(decl.name.clone());
+                }
+                WorkflowElement::Call(call) => {
+                    // Task calls create qualified variable names
+                    let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
+
+                    // Find the task definition to get output names
+                    if let Some(ref document) = self.document {
+                        if let Some(task) = document.tasks.iter().find(|t| t.name == call.task) {
+                            // task.outputs is Vec<Declaration>, not Option<Vec<Declaration>>
+                            for output in &task.outputs {
+                                let qualified_name = format!("{}.{}", call_name, output.name);
+                                variables.push(qualified_name);
+                            }
+                        }
+                    }
+
+                    // Also add the general call namespace
+                    variables.push(call_name);
+                }
+                WorkflowElement::Scatter(scatter) => {
+                    // Recursively collect from scatter body
+                    let scatter_vars = self.collect_scatter_conditional_variables(&scatter.body);
+                    variables.extend(scatter_vars);
+                }
+                WorkflowElement::Conditional(nested_conditional) => {
+                    // Recursively collect from nested conditional
+                    let nested_vars = self.collect_conditional_variables(nested_conditional);
+                    variables.extend(nested_vars);
+                }
+            }
+        }
+
+        variables
+    }
+
+    /// Helper to collect variables from scatter body within conditionals
+    fn collect_scatter_conditional_variables(&self, elements: &[WorkflowElement]) -> Vec<String> {
+        let mut variables = Vec::new();
+
+        for element in elements {
+            match element {
+                WorkflowElement::Declaration(decl) => {
+                    variables.push(decl.name.clone());
+                }
+                WorkflowElement::Call(call) => {
+                    let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
+
+                    if let Some(ref document) = self.document {
+                        if let Some(task) = document.tasks.iter().find(|t| t.name == call.task) {
+                            // task.outputs is Vec<Declaration>, not Option<Vec<Declaration>>
+                            for output in &task.outputs {
+                                let qualified_name = format!("{}.{}", call_name, output.name);
+                                variables.push(qualified_name);
+                            }
+                        }
+                    }
+
+                    variables.push(call_name);
+                }
+                WorkflowElement::Scatter(nested_scatter) => {
+                    let nested_vars =
+                        self.collect_scatter_conditional_variables(&nested_scatter.body);
+                    variables.extend(nested_vars);
+                }
+                WorkflowElement::Conditional(nested_conditional) => {
+                    let nested_vars = self.collect_conditional_variables(nested_conditional);
+                    variables.extend(nested_vars);
+                }
+            }
+        }
+
+        variables
+    }
+
+    /// Aggregate conditional outputs into optional values
+    fn aggregate_conditional_outputs(
+        &self,
+        conditional: &Conditional,
+        conditional_context: &WorkflowContext,
+        main_context: &mut WorkflowContext,
+        potential_variables: &[String],
+        condition_was_true: bool,
+    ) -> RuntimeResult<()> {
+        use crate::types::Type;
+
+        if condition_was_true {
+            // Condition was true - use actual values but make them optional
+            for binding in conditional_context.bindings.iter() {
+                let name = binding.name().to_string();
+
+                // Skip variables that were already in the outer context
+                if main_context.bindings.has_binding(&name) && !potential_variables.contains(&name)
+                {
+                    continue;
+                }
+
+                // Convert to optional type if this is a variable defined in the conditional
+                if potential_variables.contains(&name) {
+                    let value = binding.value().clone();
+                    let optional_value = self.make_optional_value(value, true);
+                    main_context.bindings = main_context.bindings.bind(name, optional_value, None);
+                }
+            }
+
+            // Handle task call outputs specially
+            for (task_name, task_result) in &conditional_context.task_results {
+                for output_binding in task_result.outputs.iter() {
+                    let qualified_name = format!("{}.{}", task_name, output_binding.name());
+                    if potential_variables.contains(&qualified_name) {
+                        let value = output_binding.value().clone();
+                        let optional_value = self.make_optional_value(value, true);
+                        main_context.bindings =
+                            main_context
+                                .bindings
+                                .bind(qualified_name, optional_value, None);
+                    }
+                }
+            }
+        } else {
+            // Condition was false - create null values for all potential variables
+            for var_name in potential_variables {
+                let null_value = Value::Null;
+                main_context.bindings =
+                    main_context
+                        .bindings
+                        .bind(var_name.clone(), null_value, None);
             }
         }
 
         Ok(())
+    }
+
+    /// Convert a value to an optional value
+    fn make_optional_value(&self, value: Value, has_value: bool) -> Value {
+        use crate::types::Type;
+        use crate::value::Value;
+
+        if has_value {
+            // The value exists - create new value with optional type
+            match value {
+                Value::Null => value, // Already null/optional
+                Value::Boolean { value: v, wdl_type } => Value::Boolean {
+                    value: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Int { value: v, wdl_type } => Value::Int {
+                    value: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Float { value: v, wdl_type } => Value::Float {
+                    value: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::String { value: v, wdl_type } => Value::String {
+                    value: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::File { value: v, wdl_type } => Value::File {
+                    value: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Directory { value: v, wdl_type } => Value::Directory {
+                    value: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Array {
+                    values: v,
+                    wdl_type,
+                } => Value::Array {
+                    values: v,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Map { pairs: p, wdl_type } => Value::Map {
+                    pairs: p,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Pair {
+                    left: l,
+                    right: r,
+                    wdl_type,
+                } => Value::Pair {
+                    left: l,
+                    right: r,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+                Value::Struct {
+                    members: m,
+                    extra_keys: e,
+                    wdl_type,
+                } => Value::Struct {
+                    members: m,
+                    extra_keys: e,
+                    wdl_type: wdl_type.with_optional(true),
+                },
+            }
+        } else {
+            // No value - return null
+            Value::Null
+        }
     }
 
     /// Collect workflow outputs
