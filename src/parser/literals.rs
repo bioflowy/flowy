@@ -247,13 +247,13 @@ mod tests {
 
     #[test]
     fn test_parse_float_literal() {
-        let mut stream = TokenStream::new("3.14", "1.0").unwrap();
+        let mut stream = TokenStream::new("3.11", "1.0").unwrap();
         let result = parse_float_literal(&mut stream);
         assert!(result.is_ok());
 
         let expr = result.unwrap();
         if let Some(value) = expr.literal() {
-            assert_eq!(value.as_float(), Some(3.14));
+            assert_eq!(value.as_float(), Some(3.11));
         } else {
             panic!("Expected literal expression");
         }
@@ -309,7 +309,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Test float
-        let mut stream = TokenStream::new("3.14", "1.0").unwrap();
+        let mut stream = TokenStream::new("3.11", "1.0").unwrap();
         let result = parse_literal(&mut stream);
         assert!(result.is_ok());
 

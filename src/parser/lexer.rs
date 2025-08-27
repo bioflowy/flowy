@@ -397,11 +397,11 @@ mod tests {
 
     #[test]
     fn test_float_literal_parsing() {
-        let input = Span::new("3.14");
+        let input = Span::new("3.11");
         let result = float_literal(input);
         assert!(result.is_ok());
         let (_, token) = result.unwrap();
-        assert_eq!(token, Token::FloatLiteral(3.14));
+        assert_eq!(token, Token::FloatLiteral(3.11));
 
         let input = Span::new("-2.5e10");
         let result = float_literal(input);

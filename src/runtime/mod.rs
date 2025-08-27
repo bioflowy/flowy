@@ -11,6 +11,9 @@ pub mod task;
 pub mod task_context;
 pub mod workflow;
 
+#[cfg(test)]
+pub mod workflow_tests;
+
 // Re-export main runtime components
 pub use config::{
     CacheConfig, Config, ConfigBuilder, ContainerBackend, ContainerConfig, ResourceLimits,

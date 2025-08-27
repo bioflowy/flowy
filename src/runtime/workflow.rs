@@ -399,17 +399,131 @@ impl WorkflowEngine {
             }
         }
 
-        // TODO: Aggregate scatter outputs properly
-        // For now, we just take the last result
-        if let Some(last_result) = scatter_results.last() {
-            for binding in last_result.iter() {
-                if !binding.name().contains('.') {
-                    // Don't override qualified task outputs
-                    context.bindings = context.bindings.bind(
-                        binding.name().to_string(),
-                        binding.value().clone(),
-                        None,
+        // Aggregate scatter outputs properly (following miniwdl's arrayize pattern)
+        self.aggregate_scatter_outputs(scatter, scatter_results, context)?;
+
+        Ok(())
+    }
+
+    /// Aggregate scatter outputs into arrays (following miniwdl's arrayize pattern)
+    fn aggregate_scatter_outputs(
+        &self,
+        scatter: &Scatter,
+        scatter_results: Vec<Bindings<Value>>,
+        context: &mut WorkflowContext,
+    ) -> RuntimeResult<()> {
+        use std::collections::HashMap;
+
+        // Track all bindings that were created in the scatter
+        let mut aggregated_bindings: HashMap<String, Vec<Value>> = HashMap::new();
+
+        // Collect values from each scatter iteration
+        for scatter_binding in &scatter_results {
+            for binding in scatter_binding.iter() {
+                let name = binding.name().to_string();
+
+                // Skip the scatter variable itself
+                if name == scatter.variable {
+                    continue;
+                }
+
+                // Skip qualified task outputs for now (they need special handling)
+                if name.contains('.') {
+                    continue;
+                }
+
+                // Add to aggregated collection
+                aggregated_bindings
+                    .entry(name)
+                    .or_insert_with(Vec::new)
+                    .push(binding.value().clone());
+            }
+        }
+
+        // Create array bindings for each collected output
+        for (name, values) in aggregated_bindings {
+            // Determine the array element type from the first value
+            let element_type = if let Some(first_value) = values.first() {
+                first_value.wdl_type().clone()
+            } else {
+                // Empty array - use a generic type
+                Type::string(false)
+            };
+
+            // Create array type
+            let array_type = Type::array(element_type, false, !values.is_empty());
+
+            // Create array value
+            let array_value = Value::Array {
+                values,
+                wdl_type: array_type,
+            };
+
+            // Bind the array to the context
+            context.bindings = context.bindings.bind(name, array_value, None);
+        }
+
+        // Handle task call outputs separately
+        self.aggregate_task_call_outputs(scatter, scatter_results.len(), context)?;
+
+        Ok(())
+    }
+
+    /// Aggregate task call outputs into arrays
+    fn aggregate_task_call_outputs(
+        &self,
+        scatter: &Scatter,
+        num_iterations: usize,
+        context: &mut WorkflowContext,
+    ) -> RuntimeResult<()> {
+        use std::collections::HashMap;
+
+        // Find task calls in the scatter body
+        for element in &scatter.body {
+            if let WorkflowElement::Call(call) = element {
+                // Track outputs for this task across all iterations
+                let mut task_outputs: HashMap<String, Vec<Value>> = HashMap::new();
+
+                // Collect outputs from each iteration
+                for i in 0..num_iterations {
+                    let indexed_name =
+                        format!("{}_{}", call.alias.as_ref().unwrap_or(&call.task), i);
+                    if let Some(task_result) = context.task_results.get(&indexed_name) {
+                        // Collect each output field
+                        for output in task_result.outputs.iter() {
+                            let output_name = output.name().to_string();
+                            task_outputs
+                                .entry(output_name)
+                                .or_insert_with(Vec::new)
+                                .push(output.value().clone());
+                        }
+                    }
+                }
+
+                // Create array bindings for task outputs
+                for (output_name, values) in task_outputs {
+                    let qualified_name = format!(
+                        "{}.{}",
+                        call.alias.as_ref().unwrap_or(&call.task),
+                        output_name
                     );
+
+                    // Determine array element type
+                    let element_type = if let Some(first_value) = values.first() {
+                        first_value.wdl_type().clone()
+                    } else {
+                        Type::string(false)
+                    };
+
+                    // Create array type and value
+                    let array_type = Type::array(element_type, false, !values.is_empty());
+                    let array_value = Value::Array {
+                        values,
+                        wdl_type: array_type,
+                    };
+
+                    // Bind to context
+                    context.bindings = context.bindings.bind(qualified_name, array_value, None);
                 }
             }
         }

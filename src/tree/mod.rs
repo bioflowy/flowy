@@ -482,6 +482,7 @@ pub struct Gather {
     pub scatter_depth: u32,
     pub section: String, // ID of the scatter/conditional section
     pub final_type: Type,
+    pub referee_id: Option<String>, // ID of the node being gathered (for miniwdl compatibility)
 }
 
 impl Gather {
@@ -494,6 +495,25 @@ impl Gather {
             scatter_depth: 0,
             section,
             final_type,
+            referee_id: None,
+        }
+    }
+
+    pub fn new_with_referee(
+        pos: SourcePosition,
+        section: String,
+        referee_id: String,
+        final_type: Type,
+    ) -> Self {
+        let workflow_node_id = format!("gather-{}", referee_id);
+
+        Self {
+            pos,
+            workflow_node_id,
+            scatter_depth: 0,
+            section,
+            final_type,
+            referee_id: Some(referee_id),
         }
     }
 }
@@ -577,6 +597,7 @@ pub struct Scatter {
     pub variable: String,
     pub expr: Expression,
     pub body: Vec<WorkflowElement>,
+    pub gathers: HashMap<String, Gather>, // Gather nodes for collecting outputs
 }
 
 impl Scatter {
@@ -587,14 +608,62 @@ impl Scatter {
         body: Vec<WorkflowElement>,
     ) -> Self {
         let workflow_node_id = format!("scatter-{}", variable);
-
-        Self {
-            pos,
+        let mut scatter = Self {
+            pos: pos.clone(),
             workflow_node_id,
             scatter_depth: 0,
             variable,
             expr,
             body,
+            gathers: HashMap::new(),
+        };
+
+        // Create gather nodes for declarations and calls in the scatter body
+        scatter.create_gathers();
+        scatter
+    }
+
+    /// Create gather nodes for scatter body elements
+    fn create_gathers(&mut self) {
+        for element in &self.body {
+            match element {
+                WorkflowElement::Declaration(decl) => {
+                    let gather = Gather::new_with_referee(
+                        decl.pos.clone(),
+                        self.workflow_node_id.clone(),
+                        decl.workflow_node_id.clone(),
+                        decl.decl_type.clone(),
+                    );
+                    self.gathers.insert(decl.workflow_node_id.clone(), gather);
+                }
+                WorkflowElement::Call(call) => {
+                    // For task calls, we need to create gathers for each output
+                    // For now, create a simple gather for the call itself
+                    let gather = Gather::new_with_referee(
+                        call.pos.clone(),
+                        self.workflow_node_id.clone(),
+                        call.workflow_node_id.clone(),
+                        Type::object(HashMap::new()), // Placeholder - should be task outputs
+                    );
+                    self.gathers.insert(call.workflow_node_id.clone(), gather);
+                }
+                WorkflowElement::Scatter(nested_scatter) => {
+                    // Handle nested scatters - gather their gathers
+                    for (gather_id, gather) in &nested_scatter.gathers {
+                        let nested_gather = Gather::new_with_referee(
+                            gather.pos.clone(),
+                            self.workflow_node_id.clone(),
+                            gather.workflow_node_id.clone(),
+                            gather.final_type.clone(),
+                        );
+                        self.gathers.insert(gather_id.clone(), nested_gather);
+                    }
+                }
+                WorkflowElement::Conditional(_conditional) => {
+                    // Handle conditional sections - gather their potential outputs
+                    // For now, skip conditionals as they need different handling (optional types)
+                }
+            }
         }
     }
 }
