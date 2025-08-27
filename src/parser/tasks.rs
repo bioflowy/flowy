@@ -7,7 +7,7 @@ use super::statements::parse_workflow_element;
 use super::token_stream::TokenStream;
 use super::tokens::Token;
 use crate::error::WdlError;
-use crate::expr::{Expression, ExpressionBase};
+use crate::expr::{Expression, ExpressionBase, StringPart};
 use crate::tree::{Declaration, Task, Workflow, WorkflowElement};
 use std::collections::HashMap;
 
@@ -184,28 +184,36 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
         Some(Token::LeftBrace) => {
             stream.next();
 
-            // Use special command-mode parsing
-            let command_text = parse_command_block_with_mode(stream)?;
+            // Use special command-mode parsing to build StringParts directly
+            let parts = parse_command_block_with_parts(stream)?;
 
             // Exit command mode before expecting closing brace
             stream.exit_command_mode();
 
             stream.expect(Token::RightBrace)?;
 
-            Ok(Expression::string_with_placeholders(pos, command_text)?)
+            Ok(Expression::String {
+                pos,
+                parts,
+                inferred_type: None,
+            })
         }
         Some(Token::HeredocStart) => {
             stream.next();
 
-            // Use special command-mode parsing for heredoc
-            let command_text = parse_heredoc_with_mode(stream)?;
+            // Use special command-mode parsing for heredoc to build StringParts directly
+            let parts = parse_heredoc_with_parts(stream)?;
 
             // Exit command mode before expecting closing heredoc marker
             stream.exit_command_mode();
 
             stream.expect(Token::HeredocEnd)?;
 
-            Ok(Expression::string_with_placeholders(pos, command_text)?)
+            Ok(Expression::String {
+                pos,
+                parts,
+                inferred_type: None,
+            })
         }
         _ => Err(WdlError::syntax_error(
             stream.current_position(),
@@ -216,25 +224,26 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
     }
 }
 
-/// Parse command block content using command-mode tokenization
-fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
+/// Parse command block content into StringParts using command-mode tokenization
+fn parse_command_block_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<StringPart>> {
     // Enter command mode for proper tokenization
     stream.enter_command_mode();
 
-    let mut content = String::new();
+    let mut parts = Vec::new();
+    let mut current_text = String::new();
     let mut depth = 1;
 
     while !stream.is_eof() && depth > 0 {
         match stream.peek_token() {
             Some(Token::LeftBrace) => {
-                content.push('{');
+                current_text.push('{');
                 stream.next();
                 depth += 1;
             }
             Some(Token::RightBrace) => {
                 depth -= 1;
                 if depth > 0 {
-                    content.push('}');
+                    current_text.push('}');
                     stream.next();
                 } else {
                     // Don't consume the closing brace - let caller handle it
@@ -242,36 +251,38 @@ fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String
                 }
             }
             Some(Token::CommandText(text)) => {
-                content.push_str(&text);
+                current_text.push_str(&text);
                 stream.next();
             }
-            Some(Token::TildeBrace) => {
-                content.push_str("~{");
-                stream.next();
-                // Parse placeholder content
-                let placeholder_text = parse_placeholder_content(stream)?;
-                content.push_str(&placeholder_text);
-                content.push('}');
-                // The closing } should be consumed by parse_placeholder_content
-            }
-            Some(Token::DollarBrace) => {
-                content.push_str("${");
-                stream.next();
-                // Parse placeholder content
-                let placeholder_text = parse_placeholder_content(stream)?;
-                content.push_str(&placeholder_text);
-                content.push('}');
-                // The closing } should be consumed by parse_placeholder_content
+            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                // Save any accumulated text as a StringPart::Text
+                if !current_text.is_empty() {
+                    parts.push(StringPart::Text(current_text.clone()));
+                    current_text.clear();
+                }
+
+                // Parse the placeholder expression
+                stream.next(); // consume ~{ or ${
+                let placeholder_content = parse_placeholder_content(stream)?;
+
+                // Create a TokenStream for the placeholder content and parse the expression
+                let mut placeholder_stream = TokenStream::new(&placeholder_content, "1.0")?;
+                let expr = parse_expression(&mut placeholder_stream)?;
+
+                parts.push(StringPart::Placeholder {
+                    expr: Box::new(expr),
+                    options: HashMap::new(),
+                });
             }
             Some(token) => {
                 // Handle other tokens (whitespace, newlines, etc.)
                 match token {
-                    Token::Whitespace(s) => content.push_str(&s),
-                    Token::Newline => content.push('\n'),
-                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(&s),
-                    Token::IntLiteral(n) => content.push_str(&n.to_string()),
-                    Token::FloatLiteral(f) => content.push_str(&f.to_string()),
-                    _ => content.push_str(&format!("{}", token)),
+                    Token::Whitespace(s) => current_text.push_str(&s),
+                    Token::Newline => current_text.push('\n'),
+                    Token::Identifier(s) | Token::Keyword(s) => current_text.push_str(&s),
+                    Token::IntLiteral(n) => current_text.push_str(&n.to_string()),
+                    Token::FloatLiteral(f) => current_text.push_str(&f.to_string()),
+                    _ => current_text.push_str(&format!("{}", token)),
                 }
                 stream.next();
             }
@@ -279,15 +290,26 @@ fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String
         }
     }
 
-    Ok(content)
+    // Add any remaining text
+    if !current_text.is_empty() {
+        parts.push(StringPart::Text(current_text));
+    }
+
+    // If no parts were created, add an empty text part
+    if parts.is_empty() {
+        parts.push(StringPart::Text(String::new()));
+    }
+
+    Ok(parts)
 }
 
-/// Parse heredoc content using command-mode tokenization
-fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
+/// Parse heredoc content into StringParts using command-mode tokenization
+fn parse_heredoc_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<StringPart>> {
     // Enter command mode for proper tokenization
     stream.enter_command_mode();
 
-    let mut content = String::new();
+    let mut parts = Vec::new();
+    let mut current_text = String::new();
 
     while !stream.is_eof() {
         match stream.peek_token() {
@@ -296,34 +318,38 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
                 break;
             }
             Some(Token::CommandText(text)) => {
-                content.push_str(&text);
+                current_text.push_str(&text);
                 stream.next();
             }
-            Some(Token::TildeBrace) => {
-                content.push_str("~{");
-                stream.next();
-                // Parse placeholder content
-                let placeholder_text = parse_placeholder_content(stream)?;
-                content.push_str(&placeholder_text);
-                content.push('}');
-            }
-            Some(Token::DollarBrace) => {
-                content.push_str("${");
-                stream.next();
-                // Parse placeholder content
-                let placeholder_text = parse_placeholder_content(stream)?;
-                content.push_str(&placeholder_text);
-                content.push('}');
+            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                // Save any accumulated text as a StringPart::Text
+                if !current_text.is_empty() {
+                    parts.push(StringPart::Text(current_text.clone()));
+                    current_text.clear();
+                }
+
+                // Parse the placeholder expression
+                stream.next(); // consume ~{ or ${
+                let placeholder_content = parse_placeholder_content(stream)?;
+
+                // Create a TokenStream for the placeholder content and parse the expression
+                let mut placeholder_stream = TokenStream::new(&placeholder_content, "1.0")?;
+                let expr = parse_expression(&mut placeholder_stream)?;
+
+                parts.push(StringPart::Placeholder {
+                    expr: Box::new(expr),
+                    options: HashMap::new(),
+                });
             }
             Some(token) => {
                 // Handle other tokens (whitespace, newlines, etc.)
                 match token {
-                    Token::Whitespace(s) => content.push_str(&s),
-                    Token::Newline => content.push('\n'),
-                    Token::Identifier(s) | Token::Keyword(s) => content.push_str(&s),
-                    Token::IntLiteral(n) => content.push_str(&n.to_string()),
-                    Token::FloatLiteral(f) => content.push_str(&f.to_string()),
-                    _ => content.push_str(&format!("{}", token)),
+                    Token::Whitespace(s) => current_text.push_str(&s),
+                    Token::Newline => current_text.push('\n'),
+                    Token::Identifier(s) | Token::Keyword(s) => current_text.push_str(&s),
+                    Token::IntLiteral(n) => current_text.push_str(&n.to_string()),
+                    Token::FloatLiteral(f) => current_text.push_str(&f.to_string()),
+                    _ => current_text.push_str(&format!("{}", token)),
                 }
                 stream.next();
             }
@@ -338,7 +364,17 @@ fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
         }
     }
 
-    Ok(content)
+    // Add any remaining text
+    if !current_text.is_empty() {
+        parts.push(StringPart::Text(current_text));
+    }
+
+    // If no parts were created, add an empty text part
+    if parts.is_empty() {
+        parts.push(StringPart::Text(String::new()));
+    }
+
+    Ok(parts)
 }
 
 /// Parse heredoc content until >>>

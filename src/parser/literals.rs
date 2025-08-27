@@ -4,8 +4,9 @@ use super::expressions::parse_expression;
 use super::parser_utils::ParseResult;
 use super::token_stream::TokenStream;
 use super::tokens::Token;
-use crate::error::WdlError;
+use crate::error::{SourcePosition, WdlError};
 use crate::expr::{Expression, ExpressionBase, StringPart};
+use std::collections::HashMap;
 
 /// Parse an integer literal
 pub fn parse_int_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
