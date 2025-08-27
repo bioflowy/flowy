@@ -179,30 +179,20 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
         }
     }
 
-    // Check for command placeholder (from preprocessing) or regular command
+    // Check for regular command blocks
     match stream.peek_token() {
-        Some(Token::CommandPlaceholder(placeholder_id)) => {
-            // This is a preprocessed command block
-            let placeholder = placeholder_id.clone();
-            stream.next();
-
-            // For now, just treat the placeholder as the command content
-            // In a full implementation, we'd look up the actual command content
-            // from the preprocessor result and parse it properly
-            Ok(Expression::string_literal(
-                pos,
-                format!("PLACEHOLDER: {}", placeholder),
-            ))
-        }
         Some(Token::LeftBrace) => {
             stream.next();
 
             // Use special command-mode parsing
             let command_text = parse_command_block_with_mode(stream)?;
 
+            // Exit command mode before expecting closing brace
+            stream.exit_command_mode();
+
             stream.expect(Token::RightBrace)?;
 
-            Ok(Expression::string_literal(pos, command_text))
+            Ok(Expression::string_with_placeholders(pos, command_text)?)
         }
         Some(Token::HeredocStart) => {
             stream.next();
@@ -210,13 +200,16 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
             // Use special command-mode parsing for heredoc
             let command_text = parse_heredoc_with_mode(stream)?;
 
+            // Exit command mode before expecting closing heredoc marker
+            stream.exit_command_mode();
+
             stream.expect(Token::HeredocEnd)?;
 
-            Ok(Expression::string_literal(pos, command_text))
+            Ok(Expression::string_with_placeholders(pos, command_text)?)
         }
         _ => Err(WdlError::syntax_error(
             stream.current_position(),
-            "Expected '{', '<<<', or command placeholder after 'command' keyword".to_string(),
+            "Expected '{' or '<<<' after 'command' keyword".to_string(),
             "1.0".to_string(),
             None,
         )),
@@ -225,6 +218,9 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
 
 /// Parse command block content using command-mode tokenization
 fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
+    // Enter command mode for proper tokenization
+    stream.enter_command_mode();
+
     let mut content = String::new();
     let mut depth = 1;
 
@@ -288,6 +284,9 @@ fn parse_command_block_with_mode(stream: &mut TokenStream) -> ParseResult<String
 
 /// Parse heredoc content using command-mode tokenization
 fn parse_heredoc_with_mode(stream: &mut TokenStream) -> ParseResult<String> {
+    // Enter command mode for proper tokenization
+    stream.enter_command_mode();
+
     let mut content = String::new();
 
     while !stream.is_eof() {
@@ -786,6 +785,7 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expr::StringPart;
     use crate::parser::token_stream::TokenStream;
 
     #[test]
@@ -910,5 +910,499 @@ mod tests {
         assert_eq!(workflow.name, "batch_process");
         assert_eq!(workflow.body.len(), 1);
         assert!(matches!(workflow.body[0], WorkflowElement::Scatter(_)));
+    }
+
+    #[test]
+    fn test_command_block_preserves_spaces() {
+        let input = r#"task test_spaces {
+            command {
+                echo "Hello World"
+                grep "pattern" file.txt
+                cat file1 file2
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        if let Err(e) = &result {
+            eprintln!("Command block spacing test error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+        let command_text = match &task.command {
+            Expression::String { parts, .. } => parts
+                .iter()
+                .filter_map(|part| match part {
+                    crate::expr::StringPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => panic!("Command should be a string expression"),
+        };
+        let command = &command_text;
+
+        // The command should preserve spaces between tokens
+        assert!(
+            command.contains("echo \"Hello World\""),
+            "Command should contain 'echo \"Hello World\"' with proper spacing, but got: {}",
+            command
+        );
+        assert!(
+            command.contains("grep \"pattern\" file.txt"),
+            "Command should contain 'grep \"pattern\" file.txt' with proper spacing, but got: {}",
+            command
+        );
+        assert!(
+            command.contains("cat file1 file2"),
+            "Command should contain 'cat file1 file2' with proper spacing, but got: {}",
+            command
+        );
+
+        // Should NOT contain concatenated tokens without spaces
+        assert!(
+            !command.contains("echo\"Hello"),
+            "Command should not contain 'echo\"Hello' (missing space), but got: {}",
+            command
+        );
+        assert!(
+            !command.contains("grep\"pattern\""),
+            "Command should not contain 'grep\"pattern\"' (missing spaces), but got: {}",
+            command
+        );
+    }
+
+    #[test]
+    fn test_heredoc_command_preserves_spaces() {
+        let input = r#"task test_heredoc {
+            command <<<
+                echo "Hello World"
+                grep "pattern" file.txt
+                cat file1 file2
+            >>>
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        if let Err(e) = &result {
+            eprintln!("Heredoc spacing test error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+        let command_text = match &task.command {
+            Expression::String { parts, .. } => parts
+                .iter()
+                .filter_map(|part| match part {
+                    crate::expr::StringPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => panic!("Command should be a string expression"),
+        };
+        let command = &command_text;
+
+        // The command should preserve spaces between tokens
+        assert!(
+            command.contains("echo \"Hello World\""),
+            "Heredoc should contain 'echo \"Hello World\"' with proper spacing, but got: {}",
+            command
+        );
+        assert!(
+            command.contains("grep \"pattern\" file.txt"),
+            "Heredoc should contain 'grep \"pattern\" file.txt' with proper spacing, but got: {}",
+            command
+        );
+        assert!(
+            command.contains("cat file1 file2"),
+            "Heredoc should contain 'cat file1 file2' with proper spacing, but got: {}",
+            command
+        );
+
+        // Should NOT contain concatenated tokens without spaces
+        assert!(
+            !command.contains("echo\"Hello"),
+            "Heredoc should not contain 'echo\"Hello' (missing space), but got: {}",
+            command
+        );
+        assert!(
+            !command.contains("grep\"pattern\""),
+            "Heredoc should not contain 'grep\"pattern\"' (missing spaces), but got: {}",
+            command
+        );
+    }
+
+    #[test]
+    fn test_command_with_variable_interpolation() {
+        let input = r#"task test_vars {
+            input {
+                String name = "World"
+            }
+            command {
+                echo "Hello, ${name}!"
+                mkdir ${name}_dir
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        if let Err(e) = &result {
+            eprintln!("Variable interpolation test error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+
+        // Check that the command expression contains placeholders (this is a parsing test, not an evaluation test)
+        match &task.command {
+            Expression::String { parts, .. } => {
+                // Should have multiple parts with placeholders
+                assert!(
+                    parts.len() > 1,
+                    "Expected multiple parts with placeholders, got: {:?}",
+                    parts
+                );
+
+                // Look for the name placeholders
+                let mut found_name_placeholders = 0;
+
+                for part in parts {
+                    if let StringPart::Placeholder { expr, .. } = part {
+                        if let Expression::Ident { name, .. } = expr.as_ref() {
+                            if name == "name" {
+                                found_name_placeholders += 1;
+                            }
+                        }
+                    }
+                }
+
+                assert_eq!(
+                    found_name_placeholders, 2,
+                    "Should find 2 'name' placeholders in command: {:?}",
+                    parts
+                );
+            }
+            _ => panic!("Command should be a String expression with parts"),
+        }
+    }
+
+    #[test]
+    fn test_complex_command_with_pipes_and_redirection() {
+        let input = r#"task test_complex {
+            command {
+                cat input.txt | grep "pattern" | sort > output.txt
+                ls -la /path/to/files
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        if let Err(e) = &result {
+            eprintln!("Complex command test error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+        let command_text = match &task.command {
+            Expression::String { parts, .. } => parts
+                .iter()
+                .filter_map(|part| match part {
+                    crate::expr::StringPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => panic!("Command should be a string expression"),
+        };
+        let command = &command_text;
+
+        // Should preserve all shell operators and spaces
+        assert!(
+            command.contains("cat input.txt"),
+            "Command should contain 'cat input.txt' with space, but got: {}",
+            command
+        );
+        assert!(
+            command.contains("grep \"pattern\""),
+            "Command should contain 'grep \"pattern\"' with spaces, but got: {}",
+            command
+        );
+        assert!(
+            command.contains("ls -la /path/to/files"),
+            "Command should contain 'ls -la /path/to/files' with spaces, but got: {}",
+            command
+        );
+
+        // Check for shell operators with proper spacing
+        assert!(
+            command.contains(" | "),
+            "Command should contain pipe operator with spaces, but got: {}",
+            command
+        );
+        assert!(
+            command.contains(" > "),
+            "Command should contain redirection operator with spaces, but got: {}",
+            command
+        );
+    }
+
+    #[test]
+    fn test_variable_substitution_simple() {
+        let input = r#"task test_var_sub {
+            input {
+                String name = "World"
+            }
+            command {
+                echo "Hello, ${name}!"
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        if let Err(e) = &result {
+            eprintln!("Variable substitution test error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+
+        // Check that the command expression contains placeholders
+        match &task.command {
+            Expression::String { parts, .. } => {
+                assert_eq!(
+                    parts.len(),
+                    3,
+                    "Expected 3 parts: text + placeholder + text, got: {:?}",
+                    parts
+                );
+
+                // First part should contain "Hello, " (may have leading whitespace)
+                if let StringPart::Text(text) = &parts[0] {
+                    assert!(
+                        text.contains("echo \"Hello, "),
+                        "First part should contain 'echo \"Hello, ', got: '{}'",
+                        text
+                    );
+                } else {
+                    panic!("First part should be Text, got: {:?}", parts[0]);
+                }
+
+                // Second part should be a placeholder for 'name'
+                if let StringPart::Placeholder { expr, .. } = &parts[1] {
+                    if let Expression::Ident { name, .. } = expr.as_ref() {
+                        assert_eq!(
+                            name, "name",
+                            "Placeholder should be for 'name', got: '{}'",
+                            name
+                        );
+                    } else {
+                        panic!("Placeholder expression should be Ident, got: {:?}", expr);
+                    }
+                } else {
+                    panic!("Second part should be Placeholder, got: {:?}", parts[1]);
+                }
+
+                // Third part should contain "!" (may have trailing whitespace)
+                if let StringPart::Text(text) = &parts[2] {
+                    assert!(
+                        text.starts_with("!"),
+                        "Third part should start with '!', got: '{}'",
+                        text
+                    );
+                } else {
+                    panic!("Third part should be Text, got: {:?}", parts[2]);
+                }
+            }
+            _ => panic!("Command should be a String expression with parts"),
+        }
+    }
+
+    #[test]
+    fn test_variable_substitution_heredoc() {
+        let input = r#"task test_heredoc_var {
+            input {
+                String person = "Alice"
+                String greeting = "Hello"
+            }
+            command <<<
+                echo "${greeting}, ${person}!"
+                echo "Welcome to WDL"
+            >>>
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+
+        // Check that the command expression contains placeholders
+        match &task.command {
+            Expression::String { parts, .. } => {
+                // Should have multiple parts for the placeholders
+                assert!(
+                    parts.len() > 1,
+                    "Expected multiple parts with placeholders, got: {:?}",
+                    parts
+                );
+
+                // Look for the greeting and person placeholders
+                let mut found_greeting = false;
+                let mut found_person = false;
+
+                for part in parts {
+                    if let StringPart::Placeholder { expr, .. } = part {
+                        if let Expression::Ident { name, .. } = expr.as_ref() {
+                            if name == "greeting" {
+                                found_greeting = true;
+                            } else if name == "person" {
+                                found_person = true;
+                            }
+                        }
+                    }
+                }
+
+                assert!(
+                    found_greeting,
+                    "Should find 'greeting' placeholder in command: {:?}",
+                    parts
+                );
+                assert!(
+                    found_person,
+                    "Should find 'person' placeholder in command: {:?}",
+                    parts
+                );
+            }
+            _ => panic!("Command should be a String expression with parts"),
+        }
+    }
+
+    #[test]
+    fn test_variable_substitution_mixed_placeholders() {
+        let input = r#"task test_mixed_placeholders {
+            input {
+                String filename = "data.txt"
+                String separator = ","
+            }
+            command {
+                cat ${filename} | cut -d'${separator}' -f1
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+
+        match &task.command {
+            Expression::String { parts, .. } => {
+                let mut placeholder_count = 0;
+                let mut found_filename = false;
+                let mut found_separator = false;
+
+                for part in parts {
+                    match part {
+                        StringPart::Placeholder { expr, .. } => {
+                            placeholder_count += 1;
+                            if let Expression::Ident { name, .. } = expr.as_ref() {
+                                if name == "filename" {
+                                    found_filename = true;
+                                } else if name == "separator" {
+                                    found_separator = true;
+                                }
+                            }
+                        }
+                        StringPart::Text(_) => {} // Expected
+                    }
+                }
+
+                assert!(found_filename, "Should find 'filename' placeholder");
+                assert!(found_separator, "Should find 'separator' placeholder");
+                assert_eq!(placeholder_count, 2, "Should have exactly 2 placeholders");
+            }
+            _ => panic!("Command should be a String expression with parts"),
+        }
+    }
+
+    #[test]
+    fn test_no_variable_substitution() {
+        let input = r#"task test_no_vars {
+            command {
+                echo "Hello, World!"
+                ls -la
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+
+        match &task.command {
+            Expression::String { parts, .. } => {
+                // Should have only one Text part since there are no placeholders
+                assert_eq!(
+                    parts.len(),
+                    1,
+                    "Expected 1 part (no placeholders), got: {:?}",
+                    parts
+                );
+
+                if let StringPart::Text(text) = &parts[0] {
+                    assert!(text.contains("echo \"Hello, World!\""));
+                    assert!(text.contains("ls -la"));
+                } else {
+                    panic!("Should be a single Text part, got: {:?}", parts[0]);
+                }
+            }
+            _ => panic!("Command should be a String expression"),
+        }
+    }
+
+    #[test]
+    fn test_tilde_placeholder_syntax() {
+        let input = r#"task test_tilde_syntax {
+            input {
+                String name = "test"
+            }
+            command {
+                echo "Processing ~{name}.txt"
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_task(&mut stream);
+        assert!(result.is_ok());
+
+        let task = result.unwrap();
+
+        match &task.command {
+            Expression::String { parts, .. } => {
+                assert_eq!(
+                    parts.len(),
+                    3,
+                    "Expected 3 parts: text + placeholder + text"
+                );
+
+                // Check for the tilde placeholder
+                let mut found_name_placeholder = false;
+                for part in parts {
+                    if let StringPart::Placeholder { expr, .. } = part {
+                        if let Expression::Ident { name, .. } = expr.as_ref() {
+                            if name == "name" {
+                                found_name_placeholder = true;
+                            }
+                        }
+                    }
+                }
+
+                assert!(found_name_placeholder, "Should find ~{{name}} placeholder");
+            }
+            _ => panic!("Command should be a String expression"),
+        }
     }
 }

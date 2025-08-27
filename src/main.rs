@@ -23,6 +23,8 @@ struct Args {
     work_dir: Option<PathBuf>,
     /// Task to run (if not running workflow)
     task: Option<String>,
+    /// Configuration file (optional)
+    config_file: Option<PathBuf>,
     /// Enable debug output
     debug: bool,
 }
@@ -50,6 +52,7 @@ fn parse_args() -> Args {
     let mut input_file = None;
     let mut work_dir = None;
     let mut task = None;
+    let mut config_file = None;
     let mut debug = false;
 
     let mut i = 1;
@@ -86,6 +89,15 @@ fn parse_args() -> Args {
                     process::exit(1);
                 }
             }
+            "-c" | "--config" => {
+                i += 1;
+                if i < args.len() {
+                    config_file = Some(PathBuf::from(&args[i]));
+                } else {
+                    eprintln!("Error: --config requires a file path");
+                    process::exit(1);
+                }
+            }
             "--debug" => {
                 debug = true;
             }
@@ -111,6 +123,7 @@ fn parse_args() -> Args {
         input_file,
         work_dir,
         task,
+        config_file,
         debug,
     }
 }
@@ -124,6 +137,7 @@ fn print_help(program: &str) {
     eprintln!("  -i, --input <file>    Input JSON file");
     eprintln!("  -d, --dir <dir>       Working directory (default: temp)");
     eprintln!("  -t, --task <name>     Run specific task instead of workflow");
+    eprintln!("  -c, --config <file>   Configuration JSON file");
     eprintln!("  --debug               Enable debug output");
     eprintln!("  -h, --help            Show this help message");
 }
@@ -157,11 +171,18 @@ fn run(args: Args) -> Result<(), WdlError> {
     eprintln!("Working directory: {}", work_dir.display());
 
     // Build runtime configuration
-    let config = miniwdl_rust::runtime::Config {
-        work_dir: work_dir.clone(),
-        debug: args.debug,
-        ..miniwdl_rust::runtime::Config::default()
+    let mut config = if let Some(config_file) = args.config_file {
+        eprintln!("Loading config from {}...", config_file.display());
+        load_config(&config_file)?
+    } else {
+        miniwdl_rust::runtime::Config::default()
     };
+
+    // Override with command-line options
+    config.work_dir = work_dir.clone();
+    if args.debug {
+        config.debug = true;
+    }
 
     // Generate run ID
     let run_id = format!("run_{}", chrono::Utc::now().timestamp());
@@ -220,6 +241,45 @@ fn run(args: Args) -> Result<(), WdlError> {
     println!("{}", serde_json::to_string_pretty(&output_json).unwrap());
 
     Ok(())
+}
+
+fn load_config(path: &Path) -> Result<miniwdl_rust::runtime::Config, WdlError> {
+    let content = fs::read_to_string(path).map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read config file: {}", e),
+    })?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| WdlError::RuntimeError {
+            message: format!("Invalid JSON in config file: {}", e),
+        })?;
+
+    let mut config = miniwdl_rust::runtime::Config::default();
+
+    if let serde_json::Value::Object(map) = json {
+        // Parse container configuration
+        if let Some(serde_json::Value::Object(container_map)) = map.get("container") {
+            if let Some(serde_json::Value::Bool(enabled)) = container_map.get("enabled") {
+                config.container.enabled = *enabled;
+            }
+            if let Some(serde_json::Value::String(backend)) = container_map.get("backend") {
+                config.container.backend = match backend.as_str() {
+                    "Docker" => miniwdl_rust::runtime::ContainerBackend::Docker,
+                    "Podman" => miniwdl_rust::runtime::ContainerBackend::Podman,
+                    "Singularity" => miniwdl_rust::runtime::ContainerBackend::Singularity,
+                    _ => miniwdl_rust::runtime::ContainerBackend::None,
+                };
+            }
+        }
+
+        // Parse logging configuration
+        if let Some(serde_json::Value::Object(logging_map)) = map.get("logging") {
+            if let Some(serde_json::Value::String(level)) = logging_map.get("level") {
+                config.debug = level == "debug";
+            }
+        }
+    }
+
+    Ok(config)
 }
 
 fn load_inputs(path: &Path) -> Result<Bindings<Value>, WdlError> {

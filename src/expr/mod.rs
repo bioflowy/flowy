@@ -465,8 +465,8 @@ mod basic_tests {
         assert_eq!(int_expr.literal(), Some(Value::int(42)));
 
         // Test Float
-        let float_expr = Expression::float(pos.clone(), 3.14);
-        assert_eq!(float_expr.literal(), Some(Value::float(3.14)));
+        let float_expr = Expression::float(pos.clone(), 3.5);
+        assert_eq!(float_expr.literal(), Some(Value::float(3.5)));
 
         // Test String
         let string_expr = Expression::string_literal(pos.clone(), "hello".to_string());

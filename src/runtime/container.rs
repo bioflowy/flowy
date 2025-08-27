@@ -142,13 +142,11 @@ pub fn prepare_container_execution(
             key: Some("runtime.docker".to_string()),
         })?;
 
-    // Build command from task command section
-    // For now, use a simple shell command execution
-    // TODO: Implement proper command template processing
+    // Build command to execute the script file
+    // The actual command is written to container_command.sh by the task context
     let command = vec![
         "/bin/bash".to_string(),
-        "-c".to_string(),
-        "echo 'command placeholder'".to_string(),
+        "/tmp/work/container_command.sh".to_string(),
     ];
 
     // Set up working directory

@@ -210,6 +210,9 @@ pub fn command_mode_text(input: Span) -> IResult<Span, Token> {
             // Don't consume ~ or $ here - they're handled separately
             '~' | '$' => false,
 
+            // Don't consume > if it might be part of >>>
+            '>' => false,
+
             // Allow everything else
             _ => true,
         }
@@ -218,7 +221,7 @@ pub fn command_mode_text(input: Span) -> IResult<Span, Token> {
     Ok((input, Token::CommandText(text.fragment().to_string())))
 }
 
-/// Parse $ or ~ with lookahead in command mode
+/// Parse $ or ~ or > with lookahead in command mode
 pub fn command_mode_special_chars(input: Span) -> IResult<Span, Token> {
     alt((
         // ${  -> DollarBrace token
@@ -242,6 +245,14 @@ pub fn command_mode_special_chars(input: Span) -> IResult<Span, Token> {
                 nom::combinator::peek(nom::character::complete::anychar), // must have next char
             ))),
             |s: Span| Token::CommandText(s.fragment().chars().take(1).collect()), // just the ~
+        ),
+        // > not part of >>> -> regular text (shell redirection)
+        map(
+            recognize(tuple((
+                char('>'),
+                nom::combinator::not(tag(">>")), // negative lookahead for >>>
+            ))),
+            |s: Span| Token::CommandText(s.fragment().chars().take(1).collect()), // just the >
         ),
     ))(input)
 }

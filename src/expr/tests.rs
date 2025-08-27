@@ -994,14 +994,14 @@ mod stdlib_function_tests {
             let result = min_fn.eval(&[Value::int(0), Value::int(1)]).unwrap();
             assert_eq!(result, Value::int(0));
 
-            let result = min_fn.eval(&[Value::float(3.14), Value::int(1)]).unwrap();
+            let result = min_fn.eval(&[Value::float(3.5), Value::int(1)]).unwrap();
             assert_eq!(result, Value::float(1.0));
         }
 
         // Test max
         if let Some(max_fn) = stdlib.get_function("max") {
-            let result = max_fn.eval(&[Value::int(1), Value::float(3.14)]).unwrap();
-            assert_eq!(result.as_float().unwrap(), 3.14);
+            let result = max_fn.eval(&[Value::int(1), Value::float(3.5)]).unwrap();
+            assert_eq!(result.as_float().unwrap(), 3.5);
         }
     }
 

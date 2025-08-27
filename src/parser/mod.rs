@@ -23,14 +23,6 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 
 /// Parse a WDL document from source text
 pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError> {
-    // First, preprocess to extract command blocks
-    let preprocessed = command_preprocessor::preprocess_commands(source)?;
-
-    // Parse the processed source (without problematic command content)
-    let doc = document::parse_document(&preprocessed.processed_source, version)?;
-
-    // TODO: Re-inject command blocks into the parsed AST
-    // For now, we'll just parse with placeholders
-
-    Ok(doc)
+    // Parse source directly using stateful lexer (no preprocessing needed)
+    document::parse_document(source, version)
 }

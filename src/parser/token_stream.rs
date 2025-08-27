@@ -49,11 +49,14 @@ impl TokenStream {
                     let consumed_bytes = remaining_source.len() - remaining.fragment().len();
                     self.source_position += consumed_bytes;
 
-                    // Filter out whitespace, newlines, and comments (same as original tokenize function)
-                    if matches!(
-                        token.token,
-                        Token::Whitespace(_) | Token::Newline | Token::Comment(_)
-                    ) {
+                    // Filter out whitespace, newlines, and comments only in normal mode
+                    // In command mode, preserve whitespace and newlines as they are significant
+                    if self.lexer.current_mode() != crate::parser::lexer::LexerMode::Command
+                        && matches!(
+                            token.token,
+                            Token::Whitespace(_) | Token::Newline | Token::Comment(_)
+                        )
+                    {
                         // Skip this token and continue the loop
                         continue;
                     }

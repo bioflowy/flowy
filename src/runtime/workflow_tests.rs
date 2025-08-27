@@ -120,6 +120,7 @@ use tempfile::TempDir;
 /// Test infrastructure for workflow runtime tests
 pub struct WorkflowTestFixture {
     temp_dir: TempDir,
+    #[allow(dead_code)]
     stdlib: StdLib,
     workflow_dir: WorkflowDirectory,
     config: Config,
@@ -221,7 +222,7 @@ impl WorkflowTestFixture {
             Ok(result) => {
                 if expected_exception.is_some() {
                     return Err(WdlError::RuntimeError {
-                        message: format!("Expected exception but workflow succeeded"),
+                        message: "Expected exception but workflow succeeded".to_string(),
                     });
                 }
 
@@ -230,10 +231,10 @@ impl WorkflowTestFixture {
                 Ok(json_outputs)
             }
             Err(e) => {
-                if expected_exception.is_some() {
+                if let Some(expected) = expected_exception {
                     // Check if error matches expected type
                     let error_str = format!("{:?}", e);
-                    if error_str.contains(expected_exception.unwrap()) {
+                    if error_str.contains(expected) {
                         return Err(WdlError::RuntimeError {
                             message: format!("Expected error: {}", error_str),
                         });
@@ -1061,7 +1062,7 @@ mod tests {
         "#;
 
         // Create subworkflow file (mocking since file creation may not be implemented)
-        if let Err(_) = std::fs::write(fixture.temp_path().join("sum_sq.wdl"), subwf_content) {
+        if std::fs::write(fixture.temp_path().join("sum_sq.wdl"), subwf_content).is_err() {
             println!("Could not create temp file - subworkflow imports not fully supported");
         }
 
@@ -1168,7 +1169,7 @@ mod tests {
 
         // Test positive control - allowed file access
         let allowed_file_path = fixture.temp_path().join("allowed.txt");
-        if let Err(_) = std::fs::write(&allowed_file_path, "yo") {
+        if std::fs::write(&allowed_file_path, "yo").is_err() {
             println!("Could not create temp file for positive control test");
             return;
         }
@@ -1229,7 +1230,7 @@ mod tests {
 
         // Create test input file
         let who_file_path = fixture.temp_path().join("who.txt");
-        if let Err(_) = std::fs::write(&who_file_path, "Alyssa\nBen\n") {
+        if std::fs::write(&who_file_path, "Alyssa\nBen\n").is_err() {
             println!("Could not create temp file for stdlib I/O test");
             return;
         }
