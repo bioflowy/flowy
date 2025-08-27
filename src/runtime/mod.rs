@@ -5,6 +5,7 @@
 //! file system utilities, and error handling.
 
 pub mod config;
+pub mod container;
 pub mod error;
 pub mod fs_utils;
 pub mod task;

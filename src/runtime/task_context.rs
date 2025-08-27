@@ -6,7 +6,8 @@
 // Note: error types available if needed
 use crate::env::Bindings;
 use crate::expr::ExpressionBase;
-use crate::runtime::config::{Config, ResourceLimits};
+use crate::runtime::config::{Config, ContainerBackend, ResourceLimits};
+use crate::runtime::container::{prepare_container_execution, ContainerFactory, ContainerRuntime};
 use crate::runtime::error::{RuntimeError, RuntimeResult};
 use crate::runtime::fs_utils::{
     create_dir_all, read_file_to_string, write_file_atomic, WorkflowDirectory,
@@ -15,6 +16,8 @@ use crate::tree::Task;
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
 use std::collections::HashMap;
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
@@ -225,6 +228,20 @@ impl TaskContext {
 
     /// Execute the generated command
     fn execute_command(&self, command_str: &str) -> RuntimeResult<(ExitStatus, String, String)> {
+        // Check if container execution is enabled
+        if self.config.container.enabled && self.config.container.backend != ContainerBackend::None
+        {
+            self.execute_command_in_container(command_str)
+        } else {
+            self.execute_command_directly(command_str)
+        }
+    }
+
+    /// Execute command directly on the host system
+    fn execute_command_directly(
+        &self,
+        command_str: &str,
+    ) -> RuntimeResult<(ExitStatus, String, String)> {
         // Write command to script file
         let script_path = self.task_dir.join("command.sh");
         let script_content = format!(
@@ -265,6 +282,142 @@ impl TaskContext {
         let result = self.wait_with_timeout(child, timeout)?;
 
         Ok(result)
+    }
+
+    /// Execute command in a container
+    fn execute_command_in_container(
+        &self,
+        command_str: &str,
+    ) -> RuntimeResult<(ExitStatus, String, String)> {
+        // Create a blocking runtime for container operations
+        let rt = tokio::runtime::Runtime::new().map_err(|e| RuntimeError::ContainerError {
+            message: "Failed to create async runtime for container execution".to_string(),
+            cause: Some(Box::new(e)),
+            container_id: None,
+        })?;
+
+        rt.block_on(async { self.execute_command_in_container_async(command_str).await })
+    }
+
+    /// Async implementation of container execution
+    async fn execute_command_in_container_async(
+        &self,
+        command_str: &str,
+    ) -> RuntimeResult<(ExitStatus, String, String)> {
+        // Create container runtime
+        let runtime = ContainerFactory::create_runtime(&self.config.container.backend)?;
+
+        // Initialize container runtime
+        runtime.global_init(&self.config).await?;
+
+        // Check if container runtime is available
+        if !runtime.is_available().await {
+            return Err(RuntimeError::ContainerError {
+                message: format!(
+                    "Container backend {:?} is not available",
+                    self.config.container.backend
+                ),
+                cause: Some(Box::new(RuntimeError::ConfigurationError {
+                    message: "Container daemon not running or not accessible".to_string(),
+                    key: None,
+                })),
+                container_id: None,
+            });
+        }
+
+        // Prepare runtime environment from task runtime section
+        let mut runtime_env = crate::env::Bindings::new();
+
+        // Add basic runtime values that containers need
+        let runtime_section = &self.task.runtime;
+        for (name, expr) in runtime_section {
+            // Evaluate runtime expression in context
+            let stdlib = crate::stdlib::StdLib::new("1.0");
+            let input_env = self.inputs.clone();
+            match expr.eval(&input_env, &stdlib) {
+                Ok(value) => {
+                    runtime_env = runtime_env.bind(name.clone(), value, None);
+                }
+                Err(_) => {
+                    // Skip runtime values that can't be evaluated
+                    continue;
+                }
+            }
+        }
+
+        // Ensure docker image is specified
+        if runtime_env.resolve("docker").is_none() {
+            return Err(RuntimeError::ContainerError {
+                message: "No docker image specified in task runtime section".to_string(),
+                cause: Some(Box::new(RuntimeError::ConfigurationError {
+                    message: "Container execution requires 'docker' in runtime section".to_string(),
+                    key: Some("docker".to_string()),
+                })),
+                container_id: None,
+            });
+        }
+
+        // Prepare container execution configuration
+        let container_execution =
+            prepare_container_execution(&self.task, &runtime_env, &self.task_dir)?;
+
+        // Generate unique run ID for this container
+        let run_id = format!("task_{}_{}", self.task.name, std::process::id());
+
+        // Create and start container
+        let container_id = runtime
+            .create_container(&run_id, &container_execution)
+            .await?;
+
+        // Write command to script file in task directory (which gets mounted)
+        let script_path = self.task_dir.join("container_command.sh");
+        let script_content = format!(
+            "#!/bin/bash\nset -euo pipefail\ncd /tmp/work\n{}\n",
+            command_str
+        );
+        write_file_atomic(&script_path, script_content)?;
+        crate::runtime::fs_utils::make_executable(&script_path)?;
+
+        // Update container execution to run our script
+        let mut updated_execution = container_execution;
+        updated_execution.command = vec![
+            "/bin/bash".to_string(),
+            "/tmp/work/container_command.sh".to_string(),
+        ];
+
+        // Create a new container with updated command
+        runtime.cleanup_container(&container_id).await?;
+        let container_id = runtime
+            .create_container(&run_id, &updated_execution)
+            .await?;
+
+        // Start container execution
+        runtime.start_container(&container_id).await?;
+
+        // Wait for completion
+        let stats = runtime.wait_for_completion(&container_id).await?;
+
+        // Get logs
+        let (stdout, stderr) = runtime.get_logs(&container_id).await?;
+
+        // Clean up container
+        runtime.cleanup_container(&container_id).await?;
+
+        // Convert exit code to ExitStatus
+        #[cfg(unix)]
+        let exit_status = ExitStatus::from_raw(stats.exit_code << 8);
+        #[cfg(not(unix))]
+        let exit_status = {
+            // For non-Unix systems, we need to create a mock ExitStatus
+            // This is a simplified approach - in a real implementation you'd want proper Windows support
+            if stats.exit_code == 0 {
+                std::process::Command::new("true").status().unwrap()
+            } else {
+                std::process::Command::new("false").status().unwrap()
+            }
+        };
+
+        Ok((exit_status, stdout, stderr))
     }
 
     /// Wait for process completion with timeout

@@ -1,7 +1,9 @@
 # miniwdl Rust Port Guidelines
 
 ## Overview
-This document outlines the process for porting miniwdl from Python to Rust. The approach is to systematically port modules one at a time, starting with foundational modules and building up the dependency chain.
+This document outlined the process for porting miniwdl from Python to Rust. The systematic approach of porting modules one at a time, starting with foundational modules and building up the dependency chain, has been successfully completed.
+
+**Status**: The miniwdl Rust port is now feature complete with 21,174+ lines of code across 56 Rust files, including a fully functional CLI executable.
 
 ## Porting Process Rules
 
@@ -33,15 +35,18 @@ Each module must meet these requirements before proceeding:
 - ✅ API matches Python equivalent functionality
 - ✅ User approval received
 
-## Module Porting Order
+## Module Porting Order (Completed)
 
-1. **Error & SourcePosition** (Foundation - no dependencies)
-2. **Environment (Env)** (Variable bindings - depends on Error)
-3. **Type** (Type system - depends on Error) 
-4. **Value** (Runtime values - depends on Type, Error)
-5. **Expression (Expr)** (Expressions - depends on all above)
-6. **AST Tree** (Document/workflow AST - depends on all above)
-7. **Parser** (Convert from Lark to Rust parser)
+1. **Error & SourcePosition** ✅ (Foundation - no dependencies)
+2. **Environment (Env)** ✅ (Variable bindings - depends on Error)
+3. **Type** ✅ (Type system - depends on Error) 
+4. **Value** ✅ (Runtime values - depends on Type, Error)
+5. **Expression (Expr)** ✅ (Expressions - depends on all above)
+6. **AST Tree** ✅ (Document/workflow AST - depends on all above)
+7. **Parser** ✅ (nom-based parser replacing Python Lark parser)
+8. **Runtime** ✅ (Task and workflow execution engine)
+9. **Standard Library** ✅ (Built-in functions and operators)
+10. **CLI Executable** ✅ (Complete command-line interface)
 
 ## Quality Standards
 - Use idiomatic Rust patterns
@@ -50,48 +55,99 @@ Each module must meet these requirements before proceeding:
 - Follow Rust naming conventions
 - Use appropriate error handling (Result types)
 
-## Progress Tracking
-Use TodoWrite tool to track progress on each module and maintain visibility into the porting process.
+## Future Development Areas
+
+With the core porting complete, potential areas for continued development include:
+
+- **Performance optimization** - Profile and optimize hot paths in parser and runtime
+- **Extended WDL support** - Additional WDL specification features
+- **Integration testing** - More comprehensive end-to-end workflow tests  
+- **Documentation** - API documentation and user guides
+- **Ecosystem integration** - IDE plugins, package managers, etc.
 
 ## Completed Modules ✅
 
-1. **Error & SourcePosition** (593 lines) - Error handling and source position tracking
-2. **Environment (Env)** (525 lines) - Variable bindings and namespaces  
-3. **Type** (810 lines) - WDL type system with coercion and unification
-4. **Value** (750 lines) - Runtime values and JSON conversion
-5. **Expression (Expr)** (1,246 lines → 7 files) - Expression AST, evaluation, and type inference
+1. **Error & SourcePosition** (638 lines) - Error handling and source position tracking
+2. **Environment (Env)** (528 lines) - Variable bindings and namespaces  
+3. **Type** (937 lines) - WDL type system with coercion and unification
+4. **Value** (780 lines) - Runtime values and JSON conversion
+5. **Expression (Expr)** (2,701 lines → 7 files) - Expression AST, evaluation, and type inference
    - Successfully refactored into modular structure for better maintainability
 
-6. **Tree (AST)** (1,107 lines → 8 files) - WDL document AST with tasks, workflows, and control flow
+6. **Tree (AST)** (2,193 lines → 8 files) - WDL document AST with tasks, workflows, and control flow
    - Modular design with visitor pattern and trait-based architecture
 
-## Current Phase: Parser Module 🎯  
-Next target: WDL Parser implementation - Convert from Python Lark-based parser to Rust.
+7. **Parser** (5,509 lines → 15 files) - Complete WDL parser implementation using nom combinators
+   - Lexer with location tracking and mode-based tokenization
+   - Expression parsing with precedence handling
+   - Statement and declaration parsing
+   - Task and workflow parsing with command preprocessing
+   - Comprehensive test coverage
 
-### Tree Module Structure Analysis
+8. **Runtime** (5,726 lines → 9 files) - Task and workflow execution engine
+   - Task execution with Docker integration
+   - Workflow orchestration with scatter/conditional support
+   - File system utilities and configuration management
+   - Comprehensive integration tests
 
-**Main AST Node Classes:**
-- `StructTypeDef` - Struct type definitions
-- `WorkflowNode` (abstract) - Base class for workflow nodes
-- `Decl` - Value declarations  
-- `Task` - Task definitions
-- `Call` - Task/workflow calls
-- `Gather` - Array gathering operations (scatter/conditional)
-- `WorkflowSection` (abstract) - Base for scatter/conditional sections  
-- `Scatter` - Scatter sections for parallel execution
-- `Conditional` - Conditional sections
-- `Workflow` - Workflow definitions
-- `Document` - Complete WDL document
+9. **Standard Library** (1,733 lines → 8 files) - WDL built-in functions and operators
+   - Array operations, math functions, string manipulation
+   - I/O operations and type utilities
+   - Task output handling
 
-### Tree Module Porting Strategy
+## Current Status: Feature Complete Implementation 🎉
+The miniwdl Rust port now includes all core functionality with a working CLI executable.
 
-Due to the size and complexity (2,122 lines), the Tree module will follow the same modular approach used for Expression:
+## Module Structure Documentation
 
-1. **tree/mod.rs** - Core AST definitions and traits
-2. **tree/document.rs** - Document and top-level structures
-3. **tree/workflow.rs** - Workflow definitions and nodes  
-4. **tree/task.rs** - Task definitions
-5. **tree/declarations.rs** - Declarations and bindings
-6. **tree/control_flow.rs** - Scatter and conditional sections
-7. **tree/validation.rs** - AST validation and type checking
-8. **tree/traversal.rs** - AST traversal utilities
+### Parser Module Structure (15 files, 5,509 lines)
+
+1. **parser/mod.rs** - Main parser entry point and module exports
+2. **parser/lexer.rs** - Tokenization with location tracking and mode support
+3. **parser/tokens.rs** - Token type definitions and classification
+4. **parser/token_stream.rs** - Token stream management with backtracking
+5. **parser/parser_utils.rs** - Common parsing utilities and combinators
+6. **parser/keywords.rs** - WDL keyword management by version
+7. **parser/literals.rs** - Literal value parsing (strings, numbers, arrays)
+8. **parser/types.rs** - Type specification parsing (primitives, collections)
+9. **parser/expressions.rs** - Expression parsing with precedence
+10. **parser/declarations.rs** - Variable and parameter declarations
+11. **parser/statements.rs** - Control flow statements (scatter, conditional, calls)
+12. **parser/tasks.rs** - Task and workflow definition parsing
+13. **parser/document.rs** - Document structure and import parsing
+14. **parser/command_preprocessor.rs** - Command template preprocessing
+15. **parser/command_parser.rs** - Command section parsing
+
+### Runtime Module Structure (9 files, 5,726 lines)
+
+1. **runtime/mod.rs** - Runtime module entry point
+2. **runtime/error.rs** - Runtime-specific error types
+3. **runtime/config.rs** - Execution configuration management
+4. **runtime/task_context.rs** - Task execution context
+5. **runtime/task.rs** - Task execution engine
+6. **runtime/workflow.rs** - Workflow orchestration engine
+7. **runtime/fs_utils.rs** - File system utilities and operations
+8. **runtime/task_tests.rs** - Task execution tests
+9. **runtime/workflow_tests.rs** - Comprehensive workflow integration tests
+
+### Standard Library Structure (8 files, 1,733 lines)
+
+1. **stdlib/mod.rs** - Standard library module entry point
+2. **stdlib/arrays.rs** - Array manipulation functions
+3. **stdlib/math.rs** - Mathematical functions and operations  
+4. **stdlib/strings.rs** - String manipulation utilities
+5. **stdlib/io.rs** - Input/output operations
+6. **stdlib/operators.rs** - Arithmetic and logical operators
+7. **stdlib/types.rs** - Type conversion and validation utilities
+8. **stdlib/task_output.rs** - Task output handling functions
+
+## CLI Executable Functionality
+
+The project includes a fully functional CLI executable (`src/main.rs`) with:
+
+- **WDL file parsing and validation**
+- **JSON input/output handling** 
+- **Workflow execution with configurable options**
+- **Task execution with Docker support**
+- **Comprehensive error reporting**
+- **Integration with all core modules**

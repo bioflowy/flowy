@@ -435,7 +435,7 @@ impl WorkflowEngine {
                 // Add to aggregated collection
                 aggregated_bindings
                     .entry(name)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(binding.value().clone());
             }
         }
@@ -494,7 +494,7 @@ impl WorkflowEngine {
                             let output_name = output.name().to_string();
                             task_outputs
                                 .entry(output_name)
-                                .or_insert_with(Vec::new)
+                                .or_default()
                                 .push(output.value().clone());
                         }
                     }
