@@ -3,7 +3,7 @@
 ## Overview
 This document outlined the process for porting miniwdl from Python to Rust. The systematic approach of porting modules one at a time, starting with foundational modules and building up the dependency chain, has been successfully completed.
 
-**Status**: The miniwdl Rust port is now feature complete with 21,174+ lines of code across 56 Rust files, including a fully functional CLI executable.
+**Status**: The miniwdl Rust port is now feature complete with 23,436+ lines of code across 56 Rust files, including a fully functional CLI executable.
 
 ## Porting Process Rules
 
@@ -60,10 +60,11 @@ Each module must meet these requirements before proceeding:
 With the core porting complete, potential areas for continued development include:
 
 - **Performance optimization** - Profile and optimize hot paths in parser and runtime
-- **Extended WDL support** - Additional WDL specification features
-- **Integration testing** - More comprehensive end-to-end workflow tests  
+- **Extended WDL support** - Additional WDL specification features  
+- **Integration testing** - More comprehensive end-to-end workflow tests
 - **Documentation** - API documentation and user guides
 - **Ecosystem integration** - IDE plugins, package managers, etc.
+- **Advanced WDL features** - Import resolution, struct types, and complex workflow patterns
 
 ## Completed Modules ✅
 
@@ -77,12 +78,13 @@ With the core porting complete, potential areas for continued development includ
 6. **Tree (AST)** (2,193 lines → 8 files) - WDL document AST with tasks, workflows, and control flow
    - Modular design with visitor pattern and trait-based architecture
 
-7. **Parser** (5,509 lines → 15 files) - Complete WDL parser implementation using nom combinators
+7. **Parser** (5,676 lines → 13 files) - Complete WDL parser implementation using nom combinators
    - Lexer with location tracking and mode-based tokenization
    - Expression parsing with precedence handling
    - Statement and declaration parsing
-   - Task and workflow parsing with command preprocessing
+   - Task and workflow parsing with direct token-based placeholder parsing
    - Comprehensive test coverage
+   - **Architecture improvement**: Eliminated circular dependencies between expr and parser modules
 
 8. **Runtime** (5,726 lines → 9 files) - Task and workflow execution engine
    - Task execution with Docker integration
@@ -98,9 +100,17 @@ With the core porting complete, potential areas for continued development includ
 ## Current Status: Feature Complete Implementation 🎉
 The miniwdl Rust port now includes all core functionality with a working CLI executable.
 
+## Recent Quality Improvements
+
+### Architecture Improvements (2025)
+- **Eliminated circular dependencies**: Refactored parser and expr modules to follow proper compiler architecture patterns
+- **Direct token-based parsing**: Replaced regex-based placeholder parsing with efficient token-stream parsing  
+- **Code cleanup**: Removed unused command parser modules (`command_parser.rs`, `command_preprocessor.rs`)
+- **Test quality**: Removed misleading tests and improved test accuracy (244 high-quality tests)
+
 ## Module Structure Documentation
 
-### Parser Module Structure (15 files, 5,509 lines)
+### Parser Module Structure (13 files, 5,676 lines)
 
 1. **parser/mod.rs** - Main parser entry point and module exports
 2. **parser/lexer.rs** - Tokenization with location tracking and mode support
@@ -113,10 +123,8 @@ The miniwdl Rust port now includes all core functionality with a working CLI exe
 9. **parser/expressions.rs** - Expression parsing with precedence
 10. **parser/declarations.rs** - Variable and parameter declarations
 11. **parser/statements.rs** - Control flow statements (scatter, conditional, calls)
-12. **parser/tasks.rs** - Task and workflow definition parsing
+12. **parser/tasks.rs** - Task and workflow definition parsing with direct token-based placeholder parsing
 13. **parser/document.rs** - Document structure and import parsing
-14. **parser/command_preprocessor.rs** - Command template preprocessing
-15. **parser/command_parser.rs** - Command section parsing
 
 ### Runtime Module Structure (9 files, 5,726 lines)
 

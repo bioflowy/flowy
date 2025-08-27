@@ -18,3 +18,10 @@ Thumbs.db
 
 # Embedded git repository
 miniwdl/
+
+# Serena cache files
+.serena/cache/
+
+# Runtime output directories
+/tmp/
+run_*/

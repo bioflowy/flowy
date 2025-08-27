@@ -1,0 +1,9 @@
+{
+  "container": {
+    "enabled": true,
+    "backend": "docker"
+  },
+  "docker": {
+    "image_cache_dir": "/tmp/miniwdl-images"
+  }
+}

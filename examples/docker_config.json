@@ -1,0 +1,9 @@
+{
+    "container": {
+        "enabled": true,
+        "backend": "Docker"
+    },
+    "logging": {
+        "level": "info"
+    }
+}

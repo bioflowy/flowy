@@ -1,0 +1,9 @@
+{
+    "container": {
+        "enabled": false,
+        "backend": "None"
+    },
+    "logging": {
+        "level": "info"
+    }
+}
