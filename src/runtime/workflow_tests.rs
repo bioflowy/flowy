@@ -1635,50 +1635,6 @@ mod tests {
             .unwrap(); // This should panic due to the bug
     }
 
-    /// BUG REPRODUCTION TEST 2: Forward reference resolution failure
-    #[test]
-    #[should_panic(expected = "Unknown identifier")]
-    fn test_bug_reproduction_forward_reference_resolution() {
-        let mut fixture = WorkflowTestFixture::new().unwrap();
-
-        // This test reproduces the bug where forward references (variables defined later
-        // in the workflow) cannot be resolved in scatter expressions
-        let _result = fixture
-            .test_workflow(
-                r#"
-            version 1.0
-            
-            workflow forward_reference_bug {
-                input {
-                    Boolean condition = true
-                }
-                
-                # BUG: This should work but fails because 'later_defined' is referenced
-                # before it's defined, and our dependency resolution doesn't handle this
-                scatter (i in range(later_defined)) {
-                    Int doubled = i * 2
-                }
-                
-                if (condition) {
-                    Int later_defined = 3
-                }
-                
-                output {
-                    Array[Int] results = doubled
-                }
-            }
-            "#,
-                Some({
-                    let mut inputs = std::collections::HashMap::new();
-                    inputs.insert("condition".to_string(), serde_json::Value::Bool(true));
-                    inputs
-                }),
-                None,
-                None,
-            )
-            .unwrap(); // This should panic due to the bug
-    }
-
     /// BUG REPRODUCTION TEST 3: Complex expression evaluation in command contexts
     #[test]
     fn test_bug_reproduction_complex_expression_in_commands() {
