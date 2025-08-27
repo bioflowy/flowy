@@ -2,6 +2,8 @@
 
 use super::{Expression, StringPart};
 use crate::error::SourcePosition;
+use crate::parser::expressions::parse_expression;
+use crate::parser::token_stream::TokenStream;
 
 impl Expression {
     /// Create a new Boolean expression
@@ -80,19 +82,20 @@ impl Expression {
                 .strip_prefix("${")
                 .and_then(|s| s.strip_suffix("}"))
             {
-                // Simple variable reference: ${variable}
+                // Parse expression inside ${...}
+                let parsed_expr = parse_placeholder_expression(inner, pos.clone())?;
                 parts.push(StringPart::Placeholder {
-                    expr: Box::new(Expression::ident(pos.clone(), inner.to_string())),
+                    expr: Box::new(parsed_expr),
                     options: HashMap::new(),
                 });
             } else if let Some(inner) = placeholder_text
                 .strip_prefix("~{")
                 .and_then(|s| s.strip_suffix("}"))
             {
-                // Expression placeholder: ~{expression} - for now treat as identifier
-                // TODO: Parse full expressions when expression parser is available
+                // Parse expression inside ~{...}
+                let parsed_expr = parse_placeholder_expression(inner, pos.clone())?;
                 parts.push(StringPart::Placeholder {
-                    expr: Box::new(Expression::ident(pos.clone(), inner.to_string())),
+                    expr: Box::new(parsed_expr),
                     options: HashMap::new(),
                 });
             }
@@ -136,4 +139,24 @@ impl Expression {
             inferred_type: None,
         }
     }
+}
+
+/// Parse an expression inside a placeholder (${...} or ~{...})
+fn parse_placeholder_expression(
+    inner: &str,
+    pos: SourcePosition,
+) -> Result<Expression, crate::error::WdlError> {
+    // Create a TokenStream for the placeholder content
+    let mut stream =
+        TokenStream::new(inner, "1.0").map_err(|e| crate::error::WdlError::RuntimeError {
+            message: format!(
+                "Failed to tokenize placeholder expression '{}': {}",
+                inner, e
+            ),
+        })?;
+
+    // Parse the expression
+    parse_expression(&mut stream).map_err(|e| crate::error::WdlError::RuntimeError {
+        message: format!("Failed to parse placeholder expression '{}': {}", inner, e),
+    })
 }

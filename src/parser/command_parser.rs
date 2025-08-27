@@ -5,6 +5,8 @@
 
 use crate::error::{SourcePosition, WdlError};
 use crate::expr::{Expression, StringPart};
+use crate::parser::expressions::parse_expression;
+use crate::parser::token_stream::TokenStream;
 
 /// Parse a raw command block with heredoc syntax <<<...>>>
 pub fn parse_raw_heredoc_command(
@@ -34,79 +36,83 @@ pub fn parse_raw_heredoc_command(
     // Extract command content between <<< and >>>
     let command_content = &input[start_idx + 3..end_idx];
 
+    // Create a TokenStream for the command content and set it to command mode
+    let mut stream = TokenStream::new(command_content, "1.0")?;
+    stream.enter_command_mode();
+
     // Parse the command content for placeholders
-    let parts = parse_command_content(command_content)?;
+    let parts = parse_command_content(&mut stream)?;
 
     Ok(Expression::string(pos.clone(), parts))
 }
 
 /// Parse command content for WDL placeholders (~{} and ${})
-fn parse_command_content(content: &str) -> Result<Vec<StringPart>, WdlError> {
+fn parse_command_content(stream: &mut TokenStream) -> Result<Vec<StringPart>, WdlError> {
     let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut chars = content.chars().peekable();
+    let mut current_text = String::new();
 
-    while let Some(ch) = chars.next() {
-        match ch {
-            '~' | '$' => {
-                // Check if this starts a placeholder
-                if chars.peek() == Some(&'{') {
+    // Process tokens in command mode
+    while !stream.is_eof() {
+        if let Some(token) = stream.peek() {
+            match &token.token {
+                crate::parser::tokens::Token::TildeBrace
+                | crate::parser::tokens::Token::DollarBrace => {
                     // Found placeholder start
-                    if !current.is_empty() {
-                        parts.push(StringPart::Text(current.clone()));
-                        current.clear();
+                    if !current_text.is_empty() {
+                        parts.push(StringPart::Text(current_text.clone()));
+                        current_text.clear();
                     }
 
-                    chars.next(); // consume '{'
+                    stream.next(); // consume the placeholder start token
 
-                    // Find the matching }
-                    let mut placeholder_content = String::new();
-                    let mut depth = 1;
+                    // Switch to normal mode for expression parsing
+                    stream.exit_command_mode();
 
-                    while depth > 0 {
-                        match chars.next() {
-                            Some('{') => {
-                                placeholder_content.push('{');
-                                depth += 1;
-                            }
-                            Some('}') => {
-                                depth -= 1;
-                                if depth > 0 {
-                                    placeholder_content.push('}');
-                                }
-                            }
-                            Some(c) => {
-                                placeholder_content.push(c);
-                            }
-                            None => {
-                                return Err(WdlError::RuntimeError {
-                                    message: "Unclosed placeholder in command".to_string(),
-                                });
-                            }
-                        }
-                    }
+                    // Parse the expression inside the placeholder
+                    let expr = parse_expression(stream).map_err(|e| WdlError::RuntimeError {
+                        message: format!("Failed to parse placeholder expression: {}", e),
+                    })?;
 
-                    // For now, treat placeholder as raw text
-                    // In a full implementation, we'd parse the expression
-                    let placeholder_marker = if ch == '~' { "~" } else { "$" };
-                    parts.push(StringPart::Text(format!(
-                        "{}{{{}}}",
-                        placeholder_marker, placeholder_content
-                    )));
-                } else {
-                    // Not a placeholder, just regular text
-                    current.push(ch);
+                    // Expect closing brace
+                    stream
+                        .expect(crate::parser::tokens::Token::RightBrace)
+                        .map_err(|e| WdlError::RuntimeError {
+                            message: format!("Expected '}}' to close placeholder: {}", e),
+                        })?;
+
+                    // Switch back to command mode
+                    stream.enter_command_mode();
+
+                    // Create placeholder
+                    parts.push(StringPart::Placeholder {
+                        expr: Box::new(expr),
+                        options: std::collections::HashMap::new(),
+                    });
+                }
+                crate::parser::tokens::Token::CommandText(text)
+                | crate::parser::tokens::Token::Whitespace(text) => {
+                    // Add text content
+                    current_text.push_str(text);
+                    stream.next(); // consume the token
+                }
+                crate::parser::tokens::Token::Newline => {
+                    current_text.push('\n');
+                    stream.next(); // consume the token
+                }
+                _ => {
+                    // For any other token in command mode, treat as text
+                    current_text.push_str(&format!("{}", token.token));
+                    stream.next(); // consume the token
                 }
             }
-            _ => {
-                current.push(ch);
-            }
+        } else {
+            break;
         }
     }
 
     // Add any remaining text
-    if !current.is_empty() {
-        parts.push(StringPart::Text(current));
+    if !current_text.is_empty() {
+        parts.push(StringPart::Text(current_text));
     }
 
     // If no parts, add empty string
@@ -159,8 +165,12 @@ pub fn parse_raw_command_block(input: &str, pos: &SourcePosition) -> Result<Expr
     // Extract command content
     let command_content = &input[start_idx + 1..end_idx];
 
+    // Create a TokenStream for the command content and set it to command mode
+    let mut stream = TokenStream::new(command_content, "1.0")?;
+    stream.enter_command_mode();
+
     // Parse the command content for placeholders
-    let parts = parse_command_content(command_content)?;
+    let parts = parse_command_content(&mut stream)?;
 
     Ok(Expression::string(pos.clone(), parts))
 }

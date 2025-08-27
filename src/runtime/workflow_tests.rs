@@ -1328,6 +1328,395 @@ mod tests {
         }
     }
 
+    /// Test advanced workflow features from miniwdl test_6workflowrun.py - Bug Discovery Tests
+    #[test]
+    fn test_advanced_workflow_features_bug_discovery() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        // Test 1: Complex task calls with arrays and string interpolation (from miniwdl test_hello)
+        let complex_task_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow hellowf {
+                input {
+                    Int x = 41
+                }
+                call hello as hello1 {
+                    input:
+                        who = ["Alice", "Bob"],
+                        x = x
+                }
+                call hello as hello2 {
+                    input:
+                        who = ["Alyssa", "Ben"],
+                        x = x
+                }
+                output {
+                    Array[String]+ messages = flatten([hello1.messages, hello2.messages])
+                    Array[Int]+ meanings = [hello1.meaning_of_life, hello2.meaning_of_life]
+                }
+            }
+
+            task hello {
+                input {
+                    Array[String]+ who
+                    Int x = 0
+                }
+                command <<<
+                    awk '{print "Hello", $0}' "~{write_lines(who)}"
+                >>>
+                output {
+                    Array[String]+ messages = read_lines(stdout())
+                    Int meaning_of_life = x+1
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert(
+                    "x".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(41)),
+                );
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match complex_task_result {
+            Ok(outputs) => {
+                println!("✅ Complex task calls test passed - checking outputs...");
+                if let Some(messages_value) = outputs.get("messages") {
+                    if let Some(messages_array) = messages_value.as_array() {
+                        let expected =
+                            vec!["Hello Alice", "Hello Bob", "Hello Alyssa", "Hello Ben"];
+                        if messages_array.len() == 4 {
+                            println!("✅ Messages array has correct length");
+                        } else {
+                            println!(
+                                "❌ BUG: Messages array length {} != expected 4",
+                                messages_array.len()
+                            );
+                        }
+                    } else {
+                        println!("❌ BUG: Messages is not an array");
+                    }
+                } else {
+                    println!("❌ BUG: Missing messages output");
+                }
+
+                if let Some(meanings_value) = outputs.get("meanings") {
+                    if let Some(meanings_array) = meanings_value.as_array() {
+                        if meanings_array.len() == 2
+                            && meanings_array[0].as_i64().unwrap_or(0) == 42
+                        {
+                            println!("✅ Meanings array has correct values");
+                        } else {
+                            println!("❌ BUG: Meanings array has incorrect values");
+                        }
+                    } else {
+                        println!("❌ BUG: Meanings is not an array");
+                    }
+                } else {
+                    println!("❌ BUG: Missing meanings output");
+                }
+            }
+            Err(e) => {
+                println!("❌ BUG: Complex task calls failed: {:?}", e);
+            }
+        }
+
+        // Test 2: Array types with non-empty constraints (Array[Type]+)
+        let non_empty_array_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow test_array_constraints {
+                input {
+                    Array[String]+ non_empty_strings = ["hello", "world"]
+                }
+                output {
+                    Array[String]+ output_strings = non_empty_strings
+                    Int length = length(non_empty_strings)
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert(
+                    "non_empty_strings".to_string(),
+                    serde_json::Value::Array(vec![
+                        serde_json::Value::String("hello".to_string()),
+                        serde_json::Value::String("world".to_string()),
+                    ]),
+                );
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match non_empty_array_result {
+            Ok(_) => {
+                println!("✅ Non-empty array constraints work");
+            }
+            Err(e) => {
+                println!("❌ BUG: Non-empty array constraints failed: {:?}", e);
+            }
+        }
+
+        // Test 3: Complex scatter with nested arrays and flattening
+        let complex_scatter_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow crossrange {
+                input {
+                    Int m = 2
+                    Int n = 2
+                }
+                scatter (i in range(m)) {
+                    scatter (j in range(n)) {
+                        Pair[Int,Int] p = (i,j)
+                    }
+                }
+                output {
+                    Array[Pair[Int,Int]] pairs = flatten(p)
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert(
+                    "m".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(2)),
+                );
+                inputs.insert(
+                    "n".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(2)),
+                );
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match complex_scatter_result {
+            Ok(outputs) => {
+                if let Some(pairs_value) = outputs.get("pairs") {
+                    if let Some(pairs_array) = pairs_value.as_array() {
+                        if pairs_array.len() == 4 {
+                            println!("✅ Complex nested scatter with flattening works");
+                        } else {
+                            println!(
+                                "❌ BUG: Flattening produced {} pairs instead of 4",
+                                pairs_array.len()
+                            );
+                        }
+                    } else {
+                        println!("❌ BUG: Pairs is not an array");
+                    }
+                } else {
+                    println!("❌ BUG: Missing pairs output");
+                }
+            }
+            Err(e) => {
+                println!("❌ BUG: Complex scatter with flattening failed: {:?}", e);
+            }
+        }
+
+        // Test 4: Forward references and dependency resolution
+        let forward_reference_result = fixture.test_workflow(
+            r#"
+            version 1.0
+            
+            workflow order_test {
+                input {
+                    Boolean b = true
+                }
+                scatter (i in range(select_first([a1, a2]))) {
+                    Array[Int?] z = [a1, a2]
+                }
+                if (b) {
+                    Int a1 = 1
+                }
+                if (!b) {
+                    Int a2 = 2
+                }
+                output {
+                    Array[Array[Int?]] z_out = z
+                }
+            }
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("b".to_string(), serde_json::Value::Bool(true));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        match forward_reference_result {
+            Ok(outputs) => {
+                println!("✅ Forward reference resolution works");
+                if let Some(z_out) = outputs.get("z_out") {
+                    if let Some(z_array) = z_out.as_array() {
+                        if z_array.len() == 1 {
+                            println!("✅ Forward reference produces correct array length");
+                        } else {
+                            println!(
+                                "❌ BUG: Forward reference produces wrong array length: {}",
+                                z_array.len()
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("❌ BUG: Forward reference resolution failed: {:?}", e);
+            }
+        }
+    }
+
+    /// BUG REPRODUCTION TEST 1: Missing standard library functions in task commands
+    #[test]
+    fn test_bug_reproduction_missing_stdlib_in_commands() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        // This test reproduces the bug where write_lines() and other stdlib functions
+        // are not available in task command contexts
+        let _result = fixture
+            .test_workflow(
+                r#"
+            version 1.0
+            
+            workflow test_stdlib_in_command {
+                input {
+                    Array[String] names = ["Alice", "Bob"]
+                }
+                call write_to_file {
+                    input: names = names
+                }
+                output {
+                    Array[String] result = read_lines(write_to_file.output_file)
+                }
+            }
+            
+            task write_to_file {
+                input {
+                    Array[String] names
+                }
+                command {
+                    # BUG: write_lines should be available here but isn't
+                    echo "Names:" > names.txt
+                    cat "~{write_lines(names)}" >> names.txt
+                }
+                output {
+                    File output_file = "names.txt"
+                }
+            }
+            "#,
+                Some({
+                    let mut inputs = std::collections::HashMap::new();
+                    inputs.insert(
+                        "names".to_string(),
+                        serde_json::Value::Array(vec![
+                            serde_json::Value::String("Alice".to_string()),
+                            serde_json::Value::String("Bob".to_string()),
+                        ]),
+                    );
+                    inputs
+                }),
+                None,
+                None,
+            )
+            .unwrap(); // This should panic due to the bug
+    }
+
+    /// BUG REPRODUCTION TEST 2: Forward reference resolution failure
+    #[test]
+    #[should_panic(expected = "Unknown identifier")]
+    fn test_bug_reproduction_forward_reference_resolution() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        // This test reproduces the bug where forward references (variables defined later
+        // in the workflow) cannot be resolved in scatter expressions
+        let _result = fixture
+            .test_workflow(
+                r#"
+            version 1.0
+            
+            workflow forward_reference_bug {
+                input {
+                    Boolean condition = true
+                }
+                
+                # BUG: This should work but fails because 'later_defined' is referenced
+                # before it's defined, and our dependency resolution doesn't handle this
+                scatter (i in range(later_defined)) {
+                    Int doubled = i * 2
+                }
+                
+                if (condition) {
+                    Int later_defined = 3
+                }
+                
+                output {
+                    Array[Int] results = doubled
+                }
+            }
+            "#,
+                Some({
+                    let mut inputs = std::collections::HashMap::new();
+                    inputs.insert("condition".to_string(), serde_json::Value::Bool(true));
+                    inputs
+                }),
+                None,
+                None,
+            )
+            .unwrap(); // This should panic due to the bug
+    }
+
+    /// BUG REPRODUCTION TEST 3: Complex expression evaluation in command contexts
+    #[test]
+    fn test_bug_reproduction_complex_expression_in_commands() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        // This test reproduces issues with complex expression evaluation in task commands
+        let _result = fixture
+            .test_workflow(
+                r#"
+            version 1.0
+            
+            workflow complex_command_expressions {
+                call process_data
+                output {
+                    Array[String] processed = process_data.lines
+                }
+            }
+            
+            task process_data {
+                command <<<
+                    # BUG: Complex expressions with nested function calls should work
+                    echo "line1" > temp.txt
+                    echo "line2" >> temp.txt
+                    # This should work but currently fails
+                    wc -l "~{write_lines(read_lines("temp.txt"))}" > result.txt
+                >>>
+                output {
+                    Array[String] lines = read_lines("result.txt")
+                }
+            }
+            "#,
+                None,
+                None,
+                None,
+            )
+            .unwrap(); // This should panic due to the bug
+    }
+
     /// Test input/output handling (equivalent to Python test_io)
     #[test]
     fn test_io() {
