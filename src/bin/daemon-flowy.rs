@@ -1,7 +1,7 @@
-//! Standalone job executor for WDL tasks
+//! daemon-flowy - Standalone job executor for WDL tasks
 //!
-//! This binary executes WDL tasks in isolation, communicating with the main
-//! miniwdl-rust process via JSON messages over stdin/stdout.
+//! This daemon executes WDL tasks in isolation, communicating with the main
+//! flowy process via JSON messages over stdin/stdout.
 
 use chrono::Utc;
 use miniwdl_rust::runtime::job_executor_schema::*;

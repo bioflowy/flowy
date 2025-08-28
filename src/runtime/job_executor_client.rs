@@ -300,11 +300,11 @@ impl JobExecutorClient {
 
         // Find or use default executor path
         let executor_path = self.config.local_executor_path.clone().unwrap_or_else(|| {
-            // Look for executor in same directory as current binary
+            // Look for daemon-flowy in same directory as current binary
             std::env::current_exe()
                 .ok()
-                .and_then(|p| p.parent().map(|d| d.join("miniwdl-job-executor")))
-                .unwrap_or_else(|| PathBuf::from("miniwdl-job-executor"))
+                .and_then(|p| p.parent().map(|d| d.join("daemon-flowy")))
+                .unwrap_or_else(|| PathBuf::from("daemon-flowy"))
         });
 
         // Spawn executor process

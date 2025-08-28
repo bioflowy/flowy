@@ -181,7 +181,7 @@ fn test_job_executor_message_wrapper() {
 fn test_job_executor_client_config() {
     let config = JobExecutorClientConfig {
         mode: ExecutorMode::Local,
-        local_executor_path: Some(PathBuf::from("/usr/local/bin/miniwdl-job-executor")),
+        local_executor_path: Some(PathBuf::from("/usr/local/bin/daemon-flowy")),
         remote_api_endpoint: None,
         auth_token: None,
         max_concurrent_jobs: 5,
@@ -360,7 +360,7 @@ mod integration_tests {
     #[test]
     fn test_job_executor_client_creation() {
         let temp_dir = TempDir::new().unwrap();
-        let executor_path = temp_dir.path().join("miniwdl-job-executor");
+        let executor_path = temp_dir.path().join("daemon-flowy");
 
         let config = JobExecutorClientConfig {
             mode: ExecutorMode::Local,

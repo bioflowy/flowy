@@ -24,8 +24,12 @@ futures-util = "0.3"
 uuid = { version = "1.0", features = ["v4"] }
 
 [[bin]]
-name = "miniwdl-job-executor"
-path = "src/bin/miniwdl-job-executor.rs"
+name = "flowy"
+path = "src/bin/flowy.rs"
+
+[[bin]]
+name = "daemon-flowy"
+path = "src/bin/daemon-flowy.rs"
 
 [dev-dependencies]
 tempfile = "3.21.0"

@@ -1,4 +1,4 @@
-//! miniwdl-rust CLI
+//! flowy - WDL workflow execution engine
 //!
 //! Command-line interface for executing WDL workflows and tasks.
 
@@ -129,7 +129,7 @@ fn parse_args() -> Args {
 }
 
 fn print_help(program: &str) {
-    eprintln!("miniwdl-rust - WDL workflow executor");
+    eprintln!("flowy - WDL workflow execution engine");
     eprintln!();
     eprintln!("Usage: {} <wdl_file> [options]", program);
     eprintln!();
@@ -163,7 +163,7 @@ fn run(args: Args) -> Result<(), WdlError> {
     // Set up working directory
     let work_dir = args
         .work_dir
-        .unwrap_or_else(|| std::env::temp_dir().join("miniwdl-rust"));
+        .unwrap_or_else(|| std::env::temp_dir().join("flowy"));
     fs::create_dir_all(&work_dir).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to create working directory: {}", e),
     })?;
