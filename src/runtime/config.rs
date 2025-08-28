@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::runtime::job_executor_client::{ExecutorMode, JobExecutorClientConfig};
+
 /// Main configuration structure for workflow execution
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -36,6 +38,9 @@ pub struct Config {
 
     /// Resource limits
     pub resources: ResourceLimits,
+
+    /// Job executor configuration
+    pub job_executor: JobExecutorClientConfig,
 }
 
 /// Container execution configuration (placeholder)
@@ -105,6 +110,7 @@ impl Default for Config {
             cache: CacheConfig::default(),
             env_vars: HashMap::new(),
             resources: ResourceLimits::default(),
+            job_executor: JobExecutorClientConfig::default(),
         }
     }
 }
@@ -189,6 +195,39 @@ impl Config {
     pub fn with_cache_dir<P: Into<PathBuf>>(mut self, cache_dir: P) -> Self {
         self.cache.enabled = true;
         self.cache.dir = Some(cache_dir.into());
+        self
+    }
+
+    /// Set job executor mode
+    pub fn with_job_executor_mode(mut self, mode: ExecutorMode) -> Self {
+        self.job_executor.mode = mode;
+        self
+    }
+
+    /// Set local job executor path
+    pub fn with_local_executor_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.job_executor.local_executor_path = Some(path.into());
+        self
+    }
+
+    /// Set remote job executor endpoint
+    pub fn with_remote_executor_endpoint<S: Into<String>>(mut self, endpoint: S) -> Self {
+        self.job_executor.mode = ExecutorMode::Remote;
+        self.job_executor.remote_api_endpoint = Some(endpoint.into());
+        self
+    }
+
+    /// Set maximum concurrent jobs
+    pub fn with_max_concurrent_jobs(mut self, max_jobs: usize) -> Self {
+        self.job_executor.max_concurrent_jobs = max_jobs;
+        self
+    }
+
+    /// Enable job executor (use separate process for task execution)
+    pub fn with_job_executor_enabled(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.job_executor.mode = ExecutorMode::Local;
+        }
         self
     }
 

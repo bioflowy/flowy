@@ -137,6 +137,16 @@ pub enum RuntimeError {
         /// Configuration key if relevant
         key: Option<String>,
     },
+
+    /// Job executor error
+    ExecutorError {
+        /// Error message
+        message: String,
+        /// Job ID if relevant
+        job_id: Option<String>,
+        /// Underlying error
+        cause: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
 }
 
 impl fmt::Display for RuntimeError {
@@ -263,6 +273,15 @@ impl fmt::Display for RuntimeError {
                     write!(f, "Configuration error: {}", message)
                 }
             }
+            RuntimeError::ExecutorError {
+                message, job_id, ..
+            } => {
+                if let Some(id) = job_id {
+                    write!(f, "Job executor error ({}): {}", id, message)
+                } else {
+                    write!(f, "Job executor error: {}", message)
+                }
+            }
         }
     }
 }
@@ -280,6 +299,9 @@ impl std::error::Error for RuntimeError {
                 .as_ref()
                 .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
             RuntimeError::CacheError { cause, .. } => cause
+                .as_ref()
+                .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
+            RuntimeError::ExecutorError { cause, .. } => cause
                 .as_ref()
                 .map(|e| e.as_ref() as &(dyn std::error::Error + 'static)),
             _ => None,

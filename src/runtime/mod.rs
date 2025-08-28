@@ -8,6 +8,8 @@ pub mod config;
 pub mod container;
 pub mod error;
 pub mod fs_utils;
+pub mod job_executor_client;
+pub mod job_executor_schema;
 pub mod task;
 pub mod task_context;
 pub mod workflow;
@@ -15,15 +17,17 @@ pub mod workflow;
 #[cfg(test)]
 pub mod workflow_tests;
 
+#[cfg(test)]
+pub mod job_executor_tests;
+
 // Re-export main runtime components
-pub use config::{
-    CacheConfig, Config, ConfigBuilder, ContainerBackend, ContainerConfig, ResourceLimits,
-};
+pub use config::{CacheConfig, Config, ContainerBackend, ContainerConfig, ResourceLimits};
 pub use error::{IntoRuntimeError, RuntimeError, RuntimeResult};
 pub use fs_utils::{
     copy_file, create_dir_all, read_file_to_string, remove_dir_all, write_file_atomic,
     WorkflowDirectory,
 };
+pub use job_executor_client::{ExecutorMode, JobExecutorClient, JobExecutorClientConfig};
 pub use task::{TaskEngine, TaskExecutionMonitor, TaskExecutionOptions, TaskExecutionStats};
 pub use task_context::TaskContext;
 pub use task_context::TaskResult;

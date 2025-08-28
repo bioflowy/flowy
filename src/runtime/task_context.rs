@@ -12,6 +12,8 @@ use crate::runtime::error::{RuntimeError, RuntimeResult};
 use crate::runtime::fs_utils::{
     create_dir_all, read_file_to_string, write_file_atomic, WorkflowDirectory,
 };
+use crate::runtime::job_executor_client::{ExecutorMode, JobExecutorClient};
+use crate::runtime::job_executor_schema::ContainerBackendType;
 use crate::tree::Task;
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
@@ -228,13 +230,61 @@ impl TaskContext {
 
     /// Execute the generated command
     fn execute_command(&self, command_str: &str) -> RuntimeResult<(ExitStatus, String, String)> {
-        // Check if container execution is enabled
-        if self.config.container.enabled && self.config.container.backend != ContainerBackend::None
+        // Check if job executor is enabled
+        if self.config.job_executor.mode == ExecutorMode::Remote
+            || self.config.job_executor.local_executor_path.is_some()
+        {
+            self.execute_command_with_job_executor(command_str)
+        } else if self.config.container.enabled
+            && self.config.container.backend != ContainerBackend::None
         {
             self.execute_command_in_container(command_str)
         } else {
             self.execute_command_directly(command_str)
         }
+    }
+
+    /// Execute command using JobExecutorClient
+    fn execute_command_with_job_executor(
+        &self,
+        _command_str: &str,
+    ) -> RuntimeResult<(ExitStatus, String, String)> {
+        // Create job executor client
+        let client = JobExecutorClient::new(self.config.job_executor.clone());
+
+        // Convert container backend
+        let container_backend = match self.config.container.backend {
+            ContainerBackend::Docker => ContainerBackendType::Docker,
+            ContainerBackend::Podman => ContainerBackendType::Podman,
+            ContainerBackend::Singularity => ContainerBackendType::Singularity,
+            ContainerBackend::None => ContainerBackendType::None,
+        };
+
+        // Execute task using job executor
+        let rt = tokio::runtime::Runtime::new().map_err(|e| RuntimeError::ExecutorError {
+            message: format!("Failed to create async runtime: {}", e),
+            job_id: None,
+            cause: Some(Box::new(e)),
+        })?;
+
+        let task_result = rt.block_on(async {
+            client
+                .execute_task(
+                    &self.task,
+                    &self.inputs,
+                    self.task_dir.clone(),
+                    container_backend,
+                    self.env_vars.clone(),
+                )
+                .await
+        })?;
+
+        // Convert TaskResult back to the format expected by this method
+        Ok((
+            task_result.exit_status,
+            task_result.stdout,
+            task_result.stderr,
+        ))
     }
 
     /// Execute command directly on the host system
