@@ -14,6 +14,7 @@ pub mod io;
 pub mod math;
 pub mod operators;
 pub mod strings;
+pub mod task_output;
 pub mod types;
 
 // Re-export all function structs for convenience
@@ -92,6 +93,7 @@ impl StdLib {
         self.register_function(Box::new(StderrFunction));
         self.register_function(Box::new(WriteLinesFunction));
         self.register_function(Box::new(ReadLinesFunction));
+        self.register_function(Box::new(ReadStringFunction));
     }
 
     /// Register all operators
@@ -121,6 +123,11 @@ impl StdLib {
     fn register_function(&mut self, function: Box<dyn Function>) {
         let name = function.name().to_string();
         self.functions.insert(name, function);
+    }
+
+    /// Add or replace a function in the library (public method)
+    pub fn add_function(&mut self, function: Box<dyn Function>) {
+        self.register_function(function);
     }
 }
 

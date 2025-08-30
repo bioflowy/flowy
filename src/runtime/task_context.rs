@@ -21,6 +21,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
+use url::Url;
 // Note: Write trait available if needed
 
 /// Context for executing a WDL task
@@ -44,6 +45,17 @@ pub struct TaskContext {
     pub resource_limits: ResourceLimits,
 }
 
+/// Result of command execution
+#[derive(Debug)]
+pub struct CommandResult {
+    /// Exit status of the command
+    pub exit_status: ExitStatus,
+    /// Path to stdout output file (as URL)
+    pub stdout_path: Url,
+    /// Path to stderr output file (as URL)
+    pub stderr_path: Url,
+}
+
 /// Result of task execution
 #[derive(Debug)]
 pub struct TaskResult {
@@ -51,10 +63,10 @@ pub struct TaskResult {
     pub outputs: Bindings<Value>,
     /// Exit status of the command
     pub exit_status: ExitStatus,
-    /// Standard output
-    pub stdout: String,
-    /// Standard error
-    pub stderr: String,
+    /// Standard output as file URL
+    pub stdout: Url,
+    /// Standard error as file URL
+    pub stderr: Url,
     /// Task execution duration
     pub duration: Duration,
     /// Working directory used
@@ -105,18 +117,18 @@ impl TaskContext {
         let command_str = self.generate_command()?;
 
         // Execute command
-        let result = self.execute_command(&command_str)?;
+        let command_result = self.execute_command(&command_str)?;
 
-        // Process outputs
-        let outputs = self.collect_outputs()?;
+        // Process outputs with command result context
+        let outputs = self.collect_outputs(&command_result)?;
 
         let duration = self.start_time.unwrap().elapsed();
 
         Ok(TaskResult {
             outputs,
-            exit_status: result.0,
-            stdout: result.1,
-            stderr: result.2,
+            exit_status: command_result.exit_status,
+            stdout: command_result.stdout_path.clone(),
+            stderr: command_result.stderr_path.clone(),
             duration,
             work_dir: self.task_dir.clone(),
         })
@@ -141,7 +153,7 @@ impl TaskContext {
     }
 
     /// Prepare the execution environment
-    fn prepare_environment(&self) -> RuntimeResult<()> {
+    pub fn prepare_environment(&self) -> RuntimeResult<()> {
         // Create input files symlinks/copies if needed
         for binding in self.inputs.iter() {
             let name = binding.name();
@@ -227,7 +239,7 @@ impl TaskContext {
     }
 
     /// Execute the generated command
-    fn execute_command(&self, command_str: &str) -> RuntimeResult<(ExitStatus, String, String)> {
+    pub fn execute_command(&self, command_str: &str) -> RuntimeResult<CommandResult> {
         // Check if container execution is enabled
         if self.config.container.enabled && self.config.container.backend != ContainerBackend::None
         {
@@ -241,7 +253,7 @@ impl TaskContext {
     fn execute_command_directly(
         &self,
         command_str: &str,
-    ) -> RuntimeResult<(ExitStatus, String, String)> {
+    ) -> RuntimeResult<CommandResult> {
         // Write command to script file
         let script_path = self.task_dir.join("command.sh");
         let script_content = format!(
@@ -288,7 +300,7 @@ impl TaskContext {
     fn execute_command_in_container(
         &self,
         command_str: &str,
-    ) -> RuntimeResult<(ExitStatus, String, String)> {
+    ) -> RuntimeResult<CommandResult> {
         // Create a blocking runtime for container operations
         let rt = tokio::runtime::Runtime::new().map_err(|e| RuntimeError::ContainerError {
             message: "Failed to create async runtime for container execution".to_string(),
@@ -303,7 +315,7 @@ impl TaskContext {
     async fn execute_command_in_container_async(
         &self,
         command_str: &str,
-    ) -> RuntimeResult<(ExitStatus, String, String)> {
+    ) -> RuntimeResult<CommandResult> {
         // Create container runtime
         let runtime = ContainerFactory::create_runtime(&self.config.container.backend)?;
 
@@ -417,15 +429,42 @@ impl TaskContext {
             }
         };
 
-        Ok((exit_status, stdout, stderr))
+        // Write stdout and stderr to files
+        let stdout_path = self.task_dir.join("stdout.txt");
+        let stderr_path = self.task_dir.join("stderr.txt");
+        
+        // Write outputs to files
+        write_file_atomic(&stdout_path, stdout.as_bytes())?;
+        write_file_atomic(&stderr_path, stderr.as_bytes())?;
+        
+        // Convert paths to file URLs
+        let stdout_url = url::Url::from_file_path(&stdout_path)
+            .map_err(|_| RuntimeError::filesystem_error(
+                "Failed to create stdout URL".to_string(),
+                Some(stdout_path.display().to_string()),
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
+            ))?;
+            
+        let stderr_url = url::Url::from_file_path(&stderr_path)
+            .map_err(|_| RuntimeError::filesystem_error(
+                "Failed to create stderr URL".to_string(),
+                Some(stderr_path.display().to_string()),
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
+            ))?;
+        
+        Ok(CommandResult {
+            exit_status,
+            stdout_path: stdout_url,
+            stderr_path: stderr_url,
+        })
     }
 
-    /// Wait for process completion with timeout
+    /// Wait for process completion with timeout and write outputs to files
     fn wait_with_timeout(
         &self,
         child: std::process::Child,
         timeout: Duration,
-    ) -> RuntimeResult<(ExitStatus, String, String)> {
+    ) -> RuntimeResult<CommandResult> {
         use std::sync::mpsc;
         use std::thread;
 
@@ -440,9 +479,36 @@ impl TaskContext {
         // Wait with timeout
         match rx.recv_timeout(timeout) {
             Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                Ok((output.status, stdout, stderr))
+                // Write stdout and stderr to files
+                let stdout_path = self.task_dir.join("stdout.txt");
+                let stderr_path = self.task_dir.join("stderr.txt");
+                
+                // Write stdout to file
+                write_file_atomic(&stdout_path, &output.stdout)?;
+                
+                // Write stderr to file
+                write_file_atomic(&stderr_path, &output.stderr)?;
+                
+                // Convert paths to file URLs
+                let stdout_url = Url::from_file_path(&stdout_path)
+                    .map_err(|_| RuntimeError::filesystem_error(
+                        "Failed to create stdout URL".to_string(),
+                        Some(stdout_path.display().to_string()),
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
+                    ))?;
+                    
+                let stderr_url = Url::from_file_path(&stderr_path)
+                    .map_err(|_| RuntimeError::filesystem_error(
+                        "Failed to create stderr URL".to_string(),
+                        Some(stderr_path.display().to_string()),
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
+                    ))?;
+                
+                Ok(CommandResult {
+                    exit_status: output.status,
+                    stdout_path: stdout_url,
+                    stderr_path: stderr_url,
+                })
             }
             Ok(Err(e)) => Err(RuntimeError::filesystem_error(
                 "Process execution failed".to_string(),
@@ -461,16 +527,19 @@ impl TaskContext {
     }
 
     /// Collect task outputs
-    fn collect_outputs(&self) -> RuntimeResult<Bindings<Value>> {
+    fn collect_outputs(&self, command_result: &CommandResult) -> RuntimeResult<Bindings<Value>> {
         let mut outputs = Bindings::new();
 
         // Create evaluation environment with inputs for output expressions
         let eval_env = self.inputs.clone();
-        let stdlib = crate::stdlib::StdLib::new("1.0");
+        
+        // Create task output-specific standard library that includes stdout/stderr functions
+        let stdlib = crate::stdlib::task_output::create_task_output_stdlib("1.0", self.task_dir.clone());
 
         for output_decl in &self.task.outputs {
             if let Some(output_expr) = &output_decl.expr {
                 let output_value = output_expr.eval(&eval_env, &stdlib).map_err(|e| {
+                    eprintln!("Error evaluating output '{}': {}", output_decl.name, e);
                     RuntimeError::run_failed(
                         format!("Failed to evaluate output: {}", output_decl.name),
                         e,
@@ -576,6 +645,188 @@ impl TaskContext {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use super::*;
+    use crate::tree::*;
+    use crate::expr::*;
+    use crate::value::Value;
+    use crate::types::Type;
+    use crate::env::Bindings;
+    use crate::error::SourcePosition;
+    use tempfile::tempdir;
+    use std::path::PathBuf;
+    use url::Url;
+
+    fn create_test_task_with_outputs() -> Task {
+        use crate::tree::Declaration;
+        use std::collections::HashMap;
+        
+        Task {
+            pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10),
+            name: "test_task".to_string(),
+            inputs: Some(vec![
+                Declaration {
+                    pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 2, 1, 2, 20),
+                    workflow_node_id: "input1".to_string(),
+                    scatter_depth: 0,
+                    decl_type: Type::String { optional: false },
+                    name: "input_str".to_string(),
+                    expr: None,
+                    decor: HashMap::new(),
+                }
+            ]),
+            postinputs: vec![],
+            command: Expression::String {
+                pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 3, 1, 3, 30),
+                parts: vec![StringPart::Placeholder {
+                    expr: Box::new(Expression::Ident {
+                        pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 3, 10, 3, 19),
+                        name: "input_str".to_string(),
+                        inferred_type: None,
+                    }),
+                    options: HashMap::new(),
+                }],
+                inferred_type: None,
+            },
+            outputs: vec![
+                Declaration {
+                    pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 4, 1, 4, 25),
+                    workflow_node_id: "output1".to_string(),
+                    scatter_depth: 0,
+                    decl_type: Type::String { optional: false },
+                    name: "stdout_content".to_string(),
+                    expr: Some(Expression::Apply {
+                        pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 4, 15, 4, 25),
+                        function_name: "read_string".to_string(),
+                        arguments: vec![
+                            Expression::Apply {
+                                pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 4, 27, 4, 35),
+                                function_name: "stdout".to_string(),
+                                arguments: vec![],
+                                inferred_type: None,
+                            }
+                        ],
+                        inferred_type: None,
+                    }),
+                    decor: HashMap::new(),
+                },
+                Declaration {
+                    pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 5, 1, 5, 25),
+                    workflow_node_id: "output2".to_string(),
+                    scatter_depth: 0,
+                    decl_type: Type::String { optional: false },
+                    name: "stderr_content".to_string(),
+                    expr: Some(Expression::Apply {
+                        pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 5, 15, 5, 25),
+                        function_name: "read_string".to_string(),
+                        arguments: vec![
+                            Expression::Apply {
+                                pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 5, 27, 5, 35),
+                                function_name: "stderr".to_string(),
+                                arguments: vec![],
+                                inferred_type: None,
+                            }
+                        ],
+                        inferred_type: None,
+                    }),
+                    decor: HashMap::new(),
+                }
+            ],
+            runtime: HashMap::new(),
+            parameter_meta: HashMap::new(),
+            meta: HashMap::new(),
+            effective_wdl_version: "1.0".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_execute_command_returns_file_urls() {
+        let task = create_test_task_with_outputs();
+        let mut inputs = Bindings::new();
+        inputs = inputs.bind("input_str".to_string(), Value::String { value: "hello world".to_string(), wdl_type: Type::String { optional: false } }, None);
+
+        let config = Config::default();
+        let temp_dir = tempdir().unwrap();
+        let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
+
+        let context = TaskContext::new(task.clone(), inputs, config.clone(), workflow_dir, "test_run").unwrap();
+        
+        // Prepare environment to create task directory
+        context.prepare_environment().unwrap();
+        
+        // Generate a simple command
+        let command_str = "echo 'Hello stdout' && echo 'Hello stderr' >&2";
+        
+        // Execute command
+        let result = context.execute_command(command_str).unwrap();
+        
+        // Check that CommandResult contains URLs
+        assert!(result.stdout_path.scheme() == "file");
+        assert!(result.stderr_path.scheme() == "file");
+        
+        // Check that the files exist
+        let stdout_path = result.stdout_path.to_file_path().unwrap();
+        let stderr_path = result.stderr_path.to_file_path().unwrap();
+        assert!(stdout_path.exists());
+        assert!(stderr_path.exists());
+        
+        // Check file contents
+        let stdout_content = std::fs::read_to_string(&stdout_path).unwrap();
+        let stderr_content = std::fs::read_to_string(&stderr_path).unwrap();
+        assert!(stdout_content.contains("Hello stdout"));
+        assert!(stderr_content.contains("Hello stderr"));
+    }
+
+    #[test]
+    fn test_collect_outputs_with_stdout_stderr() {
+        let task = create_test_task_with_outputs();
+        let mut inputs = Bindings::new();
+        inputs = inputs.bind("input_str".to_string(), Value::String { value: "test input".to_string(), wdl_type: Type::String { optional: false } }, None);
+
+        let config = Config::default();
+        let temp_dir = tempdir().unwrap();
+        let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
+
+        let context = TaskContext::new(task.clone(), inputs, config.clone(), workflow_dir, "test_run").unwrap();
+        
+        // Prepare environment
+        context.prepare_environment().unwrap();
+        
+        // Create mock stdout and stderr files
+        let stdout_path = context.task_dir.join("stdout.txt");
+        let stderr_path = context.task_dir.join("stderr.txt");
+        std::fs::write(&stdout_path, "Test stdout content").unwrap();
+        std::fs::write(&stderr_path, "Test stderr content").unwrap();
+        
+        // Create CommandResult with file URLs
+        let command_result = CommandResult {
+            exit_status: std::process::ExitStatus::from_raw(0),
+            stdout_path: Url::from_file_path(&stdout_path).unwrap(),
+            stderr_path: Url::from_file_path(&stderr_path).unwrap(),
+        };
+        
+        // Collect outputs with the command result
+        let outputs = context.collect_outputs(&command_result).unwrap();
+        
+        // Check that stdout() and stderr() functions work properly
+        assert!(outputs.has_binding("stdout_content"));
+        assert!(outputs.has_binding("stderr_content"));
+        
+        let stdout_value = outputs.resolve("stdout_content").unwrap();
+        let stderr_value = outputs.resolve("stderr_content").unwrap();
+        
+        if let Value::String { value, .. } = stdout_value {
+            assert_eq!(value, "Test stdout content");
+        } else {
+            panic!("Expected String value for stdout_content");
+        }
+        
+        if let Value::String { value, .. } = stderr_value {
+            assert_eq!(value, "Test stderr content");
+        } else {
+            panic!("Expected String value for stderr_content");
+        }
+    }
+
     // Temporarily disabled for interface integration
     /*
     use super::*;

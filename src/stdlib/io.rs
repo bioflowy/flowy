@@ -141,7 +141,7 @@ impl Function for ReadLinesFunction {
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        let _filename = match &args[0] {
+        let filename = match &args[0] {
             Value::String { value, .. } => value.clone(),
             Value::File { value, .. } => value.clone(),
             _ => {
@@ -151,7 +151,66 @@ impl Function for ReadLinesFunction {
             }
         };
 
-        // For now, return empty array - runtime should handle actual file reading
-        Ok(Value::array(Type::string(false), vec![]))
+        // Read the file and split into lines
+        match std::fs::read_to_string(&filename) {
+            Ok(content) => {
+                let lines: Vec<Value> = content
+                    .lines()
+                    .map(|line| Value::string(line.to_string()))
+                    .collect();
+                Ok(Value::array(Type::string(false), lines))
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", filename, e),
+            }),
+        }
+    }
+}
+
+/// Read string function - reads entire file content as a single string
+pub struct ReadStringFunction;
+
+impl Function for ReadStringFunction {
+    fn name(&self) -> &str {
+        "read_string"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Expect String or File
+        if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+            return Err(WdlError::RuntimeError {
+                message: "read_string() argument must be String or File".to_string(),
+            });
+        }
+
+        Ok(Type::string(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_string() argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Read the entire file as a string
+        match std::fs::read_to_string(&filename) {
+            Ok(content) => Ok(Value::string(content)),
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", filename, e),
+            }),
+        }
     }
 }
