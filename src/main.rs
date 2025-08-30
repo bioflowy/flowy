@@ -227,7 +227,7 @@ fn run(args: Args) -> Result<(), WdlError> {
             outputs: workflow_result.outputs,
             stdout: url::Url::parse("file:///dev/null").unwrap(), // Placeholder stdout
             stderr: url::Url::parse("file:///dev/null").unwrap(), // Placeholder stderr
-            exit_status: unsafe { std::mem::transmute(0u32) }, // Placeholder exit status
+            exit_status: unsafe { std::mem::transmute(0u32) },    // Placeholder exit status
             duration: Duration::from_secs(0),
             work_dir: work_dir.clone(),
         }

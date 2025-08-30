@@ -1580,7 +1580,6 @@ mod tests {
         }
     }
 
-
     /// Test input/output handling (equivalent to Python test_io)
     #[test]
     fn test_io() {
