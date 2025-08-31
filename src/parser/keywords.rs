@@ -55,6 +55,7 @@ pub fn keywords_for_version(version: &str) -> HashSet<String> {
         keywords.insert("Directory".to_string());
         keywords.insert("env".to_string());
         keywords.insert("requirements".to_string());
+        keywords.insert("hints".to_string());
     }
 
     keywords
@@ -115,6 +116,7 @@ mod tests {
         assert!(keywords.contains("Directory"));
         assert!(keywords.contains("env"));
         assert!(keywords.contains("requirements"));
+        assert!(keywords.contains("hints"));
     }
 
     #[test]

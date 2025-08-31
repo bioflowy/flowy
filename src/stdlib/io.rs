@@ -214,3 +214,59 @@ impl Function for ReadStringFunction {
         }
     }
 }
+
+/// Read int function - reads a file and parses content as an integer
+pub struct ReadIntFunction;
+
+impl Function for ReadIntFunction {
+    fn name(&self) -> &str {
+        "read_int"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Expect String or File
+        if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+            return Err(WdlError::RuntimeError {
+                message: "read_int() argument must be String or File".to_string(),
+            });
+        }
+
+        Ok(Type::int(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_int() argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Read the file and parse as integer
+        match std::fs::read_to_string(&filename) {
+            Ok(content) => {
+                let trimmed = content.trim();
+                match trimmed.parse::<i64>() {
+                    Ok(value) => Ok(Value::int(value)),
+                    Err(e) => Err(WdlError::RuntimeError {
+                        message: format!("Failed to parse '{}' as integer: {}", trimmed, e),
+                    }),
+                }
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", filename, e),
+            }),
+        }
+    }
+}

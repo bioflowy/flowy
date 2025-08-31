@@ -94,9 +94,12 @@ impl WorkflowEngine {
         // Validate workflow inputs
         self.validate_workflow_inputs(&workflow, &inputs)?;
 
+        // Resolve workflow inputs (prefer prefixed names)
+        let resolved_inputs = self.resolve_workflow_inputs(&workflow, inputs)?;
+
         // Create execution context
         let mut context = WorkflowContext {
-            bindings: inputs,
+            bindings: resolved_inputs,
             task_results: HashMap::new(),
             start_time,
         };
@@ -170,6 +173,45 @@ impl WorkflowEngine {
         }
     }
 
+    /// Resolve workflow inputs from prefixed/unprefixed input bindings
+    fn resolve_workflow_inputs(
+        &self,
+        workflow: &Workflow,
+        inputs: Bindings<Value>,
+    ) -> RuntimeResult<Bindings<Value>> {
+        let mut resolved = Bindings::new();
+
+        if let Some(ref workflow_inputs) = workflow.inputs {
+            for input_decl in workflow_inputs {
+                let prefixed_name = format!("{}.{}", workflow.name, input_decl.name);
+
+                // Check for prefixed input first, then unprefixed
+                if let Some(binding) = inputs.resolve(&prefixed_name) {
+                    resolved = resolved.bind(input_decl.name.clone(), binding.clone(), None);
+                } else if let Some(binding) = inputs.resolve(&input_decl.name) {
+                    resolved = resolved.bind(input_decl.name.clone(), binding.clone(), None);
+                }
+                // If neither exists, it will be handled by validation or default values
+            }
+        }
+
+        // Add any additional bindings that don't match workflow inputs
+        for binding in inputs.iter() {
+            let name = binding.name();
+            // Skip if it's a prefixed workflow input we already handled
+            if !name.starts_with(&format!("{}.", workflow.name))
+                || !resolved.has_binding(
+                    name.strip_prefix(&format!("{}.", workflow.name))
+                        .unwrap_or(name),
+                )
+            {
+                resolved = resolved.bind(name.to_string(), binding.value().clone(), None);
+            }
+        }
+
+        Ok(resolved)
+    }
+
     /// Validate workflow inputs
     pub fn validate_workflow_inputs(
         &self,
@@ -179,11 +221,17 @@ impl WorkflowEngine {
         if let Some(ref workflow_inputs) = workflow.inputs {
             for input_decl in workflow_inputs {
                 if input_decl.expr.is_none() {
-                    // Required input
-                    if !inputs.has_binding(&input_decl.name) {
+                    // Required input - check both prefixed and unprefixed forms
+                    let prefixed_name = format!("{}.{}", workflow.name, input_decl.name);
+                    let has_prefixed = inputs.has_binding(&prefixed_name);
+                    let has_unprefixed = inputs.has_binding(&input_decl.name);
+
+                    if !has_prefixed && !has_unprefixed {
                         return Err(RuntimeError::WorkflowValidationError {
                             message: format!(
-                                "Missing required workflow input: {}",
+                                "Missing required workflow input: '{}'\nExpected: '{}' or '{}' in input JSON",
+                                input_decl.name,
+                                prefixed_name,
                                 input_decl.name
                             ),
                             pos: input_decl.pos.clone(),

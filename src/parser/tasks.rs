@@ -159,6 +159,177 @@ fn parse_runtime_section(stream: &mut TokenStream) -> ParseResult<HashMap<String
     Ok(runtime)
 }
 
+/// Parse requirements section: requirements { key: expression, ... }
+/// Validates that only standard WDL requirements attributes are used
+fn parse_requirements_section(
+    stream: &mut TokenStream,
+) -> ParseResult<HashMap<String, Expression>> {
+    // WDL 1.2 standard requirements attributes
+    const STANDARD_REQUIREMENTS: &[&str] = &[
+        "container",
+        "docker",      // container (docker is alias)
+        "cpu",         // CPU cores
+        "memory",      // Memory (RAM)
+        "gpu",         // GPU requirement
+        "gpuType",     // GPU type
+        "gpuCount",    // Number of GPUs
+        "fpga",        // FPGA requirement
+        "disks",       // Disk space
+        "maxRetries",  // Maximum retry attempts
+        "returnCodes", // Valid return codes
+    ];
+
+    // Expect "requirements" keyword
+    match stream.peek_token() {
+        Some(Token::Keyword(kw)) if kw == "requirements" => {
+            stream.next();
+        }
+        _ => {
+            return Err(WdlError::syntax_error(
+                stream.current_position(),
+                "Expected 'requirements' keyword".to_string(),
+                "1.2".to_string(),
+                None,
+            ));
+        }
+    }
+
+    stream.expect(Token::LeftBrace)?;
+
+    let mut requirements = HashMap::new();
+
+    // Parse key-value pairs
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
+        // Skip newlines
+        while stream.peek_token() == Some(Token::Newline) {
+            stream.next();
+        }
+
+        if stream.peek_token() == Some(Token::RightBrace) {
+            break;
+        }
+
+        // Parse key
+        let key = match stream.peek_token() {
+            Some(Token::Identifier(k)) | Some(Token::Keyword(k)) => {
+                let key = k.clone();
+                stream.next();
+                key
+            }
+            _ => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Expected requirements attribute name".to_string(),
+                    "1.2".to_string(),
+                    None,
+                ));
+            }
+        };
+
+        // Validate that the key is a standard requirements attribute
+        if !STANDARD_REQUIREMENTS.contains(&key.as_str()) {
+            return Err(WdlError::syntax_error(
+                stream.current_position(),
+                format!("Unknown requirements attribute '{}'. Use hints section for arbitrary attributes.", key),
+                "1.2".to_string(),
+                None,
+            ));
+        }
+
+        stream.expect(Token::Colon)?;
+
+        // Parse value expression
+        let value = parse_expression(stream)?;
+        requirements.insert(key, value);
+
+        // Optional comma or newline
+        if stream.peek_token() == Some(Token::Comma) {
+            stream.next();
+        }
+
+        // Skip newlines
+        while stream.peek_token() == Some(Token::Newline) {
+            stream.next();
+        }
+    }
+
+    stream.expect(Token::RightBrace)?;
+
+    Ok(requirements)
+}
+
+/// Parse hints section: hints { key: expression, ... }
+/// Allows arbitrary key-value pairs for execution engine optimization hints
+fn parse_hints_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, Expression>> {
+    // Expect "hints" keyword
+    match stream.peek_token() {
+        Some(Token::Keyword(kw)) if kw == "hints" => {
+            stream.next();
+        }
+        _ => {
+            return Err(WdlError::syntax_error(
+                stream.current_position(),
+                "Expected 'hints' keyword".to_string(),
+                "1.2".to_string(),
+                None,
+            ));
+        }
+    }
+
+    stream.expect(Token::LeftBrace)?;
+
+    let mut hints = HashMap::new();
+
+    // Parse key-value pairs
+    while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
+        // Skip newlines
+        while stream.peek_token() == Some(Token::Newline) {
+            stream.next();
+        }
+
+        if stream.peek_token() == Some(Token::RightBrace) {
+            break;
+        }
+
+        // Parse key
+        let key = match stream.peek_token() {
+            Some(Token::Identifier(k)) | Some(Token::Keyword(k)) => {
+                let key = k.clone();
+                stream.next();
+                key
+            }
+            _ => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Expected hints attribute name".to_string(),
+                    "1.2".to_string(),
+                    None,
+                ));
+            }
+        };
+
+        stream.expect(Token::Colon)?;
+
+        // Parse value expression
+        let value = parse_expression(stream)?;
+        hints.insert(key, value);
+
+        // Optional comma or newline
+        if stream.peek_token() == Some(Token::Comma) {
+            stream.next();
+        }
+
+        // Skip newlines
+        while stream.peek_token() == Some(Token::Newline) {
+            stream.next();
+        }
+    }
+
+    stream.expect(Token::RightBrace)?;
+
+    Ok(hints)
+}
+
 /// Parse command section: command { ... } or command <<< ... >>>
 /// This method handles both regular commands and preprocessed placeholders
 fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
@@ -606,8 +777,15 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
     let mut command: Option<Expression> = None;
     let mut outputs: Vec<Declaration> = Vec::new();
     let mut runtime: HashMap<String, Expression> = HashMap::new();
+    let mut requirements: HashMap<String, Expression> = HashMap::new();
+    let mut hints: HashMap<String, Expression> = HashMap::new();
     let mut meta: HashMap<String, serde_json::Value> = HashMap::new();
     let mut parameter_meta: HashMap<String, serde_json::Value> = HashMap::new();
+
+    // Track which sections are present to ensure mutual exclusivity
+    let mut has_runtime = false;
+    let mut has_requirements = false;
+    let mut has_hints = false;
 
     // Parse task body
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
@@ -633,7 +811,41 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
                         outputs = parse_output_section(stream)?;
                     }
                     "runtime" => {
+                        if has_requirements || has_hints {
+                            return Err(WdlError::syntax_error(
+                                stream.current_position(),
+                                "runtime section cannot be used with requirements or hints sections".to_string(),
+                                "1.2".to_string(),
+                                None,
+                            ));
+                        }
+                        has_runtime = true;
                         runtime = parse_runtime_section(stream)?;
+                    }
+                    "requirements" => {
+                        if has_runtime {
+                            return Err(WdlError::syntax_error(
+                                stream.current_position(),
+                                "requirements section cannot be used with runtime section"
+                                    .to_string(),
+                                "1.2".to_string(),
+                                None,
+                            ));
+                        }
+                        has_requirements = true;
+                        requirements = parse_requirements_section(stream)?;
+                    }
+                    "hints" => {
+                        if has_runtime {
+                            return Err(WdlError::syntax_error(
+                                stream.current_position(),
+                                "hints section cannot be used with runtime section".to_string(),
+                                "1.2".to_string(),
+                                None,
+                            ));
+                        }
+                        has_hints = true;
+                        hints = parse_hints_section(stream)?;
                     }
                     "meta" => {
                         meta = parse_meta_section(stream)?;
@@ -691,7 +903,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
         )
     })?;
 
-    Ok(Task::new(
+    Ok(Task::new_with_requirements_hints(
         pos,
         name,
         inputs,
@@ -700,6 +912,8 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
         outputs,
         parameter_meta,
         runtime,
+        requirements,
+        hints,
         meta,
     ))
 }
@@ -821,8 +1035,132 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::StringPart;
+    use crate::parser::lexer::Lexer;
     use crate::parser::token_stream::TokenStream;
+
+    #[test]
+    fn test_parse_requirements_section() {
+        let input = r#"requirements {
+            container: "ubuntu:latest"
+            cpu: 2
+            memory: "4 GiB"
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.2").unwrap();
+
+        let requirements = parse_requirements_section(&mut stream).unwrap();
+
+        assert_eq!(requirements.len(), 3);
+        assert!(requirements.contains_key("container"));
+        assert!(requirements.contains_key("cpu"));
+        assert!(requirements.contains_key("memory"));
+    }
+
+    #[test]
+    fn test_parse_hints_section() {
+        let input = r#"hints {
+            localization_optional: false
+            maxCpu: 4
+            preemptible: 1
+            custom_hint: "value"
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.2").unwrap();
+
+        let hints = parse_hints_section(&mut stream).unwrap();
+
+        assert_eq!(hints.len(), 4);
+        assert!(hints.contains_key("localization_optional"));
+        assert!(hints.contains_key("maxCpu"));
+        assert!(hints.contains_key("preemptible"));
+        assert!(hints.contains_key("custom_hint"));
+    }
+
+    #[test]
+    fn test_requirements_invalid_attribute() {
+        let input = r#"requirements {
+            invalid_attribute: "should fail"
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.2").unwrap();
+
+        let result = parse_requirements_section(&mut stream);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown requirements attribute"));
+    }
+
+    #[test]
+    fn test_task_with_requirements_and_hints() {
+        let input = r#"task example {
+            input {
+                String message = "hello"
+            }
+            
+            command {
+                echo "${message}"
+            }
+            
+            output {
+                String result = stdout()
+            }
+            
+            requirements {
+                container: "ubuntu:latest"
+                cpu: 2
+                memory: "4 GiB"
+            }
+            
+            hints {
+                maxCpu: 4
+                preemptible: 1
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.2").unwrap();
+
+        let task = parse_task(&mut stream).unwrap();
+
+        assert_eq!(task.name, "example");
+        assert_eq!(task.requirements.len(), 3);
+        assert_eq!(task.hints.len(), 2);
+        assert!(task.runtime.is_empty());
+
+        assert!(task.requirements.contains_key("container"));
+        assert!(task.requirements.contains_key("cpu"));
+        assert!(task.requirements.contains_key("memory"));
+
+        assert!(task.hints.contains_key("maxCpu"));
+        assert!(task.hints.contains_key("preemptible"));
+    }
+
+    #[test]
+    fn test_task_runtime_requirements_mutual_exclusion() {
+        let input = r#"task example {
+            command {
+                echo "hello"
+            }
+            
+            runtime {
+                docker: "ubuntu:latest"
+            }
+            
+            requirements {
+                container: "ubuntu:latest"
+            }
+        }"#;
+
+        let mut stream = TokenStream::new(input, "1.2").unwrap();
+
+        let result = parse_task(&mut stream);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot be used with runtime"));
+    }
 
     #[test]
     fn test_parse_simple_task() {

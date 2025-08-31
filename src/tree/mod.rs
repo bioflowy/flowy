@@ -258,6 +258,8 @@ pub struct Task {
     pub outputs: Vec<Declaration>,
     pub parameter_meta: HashMap<String, serde_json::Value>,
     pub runtime: HashMap<String, Expression>,
+    pub requirements: HashMap<String, Expression>,
+    pub hints: HashMap<String, Expression>,
     pub meta: HashMap<String, serde_json::Value>,
     pub effective_wdl_version: String,
 }
@@ -283,6 +285,38 @@ impl Task {
             outputs,
             parameter_meta,
             runtime,
+            requirements: HashMap::new(),
+            hints: HashMap::new(),
+            meta,
+            effective_wdl_version: "1.0".to_string(),
+        }
+    }
+
+    /// Create a new Task with requirements and hints
+    pub fn new_with_requirements_hints(
+        pos: SourcePosition,
+        name: String,
+        inputs: Option<Vec<Declaration>>,
+        postinputs: Vec<Declaration>,
+        command: Expression,
+        outputs: Vec<Declaration>,
+        parameter_meta: HashMap<String, serde_json::Value>,
+        runtime: HashMap<String, Expression>,
+        requirements: HashMap<String, Expression>,
+        hints: HashMap<String, Expression>,
+        meta: HashMap<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            pos,
+            name,
+            inputs,
+            postinputs,
+            command,
+            outputs,
+            parameter_meta,
+            runtime,
+            requirements,
+            hints,
             meta,
             effective_wdl_version: "1.0".to_string(),
         }
@@ -361,6 +395,14 @@ impl SourceNode for Task {
         }
 
         for expr in self.runtime.values() {
+            children.push(expr);
+        }
+
+        for expr in self.requirements.values() {
+            children.push(expr);
+        }
+
+        for expr in self.hints.values() {
             children.push(expr);
         }
 

@@ -94,6 +94,7 @@ impl StdLib {
         self.register_function(Box::new(WriteLinesFunction));
         self.register_function(Box::new(ReadLinesFunction));
         self.register_function(Box::new(ReadStringFunction));
+        self.register_function(Box::new(ReadIntFunction));
     }
 
     /// Register all operators

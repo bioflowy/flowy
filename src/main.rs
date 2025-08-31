@@ -15,26 +15,56 @@ use std::time::Duration;
 
 /// CLI arguments structure
 struct Args {
-    /// WDL file to execute
-    wdl_file: PathBuf,
-    /// Input JSON file (optional)
-    input_file: Option<PathBuf>,
-    /// Working directory (optional)
-    work_dir: Option<PathBuf>,
-    /// Task to run (if not running workflow)
-    task: Option<String>,
-    /// Configuration file (optional)
-    config_file: Option<PathBuf>,
+    /// Command to execute
+    command: Command,
     /// Enable debug output
     debug: bool,
+}
+
+/// Available CLI commands
+#[derive(Debug)]
+enum Command {
+    /// Run a WDL file
+    Run {
+        /// WDL file to execute
+        wdl_file: PathBuf,
+        /// Input JSON file (optional)
+        input_file: Option<PathBuf>,
+        /// Working directory (optional)
+        work_dir: Option<PathBuf>,
+        /// Task to run (if not running workflow)
+        task: Option<String>,
+        /// Configuration file (optional)
+        config_file: Option<PathBuf>,
+    },
+    /// Run specification tests
+    SpecTests {
+        /// Path to WDL specification file
+        spec_file: PathBuf,
+        /// Path to test data directory
+        data_dir: PathBuf,
+        /// Pattern to match test names (optional)
+        pattern: Option<String>,
+        /// Exact test name to run (optional)
+        test_name: Option<String>,
+        /// Maximum number of tests to run
+        max_tests: Option<usize>,
+        /// List all available tests
+        list_tests: bool,
+    },
 }
 
 fn main() {
     // Parse command-line arguments
     let args = parse_args();
 
-    // Run the WDL file
-    if let Err(e) = run(args) {
+    // Execute the command
+    let result = match args.command {
+        Command::Run { .. } => run_wdl(args),
+        Command::SpecTests { .. } => run_spec_tests(args),
+    };
+
+    if let Err(e) = result {
         eprintln!("Error: {}", e);
         process::exit(1);
     }
@@ -48,20 +78,55 @@ fn parse_args() -> Args {
         process::exit(1);
     }
 
+    let mut debug = false;
+
+    // Check if first argument is a command
+    let command = match args[1].as_str() {
+        "run" => parse_run_command(&args[2..]),
+        "spec-tests" => parse_spec_tests_command(&args[2..]),
+        "-h" | "--help" => {
+            print_help(&args[0]);
+            process::exit(0);
+        }
+        "--debug" => {
+            debug = true;
+            if args.len() < 3 {
+                print_help(&args[0]);
+                process::exit(1);
+            }
+            match args[2].as_str() {
+                "run" => parse_run_command(&args[3..]),
+                "spec-tests" => parse_spec_tests_command(&args[3..]),
+                _ => {
+                    // Assume it's a WDL file for backward compatibility
+                    parse_run_command(&args[1..])
+                }
+            }
+        }
+        _ => {
+            // Assume it's a WDL file for backward compatibility
+            parse_run_command(&args[1..])
+        }
+    };
+
+    Args { command, debug }
+}
+
+fn parse_run_command(args: &[String]) -> Command {
+    if args.is_empty() {
+        eprintln!("Error: WDL file required");
+        process::exit(1);
+    }
+
     let mut wdl_file = None;
     let mut input_file = None;
     let mut work_dir = None;
     let mut task = None;
     let mut config_file = None;
-    let mut debug = false;
 
-    let mut i = 1;
+    let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "-h" | "--help" => {
-                print_help(&args[0]);
-                process::exit(0);
-            }
             "-i" | "--input" => {
                 i += 1;
                 if i < args.len() {
@@ -98,9 +163,6 @@ fn parse_args() -> Args {
                     process::exit(1);
                 }
             }
-            "--debug" => {
-                debug = true;
-            }
             _ => {
                 if wdl_file.is_none() && !args[i].starts_with('-') {
                     wdl_file = Some(PathBuf::from(&args[i]));
@@ -118,42 +180,151 @@ fn parse_args() -> Args {
         process::exit(1);
     });
 
-    Args {
+    Command::Run {
         wdl_file,
         input_file,
         work_dir,
         task,
         config_file,
-        debug,
+    }
+}
+
+fn parse_spec_tests_command(args: &[String]) -> Command {
+    if args.len() < 2 {
+        eprintln!("Error: spec-tests requires <spec-file> <data-dir>");
+        process::exit(1);
+    }
+
+    let spec_file = PathBuf::from(&args[0]);
+    let data_dir = PathBuf::from(&args[1]);
+    let mut pattern = None;
+    let mut test_name = None;
+    let mut max_tests = None;
+    let mut list_tests = false;
+
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-p" | "--pattern" => {
+                i += 1;
+                if i < args.len() {
+                    pattern = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --pattern requires a pattern string");
+                    process::exit(1);
+                }
+            }
+            "-n" | "--name" => {
+                i += 1;
+                if i < args.len() {
+                    test_name = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --name requires a test name");
+                    process::exit(1);
+                }
+            }
+            "-m" | "--max" => {
+                i += 1;
+                if i < args.len() {
+                    max_tests = Some(args[i].parse().unwrap_or_else(|_| {
+                        eprintln!("Error: --max requires a valid number");
+                        process::exit(1);
+                    }));
+                } else {
+                    eprintln!("Error: --max requires a number");
+                    process::exit(1);
+                }
+            }
+            "-l" | "--list" => {
+                list_tests = true;
+            }
+            _ => {
+                eprintln!("Error: Unknown option for spec-tests: {}", args[i]);
+                process::exit(1);
+            }
+        }
+        i += 1;
+    }
+
+    Command::SpecTests {
+        spec_file,
+        data_dir,
+        pattern,
+        test_name,
+        max_tests,
+        list_tests,
     }
 }
 
 fn print_help(program: &str) {
     eprintln!("miniwdl-rust - WDL workflow executor");
     eprintln!();
-    eprintln!("Usage: {} <wdl_file> [options]", program);
+    eprintln!("Usage:");
+    eprintln!(
+        "  {} run <wdl_file> [options]           Run a WDL workflow or task",
+        program
+    );
+    eprintln!(
+        "  {} spec-tests <spec_file> <data_dir>  Run specification tests",
+        program
+    );
     eprintln!();
-    eprintln!("Options:");
+    eprintln!("Run command options:");
     eprintln!("  -i, --input <file>    Input JSON file");
     eprintln!("  -d, --dir <dir>       Working directory (default: temp)");
     eprintln!("  -t, --task <name>     Run specific task instead of workflow");
     eprintln!("  -c, --config <file>   Configuration JSON file");
+    eprintln!();
+    eprintln!("Spec-tests command options:");
+    eprintln!("  -p, --pattern <pattern>  Only run tests matching pattern");
+    eprintln!("  -n, --name <name>        Run a specific test by exact name");
+    eprintln!("  -m, --max <number>       Maximum number of tests to run");
+    eprintln!("  -l, --list               List all available test names");
+    eprintln!();
+    eprintln!("Global options:");
     eprintln!("  --debug               Enable debug output");
     eprintln!("  -h, --help            Show this help message");
+    eprintln!();
+    eprintln!("Examples:");
+    eprintln!("  {} run workflow.wdl -i inputs.json", program);
+    eprintln!(
+        "  {} spec-tests ./spec/wdl-1.2/SPEC.md ./spec/wdl-1.2/tests/data",
+        program
+    );
+    eprintln!(
+        "  {} spec-tests ./spec/wdl-1.2/SPEC.md ./spec/wdl-1.2/tests/data --list",
+        program
+    );
+    eprintln!("  {} spec-tests ./spec/wdl-1.2/SPEC.md ./spec/wdl-1.2/tests/data --name spec_line_259_task_hello_task", program);
 }
 
-fn run(args: Args) -> Result<(), WdlError> {
+fn run_wdl(args: Args) -> Result<(), WdlError> {
+    let (wdl_file, input_file, work_dir, task, config_file) = match args.command {
+        Command::Run {
+            wdl_file,
+            input_file,
+            work_dir,
+            task,
+            config_file,
+        } => (wdl_file, input_file, work_dir, task, config_file),
+        _ => {
+            return Err(WdlError::RuntimeError {
+                message: "Invalid command for WDL execution".to_string(),
+            })
+        }
+    };
+
     // Read WDL file
-    let wdl_content = fs::read_to_string(&args.wdl_file).map_err(|e| WdlError::RuntimeError {
+    let wdl_content = fs::read_to_string(&wdl_file).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to read WDL file: {}", e),
     })?;
 
     // Parse WDL document
-    eprintln!("Parsing {}...", args.wdl_file.display());
-    let document = parser::parse_document(&wdl_content, "1.0")?;
+    eprintln!("Parsing {}...", wdl_file.display());
+    let document = parser::parse_document(&wdl_content, "1.2")?;
 
     // Load inputs if provided
-    let inputs = if let Some(input_file) = args.input_file {
+    let inputs = if let Some(input_file) = input_file {
         eprintln!("Loading inputs from {}...", input_file.display());
         load_inputs(&input_file)?
     } else {
@@ -161,9 +332,7 @@ fn run(args: Args) -> Result<(), WdlError> {
     };
 
     // Set up working directory
-    let work_dir = args
-        .work_dir
-        .unwrap_or_else(|| std::env::temp_dir().join("miniwdl-rust"));
+    let work_dir = work_dir.unwrap_or_else(|| std::env::temp_dir().join("miniwdl-rust"));
     fs::create_dir_all(&work_dir).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to create working directory: {}", e),
     })?;
@@ -171,7 +340,7 @@ fn run(args: Args) -> Result<(), WdlError> {
     eprintln!("Working directory: {}", work_dir.display());
 
     // Build runtime configuration
-    let mut config = if let Some(config_file) = args.config_file {
+    let mut config = if let Some(config_file) = config_file {
         eprintln!("Loading config from {}...", config_file.display());
         load_config(&config_file)?
     } else {
@@ -188,7 +357,7 @@ fn run(args: Args) -> Result<(), WdlError> {
     let run_id = format!("run_{}", chrono::Utc::now().timestamp());
 
     // Execute workflow or task
-    let result = if let Some(task_name) = args.task {
+    let result = if let Some(task_name) = task {
         // Run specific task
         eprintln!("Running task '{}'...", task_name);
 
@@ -441,6 +610,104 @@ fn value_to_json(value: &Value) -> Result<serde_json::Value, WdlError> {
                 map.insert(k.clone(), value_to_json(v)?);
             }
             Ok(serde_json::Value::Object(map))
+        }
+    }
+}
+
+fn run_spec_tests(args: Args) -> Result<(), WdlError> {
+    let (spec_file, data_dir, pattern, test_name, max_tests, list_tests) = match args.command {
+        Command::SpecTests {
+            spec_file,
+            data_dir,
+            pattern,
+            test_name,
+            max_tests,
+            list_tests,
+        } => (
+            spec_file, data_dir, pattern, test_name, max_tests, list_tests,
+        ),
+        _ => {
+            return Err(WdlError::RuntimeError {
+                message: "Invalid command for spec tests".to_string(),
+            })
+        }
+    };
+
+    // Create spec test configuration
+    let mut config = runtime::SpecTestConfig::new();
+    if args.debug {
+        config = config.with_verbose(true);
+    }
+    if let Some(max) = max_tests {
+        config = config.with_max_tests(max);
+    }
+
+    // Create spec test runner
+    let runner = runtime::SpecTestRunner::with_config(config);
+
+    // Handle different command options
+    if list_tests {
+        // List all available tests
+        eprintln!("Listing all available tests...");
+        eprintln!("Spec file: {}", spec_file.display());
+
+        match runner.list_tests(&spec_file) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                eprintln!("Failed to list tests: {}", e);
+                Err(WdlError::RuntimeError {
+                    message: format!("Failed to list tests: {}", e),
+                })
+            }
+        }
+    } else if let Some(name) = test_name {
+        // Run a specific test by name
+        eprintln!("Running specific test: {}", name);
+        eprintln!("Spec file: {}", spec_file.display());
+        eprintln!("Data directory: {}", data_dir.display());
+
+        match runner.run_single_test(&spec_file, &data_dir, &name) {
+            Ok(Some(_)) => {
+                eprintln!("\nTest completed successfully!");
+                Ok(())
+            }
+            Ok(None) => {
+                eprintln!("Test '{}' not found", name);
+                Err(WdlError::RuntimeError {
+                    message: format!("Test '{}' not found", name),
+                })
+            }
+            Err(e) => {
+                eprintln!("Test execution failed: {}", e);
+                Err(WdlError::RuntimeError {
+                    message: format!("Test execution failed: {}", e),
+                })
+            }
+        }
+    } else {
+        // Run tests (all or by pattern)
+        eprintln!("Running WDL specification tests...");
+        eprintln!("Spec file: {}", spec_file.display());
+        eprintln!("Data directory: {}", data_dir.display());
+
+        let results = if let Some(pattern) = pattern {
+            eprintln!("Running tests matching pattern: {}", pattern);
+            runner.run_tests_matching(&spec_file, &data_dir, &pattern)
+        } else {
+            runner.run_all_tests(&spec_file, &data_dir)
+        };
+
+        match results {
+            Ok(_) => {
+                eprintln!("\nSpec tests completed successfully!");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Spec tests failed: {}", e);
+                Err(WdlError::RuntimeError {
+                    message: format!("Spec tests failed: {}", e),
+                })
+            }
         }
     }
 }

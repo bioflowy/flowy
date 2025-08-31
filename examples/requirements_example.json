@@ -1,0 +1,6 @@
+{
+  "requirements_demo.data": "Hello, WDL 1.2!",
+  "requirements_demo.model": "/tmp/my_model.pkl",
+  "requirements_demo.cpu_intensive.cpu_count": 2,
+  "requirements_demo.cpu_intensive.memory_size": "4 GiB"
+}

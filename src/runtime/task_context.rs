@@ -215,7 +215,7 @@ impl TaskContext {
         );
 
         // Create stdlib for evaluation
-        let stdlib = crate::stdlib::StdLib::new("1.0");
+        let stdlib = crate::stdlib::StdLib::new("1.2");
 
         // Evaluate command expression
         let command_value = command_expr.eval(&eval_env, &stdlib).map_err(|e| {
@@ -338,7 +338,7 @@ impl TaskContext {
         let runtime_section = &self.task.runtime;
         for (name, expr) in runtime_section {
             // Evaluate runtime expression in context
-            let stdlib = crate::stdlib::StdLib::new("1.0");
+            let stdlib = crate::stdlib::StdLib::new("1.2");
             let input_env = self.inputs.clone();
             match expr.eval(&input_env, &stdlib) {
                 Ok(value) => {
@@ -533,7 +533,7 @@ impl TaskContext {
 
         // Create task output-specific standard library that includes stdout/stderr functions
         let stdlib =
-            crate::stdlib::task_output::create_task_output_stdlib("1.0", self.task_dir.clone());
+            crate::stdlib::task_output::create_task_output_stdlib("1.2", self.task_dir.clone());
 
         for output_decl in &self.task.outputs {
             if let Some(output_expr) = &output_decl.expr {
@@ -659,10 +659,10 @@ mod tests {
         use crate::tree::Declaration;
         use std::collections::HashMap;
 
-        Task {
-            pos: SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10),
-            name: "test_task".to_string(),
-            inputs: Some(vec![Declaration {
+        Task::new_with_requirements_hints(
+            SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10),
+            "test_task".to_string(),
+            Some(vec![Declaration {
                 pos: SourcePosition::new(
                     "test.wdl".to_string(),
                     "test.wdl".to_string(),
@@ -678,8 +678,8 @@ mod tests {
                 expr: None,
                 decor: HashMap::new(),
             }]),
-            postinputs: vec![],
-            command: Expression::String {
+            vec![],
+            Expression::String {
                 pos: SourcePosition::new(
                     "test.wdl".to_string(),
                     "test.wdl".to_string(),
@@ -705,7 +705,7 @@ mod tests {
                 }],
                 inferred_type: None,
             },
-            outputs: vec![
+            vec![
                 Declaration {
                     pos: SourcePosition::new(
                         "test.wdl".to_string(),
@@ -787,11 +787,12 @@ mod tests {
                     decor: HashMap::new(),
                 },
             ],
-            runtime: HashMap::new(),
-            parameter_meta: HashMap::new(),
-            meta: HashMap::new(),
-            effective_wdl_version: "1.0".to_string(),
-        }
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        )
     }
 
     #[test]
