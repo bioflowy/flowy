@@ -158,7 +158,8 @@ impl Function for ReadLinesFunction {
                     .lines()
                     .map(|line| Value::string(line.to_string()))
                     .collect();
-                Ok(Value::array(Type::string(false), lines))
+                let result = Value::array(Type::string(false), lines);
+                Ok(result)
             }
             Err(e) => Err(WdlError::RuntimeError {
                 message: format!("Failed to read file {}: {}", filename, e),

@@ -307,10 +307,36 @@ impl ValueBase for Value {
     }
 
     fn coerce(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        // Early return if types already match
+        if *self.wdl_type() == *desired_type {
+            return Ok(self.clone());
+        }
+
+        // Dispatch to type-specific methods
+        match self {
+            Value::Array { .. } => self.coerce_array(desired_type),
+            Value::Map { .. } => self.coerce_map(desired_type),
+            Value::Pair { .. } => self.coerce_pair(desired_type),
+            Value::Struct { .. } => self.coerce_struct(desired_type),
+            _ => self.coerce_base(desired_type),
+        }
+    }
+}
+
+impl Value {
+    /// Base coercion method for simple types and common cases
+    fn coerce_base(&self, desired_type: &Type) -> Result<Value, WdlError> {
         // Handle coercion to String - almost everything can be coerced to string
         if let Type::String { .. } = desired_type {
             let str_repr = match self {
-                Value::Null => "".to_string(),
+                Value::Null => {
+                    // For optional types, preserve null instead of converting to empty string
+                    if desired_type.is_optional() {
+                        return Ok(self.clone());
+                    } else {
+                        "".to_string()
+                    }
+                }
                 Value::Boolean { value, .. } => value.to_string(),
                 Value::Int { value, .. } => value.to_string(),
                 Value::Float { value, .. } => format!("{:.6}", value),
@@ -340,15 +366,20 @@ impl ValueBase for Value {
             return Ok(Value::string(str_repr));
         }
 
-        // Handle Array promotion: T -> Array[T]
+        // Handle T -> Array[T] promotion (only for non-arrays)
+        // Following miniwdl's logic: promote single value to array
         if let Type::Array { item_type, .. } = desired_type {
-            if self.wdl_type().coerces(item_type, false) {
-                let coerced_item = self.coerce(item_type)?;
-                return Ok(Value::array(item_type.as_ref().clone(), vec![coerced_item]));
+            if !matches!(self, Value::Array { .. }) {
+                // Only promote non-arrays to arrays, and only if this value's type
+                // can coerce to the array's item type
+                if self.wdl_type().coerces(item_type, false) {
+                    let coerced_item = self.coerce(item_type)?;
+                    return Ok(Value::array(item_type.as_ref().clone(), vec![coerced_item]));
+                }
             }
         }
 
-        // Specific type coercions
+        // Specific type coercions for simple types
         match (self, desired_type) {
             // Null coercions
             (Value::Null, ty) => {
@@ -383,64 +414,7 @@ impl ValueBase for Value {
                 }),
             },
 
-            // Array coercions
-            (
-                Value::Array { values, .. },
-                Type::Array {
-                    item_type,
-                    nonempty,
-                    ..
-                },
-            ) => {
-                if *nonempty && values.is_empty() {
-                    return Err(WdlError::EmptyArray {
-                        pos: SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
-                    });
-                }
-
-                let coerced_values: Result<Vec<_>, _> =
-                    values.iter().map(|v| v.coerce(item_type)).collect();
-
-                Ok(Value::array(item_type.as_ref().clone(), coerced_values?))
-            }
-
-            // Map coercions
-            (
-                Value::Map { pairs, .. },
-                Type::Map {
-                    key_type,
-                    value_type,
-                    ..
-                },
-            ) => {
-                let coerced_pairs: Result<Vec<_>, _> = pairs
-                    .iter()
-                    .map(|(k, v)| Ok((k.coerce(key_type)?, v.coerce(value_type)?)))
-                    .collect();
-
-                Ok(Value::map(
-                    key_type.as_ref().clone(),
-                    value_type.as_ref().clone(),
-                    coerced_pairs?,
-                ))
-            }
-
-            // Pair coercions
-            (
-                Value::Pair { left, right, .. },
-                Type::Pair {
-                    left_type,
-                    right_type,
-                    ..
-                },
-            ) => Ok(Value::pair(
-                left_type.as_ref().clone(),
-                right_type.as_ref().clone(),
-                left.coerce(left_type)?,
-                right.coerce(right_type)?,
-            )),
-
-            // Same type - return self
+            // Same type - return self (this handles cases not caught by early return)
             _ if self.wdl_type().coerces(desired_type, true) => Ok(self.clone()),
 
             // Coercion not possible
@@ -453,20 +427,179 @@ impl ValueBase for Value {
         }
     }
 
-    fn children(&self) -> Vec<&Value> {
-        match self {
-            Value::Array { values, .. } => values.iter().collect(),
-            Value::Map { pairs, .. } => {
-                let mut children = Vec::new();
-                for (k, v) in pairs {
-                    children.push(k);
-                    children.push(v);
+    /// Array-specific coercion following miniwdl's pattern
+    fn coerce_array(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        if let Value::Array { values, wdl_type } = self {
+            match desired_type {
+                Type::Array {
+                    item_type,
+                    nonempty,
+                    ..
+                } => {
+                    // Check nonempty constraint
+                    if *nonempty && values.is_empty() {
+                        return Err(WdlError::EmptyArray {
+                            pos: SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                        });
+                    }
+
+                    // Extract current item type
+                    let current_item_type = match wdl_type {
+                        Type::Array {
+                            item_type: current_item,
+                            ..
+                        } => current_item,
+                        _ => unreachable!("Array value must have Array type"),
+                    };
+
+                    // If item types are the same, return self (already handled by early return, but for safety)
+                    if **current_item_type == **item_type {
+                        return Ok(self.clone());
+                    }
+
+                    // Otherwise coerce each element
+                    let coerced_values: Result<Vec<_>, _> =
+                        values.iter().map(|v| v.coerce(item_type)).collect();
+
+                    Ok(Value::array(item_type.as_ref().clone(), coerced_values?))
                 }
-                children
+                // Handle coercion to String (array representation)
+                Type::String { .. } => self.coerce_base(desired_type),
+                // Other coercions fall back to base
+                _ => self.coerce_base(desired_type),
             }
-            Value::Pair { left, right, .. } => vec![left.as_ref(), right.as_ref()],
-            Value::Struct { members, .. } => members.values().collect(),
-            _ => Vec::new(),
+        } else {
+            unreachable!("coerce_array called on non-array value")
+        }
+    }
+
+    /// Map-specific coercion following miniwdl's pattern
+    fn coerce_map(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        if let Value::Map { pairs, .. } = self {
+            match desired_type {
+                Type::Map {
+                    key_type,
+                    value_type,
+                    ..
+                } => {
+                    let coerced_pairs: Result<Vec<_>, _> = pairs
+                        .iter()
+                        .map(|(k, v)| Ok((k.coerce(key_type)?, v.coerce(value_type)?)))
+                        .collect();
+
+                    Ok(Value::map(
+                        key_type.as_ref().clone(),
+                        value_type.as_ref().clone(),
+                        coerced_pairs?,
+                    ))
+                }
+                // Handle coercion to String (map representation)
+                Type::String { .. } => self.coerce_base(desired_type),
+                // Other coercions fall back to base
+                _ => self.coerce_base(desired_type),
+            }
+        } else {
+            unreachable!("coerce_map called on non-map value")
+        }
+    }
+
+    /// Pair-specific coercion following miniwdl's pattern
+    fn coerce_pair(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        if let Value::Pair { left, right, .. } = self {
+            match desired_type {
+                Type::Pair {
+                    left_type,
+                    right_type,
+                    ..
+                } => Ok(Value::pair(
+                    left_type.as_ref().clone(),
+                    right_type.as_ref().clone(),
+                    left.coerce(left_type)?,
+                    right.coerce(right_type)?,
+                )),
+                // Handle coercion to String (pair representation)
+                Type::String { .. } => self.coerce_base(desired_type),
+                // Other coercions fall back to base
+                _ => self.coerce_base(desired_type),
+            }
+        } else {
+            unreachable!("coerce_pair called on non-pair value")
+        }
+    }
+
+    /// Struct-specific coercion following miniwdl's pattern
+    fn coerce_struct(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        if let Value::Struct {
+            members,
+            extra_keys,
+            ..
+        } = self
+        {
+            match desired_type {
+                Type::StructInstance {
+                    members: target_members,
+                    ..
+                } => {
+                    // Coerce each member to the target member type
+                    let mut coerced_members = HashMap::new();
+
+                    if let Some(target_members) = target_members {
+                        for (name, target_type) in target_members {
+                            if let Some(current_value) = members.get(name) {
+                                coerced_members
+                                    .insert(name.clone(), current_value.coerce(target_type)?);
+                            } else if !target_type.is_optional() {
+                                return Err(WdlError::validation_error(
+                                    SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                                    format!("Missing required struct member: {}", name),
+                                ));
+                            } else {
+                                // Optional member missing - insert null
+                                coerced_members.insert(name.clone(), Value::null());
+                            }
+                        }
+                    }
+
+                    Ok(Value::struct_value(
+                        desired_type.clone(),
+                        coerced_members,
+                        Some(extra_keys.clone()),
+                    ))
+                }
+                Type::Object {
+                    members: target_members,
+                } => {
+                    // Coerce to Object type
+                    let mut coerced_members = HashMap::new();
+
+                    for (name, target_type) in target_members {
+                        if let Some(current_value) = members.get(name) {
+                            coerced_members
+                                .insert(name.clone(), current_value.coerce(target_type)?);
+                        } else if !target_type.is_optional() {
+                            return Err(WdlError::validation_error(
+                                SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                                format!("Missing required object member: {}", name),
+                            ));
+                        } else {
+                            // Optional member missing - insert null
+                            coerced_members.insert(name.clone(), Value::null());
+                        }
+                    }
+
+                    Ok(Value::struct_value(
+                        desired_type.clone(),
+                        coerced_members,
+                        Some(extra_keys.clone()),
+                    ))
+                }
+                // Handle coercion to String (struct representation)
+                Type::String { .. } => self.coerce_base(desired_type),
+                // Other coercions fall back to base
+                _ => self.coerce_base(desired_type),
+            }
+        } else {
+            unreachable!("coerce_struct called on non-struct value")
         }
     }
 }
@@ -698,6 +831,25 @@ mod tests {
         if let Value::Array { values, .. } = coerced {
             assert_eq!(values[0].as_float(), Some(1.0));
             assert_eq!(values[1].as_float(), Some(2.0));
+        } else {
+            panic!("Expected array");
+        }
+    }
+    #[test]
+    fn test_array_string_coercion() {
+        let string_arr = Value::array(
+            Type::string(false),
+            vec![
+                Value::string("string1".to_string()),
+                Value::string("string2".to_string()),
+            ],
+        );
+
+        let string_arr_type = Type::array(Type::string(false), false, false);
+        let coerced = string_arr.coerce(&string_arr_type).unwrap();
+        if let Value::Array { values, .. } = coerced {
+            assert_eq!(values[0].as_string(), Some("string1"));
+            assert_eq!(values[1].as_string(), Some("string2"));
         } else {
             panic!("Expected array");
         }

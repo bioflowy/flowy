@@ -546,8 +546,22 @@ impl TaskContext {
                     )
                 })?;
 
-                // Validate output type matches declaration
+                // Try to coerce the output value to the expected type
                 let expected_type = &output_decl.decl_type;
+                let output_value =
+                    output_value
+                        .coerce(expected_type)
+                        .map_err(|e| RuntimeError::OutputError {
+                            message: format!(
+                                "Cannot coerce output '{}' to expected type",
+                                output_decl.name
+                            ),
+                            expected_type: format!("{:?}", expected_type),
+                            actual: format!("{:?}", output_value.wdl_type()),
+                            pos: Some(output_decl.pos.clone()),
+                        })?;
+
+                // Validate output type matches declaration (after coercion)
                 if !self.value_matches_type(&output_value, expected_type) {
                     return Err(RuntimeError::OutputError {
                         message: format!("Output type mismatch for: {}", output_decl.name),
@@ -594,50 +608,11 @@ impl TaskContext {
         }
     }
 
-    /// Check if a value matches the expected type
+    /// Check if a value matches the expected type using the Type's coercion logic
     fn value_matches_type(&self, value: &Value, expected_type: &Type) -> bool {
-        // Simple type checking - would need more sophisticated type coercion
-        match (value, expected_type) {
-            (Value::Boolean { .. }, Type::Boolean { .. }) => true,
-            (Value::Int { .. }, Type::Int { .. }) => true,
-            (Value::Float { .. }, Type::Float { .. }) => true,
-            (Value::String { .. }, Type::String { .. }) => true,
-            (Value::File { .. }, Type::File { .. }) => true,
-            (Value::Array { values: arr, .. }, Type::Array { item_type, .. }) => {
-                arr.iter().all(|v| self.value_matches_type(v, item_type))
-            }
-            (
-                Value::Map { pairs: map, .. },
-                Type::Map {
-                    key_type,
-                    value_type,
-                    ..
-                },
-            ) => map.iter().all(|(k, v)| {
-                self.value_matches_type(k, key_type) && self.value_matches_type(v, value_type)
-            }),
-            (
-                Value::Pair { left, right, .. },
-                Type::Pair {
-                    left_type,
-                    right_type,
-                    ..
-                },
-            ) => {
-                self.value_matches_type(left, left_type)
-                    && self.value_matches_type(right, right_type)
-            }
-            (Value::Struct { .. }, Type::StructInstance { .. }) => {
-                // Would need struct definition lookup for proper validation
-                true // Simplified for now
-            }
-            // Allow null for optional types
-            (Value::Null, typ) if typ.is_optional() => true,
-            // Type coercion cases
-            (Value::Int { .. }, Type::Float { .. }) => true, // Int can be coerced to Float
-            (Value::String { .. }, Type::File { .. }) => true, // String can be coerced to File
-            _ => false,
-        }
+        // Use the value's type to check if it coerces to the expected type
+        let value_type = value.wdl_type();
+        value_type.coerces(expected_type, true)
     }
 }
 
@@ -845,6 +820,56 @@ mod tests {
         let stderr_content = std::fs::read_to_string(&stderr_path).unwrap();
         assert!(stdout_content.contains("Hello stdout"));
         assert!(stderr_content.contains("Hello stderr"));
+    }
+
+    #[test]
+    fn test_file_input_staging_with_file_value() {
+        // Test that Value::File inputs are properly staged
+        let task = create_test_task_with_outputs();
+
+        // Create a temporary test file
+        let temp_dir = tempdir().unwrap();
+        let test_file = temp_dir.path().join("test_input.txt");
+        std::fs::write(&test_file, "test content").unwrap();
+
+        // Create inputs with File value (as it should be after typed JSON conversion)
+        let mut inputs = Bindings::new();
+        inputs = inputs.bind(
+            "input_file".to_string(),
+            Value::File {
+                value: test_file.to_string_lossy().to_string(),
+                wdl_type: Type::File { optional: false },
+            },
+            None,
+        );
+
+        let config = Config::default();
+        let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
+
+        let context = TaskContext::new(
+            task.clone(),
+            inputs,
+            config.clone(),
+            workflow_dir,
+            "test_run",
+        )
+        .unwrap();
+
+        // Test prepare_environment should stage the file
+        let result = context.prepare_environment();
+        assert!(
+            result.is_ok(),
+            "prepare_environment should succeed: {:?}",
+            result.err()
+        );
+
+        // Check that file was staged
+        let staged_file = context.task_dir.join("input_file");
+        assert!(
+            staged_file.exists() || staged_file.is_symlink(),
+            "File should be staged at: {}",
+            staged_file.display()
+        );
     }
 
     #[test]
