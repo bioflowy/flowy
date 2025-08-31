@@ -7,7 +7,11 @@
 #![allow(clippy::missing_transmute_annotations)]
 #![allow(clippy::unneeded_struct_pattern)]
 
-use miniwdl_rust::{parser, runtime, Bindings, Type, Value, WdlError};
+use miniwdl_rust::{
+    parser, runtime,
+    tree::{Document, Task, Workflow},
+    Bindings, Type, Value, WdlError,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -37,21 +41,6 @@ enum Command {
         /// Configuration file (optional)
         config_file: Option<PathBuf>,
     },
-    /// Run specification tests
-    SpecTests {
-        /// Path to WDL specification file
-        spec_file: PathBuf,
-        /// Path to test data directory
-        data_dir: PathBuf,
-        /// Pattern to match test names (optional)
-        pattern: Option<String>,
-        /// Exact test name to run (optional)
-        test_name: Option<String>,
-        /// Maximum number of tests to run
-        max_tests: Option<usize>,
-        /// List all available tests
-        list_tests: bool,
-    },
 }
 
 fn main() {
@@ -61,7 +50,6 @@ fn main() {
     // Execute the command
     let result = match args.command {
         Command::Run { .. } => run_wdl(args),
-        Command::SpecTests { .. } => run_spec_tests(args),
     };
 
     if let Err(e) = result {
@@ -83,7 +71,6 @@ fn parse_args() -> Args {
     // Check if first argument is a command
     let command = match args[1].as_str() {
         "run" => parse_run_command(&args[2..]),
-        "spec-tests" => parse_spec_tests_command(&args[2..]),
         "-h" | "--help" => {
             print_help(&args[0]);
             process::exit(0);
@@ -96,7 +83,6 @@ fn parse_args() -> Args {
             }
             match args[2].as_str() {
                 "run" => parse_run_command(&args[3..]),
-                "spec-tests" => parse_spec_tests_command(&args[3..]),
                 _ => {
                     // Assume it's a WDL file for backward compatibility
                     parse_run_command(&args[1..])
@@ -189,83 +175,12 @@ fn parse_run_command(args: &[String]) -> Command {
     }
 }
 
-fn parse_spec_tests_command(args: &[String]) -> Command {
-    if args.len() < 2 {
-        eprintln!("Error: spec-tests requires <spec-file> <data-dir>");
-        process::exit(1);
-    }
-
-    let spec_file = PathBuf::from(&args[0]);
-    let data_dir = PathBuf::from(&args[1]);
-    let mut pattern = None;
-    let mut test_name = None;
-    let mut max_tests = None;
-    let mut list_tests = false;
-
-    let mut i = 2;
-    while i < args.len() {
-        match args[i].as_str() {
-            "-p" | "--pattern" => {
-                i += 1;
-                if i < args.len() {
-                    pattern = Some(args[i].clone());
-                } else {
-                    eprintln!("Error: --pattern requires a pattern string");
-                    process::exit(1);
-                }
-            }
-            "-n" | "--name" => {
-                i += 1;
-                if i < args.len() {
-                    test_name = Some(args[i].clone());
-                } else {
-                    eprintln!("Error: --name requires a test name");
-                    process::exit(1);
-                }
-            }
-            "-m" | "--max" => {
-                i += 1;
-                if i < args.len() {
-                    max_tests = Some(args[i].parse().unwrap_or_else(|_| {
-                        eprintln!("Error: --max requires a valid number");
-                        process::exit(1);
-                    }));
-                } else {
-                    eprintln!("Error: --max requires a number");
-                    process::exit(1);
-                }
-            }
-            "-l" | "--list" => {
-                list_tests = true;
-            }
-            _ => {
-                eprintln!("Error: Unknown option for spec-tests: {}", args[i]);
-                process::exit(1);
-            }
-        }
-        i += 1;
-    }
-
-    Command::SpecTests {
-        spec_file,
-        data_dir,
-        pattern,
-        test_name,
-        max_tests,
-        list_tests,
-    }
-}
-
 fn print_help(program: &str) {
     eprintln!("miniwdl-rust - WDL workflow executor");
     eprintln!();
     eprintln!("Usage:");
     eprintln!(
         "  {} run <wdl_file> [options]           Run a WDL workflow or task",
-        program
-    );
-    eprintln!(
-        "  {} spec-tests <spec_file> <data_dir>  Run specification tests",
         program
     );
     eprintln!();
@@ -275,27 +190,12 @@ fn print_help(program: &str) {
     eprintln!("  -t, --task <name>     Run specific task instead of workflow");
     eprintln!("  -c, --config <file>   Configuration JSON file");
     eprintln!();
-    eprintln!("Spec-tests command options:");
-    eprintln!("  -p, --pattern <pattern>  Only run tests matching pattern");
-    eprintln!("  -n, --name <name>        Run a specific test by exact name");
-    eprintln!("  -m, --max <number>       Maximum number of tests to run");
-    eprintln!("  -l, --list               List all available test names");
-    eprintln!();
     eprintln!("Global options:");
     eprintln!("  --debug               Enable debug output");
     eprintln!("  -h, --help            Show this help message");
     eprintln!();
     eprintln!("Examples:");
     eprintln!("  {} run workflow.wdl -i inputs.json", program);
-    eprintln!(
-        "  {} spec-tests ./spec/wdl-1.2/SPEC.md ./spec/wdl-1.2/tests/data",
-        program
-    );
-    eprintln!(
-        "  {} spec-tests ./spec/wdl-1.2/SPEC.md ./spec/wdl-1.2/tests/data --list",
-        program
-    );
-    eprintln!("  {} spec-tests ./spec/wdl-1.2/SPEC.md ./spec/wdl-1.2/tests/data --name spec_line_259_task_hello_task", program);
 }
 
 fn run_wdl(args: Args) -> Result<(), WdlError> {
@@ -307,11 +207,6 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
             task,
             config_file,
         } => (wdl_file, input_file, work_dir, task, config_file),
-        _ => {
-            return Err(WdlError::RuntimeError {
-                message: "Invalid command for WDL execution".to_string(),
-            })
-        }
     };
 
     // Read WDL file
@@ -323,10 +218,10 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     eprintln!("Parsing {}...", wdl_file.display());
     let document = parser::parse_document(&wdl_content, "1.2")?;
 
-    // Load inputs if provided
+    // Load inputs if provided (with type information from document)
     let inputs = if let Some(input_file) = input_file {
         eprintln!("Loading inputs from {}...", input_file.display());
-        load_inputs(&input_file)?
+        load_inputs(&input_file, &document)?
     } else {
         Bindings::new()
     };
@@ -357,7 +252,7 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     let run_id = format!("run_{}", chrono::Utc::now().timestamp());
 
     // Execute workflow or task
-    let result = if let Some(task_name) = task {
+    let (result, workflow_name) = if let Some(task_name) = task {
         // Run specific task
         eprintln!("Running task '{}'...", task_name);
 
@@ -373,18 +268,21 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
                 declared_wdl_version: Some("1.0".to_string()),
             })?;
 
-        runtime::run_task(task.clone(), inputs, config, &run_id, &work_dir).map_err(|e| {
-            WdlError::RuntimeError {
+        let task_result = runtime::run_task(task.clone(), inputs, config, &run_id, &work_dir)
+            .map_err(|e| WdlError::RuntimeError {
                 message: format!("Task execution failed: {}", e),
-            }
-        })?
+            })?;
+
+        (task_result, None) // No namespace for task execution
     } else {
         // Run workflow
-        if let Some(workflow) = &document.workflow {
+        let workflow_name = if let Some(workflow) = &document.workflow {
             eprintln!("Running workflow '{}'...", workflow.name);
+            Some(workflow.name.clone())
         } else {
             eprintln!("No workflow found, running tasks...");
-        }
+            None
+        };
 
         let workflow_result = runtime::run_document(document, inputs, config, &run_id, &work_dir)
             .map_err(|e| WdlError::RuntimeError {
@@ -392,21 +290,23 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
         })?;
 
         // Convert WorkflowResult to TaskResult-like output
-        runtime::task_context::TaskResult {
+        let task_result = runtime::task_context::TaskResult {
             outputs: workflow_result.outputs,
             stdout: url::Url::parse("file:///dev/null").unwrap(), // Placeholder stdout
             stderr: url::Url::parse("file:///dev/null").unwrap(), // Placeholder stderr
             exit_status: unsafe { std::mem::transmute(0u32) },    // Placeholder exit status
             duration: Duration::from_secs(0),
             work_dir: work_dir.clone(),
-        }
+        };
+
+        (task_result, workflow_name)
     };
 
     // Print outputs as JSON
     eprintln!("\nExecution completed successfully!");
     eprintln!("Outputs:");
 
-    let output_json = outputs_to_json(&result.outputs)?;
+    let output_json = outputs_to_json_with_namespace(&result.outputs, workflow_name.as_deref())?;
     println!("{}", serde_json::to_string_pretty(&output_json).unwrap());
 
     Ok(())
@@ -451,7 +351,7 @@ fn load_config(path: &Path) -> Result<miniwdl_rust::runtime::Config, WdlError> {
     Ok(config)
 }
 
-fn load_inputs(path: &Path) -> Result<Bindings<Value>, WdlError> {
+fn load_inputs(path: &Path, document: &Document) -> Result<Bindings<Value>, WdlError> {
     let content = fs::read_to_string(path).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to read input file: {}", e),
     })?;
@@ -471,7 +371,216 @@ fn load_inputs(path: &Path) -> Result<Bindings<Value>, WdlError> {
             declared_wdl_version: Some("1.0".to_string()),
         })?;
 
-    json_to_bindings(json)
+    // Get workflow information if available
+    if let Some(ref workflow) = document.workflow {
+        json_to_bindings_with_types(json, workflow)
+    } else {
+        // If no workflow, try to find task inputs
+        if document.tasks.len() == 1 {
+            let task = &document.tasks[0];
+            json_to_bindings_with_task_types(json, task)
+        } else {
+            // Fallback to untyped conversion
+            json_to_bindings(json)
+        }
+    }
+}
+
+/// Resolve a file path from a string, handling relative paths
+fn resolve_file_path(path: &str) -> Result<PathBuf, WdlError> {
+    let path_buf = PathBuf::from(path);
+
+    let resolved = if path_buf.is_absolute() {
+        path_buf
+    } else {
+        // Resolve relative to current directory
+        std::env::current_dir()
+            .map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to get current directory: {}", e),
+            })?
+            .join(&path_buf)
+    };
+
+    // Check if file exists
+    if !resolved.exists() {
+        return Err(WdlError::RuntimeError {
+            message: format!("Input file not found: {}", path),
+        });
+    }
+
+    // Get canonical path
+    resolved.canonicalize().map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to resolve file path '{}': {}", path, e),
+    })
+}
+
+/// Convert JSON to bindings using workflow type information (miniwdl-style)
+fn json_to_bindings_with_types(
+    json: serde_json::Value,
+    workflow: &Workflow,
+) -> Result<Bindings<Value>, WdlError> {
+    let mut bindings = Bindings::new();
+
+    if let serde_json::Value::Object(map) = json {
+        for (key, json_value) in map {
+            // Remove workflow name prefix if present
+            let input_name = if key.starts_with(&format!("{}.", workflow.name)) {
+                key.strip_prefix(&format!("{}.", workflow.name))
+                    .unwrap()
+                    .to_string()
+            } else {
+                key.clone()
+            };
+
+            // Find input type from workflow declarations
+            let input_type = if let Some(ref inputs) = workflow.inputs {
+                inputs
+                    .iter()
+                    .find(|decl| decl.name == input_name)
+                    .map(|decl| &decl.decl_type)
+            } else {
+                None
+            };
+
+            // Convert JSON to WDL value using type information
+            let wdl_value = if let Some(ty) = input_type {
+                json_to_value_typed(json_value, ty)?
+            } else {
+                // Fallback to untyped conversion for unknown inputs
+                json_to_value(json_value)?
+            };
+
+            bindings = bindings.bind(input_name, wdl_value, None);
+        }
+    }
+
+    Ok(bindings)
+}
+
+/// Convert JSON to bindings using task type information
+fn json_to_bindings_with_task_types(
+    json: serde_json::Value,
+    task: &Task,
+) -> Result<Bindings<Value>, WdlError> {
+    let mut bindings = Bindings::new();
+
+    if let serde_json::Value::Object(map) = json {
+        for (key, json_value) in map {
+            // Remove task name prefix if present
+            let input_name = if key.starts_with(&format!("{}.", task.name)) {
+                key.strip_prefix(&format!("{}.", task.name))
+                    .unwrap()
+                    .to_string()
+            } else {
+                key.clone()
+            };
+
+            // Find input type from task declarations
+            let input_type = if let Some(ref inputs) = task.inputs {
+                inputs
+                    .iter()
+                    .find(|decl| decl.name == input_name)
+                    .map(|decl| &decl.decl_type)
+            } else {
+                None
+            };
+
+            // Convert JSON to WDL value using type information
+            let wdl_value = if let Some(ty) = input_type {
+                json_to_value_typed(json_value, ty)?
+            } else {
+                json_to_value(json_value)?
+            };
+
+            bindings = bindings.bind(input_name, wdl_value, None);
+        }
+    }
+
+    Ok(bindings)
+}
+
+/// Convert JSON to WDL value using type information (like miniwdl's from_json)
+fn json_to_value_typed(json: serde_json::Value, wdl_type: &Type) -> Result<Value, WdlError> {
+    match (json, wdl_type) {
+        // File type: convert string to File value with resolved path
+        (serde_json::Value::String(s), Type::File { optional }) => {
+            let resolved_path = resolve_file_path(&s)?;
+            Ok(Value::File {
+                value: resolved_path.to_string_lossy().to_string(),
+                wdl_type: Type::File {
+                    optional: *optional,
+                },
+            })
+        }
+        // String type: keep as string
+        (serde_json::Value::String(s), Type::String { optional }) => Ok(Value::String {
+            value: s,
+            wdl_type: Type::String {
+                optional: *optional,
+            },
+        }),
+        // Boolean type
+        (serde_json::Value::Bool(b), Type::Boolean { optional }) => Ok(Value::Boolean {
+            value: b,
+            wdl_type: Type::Boolean {
+                optional: *optional,
+            },
+        }),
+        // Integer type
+        (serde_json::Value::Number(n), Type::Int { optional }) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::Int {
+                    value: i,
+                    wdl_type: Type::Int {
+                        optional: *optional,
+                    },
+                })
+            } else {
+                Err(WdlError::RuntimeError {
+                    message: format!("Cannot convert {} to Int", n),
+                })
+            }
+        }
+        // Float type
+        (serde_json::Value::Number(n), Type::Float { optional }) => {
+            if let Some(f) = n.as_f64() {
+                Ok(Value::Float {
+                    value: f,
+                    wdl_type: Type::Float {
+                        optional: *optional,
+                    },
+                })
+            } else {
+                Err(WdlError::RuntimeError {
+                    message: format!("Cannot convert {} to Float", n),
+                })
+            }
+        }
+        // Array type: recursively convert elements
+        (
+            serde_json::Value::Array(arr),
+            Type::Array {
+                item_type,
+                optional,
+                nonempty,
+            },
+        ) => {
+            let values: Result<Vec<_>, _> = arr
+                .into_iter()
+                .map(|v| json_to_value_typed(v, item_type))
+                .collect();
+            Ok(Value::Array {
+                values: values?,
+                wdl_type: Type::Array {
+                    item_type: item_type.clone(),
+                    optional: *optional,
+                    nonempty: *nonempty,
+                },
+            })
+        }
+        // Fallback to untyped conversion for other cases
+        (json_val, _) => json_to_value(json_val),
+    }
 }
 
 fn json_to_bindings(json: serde_json::Value) -> Result<Bindings<Value>, WdlError> {
@@ -556,12 +665,34 @@ fn json_to_value(json: serde_json::Value) -> Result<Value, WdlError> {
     }
 }
 
-fn outputs_to_json(outputs: &Bindings<Value>) -> Result<serde_json::Value, WdlError> {
+fn outputs_to_json_with_namespace(
+    outputs: &Bindings<Value>,
+    namespace: Option<&str>,
+) -> Result<serde_json::Value, WdlError> {
     let mut map = serde_json::Map::new();
+
+    // Prepare namespace prefix (like miniwdl's values_to_json)
+    let namespace_prefix = if let Some(ns) = namespace {
+        if ns.is_empty() {
+            String::new()
+        } else if ns.ends_with('.') {
+            ns.to_string()
+        } else {
+            format!("{}.", ns)
+        }
+    } else {
+        String::new()
+    };
 
     for binding in outputs.iter() {
         let json_value = value_to_json(binding.value())?;
-        map.insert(binding.name().to_string(), json_value);
+        // Add namespace prefix unless the binding name starts with "_" (following miniwdl logic)
+        let key = if !binding.name().starts_with('_') && !namespace_prefix.is_empty() {
+            format!("{}{}", namespace_prefix, binding.name())
+        } else {
+            binding.name().to_string()
+        };
+        map.insert(key, json_value);
     }
 
     Ok(serde_json::Value::Object(map))
@@ -610,104 +741,6 @@ fn value_to_json(value: &Value) -> Result<serde_json::Value, WdlError> {
                 map.insert(k.clone(), value_to_json(v)?);
             }
             Ok(serde_json::Value::Object(map))
-        }
-    }
-}
-
-fn run_spec_tests(args: Args) -> Result<(), WdlError> {
-    let (spec_file, data_dir, pattern, test_name, max_tests, list_tests) = match args.command {
-        Command::SpecTests {
-            spec_file,
-            data_dir,
-            pattern,
-            test_name,
-            max_tests,
-            list_tests,
-        } => (
-            spec_file, data_dir, pattern, test_name, max_tests, list_tests,
-        ),
-        _ => {
-            return Err(WdlError::RuntimeError {
-                message: "Invalid command for spec tests".to_string(),
-            })
-        }
-    };
-
-    // Create spec test configuration
-    let mut config = runtime::SpecTestConfig::new();
-    if args.debug {
-        config = config.with_verbose(true);
-    }
-    if let Some(max) = max_tests {
-        config = config.with_max_tests(max);
-    }
-
-    // Create spec test runner
-    let runner = runtime::SpecTestRunner::with_config(config);
-
-    // Handle different command options
-    if list_tests {
-        // List all available tests
-        eprintln!("Listing all available tests...");
-        eprintln!("Spec file: {}", spec_file.display());
-
-        match runner.list_tests(&spec_file) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                eprintln!("Failed to list tests: {}", e);
-                Err(WdlError::RuntimeError {
-                    message: format!("Failed to list tests: {}", e),
-                })
-            }
-        }
-    } else if let Some(name) = test_name {
-        // Run a specific test by name
-        eprintln!("Running specific test: {}", name);
-        eprintln!("Spec file: {}", spec_file.display());
-        eprintln!("Data directory: {}", data_dir.display());
-
-        match runner.run_single_test(&spec_file, &data_dir, &name) {
-            Ok(Some(_)) => {
-                eprintln!("\nTest completed successfully!");
-                Ok(())
-            }
-            Ok(None) => {
-                eprintln!("Test '{}' not found", name);
-                Err(WdlError::RuntimeError {
-                    message: format!("Test '{}' not found", name),
-                })
-            }
-            Err(e) => {
-                eprintln!("Test execution failed: {}", e);
-                Err(WdlError::RuntimeError {
-                    message: format!("Test execution failed: {}", e),
-                })
-            }
-        }
-    } else {
-        // Run tests (all or by pattern)
-        eprintln!("Running WDL specification tests...");
-        eprintln!("Spec file: {}", spec_file.display());
-        eprintln!("Data directory: {}", data_dir.display());
-
-        let results = if let Some(pattern) = pattern {
-            eprintln!("Running tests matching pattern: {}", pattern);
-            runner.run_tests_matching(&spec_file, &data_dir, &pattern)
-        } else {
-            runner.run_all_tests(&spec_file, &data_dir)
-        };
-
-        match results {
-            Ok(_) => {
-                eprintln!("\nSpec tests completed successfully!");
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("Spec tests failed: {}", e);
-                Err(WdlError::RuntimeError {
-                    message: format!("Spec tests failed: {}", e),
-                })
-            }
         }
     }
 }

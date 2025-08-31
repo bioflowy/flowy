@@ -8,7 +8,6 @@ pub mod config;
 pub mod container;
 pub mod error;
 pub mod fs_utils;
-pub mod spec_tests;
 pub mod task;
 pub mod task_context;
 pub mod workflow;
@@ -25,7 +24,6 @@ pub use fs_utils::{
     copy_file, create_dir_all, read_file_to_string, remove_dir_all, write_file_atomic,
     WorkflowDirectory,
 };
-pub use spec_tests::{SpecTestCase, SpecTestConfig, SpecTestRunner, TestResult, TestStatus};
 pub use task::{TaskEngine, TaskExecutionMonitor, TaskExecutionOptions, TaskExecutionStats};
 pub use task_context::TaskContext;
 pub use task_context::TaskResult;
