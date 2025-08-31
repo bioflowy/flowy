@@ -220,8 +220,8 @@ impl WorkflowEngine {
     ) -> RuntimeResult<()> {
         if let Some(ref workflow_inputs) = workflow.inputs {
             for input_decl in workflow_inputs {
-                if input_decl.expr.is_none() {
-                    // Required input - check both prefixed and unprefixed forms
+                if input_decl.expr.is_none() && !input_decl.decl_type.is_optional() {
+                    // Required input (no default AND not optional) - check both prefixed and unprefixed forms
                     let prefixed_name = format!("{}.{}", workflow.name, input_decl.name);
                     let has_prefixed = inputs.has_binding(&prefixed_name);
                     let has_unprefixed = inputs.has_binding(&input_decl.name);
@@ -275,6 +275,14 @@ impl WorkflowEngine {
                                 .bindings
                                 .bind(input_decl.name.clone(), default_value, None);
                     }
+                } else if input_decl.decl_type.is_optional()
+                    && !context.bindings.has_binding(&input_decl.name)
+                {
+                    // Optional input without explicit default - initialize with None
+                    context.bindings =
+                        context
+                            .bindings
+                            .bind(input_decl.name.clone(), Value::Null, None);
                 }
             }
         }
@@ -889,6 +897,21 @@ impl WorkflowEngine {
                                 Some(output_expr.pos().clone()),
                             )
                         })?;
+
+                    // Try to coerce the output value to the expected type
+                    let expected_type = &output_decl.decl_type;
+                    let output_value = output_value.coerce(expected_type).map_err(|_e| {
+                        RuntimeError::OutputError {
+                            message: format!(
+                                "Cannot coerce workflow output '{}' to expected type",
+                                output_decl.name
+                            ),
+                            expected_type: format!("{:?}", expected_type),
+                            actual: format!("{:?}", output_value.wdl_type()),
+                            pos: Some(output_decl.pos.clone()),
+                        }
+                    })?;
+
                     outputs = outputs.bind(output_decl.name.clone(), output_value, None);
                 } else {
                     return Err(RuntimeError::WorkflowValidationError {

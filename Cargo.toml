@@ -23,5 +23,9 @@ futures = "0.3"
 futures-util = "0.3"
 url = "2.5"
 
+[[bin]]
+name = "spec_tests"
+path = "src/bin/spec_tests.rs"
+
 [dev-dependencies]
 tempfile = "3.21.0"
