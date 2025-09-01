@@ -1116,4 +1116,61 @@ mod stdlib_function_tests {
             assert_eq!(result, Value::string("file".to_string()));
         }
     }
+
+    #[test]
+    fn test_pair_member_access() {
+        use crate::env::Bindings;
+        use crate::stdlib::StdLib;
+
+        let stdlib = StdLib::new("1.0");
+
+        // Create a pair (5, ["hello", "goodbye"])
+        let pair_value = Value::pair(
+            Type::int(false),
+            Type::array(Type::string(false), false, false),
+            Value::int(5),
+            Value::array(
+                Type::string(false),
+                vec![
+                    Value::string("hello".to_string()),
+                    Value::string("goodbye".to_string()),
+                ],
+            ),
+        );
+        let env = Bindings::new().bind("data".to_string(), pair_value, None);
+
+        // Test data.left access
+        let expr = Expression::get(
+            test_pos(),
+            Expression::ident(test_pos(), "data".to_string()),
+            Expression::string(test_pos(), vec![StringPart::Text("left".to_string())]),
+        );
+
+        let result = expr.eval(&env, &stdlib);
+        assert!(result.is_ok(), "Failed to evaluate data.left: {:?}", result);
+        let value = result.unwrap();
+        assert_eq!(value, Value::int(5));
+
+        // Test data.right access
+        let expr = Expression::get(
+            test_pos(),
+            Expression::ident(test_pos(), "data".to_string()),
+            Expression::string(test_pos(), vec![StringPart::Text("right".to_string())]),
+        );
+
+        let result = expr.eval(&env, &stdlib);
+        assert!(
+            result.is_ok(),
+            "Failed to evaluate data.right: {:?}",
+            result
+        );
+        let value = result.unwrap();
+        if let Value::Array { values, .. } = value {
+            assert_eq!(values.len(), 2);
+            assert_eq!(values[0], Value::string("hello".to_string()));
+            assert_eq!(values[1], Value::string("goodbye".to_string()));
+        } else {
+            panic!("Expected array value");
+        }
+    }
 }

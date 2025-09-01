@@ -242,9 +242,22 @@ impl ExpressionBase for Expression {
                             ))
                         }
                     }
+                    (Value::Pair { left, right, .. }, Value::String { value: member, .. }) => {
+                        match member.as_str() {
+                            "left" => Ok(left.as_ref().clone()),
+                            "right" => Ok(right.as_ref().clone()),
+                            _ => Err(WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                format!(
+                                    "Pair has no member '{}'. Valid members are 'left' and 'right'",
+                                    member
+                                ),
+                            )),
+                        }
+                    }
                     _ => Err(WdlError::validation_error(
                         HasSourcePosition::source_position(self).clone(),
-                        "Invalid array/map/struct access".to_string(),
+                        "Invalid array/map/struct/pair access".to_string(),
                     )),
                 }
             }

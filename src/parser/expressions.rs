@@ -62,6 +62,13 @@ pub fn parse_member_access(stream: &mut TokenStream, base: Expression) -> ParseR
             stream.next();
             name
         }
+        Some(Token::Keyword(name)) => {
+            // Allow keywords as field names for member access
+            // This is common for Pair access like .left and .right
+            let name = name.clone();
+            stream.next();
+            name
+        }
         _ => {
             return Err(WdlError::syntax_error(
                 stream.current_position(),
@@ -780,5 +787,23 @@ mod tests {
         } else {
             panic!("Expected binary operation");
         }
+    }
+
+    #[test]
+    fn test_parse_pair_member_access() {
+        // This should reproduce the bug with data.left
+        let mut stream = TokenStream::new("data.left", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse data.left: {:?}", result);
+        assert!(stream.is_eof());
+    }
+
+    #[test]
+    fn test_parse_pair_member_access_right() {
+        // This should also reproduce the bug with data.right
+        let mut stream = TokenStream::new("data.right", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse data.right: {:?}", result);
+        assert!(stream.is_eof());
     }
 }
