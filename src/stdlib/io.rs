@@ -466,3 +466,194 @@ impl Function for ReadIntFunction {
         }
     }
 }
+/// Read float function - reads a file and parses content as a floating point number
+pub struct ReadFloatFunction;
+
+impl Function for ReadFloatFunction {
+    fn name(&self) -> &str {
+        "read_float"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Expect String or File
+        if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+            return Err(WdlError::RuntimeError {
+                message: "read_float() argument must be String or File".to_string(),
+            });
+        }
+
+        Ok(Type::float(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        // Default implementation for backward compatibility
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_float() argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Read the file and parse as float (without path mapping)
+        match std::fs::read_to_string(&filename) {
+            Ok(content) => {
+                let trimmed = content.trim();
+                match trimmed.parse::<f64>() {
+                    Ok(value) => Ok(Value::float(value)),
+                    Err(e) => Err(WdlError::RuntimeError {
+                        message: format!("Failed to parse '{}' as float: {}", trimmed, e),
+                    }),
+                }
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", filename, e),
+            }),
+        }
+    }
+
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_float() argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Use path mapper to devirtualize filename
+        let real_path = stdlib.path_mapper().devirtualize_filename(&filename)?;
+
+        // Read the file and parse as float
+        match std::fs::read_to_string(&real_path) {
+            Ok(content) => {
+                let trimmed = content.trim();
+                match trimmed.parse::<f64>() {
+                    Ok(value) => Ok(Value::float(value)),
+                    Err(e) => Err(WdlError::RuntimeError {
+                        message: format!("Failed to parse '{}' as float: {}", trimmed, e),
+                    }),
+                }
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", real_path.display(), e),
+            }),
+        }
+    }
+}
+
+/// Read boolean function - reads a file and parses content as a boolean
+pub struct ReadBooleanFunction;
+
+impl Function for ReadBooleanFunction {
+    fn name(&self) -> &str {
+        "read_boolean"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Expect String or File
+        if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+            return Err(WdlError::RuntimeError {
+                message: "read_boolean() argument must be String or File".to_string(),
+            });
+        }
+
+        Ok(Type::boolean(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        // Default implementation for backward compatibility
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_boolean() argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Read the file and parse as boolean (without path mapping)
+        match std::fs::read_to_string(&filename) {
+            Ok(content) => {
+                let trimmed = content.trim().to_lowercase();
+                match trimmed.as_str() {
+                    "true" => Ok(Value::boolean(true)),
+                    "false" => Ok(Value::boolean(false)),
+                    _ => Err(WdlError::RuntimeError {
+                        message: format!(
+                            "Failed to parse '{}' as boolean (expected 'true' or 'false')",
+                            trimmed
+                        ),
+                    }),
+                }
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", filename, e),
+            }),
+        }
+    }
+
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_boolean() argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Use path mapper to devirtualize filename
+        let real_path = stdlib.path_mapper().devirtualize_filename(&filename)?;
+
+        // Read the file and parse as boolean
+        match std::fs::read_to_string(&real_path) {
+            Ok(content) => {
+                let trimmed = content.trim().to_lowercase();
+                match trimmed.as_str() {
+                    "true" => Ok(Value::boolean(true)),
+                    "false" => Ok(Value::boolean(false)),
+                    _ => Err(WdlError::RuntimeError {
+                        message: format!(
+                            "Failed to parse '{}' as boolean (expected 'true' or 'false')",
+                            trimmed
+                        ),
+                    }),
+                }
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("Failed to read file {}: {}", real_path.display(), e),
+            }),
+        }
+    }
+}

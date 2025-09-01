@@ -187,6 +187,8 @@ impl StdLib {
         self.register_function(Box::new(ReadLinesFunction));
         self.register_function(Box::new(ReadStringFunction));
         self.register_function(Box::new(ReadIntFunction));
+        self.register_function(Box::new(ReadFloatFunction));
+        self.register_function(Box::new(ReadBooleanFunction));
     }
 
     /// Register all operators
