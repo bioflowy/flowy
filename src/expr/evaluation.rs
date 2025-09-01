@@ -296,7 +296,7 @@ impl ExpressionBase for Expression {
 
                 // Look up function in stdlib
                 if let Some(function) = stdlib.get_function(function_name) {
-                    function.eval(&eval_args).map_err(|e| {
+                    function.eval_with_stdlib(&eval_args, stdlib).map_err(|e| {
                         // Convert WdlError to include position information
                         match e {
                             WdlError::RuntimeError { message } => WdlError::validation_error(
@@ -350,13 +350,15 @@ impl ExpressionBase for Expression {
 
                 // Call the stdlib operator function
                 if let Some(function) = stdlib.get_function(function_name) {
-                    function.eval(&[left_val, right_val]).map_err(|e| match e {
-                        WdlError::RuntimeError { message } => WdlError::validation_error(
-                            HasSourcePosition::source_position(self).clone(),
-                            message,
-                        ),
-                        other => other,
-                    })
+                    function
+                        .eval_with_stdlib(&[left_val, right_val], stdlib)
+                        .map_err(|e| match e {
+                            WdlError::RuntimeError { message } => WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                message,
+                            ),
+                            other => other,
+                        })
                 } else {
                     // This should never happen if stdlib is properly initialized
                     Err(WdlError::validation_error(

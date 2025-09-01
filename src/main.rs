@@ -273,7 +273,7 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
                 message: format!("Task execution failed: {}", e),
             })?;
 
-        (task_result, None) // No namespace for task execution
+        (task_result, Some(task.name.clone())) // Use task name as namespace
     } else {
         // Run workflow
         let workflow_name = if let Some(workflow) = &document.workflow {
@@ -281,7 +281,12 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
             Some(workflow.name.clone())
         } else {
             eprintln!("No workflow found, running tasks...");
-            None
+            // If no workflow but tasks exist, use the first task name as namespace
+            if !document.tasks.is_empty() {
+                Some(document.tasks[0].name.clone())
+            } else {
+                None
+            }
         };
 
         let workflow_result = runtime::run_document(document, inputs, config, &run_id, &work_dir)

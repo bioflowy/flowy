@@ -1,0 +1,10 @@
+# Rust pretty printing
+type summary add --regex "^flowy::env::Binding<.*>$" --summary-string "Binding { name: ${var.name}, value: ${var.value} }"
+type summary add --regex "^flowy::env::Bindings<.*>$" --summary-string "Bindings { binding: ${var.binding}, next: ${var.next} }"
+
+# Enable Rust language support
+settings set target.language rust
+
+# Show more details for Rust types
+settings set target.max-string-summary-length 1000
+settings set target.max-memory-read-size 8192

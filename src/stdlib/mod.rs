@@ -7,6 +7,7 @@ use crate::error::WdlError;
 use crate::types::Type;
 use crate::value::Value;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 // Import submodules
 pub mod arrays;
@@ -25,6 +26,65 @@ pub use operators::*;
 pub use strings::*;
 pub use types::*;
 
+/// Path mapping trait for file virtualization/devirtualization
+/// Similar to miniwdl's _devirtualize_filename and _virtualize_filename
+pub trait PathMapper: Send + Sync {
+    /// Convert a virtual filename to a real filesystem path that can be opened
+    fn devirtualize_filename(&self, filename: &str) -> Result<PathBuf, WdlError>;
+
+    /// Convert a real filesystem path to a virtual filename for WDL values
+    fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError>;
+}
+
+/// Default path mapper that performs no transformation
+pub struct DefaultPathMapper;
+
+impl PathMapper for DefaultPathMapper {
+    fn devirtualize_filename(&self, filename: &str) -> Result<PathBuf, WdlError> {
+        Ok(PathBuf::from(filename))
+    }
+
+    fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError> {
+        path.to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| WdlError::RuntimeError {
+                message: format!("Invalid path: {}", path.display()),
+            })
+    }
+}
+
+/// Task-specific path mapper that resolves relative paths against a task directory
+pub struct TaskPathMapper {
+    task_dir: PathBuf,
+}
+
+impl TaskPathMapper {
+    pub fn new(task_dir: PathBuf) -> Self {
+        Self { task_dir }
+    }
+}
+
+impl PathMapper for TaskPathMapper {
+    fn devirtualize_filename(&self, filename: &str) -> Result<PathBuf, WdlError> {
+        let path = Path::new(filename);
+        if path.is_absolute() {
+            Ok(path.to_path_buf())
+        } else {
+            Ok(self.task_dir.join(path))
+        }
+    }
+
+    fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError> {
+        // For virtualization, we could potentially make paths relative to task_dir
+        // For now, just return the absolute path
+        path.to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| WdlError::RuntimeError {
+                message: format!("Invalid path: {}", path.display()),
+            })
+    }
+}
+
 /// Function trait for standard library functions
 pub trait Function: Send + Sync {
     /// Check argument types and return the result type
@@ -33,6 +93,12 @@ pub trait Function: Send + Sync {
     /// Evaluate the function with given arguments
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError>;
 
+    /// Evaluate the function with given arguments and access to stdlib context
+    /// Default implementation calls eval() for backward compatibility
+    fn eval_with_stdlib(&self, args: &[Value], _stdlib: &StdLib) -> Result<Value, WdlError> {
+        self.eval(args)
+    }
+
     /// Get the function name
     fn name(&self) -> &str;
 }
@@ -40,16 +106,28 @@ pub trait Function: Send + Sync {
 /// Standard library containing all built-in functions and operators
 pub struct StdLib {
     functions: HashMap<String, Box<dyn Function>>,
-    #[allow(dead_code)]
     wdl_version: String,
+    path_mapper: Box<dyn PathMapper>,
+    is_task_context: bool,
 }
 
 impl StdLib {
     /// Create a new standard library instance for the given WDL version
     pub fn new(wdl_version: &str) -> Self {
+        Self::with_path_mapper(wdl_version, Box::new(DefaultPathMapper), false)
+    }
+
+    /// Create a standard library instance with custom path mapper and context
+    pub fn with_path_mapper(
+        wdl_version: &str,
+        path_mapper: Box<dyn PathMapper>,
+        is_task_context: bool,
+    ) -> Self {
         let mut stdlib = StdLib {
             functions: HashMap::new(),
             wdl_version: wdl_version.to_string(),
+            path_mapper,
+            is_task_context,
         };
 
         // Register built-in functions
@@ -62,6 +140,16 @@ impl StdLib {
     /// Get a function by name
     pub fn get_function(&self, name: &str) -> Option<&dyn Function> {
         self.functions.get(name).map(|f| f.as_ref())
+    }
+
+    /// Get the path mapper for file operations
+    pub fn path_mapper(&self) -> &dyn PathMapper {
+        self.path_mapper.as_ref()
+    }
+
+    /// Get the WDL version this standard library was initialized for
+    pub fn wdl_version(&self) -> &str {
+        &self.wdl_version
     }
 
     /// Register all built-in functions
@@ -89,8 +177,12 @@ impl StdLib {
         self.register_function(Box::new(DefinedFunction));
 
         // I/O functions
-        self.register_function(Box::new(StdoutFunction));
-        self.register_function(Box::new(StderrFunction));
+        // stdout() and stderr() are only available in task output context
+        if self.is_task_context {
+            self.register_function(Box::new(StdoutFunction));
+            self.register_function(Box::new(StderrFunction));
+        }
+
         self.register_function(Box::new(WriteLinesFunction));
         self.register_function(Box::new(ReadLinesFunction));
         self.register_function(Box::new(ReadStringFunction));

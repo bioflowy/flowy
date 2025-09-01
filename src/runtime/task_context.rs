@@ -180,6 +180,24 @@ impl TaskContext {
         // Create evaluation environment with inputs and built-in variables
         let mut eval_env = self.inputs.clone();
 
+        // Create task-specific stdlib for postinput evaluation
+        let stdlib =
+            crate::stdlib::task_output::create_task_output_stdlib("1.2", self.task_dir.clone());
+
+        // Evaluate postinput declarations first
+        for postinput in &self.task.postinputs {
+            if let Some(init_expr) = &postinput.expr {
+                let value = init_expr.eval(&eval_env, &stdlib).map_err(|e| {
+                    RuntimeError::run_failed(
+                        format!("Failed to evaluate postinput variable: {}", postinput.name),
+                        e,
+                        Some(postinput.pos.clone()),
+                    )
+                })?;
+                eval_env = eval_env.bind(postinput.name.clone(), value, None);
+            }
+        }
+
         // Add built-in variables
         eval_env = eval_env.bind(
             "task".to_string(),
@@ -213,9 +231,6 @@ impl TaskContext {
             },
             None,
         );
-
-        // Create stdlib for evaluation
-        let stdlib = crate::stdlib::StdLib::new("1.2");
 
         // Evaluate command expression
         let command_value = command_expr.eval(&eval_env, &stdlib).map_err(|e| {
@@ -338,7 +353,8 @@ impl TaskContext {
         let runtime_section = &self.task.runtime;
         for (name, expr) in runtime_section {
             // Evaluate runtime expression in context
-            let stdlib = crate::stdlib::StdLib::new("1.2");
+            let stdlib =
+                crate::stdlib::task_output::create_task_output_stdlib("1.2", self.task_dir.clone());
             let input_env = self.inputs.clone();
             match expr.eval(&input_env, &stdlib) {
                 Ok(value) => {
