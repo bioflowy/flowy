@@ -186,9 +186,14 @@ impl StdLib {
         self.register_function(Box::new(WriteLinesFunction));
         self.register_function(Box::new(ReadLinesFunction));
         self.register_function(Box::new(ReadStringFunction));
-        self.register_function(Box::new(ReadIntFunction));
-        self.register_function(Box::new(ReadFloatFunction));
-        self.register_function(Box::new(ReadBooleanFunction));
+        self.register_function(io::create_read_int());
+        self.register_function(io::create_read_float());
+        self.register_function(io::create_read_boolean());
+        self.register_function(io::create_read_json());
+        self.register_function(io::create_read_tsv());
+        self.register_function(io::create_read_map());
+        self.register_function(io::create_read_objects());
+        self.register_function(io::create_read_object());
     }
 
     /// Register all operators
