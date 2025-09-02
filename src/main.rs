@@ -43,9 +43,63 @@ enum Command {
     },
 }
 
+/// Display error with enhanced location information
+fn display_error_with_location(error: &WdlError, wdl_file: Option<&std::path::Path>) {
+    match error {
+        WdlError::Syntax { pos, message, .. } => {
+            // Use the command line file path if position doesn't have filename
+            let filename = if pos.uri.is_empty() {
+                if let Some(file) = wdl_file {
+                    file.to_string_lossy().to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                pos.uri.clone()
+            };
+
+            // Show file location and context if available
+            eprintln!(
+                "Error in {}:{}:{}: {}",
+                filename, pos.line, pos.column, message
+            );
+
+            // Try to show source code context
+            let file_to_read = if filename.is_empty() {
+                if let Some(file) = wdl_file {
+                    file
+                } else {
+                    std::path::Path::new("")
+                }
+            } else {
+                std::path::Path::new(&filename)
+            };
+
+            if let Ok(content) = std::fs::read_to_string(file_to_read) {
+                let lines: Vec<&str> = content.lines().collect();
+                if let Some(error_line) = lines.get((pos.line - 1) as usize) {
+                    eprintln!("    {}", error_line);
+
+                    // Create a caret pointer to show exact position
+                    let pointer = " ".repeat((pos.column - 1) as usize) + "^";
+                    eprintln!("    {}", pointer);
+                }
+            }
+        }
+        _ => {
+            eprintln!("Error: {}", error);
+        }
+    }
+}
+
 fn main() {
     // Parse command-line arguments
     let args = parse_args();
+
+    // Store the wdl_file for error reporting
+    let wdl_file = match &args.command {
+        Command::Run { wdl_file, .. } => wdl_file.clone(),
+    };
 
     // Execute the command
     let result = match args.command {
@@ -53,7 +107,7 @@ fn main() {
     };
 
     if let Err(e) = result {
-        eprintln!("Error: {}", e);
+        display_error_with_location(&e, Some(&wdl_file));
         process::exit(1);
     }
 }
@@ -214,9 +268,10 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
         message: format!("Failed to read WDL file: {}", e),
     })?;
 
-    // Parse WDL document
+    // Parse WDL document with filename for better error reporting
     eprintln!("Parsing {}...", wdl_file.display());
-    let document = parser::parse_document(&wdl_content, "1.2")?;
+    let filename = wdl_file.to_string_lossy();
+    let document = parser::parse_document_with_filename(&wdl_content, "1.2", &filename)?;
 
     // Load inputs if provided (with type information from document)
     let inputs = if let Some(input_file) = input_file {

@@ -367,6 +367,97 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
     ))
 }
 
+/// Parse a WDL document with filename for better error reporting
+pub fn parse_document_with_filename(
+    source: &str,
+    version: &str,
+    filename: &str,
+) -> Result<Document, WdlError> {
+    let mut stream = TokenStream::new_with_filename(source, version, filename)?;
+
+    let pos = stream.current_position();
+    let mut doc_version: Option<String> = None;
+    let mut imports: Vec<ImportDoc> = Vec::new();
+    let mut struct_typedefs: Vec<StructTypeDef> = Vec::new();
+    let mut tasks: Vec<Task> = Vec::new();
+    let mut workflow: Option<Workflow> = None;
+
+    // Parse document elements
+    while !stream.is_eof() {
+        // Skip newlines
+        while stream.peek_token() == Some(Token::Newline) {
+            stream.next();
+        }
+
+        if stream.is_eof() {
+            break;
+        }
+
+        match stream.peek_token() {
+            Some(Token::Keyword(kw)) => match kw.as_str() {
+                "version" => {
+                    doc_version = Some(parse_version(&mut stream)?);
+                }
+                "import" => {
+                    let import = parse_import(&mut stream)?;
+                    imports.push(import);
+                }
+                "struct" => {
+                    let struct_def = parse_struct(&mut stream)?;
+                    struct_typedefs.push(struct_def);
+                }
+                "task" => {
+                    let task = parse_task(&mut stream)?;
+                    tasks.push(task);
+                }
+                "workflow" => {
+                    if workflow.is_some() {
+                        let workflow_pos = stream.current_position();
+                        return Err(WdlError::syntax_error(
+                            workflow_pos,
+                            "Multiple workflow definitions not allowed".to_string(),
+                            version.to_string(),
+                            None,
+                        ));
+                    }
+                    workflow = Some(parse_workflow(&mut stream)?);
+                }
+                _ => {
+                    let pos = stream.current_position();
+                    return Err(WdlError::syntax_error(
+                        pos,
+                        format!("Unexpected keyword at top level: {}", kw),
+                        version.to_string(),
+                        None,
+                    ));
+                }
+            },
+            _ => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Expected version, import, struct, task, or workflow".to_string(),
+                    version.to_string(),
+                    None,
+                ));
+            }
+        }
+
+        // Skip newlines
+        while stream.peek_token() == Some(Token::Newline) {
+            stream.next();
+        }
+    }
+
+    Ok(Document::new(
+        pos,
+        doc_version,
+        imports,
+        struct_typedefs,
+        tasks,
+        workflow,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

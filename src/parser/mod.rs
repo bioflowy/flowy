@@ -24,3 +24,13 @@ pub fn parse_document(source: &str, version: &str) -> Result<Document, WdlError>
     // Parse source directly using stateful lexer (no preprocessing needed)
     document::parse_document(source, version)
 }
+
+/// Parse a WDL document from source text with filename for better error reporting
+pub fn parse_document_with_filename(
+    source: &str,
+    version: &str,
+    filename: &str,
+) -> Result<Document, WdlError> {
+    // Parse source directly using stateful lexer (no preprocessing needed)
+    document::parse_document_with_filename(source, version, filename)
+}

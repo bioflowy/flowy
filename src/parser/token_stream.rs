@@ -32,6 +32,25 @@ impl TokenStream {
         })
     }
 
+    /// Create a new token stream from source text with filename for better error reporting
+    pub fn new_with_filename(
+        source: &str,
+        version: &str,
+        filename: &str,
+    ) -> Result<Self, WdlError> {
+        let mut lexer = Lexer::new(version);
+        lexer.set_filename(filename);
+        Ok(TokenStream {
+            source: source.to_string(),
+            source_position: 0,
+            token_position: 0,
+            lexer,
+            version: version.to_string(),
+            current_token: None,
+            generated_tokens: Vec::new(),
+        })
+    }
+
     /// Generate the next token from the source at the current position
     fn generate_next_token(&mut self) -> Result<Option<LocatedToken>, WdlError> {
         loop {
@@ -44,9 +63,30 @@ impl TokenStream {
             let tokenizer = stateful_token(&self.lexer);
 
             match tokenizer(input) {
-                Ok((remaining, token)) => {
+                Ok((remaining, mut token)) => {
                     // Update source position
                     let consumed_bytes = remaining_source.len() - remaining.fragment().len();
+
+                    // Adjust token position to account for source_position offset
+                    let filename = self.lexer.get_filename();
+                    if !filename.is_empty() {
+                        // Calculate actual line and column from the beginning of the source
+                        let prefix = &self.source[..self.source_position];
+                        let lines_before = prefix.matches('\n').count();
+                        let last_line_start = prefix.rfind('\n').map(|pos| pos + 1).unwrap_or(0);
+                        let column_offset = self.source_position - last_line_start;
+
+                        // Update token position
+                        token.pos = SourcePosition::new(
+                            filename.to_string(),
+                            filename.to_string(),
+                            (lines_before + 1) as u32,
+                            (column_offset + 1) as u32,
+                            (lines_before + 1) as u32,
+                            (column_offset + consumed_bytes + 1) as u32,
+                        );
+                    }
+
                     self.source_position += consumed_bytes;
 
                     // Filter out whitespace, newlines, and comments only in normal mode
@@ -64,8 +104,22 @@ impl TokenStream {
                     return Ok(Some(token));
                 }
                 Err(e) => {
-                    // Convert nom error to WdlError
-                    let pos = SourcePosition::new("".to_string(), "".to_string(), 1, 1, 1, 1);
+                    // Create error position with current source position
+                    let prefix = &self.source[..self.source_position.min(self.source.len())];
+                    let lines_before = prefix.matches('\n').count();
+                    let last_line_start = prefix.rfind('\n').map(|pos| pos + 1).unwrap_or(0);
+                    let column_offset = self.source_position - last_line_start;
+
+                    let filename = self.lexer.get_filename();
+                    let pos = SourcePosition::new(
+                        filename.to_string(),
+                        filename.to_string(),
+                        (lines_before + 1) as u32,
+                        (column_offset + 1) as u32,
+                        (lines_before + 1) as u32,
+                        (column_offset + 1) as u32,
+                    );
+
                     return Err(WdlError::syntax_error(
                         pos,
                         format!("Tokenization error: {:?}", e),
@@ -320,7 +374,7 @@ pub fn tokenize(source: &str, version: &str) -> Result<Vec<LocatedToken>, WdlErr
         Ok((remaining, tokens)) => {
             // Check if we consumed all input
             if !remaining.fragment().is_empty() {
-                let pos = super::lexer::span_to_position(remaining);
+                let pos = super::lexer::span_to_position(remaining, "");
                 return Err(WdlError::syntax_error(
                     pos,
                     format!("Unexpected input: {}", remaining.fragment()),
@@ -369,7 +423,7 @@ pub fn tokenize_with_whitespace(
         Ok((remaining, tokens)) => {
             // Check if we consumed all input
             if !remaining.fragment().is_empty() {
-                let pos = super::lexer::span_to_position(remaining);
+                let pos = super::lexer::span_to_position(remaining, "");
                 return Err(WdlError::syntax_error(
                     pos,
                     format!("Unexpected input: {}", remaining.fragment()),

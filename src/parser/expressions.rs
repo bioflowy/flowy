@@ -806,4 +806,84 @@ mod tests {
         assert!(result.is_ok(), "Failed to parse data.right: {:?}", result);
         assert!(stream.is_eof());
     }
+
+    #[test]
+    fn test_parse_array_index_arithmetic() {
+        // Test the specific case that was failing: arr[n-1]
+        let mut stream = TokenStream::new("arr[num_files-1]", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(
+            result.is_ok(),
+            "Failed to parse arr[num_files-1]: {:?}",
+            result
+        );
+        assert!(stream.is_eof());
+    }
+
+    #[test]
+    fn test_parse_array_index_addition() {
+        // Test arithmetic with addition
+        let mut stream = TokenStream::new("arr[i+1]", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse arr[i+1]: {:?}", result);
+        assert!(stream.is_eof());
+    }
+
+    #[test]
+    fn test_parse_array_index_unary_minus() {
+        // Test unary minus (negative index)
+        let mut stream = TokenStream::new("arr[-1]", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse arr[-1]: {:?}", result);
+        assert!(stream.is_eof());
+    }
+
+    #[test]
+    fn test_parse_array_index_complex_arithmetic() {
+        // Test complex arithmetic expression
+        let mut stream = TokenStream::new("arr[a*b-c+1]", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse arr[a*b-c+1]: {:?}", result);
+        assert!(stream.is_eof());
+    }
+
+    #[test]
+    fn test_parse_negative_literals() {
+        // Test that negative numbers are parsed as unary minus + positive literal
+        let mut stream = TokenStream::new("-42", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse -42: {:?}", result);
+
+        let expr = result.unwrap();
+        if let Expression::UnaryOp { op, operand, .. } = expr {
+            assert!(matches!(op, UnaryOperator::Negate));
+            if let Expression::Int { value, .. } = operand.as_ref() {
+                assert_eq!(*value, 42);
+            } else {
+                panic!("Expected positive integer operand");
+            }
+        } else {
+            panic!("Expected unary negation expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_negative_floats() {
+        // Test that negative floats are parsed as unary minus + positive literal
+        let mut stream = TokenStream::new("-3.14", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok(), "Failed to parse -3.14: {:?}", result);
+
+        let expr = result.unwrap();
+        if let Expression::UnaryOp { op, operand, .. } = expr {
+            assert!(matches!(op, UnaryOperator::Negate));
+            if let Expression::Float { value, .. } = operand.as_ref() {
+                assert!((value - 3.14).abs() < 1e-10);
+            } else {
+                panic!("Expected positive float operand");
+            }
+        } else {
+            panic!("Expected unary negation expression");
+        }
+    }
 }

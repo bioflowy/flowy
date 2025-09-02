@@ -35,6 +35,7 @@ pub struct Lexer {
     mode_stack: Vec<LexerMode>,
     #[allow(dead_code)]
     version: String,
+    filename: String,
 }
 
 impl Lexer {
@@ -43,7 +44,18 @@ impl Lexer {
         Self {
             mode_stack: vec![LexerMode::Normal],
             version: version.to_string(),
+            filename: String::new(),
         }
+    }
+
+    /// Set the filename for better error reporting
+    pub fn set_filename(&mut self, filename: &str) {
+        self.filename = filename.to_string();
+    }
+
+    /// Get the filename
+    pub fn get_filename(&self) -> &str {
+        &self.filename
     }
 
     /// Get the current lexer mode
@@ -74,16 +86,31 @@ impl Lexer {
     }
 }
 
-/// Convert a span to a source position
-pub fn span_to_position(span: Span) -> SourcePosition {
+/// Convert a span to a source position with filename and offset
+pub fn span_to_position_with_offset(
+    span: Span,
+    filename: &str,
+    source_offset: usize,
+) -> SourcePosition {
+    // Calculate actual line and column considering the source offset
+    let line = span.location_line() as usize;
+    let column = span.get_utf8_column();
+
+    // For now, we'll calculate line/column from the beginning, but this could be improved
+    // to use the source_offset to calculate the actual position in the original file
     SourcePosition::new(
-        "".to_string(),
-        "".to_string(),
-        span.location_line(),
-        span.get_utf8_column() as u32,
-        span.location_line(),
-        (span.get_utf8_column() + span.fragment().len()) as u32,
+        filename.to_string(),
+        filename.to_string(),
+        line as u32,
+        column as u32,
+        line as u32,
+        (column + span.fragment().len()) as u32,
     )
+}
+
+/// Convert a span to a source position with filename (legacy version)
+pub fn span_to_position(span: Span, filename: &str) -> SourcePosition {
+    span_to_position_with_offset(span, filename, 0)
 }
 
 // Basic token parsers
@@ -108,19 +135,18 @@ pub fn comment(input: Span) -> IResult<Span, Token> {
     )(input)
 }
 
-/// Parse an integer literal
+/// Parse an integer literal (positive only, minus handled as separate token)
 pub fn int_literal(input: Span) -> IResult<Span, Token> {
-    map(recognize(pair(opt(char('-')), digit1)), |s: Span| {
+    map(recognize(digit1), |s: Span| {
         let num = s.fragment().parse::<i64>().unwrap_or(0);
         Token::IntLiteral(num)
     })(input)
 }
 
-/// Parse a float literal
+/// Parse a float literal (positive only, minus handled as separate token)
 pub fn float_literal(input: Span) -> IResult<Span, Token> {
     map(
         recognize(tuple((
-            opt(char('-')),
             digit1,
             char('.'),
             digit1,
@@ -260,7 +286,32 @@ pub fn command_mode_special_chars(input: Span) -> IResult<Span, Token> {
 /// Parse a single token in command mode
 pub fn command_mode_token(_version: &str) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
     move |input: Span| {
-        let pos = span_to_position(input);
+        let pos = span_to_position(input, "");
+        let (input, token) = alt((
+            // Check for closing command delimiters first
+            value(Token::RightBrace, char('}')),
+            value(Token::HeredocEnd, tag(">>>")),
+            // Handle special characters with lookahead
+            command_mode_special_chars,
+            // Handle regular text
+            command_mode_text,
+            // Handle whitespace and newlines (preserve in command mode)
+            whitespace,
+            newline,
+            comment,
+        ))(input)?;
+
+        Ok((input, LocatedToken::new(token, pos)))
+    }
+}
+
+/// Parse a single token in command mode with filename information
+pub fn command_mode_token_with_filename<'a>(
+    _version: &'a str,
+    filename: &'a str,
+) -> impl Fn(Span) -> IResult<Span, LocatedToken> + 'a {
+    move |input: Span| {
+        let pos = span_to_position(input, filename);
         let (input, token) = alt((
             // Check for closing command delimiters first
             value(Token::RightBrace, char('}')),
@@ -329,15 +380,17 @@ pub fn punctuation(input: Span) -> IResult<Span, Token> {
 pub fn stateful_token(lexer: &Lexer) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
     move |input: Span| {
         match lexer.current_mode() {
-            LexerMode::Normal => normal_token(&lexer.version)(input),
-            LexerMode::Command => command_mode_token(&lexer.version)(input),
+            LexerMode::Normal => normal_token_with_filename(&lexer.version, &lexer.filename)(input),
+            LexerMode::Command => {
+                command_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
+            }
             LexerMode::StringLiteral => {
                 // TODO: Implement string literal mode if needed
-                normal_token(&lexer.version)(input)
+                normal_token_with_filename(&lexer.version, &lexer.filename)(input)
             }
             LexerMode::Placeholder => {
                 // TODO: Implement placeholder mode if needed
-                normal_token(&lexer.version)(input)
+                normal_token_with_filename(&lexer.version, &lexer.filename)(input)
             }
         }
     }
@@ -346,7 +399,34 @@ pub fn stateful_token(lexer: &Lexer) -> impl Fn(Span) -> IResult<Span, LocatedTo
 /// Parse a single token in normal mode
 pub fn normal_token(version: &str) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
     move |input: Span| {
-        let pos = span_to_position(input);
+        let pos = span_to_position(input, "");
+        let (input, token) = alt((
+            command_placeholder, // Must come before identifiers (has underscores)
+            command_tokens,      // Must come before operators due to overlaps
+            string_literal,      // Must come before other literals
+            float_literal,       // Must come before int_literal
+            int_literal,
+            bool_literal,
+            identifier_or_keyword(version),
+            operator,
+            delimiter,
+            punctuation,
+            whitespace,
+            newline,
+            comment,
+        ))(input)?;
+
+        Ok((input, LocatedToken::new(token, pos)))
+    }
+}
+
+/// Parse a single token in normal mode with filename information
+pub fn normal_token_with_filename<'a>(
+    version: &'a str,
+    filename: &'a str,
+) -> impl Fn(Span) -> IResult<Span, LocatedToken> + 'a {
+    move |input: Span| {
+        let pos = span_to_position(input, filename);
         let (input, token) = alt((
             command_placeholder, // Must come before identifiers (has underscores)
             command_tokens,      // Must come before operators due to overlaps
@@ -399,11 +479,14 @@ mod tests {
         let (_, token) = result.unwrap();
         assert_eq!(token, Token::IntLiteral(42));
 
+        // Negative numbers should NOT be parsed by the lexer anymore
+        // They are handled as Minus + IntLiteral by the expression parser
         let input = Span::new("-123");
         let result = int_literal(input);
-        assert!(result.is_ok());
-        let (_, token) = result.unwrap();
-        assert_eq!(token, Token::IntLiteral(-123));
+        assert!(
+            result.is_err(),
+            "Lexer should not parse negative integers directly"
+        );
     }
 
     #[test]
@@ -414,11 +497,17 @@ mod tests {
         let (_, token) = result.unwrap();
         assert_eq!(token, Token::FloatLiteral(3.11));
 
-        let input = Span::new("-2.5e10");
+        // Positive float with exponent
+        let input = Span::new("2.5e10");
         let result = float_literal(input);
         assert!(result.is_ok());
         let (_, token) = result.unwrap();
-        assert_eq!(token, Token::FloatLiteral(-2.5e10));
+        assert_eq!(token, Token::FloatLiteral(2.5e10));
+
+        // Negative numbers should fail (handled by parser as unary minus)
+        let input = Span::new("-2.5e10");
+        let result = float_literal(input);
+        assert!(result.is_err()); // This should fail as expected
     }
 
     #[test]
