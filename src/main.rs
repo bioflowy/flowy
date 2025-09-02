@@ -10,7 +10,7 @@
 use miniwdl_rust::{
     load, runtime,
     tree::{Document, Task, Workflow},
-    Bindings, Type, Value, WdlError,
+    Bindings, SourcePosition, Type, Value, WdlError,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -45,46 +45,136 @@ enum Command {
 
 /// Display error with enhanced location information
 fn display_error_with_location(error: &WdlError, wdl_file: Option<&std::path::Path>) {
+    // Helper function to display error with position
+    let display_with_pos = |pos: &SourcePosition, message: &str| {
+        // Use the command line file path if position doesn't have filename
+        let filename = if pos.uri.is_empty() {
+            if let Some(file) = wdl_file {
+                file.to_string_lossy().to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            pos.uri.clone()
+        };
+
+        // Show file location and context if available
+        eprintln!(
+            "Error in {}:{}:{}: {}",
+            filename, pos.line, pos.column, message
+        );
+
+        // Try to show source code context
+        let file_to_read = if filename.is_empty() {
+            if let Some(file) = wdl_file {
+                file
+            } else {
+                std::path::Path::new("")
+            }
+        } else {
+            std::path::Path::new(&filename)
+        };
+
+        if let Ok(content) = std::fs::read_to_string(file_to_read) {
+            let lines: Vec<&str> = content.lines().collect();
+            if let Some(error_line) = lines.get((pos.line - 1) as usize) {
+                eprintln!("    {}", error_line);
+
+                // Create a caret pointer to show exact position
+                let pointer = " ".repeat((pos.column - 1) as usize) + "^";
+                eprintln!("    {}", pointer);
+            }
+        }
+    };
+
     match error {
         WdlError::Syntax { pos, message, .. } => {
-            // Use the command line file path if position doesn't have filename
-            let filename = if pos.uri.is_empty() {
-                if let Some(file) = wdl_file {
-                    file.to_string_lossy().to_string()
-                } else {
-                    String::new()
-                }
-            } else {
-                pos.uri.clone()
-            };
-
-            // Show file location and context if available
-            eprintln!(
-                "Error in {}:{}:{}: {}",
-                filename, pos.line, pos.column, message
+            display_with_pos(pos, message);
+        }
+        WdlError::Validation { pos, message, .. } => {
+            display_with_pos(pos, message);
+        }
+        WdlError::UnknownIdentifier { pos, message, .. } => {
+            display_with_pos(pos, &format!("Unknown identifier: {}", message));
+        }
+        WdlError::InvalidType { pos, message, .. } => {
+            display_with_pos(pos, &format!("Invalid type: {}", message));
+        }
+        WdlError::IndeterminateType { pos, message, .. } => {
+            display_with_pos(pos, &format!("Indeterminate type: {}", message));
+        }
+        WdlError::NoSuchTask { pos, name, .. } => {
+            display_with_pos(pos, &format!("No such task/workflow: {}", name));
+        }
+        WdlError::NoSuchCall { pos, name, .. } => {
+            display_with_pos(pos, &format!("No such call in this workflow: {}", name));
+        }
+        WdlError::NoSuchFunction { pos, name, .. } => {
+            display_with_pos(pos, &format!("No such function: {}", name));
+        }
+        WdlError::WrongArity {
+            pos,
+            function_name,
+            expected,
+            ..
+        } => {
+            display_with_pos(
+                pos,
+                &format!("{} expects {} argument(s)", function_name, expected),
             );
-
-            // Try to show source code context
-            let file_to_read = if filename.is_empty() {
-                if let Some(file) = wdl_file {
-                    file
-                } else {
-                    std::path::Path::new("")
-                }
+        }
+        WdlError::NotAnArray { pos, .. } => {
+            display_with_pos(pos, "Not an array");
+        }
+        WdlError::NoSuchMember { pos, member, .. } => {
+            display_with_pos(pos, &format!("No such member '{}'", member));
+        }
+        WdlError::StaticTypeMismatch {
+            pos,
+            expected,
+            actual,
+            message,
+            ..
+        } => {
+            let full_message = if message.is_empty() {
+                format!("Expected {} instead of {}", expected, actual)
             } else {
-                std::path::Path::new(&filename)
+                message.clone()
             };
-
-            if let Ok(content) = std::fs::read_to_string(file_to_read) {
-                let lines: Vec<&str> = content.lines().collect();
-                if let Some(error_line) = lines.get((pos.line - 1) as usize) {
-                    eprintln!("    {}", error_line);
-
-                    // Create a caret pointer to show exact position
-                    let pointer = " ".repeat((pos.column - 1) as usize) + "^";
-                    eprintln!("    {}", pointer);
-                }
-            }
+            display_with_pos(pos, &full_message);
+        }
+        WdlError::IncompatibleOperand { pos, message, .. } => {
+            display_with_pos(pos, &format!("Incompatible operand: {}", message));
+        }
+        WdlError::NoSuchInput { pos, name, .. } => {
+            display_with_pos(pos, &format!("No such input {}", name));
+        }
+        WdlError::UncallableWorkflow { pos, name, .. } => {
+            display_with_pos(pos, &format!("Cannot call subworkflow {} because its own calls have missing required inputs, and/or it lacks an output section", name));
+        }
+        WdlError::MultipleDefinitions { pos, message, .. } => {
+            display_with_pos(pos, &format!("Multiple definitions: {}", message));
+        }
+        WdlError::StrayInputDeclaration { pos, message, .. } => {
+            display_with_pos(pos, &format!("Stray input declaration: {}", message));
+        }
+        WdlError::CircularDependencies { pos, name, .. } => {
+            display_with_pos(pos, &format!("Circular dependencies involving {}", name));
+        }
+        WdlError::Eval { pos, message, .. } => {
+            display_with_pos(pos, &format!("Evaluation error: {}", message));
+        }
+        WdlError::OutOfBounds { pos, .. } => {
+            display_with_pos(pos, "Array index out of bounds");
+        }
+        WdlError::EmptyArray { pos, .. } => {
+            display_with_pos(pos, "Empty array for Array+ input/declaration");
+        }
+        WdlError::NullValue { pos, .. } => {
+            display_with_pos(pos, "Null value");
+        }
+        WdlError::WorkflowValidationError { pos, message, .. } => {
+            display_with_pos(pos, &format!("Workflow validation error: {}", message));
         }
         _ => {
             eprintln!("Error: {}", error);
@@ -271,12 +361,12 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     // Load WDL document with imports and type checking
     eprintln!("Parsing {}...", wdl_file.display());
     let filename = wdl_file.to_string_lossy();
-    
+
     // Get parent directory for import resolution
     let parent_dir_str = wdl_file.parent().map(|p| p.to_string_lossy().into_owned());
     let search_paths: Option<Vec<&str>> = parent_dir_str.as_ref().map(|p| vec![p.as_str()]);
-    let search_paths_slice = search_paths.as_ref().map(|v| v.as_slice());
-    
+    let search_paths_slice = search_paths.as_deref();
+
     let document = load(&filename, search_paths_slice, true, 10)?;
 
     // Load inputs if provided (with type information from document)
@@ -350,10 +440,7 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
             }
         };
 
-        let workflow_result = runtime::run_document(document, inputs, config, &run_id, &work_dir)
-            .map_err(|e| WdlError::RuntimeError {
-            message: format!("Workflow execution failed: {}", e),
-        })?;
+        let workflow_result = runtime::run_document(document, inputs, config, &run_id, &work_dir)?;
 
         // Convert WorkflowResult to TaskResult-like output
         let task_result = runtime::task_context::TaskResult {

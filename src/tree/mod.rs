@@ -428,7 +428,7 @@ pub struct Call {
     pub alias: Option<String>,
     pub inputs: HashMap<String, Expression>,
     pub afters: Vec<String>,
-    
+
     // Resolved call information (filled during type checking)
     #[serde(skip)]
     pub callee: Option<CalleeRef>, // Reference to the actual Task or Workflow
@@ -462,20 +462,20 @@ impl Call {
             callee: None, // Will be resolved during type checking
         }
     }
-    
+
     /// Resolve the call to its actual task or workflow
     pub fn resolve(&mut self, doc: &Document) -> Result<(), WdlError> {
         if self.callee.is_some() {
             return Ok(()); // Already resolved
         }
-        
+
         let parts: Vec<&str> = self.task.split('.').collect();
-        
+
         match parts.len() {
             1 => {
                 // Local call - look in this document
                 let task_name = parts[0];
-                
+
                 // First check workflows
                 if let Some(ref workflow) = doc.workflow {
                     if workflow.name == task_name {
@@ -486,12 +486,15 @@ impl Call {
                         } else {
                             return Err(WdlError::validation_error(
                                 self.pos.clone(),
-                                format!("Workflow {} is not callable (incomplete calls)", task_name),
+                                format!(
+                                    "Workflow {} is not callable (incomplete calls)",
+                                    task_name
+                                ),
                             ));
                         }
                     }
                 }
-                
+
                 // Then check tasks
                 for task in &doc.tasks {
                     if task.name == task_name {
@@ -499,17 +502,17 @@ impl Call {
                         return Ok(());
                     }
                 }
-                
-                return Err(WdlError::validation_error(
+
+                Err(WdlError::validation_error(
                     self.pos.clone(),
                     format!("No such task or workflow: {}", task_name),
-                ));
+                ))
             }
             2 => {
                 // Namespaced call - look in imported documents
                 let namespace = parts[0];
                 let task_name = parts[1];
-                
+
                 // Find the import with matching namespace
                 for import in &doc.imports {
                     if import.namespace == namespace {
@@ -523,12 +526,15 @@ impl Call {
                                     } else {
                                         return Err(WdlError::validation_error(
                                             self.pos.clone(),
-                                            format!("Workflow {}.{} is not callable (incomplete calls)", namespace, task_name),
+                                            format!(
+                                                "Workflow {}.{} is not callable (incomplete calls)",
+                                                namespace, task_name
+                                            ),
                                         ));
                                     }
                                 }
                             }
-                            
+
                             // Then check tasks in imported document
                             for task in &imported_doc.tasks {
                                 if task.name == task_name {
@@ -536,7 +542,7 @@ impl Call {
                                     return Ok(());
                                 }
                             }
-                            
+
                             return Err(WdlError::validation_error(
                                 self.pos.clone(),
                                 format!("No such task or workflow in {}: {}", namespace, task_name),
@@ -549,18 +555,16 @@ impl Call {
                         }
                     }
                 }
-                
-                return Err(WdlError::validation_error(
+
+                Err(WdlError::validation_error(
                     self.pos.clone(),
                     format!("No such import namespace: {}", namespace),
-                ));
+                ))
             }
-            _ => {
-                return Err(WdlError::validation_error(
-                    self.pos.clone(),
-                    format!("Invalid call syntax: {}", self.task),
-                ));
-            }
+            _ => Err(WdlError::validation_error(
+                self.pos.clone(),
+                format!("Invalid call syntax: {}", self.task),
+            )),
         }
     }
 
@@ -1104,7 +1108,7 @@ pub struct ImportDoc {
     pub pos: SourcePosition,
     pub uri: String,
     pub namespace: String, // Required - inferred from filename if not provided
-    pub aliases: Vec<(String, String)>, // List of (name, alias) pairs 
+    pub aliases: Vec<(String, String)>, // List of (name, alias) pairs
     pub doc: Option<Box<Document>>, // Resolved document after loading
 }
 
@@ -1119,12 +1123,12 @@ impl ImportDoc {
         let namespace = namespace.unwrap_or_else(|| {
             // Infer namespace from filename/URI (matches Python implementation)
             let mut ns = uri.clone();
-            
+
             // Remove path components
             if let Some(slash_pos) = ns.rfind('/') {
                 ns = ns[slash_pos + 1..].to_string();
             }
-            
+
             // Remove query parameters and file extension
             if let Some(question_pos) = ns.find('?') {
                 ns = ns[..question_pos].to_string();
@@ -1132,10 +1136,10 @@ impl ImportDoc {
             if let Some(dot_pos) = ns.rfind('.') {
                 ns = ns[..dot_pos].to_string();
             }
-            
+
             ns
         });
-        
+
         Self {
             pos,
             uri,
@@ -1144,7 +1148,7 @@ impl ImportDoc {
             doc: None,
         }
     }
-    
+
     /// Create a new ImportDoc with a resolved document
     pub fn with_document(mut self, doc: Box<Document>) -> Self {
         self.doc = Some(doc);
@@ -1206,18 +1210,18 @@ impl Document {
     pub fn typecheck(&mut self) -> Result<(), WdlError> {
         // 1. Check for duplicate import namespaces
         self.check_import_namespaces()?;
-        
+
         // 2. Import structs from imported documents
         self.import_structs()?;
-        
+
         // 3. Type check all tasks (simplified for now)
         for task in &self.tasks {
             // TODO: Implement full task type checking
         }
-        
+
         // 4. Resolve all calls in workflows
         self.resolve_calls()?;
-        
+
         // 5. Type check workflow if present
         if let Some(ref mut workflow) = self.workflow {
             // Set complete_calls based on a simple heuristic
@@ -1232,7 +1236,7 @@ impl Document {
     /// Check for duplicate import namespaces
     fn check_import_namespaces(&self) -> Result<(), WdlError> {
         let mut seen_namespaces = std::collections::HashSet::new();
-        
+
         for import in &self.imports {
             if seen_namespaces.contains(&import.namespace) {
                 return Err(WdlError::multiple_definitions_error(
@@ -1242,14 +1246,14 @@ impl Document {
             }
             seen_namespaces.insert(&import.namespace);
         }
-        
+
         Ok(())
     }
 
     /// Import struct types from imported documents
     fn import_structs(&mut self) -> Result<(), WdlError> {
         let mut imported_structs = std::collections::HashMap::new();
-        
+
         for import in &self.imports {
             if let Some(ref imported_doc) = import.doc {
                 // Collect structs from imported document
@@ -1257,7 +1261,7 @@ impl Document {
                 for struct_def in &imported_doc.struct_typedefs {
                     doc_structs.insert(struct_def.name.clone(), struct_def.clone());
                 }
-                
+
                 // Process aliases
                 for (original_name, alias_name) in &import.aliases {
                     // Check if the aliased struct exists in the imported document
@@ -1267,7 +1271,7 @@ impl Document {
                             original_name.clone(),
                         ));
                     }
-                    
+
                     // Check for collisions with other imported structs in this import
                     if alias_name != original_name && doc_structs.contains_key(alias_name) {
                         return Err(WdlError::multiple_definitions_error(
@@ -1278,29 +1282,35 @@ impl Document {
                             ),
                         ));
                     }
-                    
+
                     // Check for collisions with existing structs in this document
                     if self.struct_typedefs.iter().any(|s| s.name == *alias_name) {
                         return Err(WdlError::multiple_definitions_error(
                             import.pos.clone(),
-                            format!("struct type alias {} collides with a struct type in this document", alias_name),
+                            format!(
+                                "struct type alias {} collides with a struct type in this document",
+                                alias_name
+                            ),
                         ));
                     }
-                    
+
                     // Add/rename the struct
                     if let Some(original_struct) = doc_structs.get(original_name) {
                         let mut aliased_struct = original_struct.clone();
                         aliased_struct.name = alias_name.clone();
-                        aliased_struct.imported = Some((Box::new(imported_doc.as_ref().clone()), Box::new(original_struct.clone())));
+                        aliased_struct.imported = Some((
+                            Box::new(imported_doc.as_ref().clone()),
+                            Box::new(original_struct.clone()),
+                        ));
                         imported_structs.insert(alias_name.clone(), aliased_struct);
                     }
-                    
+
                     // Remove original if renamed
                     if alias_name != original_name {
                         doc_structs.remove(original_name);
                     }
                 }
-                
+
                 // Add remaining non-aliased structs
                 for (name, struct_def) in doc_structs {
                     // Check for naming conflicts with existing structs
@@ -1318,23 +1328,26 @@ impl Document {
                         // Types are compatible, skip adding
                         continue;
                     }
-                    
+
                     // Create imported struct with reference to original
                     let mut imported_struct = struct_def.clone();
-                    imported_struct.imported = Some((Box::new(imported_doc.as_ref().clone()), Box::new(struct_def)));
+                    imported_struct.imported = Some((
+                        Box::new(imported_doc.as_ref().clone()),
+                        Box::new(struct_def),
+                    ));
                     imported_structs.insert(name, imported_struct);
                 }
             }
         }
-        
+
         // Add imported structs to this document
         for (_, imported_struct) in imported_structs {
             self.struct_typedefs.push(imported_struct);
         }
-        
+
         Ok(())
     }
-    
+
     /// Resolve all calls in the workflow
     fn resolve_calls(&mut self) -> Result<(), WdlError> {
         // Take ownership of workflow temporarily to avoid borrowing issues
@@ -1344,7 +1357,7 @@ impl Document {
         }
         Ok(())
     }
-    
+
     /// Recursively resolve calls in workflow sections
     fn resolve_calls_in_workflow(doc: &Document, workflow: &mut Workflow) -> Result<(), WdlError> {
         for node in &mut workflow.body {
@@ -1352,7 +1365,7 @@ impl Document {
         }
         Ok(())
     }
-    
+
     /// Resolve calls in a workflow node (recursively for sections)
     fn resolve_calls_in_node(doc: &Document, node: &mut WorkflowElement) -> Result<(), WdlError> {
         match node {

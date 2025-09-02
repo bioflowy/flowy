@@ -362,13 +362,11 @@ impl WorkflowEngine {
         // Execute task
         let call_name = if let Some(alias) = &call.alias {
             alias.clone()
-        } else if call.task.contains('.') {
-            // For namespaced calls like "lib.hello", use just the task name part "hello"
-            call.task.split('.').last().unwrap().to_string()
         } else {
+            // Use the full task name including namespace for proper resolution
             call.task.clone()
         };
-        let unique_run_id = format!("{}_{}", run_id, call_name);
+        let unique_run_id = format!("{}_{}", run_id, call_name.replace('.', "_"));
 
         let task_result =
             self.task_engine
@@ -382,7 +380,7 @@ impl WorkflowEngine {
                 .bind(qualified_name, binding.value().clone(), None);
         }
 
-        // Store task result
+        // Store task result using the call name that the aggregation expects
         context.task_results.insert(call_name, task_result);
 
         Ok(())
@@ -530,10 +528,30 @@ impl WorkflowEngine {
                 // Track outputs for this task across all iterations
                 let mut task_outputs: HashMap<String, Vec<Value>> = HashMap::new();
 
+                // For scattered calls, determine the binding name
+                // For namespaced calls like "hello.hello_task", the output should be bound as "hello_task.matches"
+                // to match WDL conventions where the namespace is stripped from output references
+                let binding_call_name = if let Some(alias) = &call.alias {
+                    alias.clone()
+                } else if call.task.contains('.') {
+                    // For namespaced calls, use just the task name part
+                    call.task.split('.').next_back().unwrap().to_string()
+                } else {
+                    call.task.clone()
+                };
+
+                // The task results are stored using the full call name with index
+                let storage_call_name = if let Some(alias) = &call.alias {
+                    alias.clone()
+                } else {
+                    call.task.clone()
+                };
+
                 // Collect outputs from each iteration
                 for i in 0..num_iterations {
-                    let indexed_name =
-                        format!("{}_{}", call.alias.as_ref().unwrap_or(&call.task), i);
+                    // The key format matches what execute_scatter creates: "{name}_{index}"
+                    let indexed_name = format!("{}_{}", storage_call_name, i);
+
                     if let Some(task_result) = context.task_results.get(&indexed_name) {
                         // Collect each output field
                         for output in task_result.outputs.iter() {
@@ -546,13 +564,9 @@ impl WorkflowEngine {
                     }
                 }
 
-                // Create array bindings for task outputs
+                // Create array bindings for task outputs using the binding name (not storage name)
                 for (output_name, values) in task_outputs {
-                    let qualified_name = format!(
-                        "{}.{}",
-                        call.alias.as_ref().unwrap_or(&call.task),
-                        output_name
-                    );
+                    let qualified_name = format!("{}.{}", binding_call_name, output_name);
 
                     // Determine array element type
                     let element_type = if let Some(first_value) = values.first() {

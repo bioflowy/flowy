@@ -165,9 +165,9 @@ impl ExpressionBase for Expression {
                     }
                 }
 
-                Err(WdlError::validation_error(
+                Err(WdlError::unknown_identifier_error(
                     HasSourcePosition::source_position(self).clone(),
-                    format!("Unknown identifier: {}", name),
+                    name.clone(),
                 ))
             }
 

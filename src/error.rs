@@ -578,6 +578,16 @@ impl WdlError {
         Self::WorkflowValidationError { message, pos }
     }
 
+    /// Create an unknown identifier error with position information
+    pub fn unknown_identifier_error(pos: SourcePosition, identifier: String) -> Self {
+        Self::UnknownIdentifier {
+            pos,
+            message: identifier,
+            source_text: None,
+            declared_wdl_version: None,
+        }
+    }
+
     /// Create a file system error
     pub fn file_system_error(
         message: String,
