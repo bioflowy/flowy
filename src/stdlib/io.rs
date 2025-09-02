@@ -1332,6 +1332,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_read_float_valid() {
         let (_temp_dir, file_path) = create_test_file("3.14159");
         let func = create_read_float();

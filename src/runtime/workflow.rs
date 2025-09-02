@@ -4,7 +4,7 @@
 //! task execution and managing data flow between tasks.
 
 use crate::env::Bindings;
-use crate::error::SourcePosition;
+use crate::error::{SourcePosition, WdlError};
 use crate::expr::ExpressionBase;
 use crate::runtime::config::Config;
 use crate::runtime::error::{RuntimeError, RuntimeResult};
@@ -891,11 +891,29 @@ impl WorkflowEngine {
                 if let Some(output_expr) = &output_decl.expr {
                     let output_value =
                         output_expr.eval(&context.bindings, stdlib).map_err(|e| {
-                            RuntimeError::run_failed(
-                                format!("Failed to evaluate workflow output: {}", output_decl.name),
-                                e,
-                                Some(output_expr.pos().clone()),
-                            )
+                            // Preserve the original error message if it's more specific
+                            match &e {
+                                WdlError::Validation { message, .. }
+                                    if message.starts_with("Unknown function:") =>
+                                {
+                                    RuntimeError::run_failed(
+                                        format!(
+                                            "Failed to evaluate workflow output '{}': {}",
+                                            output_decl.name, message
+                                        ),
+                                        e,
+                                        Some(output_expr.pos().clone()),
+                                    )
+                                }
+                                _ => RuntimeError::run_failed(
+                                    format!(
+                                        "Failed to evaluate workflow output: {}",
+                                        output_decl.name
+                                    ),
+                                    e,
+                                    Some(output_expr.pos().clone()),
+                                ),
+                            }
                         })?;
 
                     // Try to coerce the output value to the expected type

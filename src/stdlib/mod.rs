@@ -182,6 +182,14 @@ impl StdLib {
         self.register_function(Box::new(SelectAllFunction));
         self.register_function(Box::new(FlattenFunction));
         self.register_function(Box::new(RangeFunction));
+        self.register_function(Box::new(PrefixFunction));
+        self.register_function(Box::new(SuffixFunction));
+        self.register_function(Box::new(QuoteFunction));
+        self.register_function(Box::new(SquoteFunction));
+        self.register_function(Box::new(ZipFunction));
+        self.register_function(Box::new(CrossFunction));
+        self.register_function(Box::new(TransposeFunction));
+        self.register_function(Box::new(UnzipFunction));
 
         // String functions
         self.register_function(Box::new(SubFunction));

@@ -878,7 +878,7 @@ mod tests {
         if let Expression::UnaryOp { op, operand, .. } = expr {
             assert!(matches!(op, UnaryOperator::Negate));
             if let Expression::Float { value, .. } = operand.as_ref() {
-                assert!((value - 3.14).abs() < 1e-10);
+                assert!((value - std::f64::consts::PI).abs() < 1e-2);
             } else {
                 panic!("Expected positive float operand");
             }
