@@ -540,7 +540,8 @@ impl TaskContext {
         let mut outputs = Bindings::new();
 
         // Create evaluation environment with inputs for output expressions
-        let eval_env = self.inputs.clone();
+        // This environment will be extended with each output variable as it's evaluated
+        let mut eval_env = self.inputs.clone();
 
         // Create task output-specific standard library that includes stdout/stderr functions
         let stdlib =
@@ -582,7 +583,10 @@ impl TaskContext {
                     });
                 }
 
-                outputs = outputs.bind(output_decl.name.clone(), output_value, None);
+                // Add this output to both the final outputs and the evaluation environment
+                // This allows subsequent outputs to reference previously evaluated outputs
+                outputs = outputs.bind(output_decl.name.clone(), output_value.clone(), None);
+                eval_env = eval_env.bind(output_decl.name.clone(), output_value, None);
             } else {
                 return Err(RuntimeError::WorkflowValidationError {
                     message: format!(
