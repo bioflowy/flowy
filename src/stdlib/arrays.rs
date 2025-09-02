@@ -51,20 +51,27 @@ impl Function for SelectFirstFunction {
     }
 
     fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
+        if args.is_empty() || args.len() > 2 {
             return Err(WdlError::ArgumentCountMismatch {
                 function: self.name().to_string(),
-                expected: 1,
+                expected: if args.is_empty() { 1 } else { 2 },
                 actual: args.len(),
             });
         }
 
         if let Type::Array { item_type, .. } = &args[0] {
-            // Return the non-optional version of the item type
-            Ok(item_type.clone().with_optional(false))
+            if args.len() == 2 {
+                // With fallback argument, return the common type of array items and fallback
+                let fallback_type = &args[1];
+                // For simplicity, return the fallback type (should be same as item type)
+                Ok(fallback_type.clone())
+            } else {
+                // Return the non-optional version of the item type
+                Ok(item_type.clone().with_optional(false))
+            }
         } else {
             Err(WdlError::RuntimeError {
-                message: "select_first() expects Array argument".to_string(),
+                message: "select_first() expects Array as first argument".to_string(),
             })
         }
     }
@@ -76,12 +83,19 @@ impl Function for SelectFirstFunction {
                     return Ok(value.clone());
                 }
             }
-            Err(WdlError::RuntimeError {
-                message: "select_first() found no non-null values".to_string(),
-            })
+
+            // No non-null values found, check if fallback is provided
+            if args.len() == 2 {
+                Ok(args[1].clone())
+            } else {
+                Err(WdlError::RuntimeError {
+                    message: "select_first() found no non-null values and no fallback provided"
+                        .to_string(),
+                })
+            }
         } else {
             Err(WdlError::RuntimeError {
-                message: "select_first() expects Array argument".to_string(),
+                message: "select_first() expects Array as first argument".to_string(),
             })
         }
     }
@@ -859,6 +873,104 @@ impl Function for UnzipFunction {
         } else {
             Err(WdlError::RuntimeError {
                 message: "unzip() expects Array argument".to_string(),
+            })
+        }
+    }
+}
+
+/// Get keys from a map
+pub struct KeysFunction;
+
+impl Function for KeysFunction {
+    fn name(&self) -> &str {
+        "keys"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        if let Type::Map { key_type, .. } = &args[0] {
+            Ok(Type::array(key_type.as_ref().clone(), false, false))
+        } else {
+            Err(WdlError::RuntimeError {
+                message: "keys() expects Map argument".to_string(),
+            })
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if let Value::Map {
+            pairs, wdl_type, ..
+        } = &args[0]
+        {
+            let keys: Vec<Value> = pairs.iter().map(|(k, _)| k.clone()).collect();
+
+            // Get key type from map type
+            let key_type = if let Type::Map { key_type, .. } = wdl_type {
+                key_type.as_ref().clone()
+            } else {
+                Type::any()
+            };
+
+            Ok(Value::array(key_type, keys))
+        } else {
+            Err(WdlError::RuntimeError {
+                message: "keys() expects Map argument".to_string(),
+            })
+        }
+    }
+}
+
+/// Get values from a map
+pub struct ValuesFunction;
+
+impl Function for ValuesFunction {
+    fn name(&self) -> &str {
+        "values"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        if let Type::Map { value_type, .. } = &args[0] {
+            Ok(Type::array(value_type.as_ref().clone(), false, false))
+        } else {
+            Err(WdlError::RuntimeError {
+                message: "values() expects Map argument".to_string(),
+            })
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if let Value::Map {
+            pairs, wdl_type, ..
+        } = &args[0]
+        {
+            let values: Vec<Value> = pairs.iter().map(|(_, v)| v.clone()).collect();
+
+            // Get value type from map type
+            let value_type = if let Type::Map { value_type, .. } = wdl_type {
+                value_type.as_ref().clone()
+            } else {
+                Type::any()
+            };
+
+            Ok(Value::array(value_type, values))
+        } else {
+            Err(WdlError::RuntimeError {
+                message: "values() expects Map argument".to_string(),
             })
         }
     }

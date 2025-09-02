@@ -191,6 +191,10 @@ impl StdLib {
         self.register_function(Box::new(TransposeFunction));
         self.register_function(Box::new(UnzipFunction));
 
+        // Map functions
+        self.register_function(Box::new(KeysFunction));
+        self.register_function(Box::new(ValuesFunction));
+
         // String functions
         self.register_function(Box::new(SubFunction));
         self.register_function(Box::new(BasenameFunction));

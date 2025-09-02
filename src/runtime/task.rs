@@ -315,7 +315,7 @@ pub mod utils {
         let temp_file = temp_dir.join(filename);
 
         let mut file = std::fs::File::create(&temp_file).map_err(|e| {
-            RuntimeError::filesystem_error(
+            RuntimeError::file_system_error(
                 "Failed to create temporary file".to_string(),
                 Some(temp_file.display().to_string()),
                 e,
@@ -323,7 +323,7 @@ pub mod utils {
         })?;
 
         file.write_all(content.as_bytes()).map_err(|e| {
-            RuntimeError::filesystem_error(
+            RuntimeError::file_system_error(
                 "Failed to write temporary file".to_string(),
                 Some(temp_file.display().to_string()),
                 e,

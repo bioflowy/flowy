@@ -43,6 +43,8 @@ pub struct TaskContext {
     pub start_time: Option<Instant>,
     /// Resource limits for this task
     pub resource_limits: ResourceLimits,
+    /// Evaluation environment including postinput declarations
+    pub eval_env: Option<Bindings<Value>>,
 }
 
 /// Result of command execution
@@ -100,6 +102,7 @@ impl TaskContext {
             env_vars,
             start_time: None,
             resource_limits: config.resources,
+            eval_env: None,
         })
     }
 
@@ -174,7 +177,7 @@ impl TaskContext {
     }
 
     /// Generate the command string from the task's command template
-    fn generate_command(&self) -> RuntimeResult<String> {
+    fn generate_command(&mut self) -> RuntimeResult<String> {
         let command_expr = &self.task.command;
 
         // Create evaluation environment with inputs and built-in variables
@@ -264,6 +267,8 @@ impl TaskContext {
         })?;
 
         if let Value::String { value: cmd, .. } = command_value {
+            // Save the complete evaluation environment for use in output evaluation
+            self.eval_env = Some(eval_env);
             eprintln!("Generated command: {}", cmd);
             Ok(cmd)
         } else {
@@ -306,7 +311,7 @@ impl TaskContext {
         // TODO: Implement actual resource limiting using cgroups or similar
 
         let child = cmd.spawn().map_err(|e| {
-            RuntimeError::filesystem_error(
+            RuntimeError::file_system_error(
                 "Failed to spawn command".to_string(),
                 Some(script_path.display().to_string()),
                 e,
@@ -461,7 +466,7 @@ impl TaskContext {
 
         // Convert paths to file URLs
         let stdout_url = url::Url::from_file_path(&stdout_path).map_err(|_| {
-            RuntimeError::filesystem_error(
+            RuntimeError::file_system_error(
                 "Failed to create stdout URL".to_string(),
                 Some(stdout_path.display().to_string()),
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
@@ -469,7 +474,7 @@ impl TaskContext {
         })?;
 
         let stderr_url = url::Url::from_file_path(&stderr_path).map_err(|_| {
-            RuntimeError::filesystem_error(
+            RuntimeError::file_system_error(
                 "Failed to create stderr URL".to_string(),
                 Some(stderr_path.display().to_string()),
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
@@ -515,7 +520,7 @@ impl TaskContext {
 
                 // Convert paths to file URLs
                 let stdout_url = Url::from_file_path(&stdout_path).map_err(|_| {
-                    RuntimeError::filesystem_error(
+                    RuntimeError::file_system_error(
                         "Failed to create stdout URL".to_string(),
                         Some(stdout_path.display().to_string()),
                         std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
@@ -523,7 +528,7 @@ impl TaskContext {
                 })?;
 
                 let stderr_url = Url::from_file_path(&stderr_path).map_err(|_| {
-                    RuntimeError::filesystem_error(
+                    RuntimeError::file_system_error(
                         "Failed to create stderr URL".to_string(),
                         Some(stderr_path.display().to_string()),
                         std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
@@ -536,7 +541,7 @@ impl TaskContext {
                     stderr_path: stderr_url,
                 })
             }
-            Ok(Err(e)) => Err(RuntimeError::filesystem_error(
+            Ok(Err(e)) => Err(RuntimeError::file_system_error(
                 "Process execution failed".to_string(),
                 None,
                 e,
@@ -558,7 +563,7 @@ impl TaskContext {
 
         // Create evaluation environment with inputs for output expressions
         // This environment will be extended with each output variable as it's evaluated
-        let mut eval_env = self.inputs.clone();
+        let mut eval_env = self.eval_env.as_ref().unwrap_or(&self.inputs).clone();
 
         // Create task output-specific standard library that includes stdout/stderr functions
         let stdlib =
@@ -566,14 +571,7 @@ impl TaskContext {
 
         for output_decl in &self.task.outputs {
             if let Some(output_expr) = &output_decl.expr {
-                let output_value = output_expr.eval(&eval_env, &stdlib).map_err(|e| {
-                    eprintln!("Error evaluating output '{}': {}", output_decl.name, e);
-                    RuntimeError::run_failed(
-                        format!("Failed to evaluate output: {}", output_decl.name),
-                        e,
-                        Some(output_expr.pos().clone()),
-                    )
-                })?;
+                let output_value = output_expr.eval(&eval_env, &stdlib)?;
 
                 // Try to coerce the output value to the expected type
                 let expected_type = &output_decl.decl_type;
@@ -1059,7 +1057,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
 
-        let context = TaskContext::new(task, inputs, config, workflow_dir, "test_run").unwrap();
+        let mut context = TaskContext::new(task, inputs, config, workflow_dir, "test_run").unwrap();
         let command = context.generate_command();
         assert!(command.is_ok());
 
@@ -1205,7 +1203,7 @@ mod tests {
 
         // Create task context with empty runtime inputs (no values provided)
         let runtime_inputs = Bindings::new();
-        let context =
+        let mut context =
             TaskContext::new(task, runtime_inputs, config, workflow_dir, "test_run").unwrap();
 
         // This should fail currently because input defaults aren't evaluated

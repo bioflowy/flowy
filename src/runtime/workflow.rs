@@ -259,17 +259,7 @@ impl WorkflowEngine {
                 if let Some(input_expr) = &input_decl.expr {
                     // Evaluate default value if input not provided
                     if !context.bindings.has_binding(&input_decl.name) {
-                        let default_value =
-                            input_expr.eval(&context.bindings, &stdlib).map_err(|e| {
-                                RuntimeError::run_failed(
-                                    format!(
-                                        "Failed to evaluate default input: {}",
-                                        input_decl.name
-                                    ),
-                                    e,
-                                    Some(input_decl.pos.clone()),
-                                )
-                            })?;
+                        let default_value = input_expr.eval(&context.bindings, &stdlib)?;
                         context.bindings =
                             context
                                 .bindings
@@ -316,13 +306,7 @@ impl WorkflowEngine {
             WorkflowElement::Declaration(decl) => {
                 // Execute variable declaration
                 if let Some(expr) = &decl.expr {
-                    let value = expr.eval(&context.bindings, stdlib).map_err(|e| {
-                        RuntimeError::run_failed(
-                            format!("Failed to evaluate declaration: {}", decl.name),
-                            e,
-                            Some(decl.pos.clone()),
-                        )
-                    })?;
+                    let value = expr.eval(&context.bindings, stdlib)?;
                     context.bindings = context.bindings.bind(decl.name.clone(), value, None);
                 }
             }
@@ -342,13 +326,7 @@ impl WorkflowEngine {
         let mut call_inputs = Bindings::new();
 
         for (input_name, input_expr) in &call.inputs {
-            let input_value = input_expr.eval(&context.bindings, stdlib).map_err(|e| {
-                RuntimeError::run_failed(
-                    format!("Failed to evaluate call input: {}", input_name),
-                    e,
-                    Some(input_expr.pos().clone()),
-                )
-            })?;
+            let input_value = input_expr.eval(&context.bindings, stdlib)?;
             call_inputs = call_inputs.bind(input_name.clone(), input_value, None);
         }
 
@@ -401,24 +379,18 @@ impl WorkflowEngine {
         stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate scatter collection
-        let collection_value = scatter.expr.eval(&context.bindings, stdlib).map_err(|e| {
-            RuntimeError::run_failed(
-                "Failed to evaluate scatter collection".to_string(),
-                e,
-                Some(scatter.expr.pos().clone()),
-            )
-        })?;
+        let collection_value = scatter.expr.eval(&context.bindings, stdlib)?;
 
         // Extract array values
         let array_values = match collection_value {
             Value::Array { values, .. } => values,
             _ => {
-                return Err(RuntimeError::OutputError {
-                    message: "Scatter collection must be an array".to_string(),
-                    expected_type: "Array".to_string(),
-                    actual: format!("{:?}", collection_value.wdl_type()),
-                    pos: Some(scatter.expr.pos().clone()),
-                });
+                return Err(WdlError::output_error(
+                    "Scatter collection must be an array".to_string(),
+                    "Array".to_string(),
+                    format!("{:?}", collection_value.wdl_type()),
+                    Some(scatter.expr.pos().clone()),
+                ));
             }
         };
 
@@ -596,28 +568,19 @@ impl WorkflowEngine {
         stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<()> {
         // Evaluate condition
-        let condition_value = conditional
-            .expr
-            .eval(&context.bindings, stdlib)
-            .map_err(|e| {
-                RuntimeError::run_failed(
-                    "Failed to evaluate conditional condition".to_string(),
-                    e,
-                    Some(conditional.expr.pos().clone()),
-                )
-            })?;
+        let condition_value = conditional.expr.eval(&context.bindings, stdlib)?;
 
         // Check if condition is true
         let should_execute = match condition_value {
             Value::Boolean { value, .. } => value,
             Value::Null => false,
             _ => {
-                return Err(RuntimeError::OutputError {
-                    message: "Conditional condition must be Boolean or None".to_string(),
-                    expected_type: "Boolean".to_string(),
-                    actual: format!("{:?}", condition_value.wdl_type()),
-                    pos: Some(conditional.expr.pos().clone()),
-                });
+                return Err(WdlError::output_error(
+                    "Conditional condition must be Boolean or None".to_string(),
+                    "Boolean".to_string(),
+                    format!("{:?}", condition_value.wdl_type()),
+                    Some(conditional.expr.pos().clone()),
+                ));
             }
         };
 
@@ -889,56 +852,28 @@ impl WorkflowEngine {
         if !workflow.outputs.is_empty() {
             for output_decl in &workflow.outputs {
                 if let Some(output_expr) = &output_decl.expr {
-                    let output_value =
-                        output_expr.eval(&context.bindings, stdlib).map_err(|e| {
-                            // Preserve the original error message if it's more specific
-                            match &e {
-                                WdlError::Validation { message, .. }
-                                    if message.starts_with("Unknown function:") =>
-                                {
-                                    RuntimeError::run_failed(
-                                        format!(
-                                            "Failed to evaluate workflow output '{}': {}",
-                                            output_decl.name, message
-                                        ),
-                                        e,
-                                        Some(output_expr.pos().clone()),
-                                    )
-                                }
-                                _ => RuntimeError::run_failed(
-                                    format!(
-                                        "Failed to evaluate workflow output: {}",
-                                        output_decl.name
-                                    ),
-                                    e,
-                                    Some(output_expr.pos().clone()),
-                                ),
-                            }
-                        })?;
+                    let output_value = output_expr.eval(&context.bindings, stdlib)?;
 
                     // Try to coerce the output value to the expected type
                     let expected_type = &output_decl.decl_type;
                     let output_value = output_value.coerce(expected_type).map_err(|_e| {
-                        RuntimeError::OutputError {
-                            message: format!(
+                        WdlError::output_error(
+                            format!(
                                 "Cannot coerce workflow output '{}' to expected type",
                                 output_decl.name
                             ),
-                            expected_type: format!("{:?}", expected_type),
-                            actual: format!("{:?}", output_value.wdl_type()),
-                            pos: Some(output_decl.pos.clone()),
-                        }
+                            format!("{:?}", expected_type),
+                            format!("{:?}", output_value.wdl_type()),
+                            Some(output_decl.pos.clone()),
+                        )
                     })?;
 
                     outputs = outputs.bind(output_decl.name.clone(), output_value, None);
                 } else {
-                    return Err(RuntimeError::WorkflowValidationError {
-                        message: format!(
-                            "Workflow output missing expression: {}",
-                            output_decl.name
-                        ),
-                        pos: output_decl.pos.clone(),
-                    });
+                    return Err(WdlError::workflow_validation_error(
+                        format!("Workflow output missing expression: {}", output_decl.name),
+                        output_decl.pos.clone(),
+                    ));
                 }
             }
         }

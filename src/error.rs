@@ -305,6 +305,104 @@ pub enum WdlError {
     /// Runtime error
     #[error("Runtime error: {message}")]
     RuntimeError { message: String },
+
+    // Runtime execution errors
+    /// Task execution failed
+    #[error("Task execution failed: {message}")]
+    RunFailed {
+        message: String,
+        cause: Option<Box<dyn std::error::Error + Send + Sync>>,
+        pos: Option<SourcePosition>,
+    },
+
+    /// Command execution failed
+    #[error("Command failed: {command}")]
+    CommandFailed {
+        command: String,
+        exit_status: Option<std::process::ExitStatus>,
+        stdout: String,
+        stderr: String,
+        working_dir: String,
+    },
+
+    /// Task was terminated by signal
+    #[error("Task terminated by signal {signal}: {command}")]
+    Terminated { signal: i32, command: String },
+
+    /// Task was interrupted by user
+    #[error("Task interrupted: {reason}")]
+    Interrupted { reason: String },
+
+    /// Task timeout
+    #[error("Task timeout after {timeout:?}: {task_name}")]
+    TaskTimeout {
+        timeout: std::time::Duration,
+        task_name: String,
+        command: String,
+    },
+
+    /// Output validation failed
+    #[error("Output validation failed: {message}")]
+    OutputError {
+        message: String,
+        expected_type: String,
+        actual: String,
+        pos: Option<SourcePosition>,
+    },
+
+    /// File system operation failed
+    #[error("File system error: {message}")]
+    FileSystemError {
+        message: String,
+        path: Option<String>,
+        io_error: std::io::Error,
+    },
+
+    /// Download failed
+    #[error("Download failed: {url}")]
+    DownloadFailed {
+        url: String,
+        message: String,
+        status_code: Option<u16>,
+    },
+
+    /// Container operation failed
+    #[error("Container error: {message}")]
+    ContainerError {
+        message: String,
+        container_id: Option<String>,
+        cause: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    /// Cache operation failed
+    #[error("Cache error: {message}")]
+    CacheError {
+        message: String,
+        cache_key: Option<String>,
+        cause: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    /// Workflow validation failed at runtime
+    #[error("Workflow validation error: {message}")]
+    WorkflowValidationError {
+        message: String,
+        pos: SourcePosition,
+    },
+
+    /// Resource limit exceeded
+    #[error("Resource limit exceeded: {resource}")]
+    ResourceLimitExceeded {
+        resource: String,
+        limit: String,
+        usage: String,
+    },
+
+    /// Configuration error
+    #[error("Configuration error: {message}")]
+    ConfigurationError {
+        message: String,
+        key: Option<String>,
+    },
 }
 
 impl WdlError {
@@ -334,6 +432,9 @@ impl WdlError {
             WdlError::OutOfBounds { pos, .. } => Some(pos),
             WdlError::EmptyArray { pos, .. } => Some(pos),
             WdlError::NullValue { pos, .. } => Some(pos),
+            WdlError::RunFailed { pos, .. } => pos.as_ref(),
+            WdlError::OutputError { pos, .. } => pos.as_ref(),
+            WdlError::WorkflowValidationError { pos, .. } => Some(pos),
             _ => None,
         }
     }
@@ -423,6 +524,70 @@ impl WdlError {
             count,
             source_text: None,
             declared_wdl_version: None,
+        }
+    }
+
+    // Runtime error helper methods
+    /// Create a run failed error
+    pub fn run_failed<E: std::error::Error + Send + Sync + 'static>(
+        message: String,
+        cause: E,
+        pos: Option<SourcePosition>,
+    ) -> Self {
+        Self::RunFailed {
+            message,
+            cause: Some(Box::new(cause)),
+            pos,
+        }
+    }
+
+    /// Create a command failed error
+    pub fn command_failed(
+        command: String,
+        exit_status: Option<std::process::ExitStatus>,
+        stdout: String,
+        stderr: String,
+        working_dir: String,
+    ) -> Self {
+        Self::CommandFailed {
+            command,
+            exit_status,
+            stdout,
+            stderr,
+            working_dir,
+        }
+    }
+
+    /// Create an output error
+    pub fn output_error(
+        message: String,
+        expected_type: String,
+        actual: String,
+        pos: Option<SourcePosition>,
+    ) -> Self {
+        Self::OutputError {
+            message,
+            expected_type,
+            actual,
+            pos,
+        }
+    }
+
+    /// Create a workflow validation error
+    pub fn workflow_validation_error(message: String, pos: SourcePosition) -> Self {
+        Self::WorkflowValidationError { message, pos }
+    }
+
+    /// Create a file system error
+    pub fn file_system_error(
+        message: String,
+        path: Option<String>,
+        io_error: std::io::Error,
+    ) -> Self {
+        Self::FileSystemError {
+            message,
+            path,
+            io_error,
         }
     }
 }
