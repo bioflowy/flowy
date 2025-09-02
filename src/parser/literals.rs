@@ -99,9 +99,8 @@ pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression>
             let content = s.clone();
             stream.next();
 
-            // For now, treat as simple string without interpolation
-            // TODO: Parse string interpolation if needed
-            let parts = vec![StringPart::Text(content)];
+            // Parse string content for interpolation
+            let parts = parse_string_interpolation(&content)?;
             Ok(Expression::string(pos, parts))
         }
         _ => Err(WdlError::syntax_error(
@@ -111,6 +110,103 @@ pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression>
             None,
         )),
     }
+}
+
+/// Parse string content for interpolation placeholders
+fn parse_string_interpolation(content: &str) -> ParseResult<Vec<StringPart>> {
+    let mut parts = Vec::new();
+    let mut current_text = String::new();
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '~' && chars.peek() == Some(&'{') {
+            // Found placeholder start
+            chars.next(); // consume '{'
+
+            // Save any accumulated text
+            if !current_text.is_empty() {
+                parts.push(StringPart::Text(current_text.clone()));
+                current_text.clear();
+            }
+
+            // Extract placeholder content
+            let mut placeholder_content = String::new();
+            let mut brace_count = 1;
+
+            for inner_ch in chars.by_ref() {
+                if inner_ch == '{' {
+                    brace_count += 1;
+                    placeholder_content.push(inner_ch);
+                } else if inner_ch == '}' {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        break; // Found matching closing brace
+                    } else {
+                        placeholder_content.push(inner_ch);
+                    }
+                } else {
+                    placeholder_content.push(inner_ch);
+                }
+            }
+
+            if brace_count != 0 {
+                return Err(WdlError::syntax_error(
+                    SourcePosition::new("string".to_string(), "string".to_string(), 1, 1, 1, 1),
+                    "Unclosed placeholder in string literal".to_string(),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
+
+            // Parse the placeholder expression
+            let mut placeholder_stream =
+                crate::parser::token_stream::TokenStream::new(&placeholder_content, "1.0")
+                    .map_err(|e| {
+                        WdlError::syntax_error(
+                            SourcePosition::new(
+                                "string".to_string(),
+                                "string".to_string(),
+                                1,
+                                1,
+                                1,
+                                1,
+                            ),
+                            format!("Failed to parse placeholder content: {}", e),
+                            "1.0".to_string(),
+                            None,
+                        )
+                    })?;
+
+            let expr = crate::parser::expressions::parse_expression(&mut placeholder_stream)
+                .map_err(|e| {
+                    WdlError::syntax_error(
+                        SourcePosition::new("string".to_string(), "string".to_string(), 1, 1, 1, 1),
+                        format!("Invalid expression in placeholder: {}", e),
+                        "1.0".to_string(),
+                        None,
+                    )
+                })?;
+
+            parts.push(StringPart::Placeholder {
+                expr: Box::new(expr),
+                options: std::collections::HashMap::new(),
+            });
+        } else {
+            current_text.push(ch);
+        }
+    }
+
+    // Add any remaining text
+    if !current_text.is_empty() {
+        parts.push(StringPart::Text(current_text));
+    }
+
+    // If no parts were added, add an empty text part
+    if parts.is_empty() {
+        parts.push(StringPart::Text(String::new()));
+    }
+
+    Ok(parts)
 }
 
 /// Parse any literal expression
@@ -323,5 +419,123 @@ mod tests {
         let mut stream = TokenStream::new("'hello'", "1.0").unwrap();
         let result = parse_literal(&mut stream);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_string_interpolation_simple() {
+        // Test basic string interpolation
+        let mut stream = TokenStream::new("\"Hello ~{name}\"", "1.0").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            // Should be: "Hello ", placeholder
+            assert_eq!(parts.len(), 2);
+            assert!(matches!(parts[0], StringPart::Text(ref s) if s == "Hello "));
+            assert!(matches!(parts[1], StringPart::Placeholder { .. }));
+        } else {
+            panic!("Expected String expression");
+        }
+    }
+
+    #[test]
+    fn test_string_interpolation_multiple_variables() {
+        // Test multiple variables in one string
+        let mut stream = TokenStream::new("\"~{greeting} ~{name}, how are you?\"", "1.0").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            // Should be: placeholder, " ", placeholder, ", how are you?"
+            assert_eq!(parts.len(), 4);
+            assert!(matches!(parts[0], StringPart::Placeholder { .. }));
+            assert!(matches!(parts[1], StringPart::Text(ref s) if s == " "));
+            assert!(matches!(parts[2], StringPart::Placeholder { .. }));
+            assert!(matches!(parts[3], StringPart::Text(ref s) if s == ", how are you?"));
+        } else {
+            panic!("Expected String expression");
+        }
+    }
+
+    #[test]
+    fn test_string_interpolation_no_placeholders() {
+        // Test string without placeholders (should still work)
+        let mut stream = TokenStream::new("\"Just plain text\"", "1.0").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            assert_eq!(parts.len(), 1);
+            assert!(matches!(parts[0], StringPart::Text(ref s) if s == "Just plain text"));
+        } else {
+            panic!("Expected String expression");
+        }
+    }
+
+    #[test]
+    fn test_string_interpolation_only_placeholder() {
+        // Test string with only a placeholder
+        let mut stream = TokenStream::new("\"~{variable}\"", "1.0").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            assert_eq!(parts.len(), 1);
+            assert!(matches!(parts[0], StringPart::Placeholder { .. }));
+        } else {
+            panic!("Expected String expression");
+        }
+    }
+
+    #[test]
+    fn test_string_literal_scatter_reproduction() {
+        use crate::env::Bindings;
+        use crate::types::Type;
+        use crate::value::Value;
+
+        // This test reproduces the scatter bug scenario
+        // When fixed, this should pass
+        let mut stream = TokenStream::new("\"~{salutation} ~{name}\"", "1.0").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+
+        // Create environment with variables
+        let mut env = Bindings::new();
+        env = env.bind(
+            "salutation".to_string(),
+            Value::String {
+                value: "Hello".to_string(),
+                wdl_type: Type::String { optional: false },
+            },
+            None,
+        );
+        env = env.bind(
+            "name".to_string(),
+            Value::String {
+                value: "Joe".to_string(),
+                wdl_type: Type::String { optional: false },
+            },
+            None,
+        );
+
+        // Evaluate the expression
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+        let result = expr.eval(&env, &stdlib);
+
+        // After the fix, this should evaluate to "Hello Joe"
+        match result {
+            Ok(Value::String { value, .. }) => {
+                assert_eq!(value, "Hello Joe");
+            }
+            _ => {
+                panic!("String interpolation should work now");
+            }
+        }
     }
 }
