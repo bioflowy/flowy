@@ -8,7 +8,7 @@
 #![allow(clippy::unneeded_struct_pattern)]
 
 use miniwdl_rust::{
-    parser, runtime,
+    load, runtime,
     tree::{Document, Task, Workflow},
     Bindings, Type, Value, WdlError,
 };
@@ -264,14 +264,20 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     };
 
     // Read WDL file
-    let wdl_content = fs::read_to_string(&wdl_file).map_err(|e| WdlError::RuntimeError {
+    let _wdl_content = fs::read_to_string(&wdl_file).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to read WDL file: {}", e),
     })?;
 
-    // Parse WDL document with filename for better error reporting
+    // Load WDL document with imports and type checking
     eprintln!("Parsing {}...", wdl_file.display());
     let filename = wdl_file.to_string_lossy();
-    let document = parser::parse_document_with_filename(&wdl_content, "1.2", &filename)?;
+    
+    // Get parent directory for import resolution
+    let parent_dir_str = wdl_file.parent().map(|p| p.to_string_lossy().into_owned());
+    let search_paths: Option<Vec<&str>> = parent_dir_str.as_ref().map(|p| vec![p.as_str()]);
+    let search_paths_slice = search_paths.as_ref().map(|v| v.as_slice());
+    
+    let document = load(&filename, search_paths_slice, true, 10)?;
 
     // Load inputs if provided (with type information from document)
     let inputs = if let Some(input_file) = input_file {

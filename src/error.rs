@@ -590,6 +590,36 @@ impl WdlError {
             io_error,
         }
     }
+
+    /// Create a circular dependencies error
+    pub fn circular_dependencies_error(pos: SourcePosition, name: String) -> Self {
+        WdlError::CircularDependencies {
+            pos,
+            name,
+            source_text: None,
+            declared_wdl_version: None,
+        }
+    }
+
+    /// Create a no such member error
+    pub fn no_such_member_error(pos: SourcePosition, member: String) -> Self {
+        WdlError::NoSuchMember {
+            pos,
+            member,
+            source_text: None,
+            declared_wdl_version: None,
+        }
+    }
+
+    /// Create a multiple definitions error
+    pub fn multiple_definitions_error(pos: SourcePosition, message: String) -> Self {
+        WdlError::MultipleDefinitions {
+            pos,
+            message,
+            source_text: None,
+            declared_wdl_version: None,
+        }
+    }
 }
 
 /// Context for collecting multiple validation errors.

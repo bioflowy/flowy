@@ -120,7 +120,7 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
     };
 
     // Parse optional aliases
-    let mut aliases = HashMap::new();
+    let mut aliases = Vec::new();
     if stream.peek_token() == Some(Token::LeftBrace) {
         stream.next(); // consume {
 
@@ -171,7 +171,7 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
                 }
             };
 
-            aliases.insert(alias_name, target_name);
+            aliases.push((alias_name, target_name));
 
             // Optional comma
             if stream.peek_token() == Some(Token::Comma) {
@@ -187,13 +187,7 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
         stream.expect(Token::RightBrace)?;
     }
 
-    Ok(ImportDoc {
-        pos,
-        uri,
-        namespace,
-        aliases,
-        doc: None, // Will be resolved later
-    })
+    Ok(ImportDoc::new(pos, uri, namespace, aliases))
 }
 
 /// Parse a struct definition: struct StructName { field: Type, ... }
@@ -484,7 +478,7 @@ mod tests {
 
         let import = result.unwrap();
         assert_eq!(import.uri, "lib.wdl");
-        assert_eq!(import.namespace, Some("lib".to_string()));
+        assert_eq!(import.namespace, "lib".to_string());
         assert!(import.aliases.is_empty());
     }
 
@@ -501,10 +495,10 @@ mod tests {
 
         let import = result.unwrap();
         assert_eq!(import.uri, "lib.wdl");
-        assert_eq!(import.namespace, None);
+        assert_eq!(import.namespace, "lib".to_string()); // Should be inferred from filename
         assert_eq!(import.aliases.len(), 2);
-        assert_eq!(import.aliases.get("task1"), Some(&"MyTask".to_string()));
-        assert_eq!(import.aliases.get("task2"), Some(&"OtherTask".to_string()));
+        assert!(import.aliases.contains(&("task1".to_string(), "MyTask".to_string())));
+        assert!(import.aliases.contains(&("task2".to_string(), "OtherTask".to_string())));
     }
 
     #[test]
@@ -582,11 +576,11 @@ mod tests {
 
         // Check first import
         assert_eq!(doc.imports[0].uri, "utils.wdl");
-        assert_eq!(doc.imports[0].namespace, Some("utils".to_string()));
+        assert_eq!(doc.imports[0].namespace, "utils".to_string());
 
         // Check second import
         assert_eq!(doc.imports[1].uri, "types.wdl");
-        assert_eq!(doc.imports[1].namespace, None);
+        assert_eq!(doc.imports[1].namespace, "types".to_string()); // Should be inferred from filename
         assert_eq!(doc.imports[1].aliases.len(), 1);
 
         // Check struct

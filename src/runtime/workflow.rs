@@ -330,8 +330,19 @@ impl WorkflowEngine {
             call_inputs = call_inputs.bind(input_name.clone(), input_value, None);
         }
 
-        // Find the task definition from the document
-        let task = if let Some(ref document) = self.document {
+        // Use resolved callee if available, otherwise fall back to document search
+        let task = if let Some(ref callee) = call.callee {
+            match callee {
+                crate::tree::CalleeRef::Task(task) => task.clone(),
+                crate::tree::CalleeRef::Workflow(_) => {
+                    return Err(RuntimeError::WorkflowValidationError {
+                        message: format!("Cannot execute workflow '{}' as a task call", call.task),
+                        pos: call.pos.clone(),
+                    });
+                }
+            }
+        } else if let Some(ref document) = self.document {
+            // Fall back to old behavior for backwards compatibility
             document
                 .tasks
                 .iter()
@@ -349,7 +360,14 @@ impl WorkflowEngine {
         };
 
         // Execute task
-        let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
+        let call_name = if let Some(alias) = &call.alias {
+            alias.clone()
+        } else if call.task.contains('.') {
+            // For namespaced calls like "lib.hello", use just the task name part "hello"
+            call.task.split('.').last().unwrap().to_string()
+        } else {
+            call.task.clone()
+        };
         let unique_run_id = format!("{}_{}", run_id, call_name);
 
         let task_result =
@@ -644,14 +662,24 @@ impl WorkflowEngine {
                     // Task calls create qualified variable names
                     let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
 
-                    // Find the task definition to get output names
-                    if let Some(ref document) = self.document {
-                        if let Some(task) = document.tasks.iter().find(|t| t.name == call.task) {
-                            // task.outputs is Vec<Declaration>, not Option<Vec<Declaration>>
-                            for output in &task.outputs {
-                                let qualified_name = format!("{}.{}", call_name, output.name);
-                                variables.push(qualified_name);
-                            }
+                    // Find the task definition to get output names using resolved callee
+                    let task_opt = if let Some(ref callee) = call.callee {
+                        match callee {
+                            crate::tree::CalleeRef::Task(task) => Some(task),
+                            crate::tree::CalleeRef::Workflow(_) => None, // Workflows not supported in task calls
+                        }
+                    } else if let Some(ref document) = self.document {
+                        // Fall back to document search
+                        document.tasks.iter().find(|t| t.name == call.task)
+                    } else {
+                        None
+                    };
+
+                    if let Some(task) = task_opt {
+                        // task.outputs is Vec<Declaration>, not Option<Vec<Declaration>>
+                        for output in &task.outputs {
+                            let qualified_name = format!("{}.{}", call_name, output.name);
+                            variables.push(qualified_name);
                         }
                     }
 
@@ -686,13 +714,24 @@ impl WorkflowEngine {
                 WorkflowElement::Call(call) => {
                     let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
 
-                    if let Some(ref document) = self.document {
-                        if let Some(task) = document.tasks.iter().find(|t| t.name == call.task) {
-                            // task.outputs is Vec<Declaration>, not Option<Vec<Declaration>>
-                            for output in &task.outputs {
-                                let qualified_name = format!("{}.{}", call_name, output.name);
-                                variables.push(qualified_name);
-                            }
+                    // Find the task definition to get output names using resolved callee
+                    let task_opt = if let Some(ref callee) = call.callee {
+                        match callee {
+                            crate::tree::CalleeRef::Task(task) => Some(task),
+                            crate::tree::CalleeRef::Workflow(_) => None, // Workflows not supported in task calls
+                        }
+                    } else if let Some(ref document) = self.document {
+                        // Fall back to document search
+                        document.tasks.iter().find(|t| t.name == call.task)
+                    } else {
+                        None
+                    };
+
+                    if let Some(task) = task_opt {
+                        // task.outputs is Vec<Declaration>, not Option<Vec<Declaration>>
+                        for output in &task.outputs {
+                            let qualified_name = format!("{}.{}", call_name, output.name);
+                            variables.push(qualified_name);
                         }
                     }
 
