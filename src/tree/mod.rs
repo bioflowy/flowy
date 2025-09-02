@@ -252,7 +252,7 @@ impl ASTNode for Declaration {
 pub struct Task {
     pub pos: SourcePosition,
     pub name: String,
-    pub inputs: Option<Vec<Declaration>>,
+    pub inputs: Vec<Declaration>,
     pub postinputs: Vec<Declaration>,
     pub command: Expression, // Should be a String expression
     pub outputs: Vec<Declaration>,
@@ -268,7 +268,7 @@ impl Task {
     pub fn new(
         pos: SourcePosition,
         name: String,
-        inputs: Option<Vec<Declaration>>,
+        inputs: Vec<Declaration>,
         postinputs: Vec<Declaration>,
         command: Expression,
         outputs: Vec<Declaration>,
@@ -296,7 +296,7 @@ impl Task {
     pub fn new_with_requirements_hints(
         pos: SourcePosition,
         name: String,
-        inputs: Option<Vec<Declaration>>,
+        inputs: Vec<Declaration>,
         postinputs: Vec<Declaration>,
         command: Expression,
         outputs: Vec<Declaration>,
@@ -326,8 +326,8 @@ impl Task {
     pub fn available_inputs(&self) -> Bindings<&Declaration> {
         let mut bindings = Bindings::new();
 
-        let declarations = if let Some(ref inputs) = self.inputs {
-            inputs
+        let declarations = if !self.inputs.is_empty() {
+            &self.inputs
         } else {
             &self.postinputs
         };
@@ -378,10 +378,8 @@ impl SourceNode for Task {
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
 
-        if let Some(ref inputs) = self.inputs {
-            for input in inputs {
-                children.push(input);
-            }
+        for input in &self.inputs {
+            children.push(input);
         }
 
         for postinput in &self.postinputs {
@@ -888,10 +886,10 @@ impl ASTNode for Conditional {
 pub struct Workflow {
     pub pos: SourcePosition,
     pub name: String,
-    pub inputs: Option<Vec<Declaration>>,
+    pub inputs: Vec<Declaration>,
     pub postinputs: Vec<Declaration>,
     pub body: Vec<WorkflowElement>,
-    pub outputs: Option<Vec<Declaration>>,
+    pub outputs: Vec<Declaration>,
     pub parameter_meta: HashMap<String, serde_json::Value>,
     pub meta: HashMap<String, serde_json::Value>,
     pub effective_wdl_version: String,
@@ -902,10 +900,10 @@ impl Workflow {
     pub fn new(
         pos: SourcePosition,
         name: String,
-        inputs: Option<Vec<Declaration>>,
+        inputs: Vec<Declaration>,
         postinputs: Vec<Declaration>,
         body: Vec<WorkflowElement>,
-        outputs: Option<Vec<Declaration>>,
+        outputs: Vec<Declaration>,
         parameter_meta: HashMap<String, serde_json::Value>,
         meta: HashMap<String, serde_json::Value>,
     ) -> Self {
@@ -946,10 +944,8 @@ impl SourceNode for Workflow {
     fn children(&self) -> Vec<&dyn SourceNode> {
         let mut children: Vec<&dyn SourceNode> = Vec::new();
 
-        if let Some(ref inputs) = self.inputs {
-            for input in inputs {
-                children.push(input);
-            }
+        for input in &self.inputs {
+            children.push(input);
         }
 
         for postinput in &self.postinputs {
@@ -958,10 +954,8 @@ impl SourceNode for Workflow {
 
         // TODO: Add body elements as children
 
-        if let Some(ref outputs) = self.outputs {
-            for output in outputs {
-                children.push(output);
-            }
+        for output in &self.outputs {
+            children.push(output);
         }
 
         children
@@ -1127,7 +1121,7 @@ mod tests {
         let task = Task::new(
             pos.clone(),
             "my_task".to_string(),
-            None,
+            Vec::new(),
             Vec::new(),
             Expression::string_literal(pos.clone(), "echo hello".to_string()),
             Vec::new(),
@@ -1138,7 +1132,7 @@ mod tests {
 
         assert_eq!(task.name, "my_task");
         assert_eq!(task.effective_wdl_version, "1.0");
-        assert!(task.inputs.is_none());
+        assert!(task.inputs.is_empty());
         assert!(task.postinputs.is_empty());
         assert!(task.outputs.is_empty());
     }
@@ -1166,19 +1160,19 @@ mod tests {
         let workflow = Workflow::new(
             pos.clone(),
             "my_workflow".to_string(),
-            None,
             Vec::new(),
             Vec::new(),
-            None,
+            Vec::new(),
+            Vec::new(),
             HashMap::new(),
             HashMap::new(),
         );
 
         assert_eq!(workflow.name, "my_workflow");
         assert_eq!(workflow.effective_wdl_version, "1.0");
-        assert!(workflow.inputs.is_none());
+        assert!(workflow.inputs.is_empty());
         assert!(workflow.body.is_empty());
-        assert!(workflow.outputs.is_none());
+        assert!(workflow.outputs.is_empty());
     }
 
     #[test]

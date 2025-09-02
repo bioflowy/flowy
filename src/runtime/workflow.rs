@@ -181,8 +181,8 @@ impl WorkflowEngine {
     ) -> RuntimeResult<Bindings<Value>> {
         let mut resolved = Bindings::new();
 
-        if let Some(ref workflow_inputs) = workflow.inputs {
-            for input_decl in workflow_inputs {
+        if !workflow.inputs.is_empty() {
+            for input_decl in &workflow.inputs {
                 let prefixed_name = format!("{}.{}", workflow.name, input_decl.name);
 
                 // Check for prefixed input first, then unprefixed
@@ -218,8 +218,8 @@ impl WorkflowEngine {
         workflow: &Workflow,
         inputs: &Bindings<Value>,
     ) -> RuntimeResult<()> {
-        if let Some(ref workflow_inputs) = workflow.inputs {
-            for input_decl in workflow_inputs {
+        if !workflow.inputs.is_empty() {
+            for input_decl in &workflow.inputs {
                 if input_decl.expr.is_none() && !input_decl.decl_type.is_optional() {
                     // Required input (no default AND not optional) - check both prefixed and unprefixed forms
                     let prefixed_name = format!("{}.{}", workflow.name, input_decl.name);
@@ -254,8 +254,8 @@ impl WorkflowEngine {
         let stdlib = crate::stdlib::StdLib::new("1.0");
 
         // Add workflow inputs to context
-        if let Some(ref workflow_inputs) = workflow.inputs {
-            for input_decl in workflow_inputs {
+        if !workflow.inputs.is_empty() {
+            for input_decl in &workflow.inputs {
                 if let Some(input_expr) = &input_decl.expr {
                     // Evaluate default value if input not provided
                     if !context.bindings.has_binding(&input_decl.name) {
@@ -886,8 +886,8 @@ impl WorkflowEngine {
     ) -> RuntimeResult<Bindings<Value>> {
         let mut outputs = Bindings::new();
 
-        if let Some(ref workflow_outputs) = workflow.outputs {
-            for output_decl in workflow_outputs {
+        if !workflow.outputs.is_empty() {
+            for output_decl in &workflow.outputs {
                 if let Some(output_expr) = &output_decl.expr {
                     let output_value =
                         output_expr.eval(&context.bindings, stdlib).map_err(|e| {
@@ -932,38 +932,28 @@ impl WorkflowEngine {
     pub fn get_workflow_inputs(&self, workflow: &Workflow) -> Vec<(String, Type, bool)> {
         workflow
             .inputs
-            .as_ref()
-            .map(|inputs| {
-                inputs
-                    .iter()
-                    .map(|decl| {
-                        let required = decl.expr.is_none();
-                        (decl.name.clone(), decl.decl_type.clone(), required)
-                    })
-                    .collect()
+            .iter()
+            .map(|decl| {
+                let required = decl.expr.is_none();
+                (decl.name.clone(), decl.decl_type.clone(), required)
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Get workflow output types
     pub fn get_workflow_outputs(&self, workflow: &Workflow) -> Vec<(String, Type)> {
         workflow
             .outputs
-            .as_ref()
-            .map(|outputs| {
-                outputs
-                    .iter()
-                    .map(|decl| (decl.name.clone(), decl.decl_type.clone()))
-                    .collect()
-            })
-            .unwrap_or_default()
+            .iter()
+            .map(|decl| (decl.name.clone(), decl.decl_type.clone()))
+            .collect()
     }
 
     /// Validate a workflow before execution
     pub fn validate_workflow(&self, workflow: &Workflow) -> RuntimeResult<()> {
         // Check that workflow has inputs and outputs
-        let has_inputs = workflow.inputs.as_ref().map_or(false, |v| !v.is_empty());
-        let has_outputs = workflow.outputs.as_ref().map_or(false, |v| !v.is_empty());
+        let has_inputs = !workflow.inputs.is_empty();
+        let has_outputs = !workflow.outputs.is_empty();
         if !has_inputs && !has_outputs {
             return Err(RuntimeError::WorkflowValidationError {
                 message: "Workflow has no inputs or outputs".to_string(),
@@ -972,8 +962,8 @@ impl WorkflowEngine {
         }
 
         // Validate that all outputs have expressions
-        if let Some(outputs) = &workflow.outputs {
-            for output_decl in outputs {
+        if !workflow.outputs.is_empty() {
+            for output_decl in &workflow.outputs {
                 if output_decl.expr.is_none() {
                     return Err(RuntimeError::WorkflowValidationError {
                         message: format!(

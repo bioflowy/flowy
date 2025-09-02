@@ -113,8 +113,8 @@ impl TaskEngine {
     /// Validate a task before execution
     pub fn validate_task(&self, task: &Task, inputs: &Bindings<Value>) -> RuntimeResult<()> {
         // Check that all required inputs are provided
-        if let Some(ref task_inputs) = task.inputs {
-            for input_decl in task_inputs {
+        if !task.inputs.is_empty() {
+            for input_decl in &task.inputs {
                 if input_decl.expr.is_none() {
                     // Required input
                     if !inputs.has_binding(&input_decl.name) {
@@ -152,17 +152,12 @@ impl TaskEngine {
     /// Get task input requirements
     pub fn get_task_inputs(&self, task: &Task) -> Vec<(String, crate::Type, bool)> {
         task.inputs
-            .as_ref()
-            .map(|inputs| {
-                inputs
-                    .iter()
-                    .map(|decl| {
-                        let required = decl.expr.is_none();
-                        (decl.name.clone(), decl.decl_type.clone(), required)
-                    })
-                    .collect()
+            .iter()
+            .map(|decl| {
+                let required = decl.expr.is_none();
+                (decl.name.clone(), decl.decl_type.clone(), required)
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Get task output types

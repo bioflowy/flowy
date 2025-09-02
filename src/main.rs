@@ -493,14 +493,11 @@ fn json_to_bindings_with_types(
             };
 
             // Find input type from workflow declarations
-            let input_type = if let Some(ref inputs) = workflow.inputs {
-                inputs
-                    .iter()
-                    .find(|decl| decl.name == input_name)
-                    .map(|decl| &decl.decl_type)
-            } else {
-                None
-            };
+            let input_type = workflow
+                .inputs
+                .iter()
+                .find(|decl| decl.name == input_name)
+                .map(|decl| &decl.decl_type);
 
             // Convert JSON to WDL value using type information
             let wdl_value = if let Some(ty) = input_type {
@@ -536,14 +533,11 @@ fn json_to_bindings_with_task_types(
             };
 
             // Find input type from task declarations
-            let input_type = if let Some(ref inputs) = task.inputs {
-                inputs
-                    .iter()
-                    .find(|decl| decl.name == input_name)
-                    .map(|decl| &decl.decl_type)
-            } else {
-                None
-            };
+            let input_type = task
+                .inputs
+                .iter()
+                .find(|decl| decl.name == input_name)
+                .map(|decl| &decl.decl_type);
 
             // Convert JSON to WDL value using type information
             let wdl_value = if let Some(ty) = input_type {

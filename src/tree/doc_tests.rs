@@ -117,7 +117,7 @@ mod basic_infrastructure_tests {
         let task = Task::new(
             pos.clone(),
             "test_task".to_string(),
-            None,   // no inputs
+            vec![], // no inputs
             vec![], // no postinputs
             command_expr,
             vec![],         // no outputs
@@ -128,7 +128,7 @@ mod basic_infrastructure_tests {
 
         assert_eq!(task.name, "test_task");
         assert_eq!(task.effective_wdl_version, "1.0");
-        assert!(task.inputs.is_none());
+        assert!(task.inputs.is_empty());
         assert_eq!(task.outputs.len(), 0);
 
         println!("✅ Successfully created Task structure directly");
@@ -225,11 +225,9 @@ mod parser_integration_tests {
                 assert_eq!(task.name, "echo_input");
 
                 // Check inputs if they exist
-                if let Some(inputs) = &task.inputs {
-                    if !inputs.is_empty() {
-                        assert_eq!(inputs[0].name, "message");
-                        println!("✅ Input parsing works correctly");
-                    }
+                if !task.inputs.is_empty() {
+                    assert_eq!(task.inputs[0].name, "message");
+                    println!("✅ Input parsing works correctly");
                 }
             }
             Err(e) => {
@@ -340,9 +338,9 @@ mod error_detection_tests {
                 println!("✅ Document with various types parsed successfully");
                 let task = &doc.tasks[0];
 
-                if let Some(inputs) = &task.inputs {
-                    println!("Task has {} inputs", inputs.len());
-                    for (i, input) in inputs.iter().enumerate() {
+                if !task.inputs.is_empty() {
+                    println!("Task has {} inputs", task.inputs.len());
+                    for (i, input) in task.inputs.iter().enumerate() {
                         println!("  Input {}: {} : {:?}", i, input.name, input.decl_type);
                     }
                 }
@@ -387,9 +385,9 @@ mod comprehensive_tests {
                 assert_eq!(task.name, "wc");
 
                 // Verify structure matches expected miniwdl behavior
-                if let Some(inputs) = &task.inputs {
-                    assert_eq!(inputs.len(), 1);
-                    assert_eq!(inputs[0].name, "in");
+                if !task.inputs.is_empty() {
+                    assert_eq!(task.inputs.len(), 1);
+                    assert_eq!(task.inputs[0].name, "in");
                 }
 
                 assert_eq!(task.outputs.len(), 1);

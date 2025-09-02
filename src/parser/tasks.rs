@@ -768,7 +768,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
     stream.expect(Token::LeftBrace)?;
 
     // Parse task sections
-    let mut inputs: Option<Vec<Declaration>> = None;
+    let mut inputs: Vec<Declaration> = Vec::new();
     let mut postinputs: Vec<Declaration> = Vec::new();
     let mut command: Option<Expression> = None;
     let mut outputs: Vec<Declaration> = Vec::new();
@@ -798,7 +798,7 @@ pub fn parse_task(stream: &mut TokenStream) -> ParseResult<Task> {
             Some(Token::Keyword(kw)) => {
                 match kw.as_str() {
                     "input" => {
-                        inputs = Some(parse_input_section(stream)?);
+                        inputs = parse_input_section(stream)?;
                     }
                     "command" => {
                         command = Some(parse_command_section(stream)?);
@@ -953,10 +953,10 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
     stream.expect(Token::LeftBrace)?;
 
     // Parse workflow sections
-    let mut inputs: Option<Vec<Declaration>> = None;
+    let mut inputs: Vec<Declaration> = Vec::new();
     let postinputs: Vec<Declaration> = Vec::new();
     let mut body: Vec<WorkflowElement> = Vec::new();
-    let mut outputs: Option<Vec<Declaration>> = None;
+    let mut outputs: Vec<Declaration> = Vec::new();
     let mut meta: HashMap<String, serde_json::Value> = HashMap::new();
     let mut parameter_meta: HashMap<String, serde_json::Value> = HashMap::new();
 
@@ -975,10 +975,10 @@ pub fn parse_workflow(stream: &mut TokenStream) -> ParseResult<Workflow> {
             Some(Token::Keyword(kw)) => {
                 match kw.as_str() {
                     "input" => {
-                        inputs = Some(parse_input_section(stream)?);
+                        inputs = parse_input_section(stream)?;
                     }
                     "output" => {
-                        outputs = Some(parse_output_section(stream)?);
+                        outputs = parse_output_section(stream)?;
                     }
                     "meta" => {
                         meta = parse_meta_section(stream)?;
@@ -1175,7 +1175,7 @@ mod tests {
 
         let task = result.unwrap();
         assert_eq!(task.name, "hello");
-        assert!(task.inputs.is_none());
+        assert!(task.inputs.is_empty());
         assert_eq!(task.outputs.len(), 1);
     }
 
@@ -1203,8 +1203,8 @@ mod tests {
 
         let task = result.unwrap();
         assert_eq!(task.name, "process");
-        assert!(task.inputs.is_some());
-        assert_eq!(task.inputs.as_ref().unwrap().len(), 2);
+        assert!(!task.inputs.is_empty());
+        assert_eq!(task.inputs.len(), 2);
     }
 
     #[test]
@@ -1252,10 +1252,10 @@ mod tests {
 
         let workflow = result.unwrap();
         assert_eq!(workflow.name, "my_workflow");
-        assert!(workflow.inputs.is_some());
+        assert!(!workflow.inputs.is_empty());
         assert_eq!(workflow.body.len(), 1);
         assert!(matches!(workflow.body[0], WorkflowElement::Call(_)));
-        assert!(workflow.outputs.is_some());
+        assert!(!workflow.outputs.is_empty());
     }
 
     #[test]

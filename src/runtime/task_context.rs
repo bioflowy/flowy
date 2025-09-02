@@ -136,8 +136,8 @@ impl TaskContext {
     /// Validate that all required inputs are provided
     #[allow(dead_code)]
     fn validate_inputs(&self) -> RuntimeResult<()> {
-        if let Some(inputs) = &self.task.inputs {
-            for input_decl in inputs {
+        if !self.task.inputs.is_empty() {
+            for input_decl in &self.task.inputs {
                 if input_decl.expr.is_none() {
                     // Required input (no default)
                     if !self.inputs.has_binding(&input_decl.name) {
@@ -652,7 +652,7 @@ mod tests {
         Task::new_with_requirements_hints(
             SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 10),
             "test_task".to_string(),
-            Some(vec![Declaration {
+            vec![Declaration {
                 pos: SourcePosition::new(
                     "test.wdl".to_string(),
                     "test.wdl".to_string(),
@@ -667,7 +667,7 @@ mod tests {
                 name: "input_str".to_string(),
                 expr: None,
                 decor: HashMap::new(),
-            }]),
+            }],
             vec![],
             Expression::String {
                 pos: SourcePosition::new(
