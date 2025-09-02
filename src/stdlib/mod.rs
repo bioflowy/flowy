@@ -203,7 +203,13 @@ impl StdLib {
             }
         }
 
-        self.register_function(Box::new(WriteLinesFunction));
+        // Write functions
+        self.register_function(io::create_write_lines());
+        self.register_function(io::create_write_tsv());
+        self.register_function(io::create_write_map());
+        self.register_function(io::create_write_json());
+
+        // Read functions
         self.register_function(Box::new(ReadLinesFunction));
         self.register_function(Box::new(ReadStringFunction));
         self.register_function(io::create_read_int());

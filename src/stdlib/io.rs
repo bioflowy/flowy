@@ -105,111 +105,6 @@ impl Function for StderrFunction {
     }
 }
 
-/// Write lines function - writes array of strings to a file
-pub struct WriteLinesFunction;
-
-impl Function for WriteLinesFunction {
-    fn name(&self) -> &str {
-        "write_lines"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        // Expect Array[String]
-        if !matches!(args[0], Type::Array { .. }) {
-            return Err(WdlError::RuntimeError {
-                message: "write_lines() argument must be Array[String]".to_string(),
-            });
-        }
-
-        Ok(Type::file(false))
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        // Default implementation - create temp file without path mapping
-        use std::io::Write;
-
-        let array = args[0].as_array().ok_or_else(|| WdlError::RuntimeError {
-            message: "write_lines() argument must be Array[String]".to_string(),
-        })?;
-
-        // Create a temporary file
-        let mut temp_file = std::env::temp_dir();
-        temp_file.push(format!(
-            "write_lines_{}.txt",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-
-        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to create temporary file: {}", e),
-        })?;
-
-        // Write each line
-        for value in array {
-            let line = match value {
-                Value::String { value, .. } => value.clone(),
-                _ => value.to_string(),
-            };
-            writeln!(file, "{}", line).map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to write to file: {}", e),
-            })?;
-        }
-
-        Value::file(temp_file.to_string_lossy().to_string())
-    }
-
-    fn eval_with_stdlib(
-        &self,
-        args: &[Value],
-        stdlib: &crate::stdlib::StdLib,
-    ) -> Result<Value, WdlError> {
-        use std::io::Write;
-
-        let array = args[0].as_array().ok_or_else(|| WdlError::RuntimeError {
-            message: "write_lines() argument must be Array[String]".to_string(),
-        })?;
-
-        // Create a temporary file
-        let mut temp_file = std::env::temp_dir();
-        temp_file.push(format!(
-            "write_lines_{}.txt",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-
-        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to create temporary file: {}", e),
-        })?;
-
-        // Write each line
-        for value in array {
-            let line = match value {
-                Value::String { value, .. } => value.clone(),
-                _ => value.to_string(),
-            };
-            writeln!(file, "{}", line).map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to write to file: {}", e),
-            })?;
-        }
-
-        // Use path mapper to virtualize the filename
-        let virtual_path = stdlib.path_mapper().virtualize_filename(&temp_file)?;
-        Value::file(virtual_path)
-    }
-}
-
 /// Read lines function - reads lines from a file into an array
 pub struct ReadLinesFunction;
 
@@ -1033,6 +928,336 @@ impl Function for GlobFunction {
 /// Helper function to create glob function
 pub fn create_glob(task_dir: PathBuf) -> Box<dyn Function> {
     Box::new(GlobFunction::new(task_dir))
+}
+
+/// Generic write file function that serializes data using a provided serializer
+pub struct WriteFileFunction<F> {
+    name: &'static str,
+    input_type: Type,
+    serializer: F,
+}
+
+/// Helper function to create write_lines function
+pub fn create_write_lines() -> Box<dyn Function> {
+    Box::new(WriteFileFunction::new(
+        "write_lines",
+        Type::Array {
+            item_type: Box::new(Type::String { optional: false }),
+            optional: false,
+            nonempty: false,
+        },
+        |value| {
+            let array = value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                message: "write_lines() argument must be Array[String]".to_string(),
+            })?;
+
+            let mut lines = Vec::new();
+            for item in array {
+                let line = match item {
+                    Value::String { value, .. } => value.clone(),
+                    _ => item.to_string(),
+                };
+                lines.push(line);
+            }
+
+            Ok(lines.join("\n") + "\n")
+        },
+    ))
+}
+
+/// Helper function to create write_tsv function
+pub fn create_write_tsv() -> Box<dyn Function> {
+    Box::new(WriteFileFunction::new(
+        "write_tsv",
+        Type::Array {
+            item_type: Box::new(Type::Array {
+                item_type: Box::new(Type::String { optional: false }),
+                optional: false,
+                nonempty: false,
+            }),
+            optional: false,
+            nonempty: false,
+        },
+        |value| {
+            let array = value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                message: "write_tsv() argument must be Array[Array[String]]".to_string(),
+            })?;
+
+            let mut rows = Vec::new();
+            for row_value in array {
+                let row_array = row_value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                    message: "write_tsv() argument must be Array[Array[String]]".to_string(),
+                })?;
+
+                let mut columns = Vec::new();
+                for col_value in row_array {
+                    let col_str = match col_value {
+                        Value::String { value, .. } => value.clone(),
+                        _ => col_value.to_string(),
+                    };
+
+                    // Validate that the string doesn't contain tabs or newlines
+                    if col_str.contains('\t') || col_str.contains('\n') {
+                        return Err(WdlError::RuntimeError {
+                            message: format!(
+                                "write_tsv() cannot write string containing tab or newline: '{}'",
+                                col_str
+                            ),
+                        });
+                    }
+
+                    columns.push(col_str);
+                }
+                rows.push(columns.join("\t"));
+            }
+
+            Ok(rows.join("\n") + "\n")
+        },
+    ))
+}
+
+/// Helper function to create write_map function
+pub fn create_write_map() -> Box<dyn Function> {
+    Box::new(WriteFileFunction::new(
+        "write_map",
+        Type::Map {
+            key_type: Box::new(Type::String { optional: false }),
+            value_type: Box::new(Type::String { optional: false }),
+            optional: false,
+            literal_keys: None,
+        },
+        |value| {
+            let pairs = match value {
+                Value::Map { pairs, .. } => pairs,
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "write_map() argument must be a Map".to_string(),
+                    });
+                }
+            };
+
+            let mut lines = Vec::new();
+            for (key_val, value_val) in pairs {
+                let key_str = match key_val {
+                    Value::String { value, .. } => value.clone(),
+                    _ => key_val.to_string(),
+                };
+
+                let val_str = match value_val {
+                    Value::String { value, .. } => value.clone(),
+                    _ => value_val.to_string(),
+                };
+
+                // Validate that keys and values don't contain tabs or newlines
+                if key_str.contains('\t') || key_str.contains('\n') {
+                    return Err(WdlError::RuntimeError {
+                        message: format!(
+                            "write_map() cannot write key containing tab or newline: '{}'",
+                            key_str
+                        ),
+                    });
+                }
+                if val_str.contains('\t') || val_str.contains('\n') {
+                    return Err(WdlError::RuntimeError {
+                        message: format!(
+                            "write_map() cannot write value containing tab or newline: '{}'",
+                            val_str
+                        ),
+                    });
+                }
+
+                lines.push(format!("{}\t{}", key_str, val_str));
+            }
+
+            Ok(lines.join("\n") + "\n")
+        },
+    ))
+}
+
+/// Helper function to create write_json function  
+pub fn create_write_json() -> Box<dyn Function> {
+    Box::new(WriteFileFunction::new(
+        "write_json",
+        Type::Any { optional: false }, // Any type can be serialized to JSON
+        |value| {
+            // Convert WDL Value to JSON using serde_json
+            let json_value = value_to_json(value)?;
+            serde_json::to_string_pretty(&json_value)
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to serialize to JSON: {}", e),
+                })
+                .map(|s| s + "\n") // Add newline at end
+        },
+    ))
+}
+
+/// Convert WDL Value to serde_json::Value for JSON serialization
+fn value_to_json(value: &Value) -> Result<serde_json::Value, WdlError> {
+    match value {
+        Value::Null => Ok(serde_json::Value::Null),
+        Value::Boolean { value, .. } => Ok(serde_json::Value::Bool(*value)),
+        Value::Int { value, .. } => Ok(serde_json::Value::Number(serde_json::Number::from(*value))),
+        Value::Float { value, .. } => serde_json::Number::from_f64(*value)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| WdlError::RuntimeError {
+                message: format!("Cannot represent float {} in JSON", value),
+            }),
+        Value::String { value, .. } => Ok(serde_json::Value::String(value.clone())),
+        Value::File { value, .. } => Ok(serde_json::Value::String(value.clone())),
+        Value::Directory { value, .. } => Ok(serde_json::Value::String(value.clone())),
+        Value::Array { values, .. } => {
+            let mut json_array = Vec::new();
+            for item in values {
+                json_array.push(value_to_json(item)?);
+            }
+            Ok(serde_json::Value::Array(json_array))
+        }
+        Value::Map { pairs, .. } => {
+            let mut json_map = serde_json::Map::new();
+            for (key, val) in pairs {
+                let key_str = match key {
+                    Value::String { value, .. } => value.clone(),
+                    _ => key.to_string(),
+                };
+                json_map.insert(key_str, value_to_json(val)?);
+            }
+            Ok(serde_json::Value::Object(json_map))
+        }
+        Value::Pair { left, right, .. } => {
+            let json_array = vec![value_to_json(left)?, value_to_json(right)?];
+            Ok(serde_json::Value::Array(json_array))
+        }
+        Value::Struct { members, .. } => {
+            let mut json_map = serde_json::Map::new();
+            for (name, val) in members {
+                json_map.insert(name.clone(), value_to_json(val)?);
+            }
+            Ok(serde_json::Value::Object(json_map))
+        }
+    }
+}
+
+impl<F> WriteFileFunction<F>
+where
+    F: Fn(&Value) -> Result<String, WdlError> + Send + Sync,
+{
+    pub fn new(name: &'static str, input_type: Type, serializer: F) -> Self {
+        Self {
+            name,
+            input_type,
+            serializer,
+        }
+    }
+}
+
+impl<F> Function for WriteFileFunction<F>
+where
+    F: Fn(&Value) -> Result<String, WdlError> + Send + Sync,
+{
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name.to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Check if input type matches expected
+        if !args[0].coerces(&self.input_type, false) {
+            return Err(WdlError::TypeMismatch {
+                expected: self.input_type.clone(),
+                actual: args[0].clone(),
+            });
+        }
+
+        Ok(Type::file(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        // Default implementation - create temp file without path mapping
+        use std::io::Write;
+
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name.to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Serialize the data using the provided serializer
+        let content = (self.serializer)(&args[0])?;
+
+        // Create a temporary file
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push(format!(
+            "{}_{}.txt",
+            self.name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
+        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create temporary file: {}", e),
+        })?;
+
+        file.write_all(content.as_bytes())
+            .map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write to file: {}", e),
+            })?;
+
+        Value::file(temp_file.to_string_lossy().to_string())
+    }
+
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        use std::io::Write;
+
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name.to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Serialize the data using the provided serializer
+        let content = (self.serializer)(&args[0])?;
+
+        // Create a temporary file
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push(format!(
+            "{}_{}.txt",
+            self.name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
+        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create temporary file: {}", e),
+        })?;
+
+        file.write_all(content.as_bytes())
+            .map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write to file: {}", e),
+            })?;
+
+        // Use path mapper to virtualize the filename
+        let virtual_path = stdlib.path_mapper().virtualize_filename(&temp_file)?;
+        Value::file(virtual_path)
+    }
 }
 
 // For backward compatibility with tests, we keep type aliases
