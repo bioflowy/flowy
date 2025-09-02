@@ -5,6 +5,7 @@ use crate::error::WdlError;
 use crate::types::Type;
 use crate::value::Value;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 /// Stdout function - returns reference to stdout file
 pub struct StdoutFunction;
@@ -909,6 +910,129 @@ pub fn create_read_object() -> Box<dyn Function> {
             })
         },
     ))
+}
+
+/// Glob function that returns an array of files matching a pattern
+pub struct GlobFunction {
+    name: String,
+    task_dir: PathBuf,
+}
+
+impl GlobFunction {
+    pub fn new(task_dir: PathBuf) -> Self {
+        Self {
+            name: "glob".to_string(),
+            task_dir,
+        }
+    }
+}
+
+impl Function for GlobFunction {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        // Expect String argument
+        match &args[0] {
+            Type::String { .. } => Ok(Type::Array {
+                item_type: Box::new(Type::File { optional: false }),
+                optional: false,
+                nonempty: false,
+            }),
+            _ => Err(WdlError::TypeMismatch {
+                expected: Type::String { optional: false },
+                actual: args[0].clone(),
+            }),
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "glob".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let pattern = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "glob() expects a String argument".to_string(),
+                });
+            }
+        };
+
+        // Use glob crate to find matching files
+        let glob_pattern = if pattern.starts_with('/') {
+            // Absolute path
+            pattern
+        } else {
+            // Relative path - make it relative to task directory
+            self.task_dir.join(&pattern).to_string_lossy().to_string()
+        };
+
+        match glob::glob(&glob_pattern) {
+            Ok(paths) => {
+                let mut files = Vec::new();
+                for entry in paths {
+                    match entry {
+                        Ok(path) => {
+                            if path.is_file() {
+                                files.push(Value::File {
+                                    value: path.to_string_lossy().to_string(),
+                                    wdl_type: Type::File { optional: false },
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            return Err(WdlError::RuntimeError {
+                                message: format!("glob() error: {}", e),
+                            });
+                        }
+                    }
+                }
+
+                // Sort files for consistent results
+                files.sort_by(|a, b| {
+                    if let (Value::File { value: a_val, .. }, Value::File { value: b_val, .. }) =
+                        (a, b)
+                    {
+                        a_val.cmp(b_val)
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                });
+
+                Ok(Value::Array {
+                    values: files,
+                    wdl_type: Type::Array {
+                        item_type: Box::new(Type::File { optional: false }),
+                        optional: false,
+                        nonempty: false,
+                    },
+                })
+            }
+            Err(e) => Err(WdlError::RuntimeError {
+                message: format!("glob() pattern error: {}", e),
+            }),
+        }
+    }
+}
+
+/// Helper function to create glob function
+pub fn create_glob(task_dir: PathBuf) -> Box<dyn Function> {
+    Box::new(GlobFunction::new(task_dir))
 }
 
 // For backward compatibility with tests, we keep type aliases

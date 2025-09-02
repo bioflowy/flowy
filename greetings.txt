@@ -1,6 +1,0 @@
-hello world
-hello there
-goodbye world
-hello friend
-hi everyone
-hello again

@@ -214,8 +214,6 @@ pub fn command_tokens(input: Span) -> IResult<Span, Token> {
         value(Token::HeredocStart, tag("<<<")),
         value(Token::HeredocEnd, tag(">>>")),
         value(Token::TildeBrace, tag("~{")),
-        value(Token::DollarBrace, tag("${")),
-        // Note: ${ must come after ~{ due to ordering
     ))(input)
 }
 
@@ -250,19 +248,10 @@ pub fn command_mode_text(input: Span) -> IResult<Span, Token> {
 /// Parse $ or ~ or > with lookahead in command mode
 pub fn command_mode_special_chars(input: Span) -> IResult<Span, Token> {
     alt((
-        // ${  -> DollarBrace token
-        value(Token::DollarBrace, tag("${")),
         // ~{  -> TildeBrace token
         value(Token::TildeBrace, tag("~{")),
-        // $ not followed by { -> part of shell syntax, treat as text
-        map(
-            recognize(tuple((
-                char('$'),
-                nom::combinator::not(char('{')), // negative lookahead
-                nom::combinator::peek(nom::character::complete::anychar), // must have next char
-            ))),
-            |s: Span| Token::CommandText(s.fragment().chars().take(1).collect()), // just the $
-        ),
+        // $ -> part of shell syntax, treat as text (including ${})
+        map(char('$'), |_| Token::CommandText("$".to_string())),
         // ~ not followed by { -> regular text
         map(
             recognize(tuple((

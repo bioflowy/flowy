@@ -34,6 +34,9 @@ pub trait PathMapper: Send + Sync {
 
     /// Convert a real filesystem path to a virtual filename for WDL values
     fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError>;
+
+    /// For downcasting to concrete types
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Default path mapper that performs no transformation
@@ -51,6 +54,10 @@ impl PathMapper for DefaultPathMapper {
                 message: format!("Invalid path: {}", path.display()),
             })
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 /// Task-specific path mapper that resolves relative paths against a task directory
@@ -61,6 +68,10 @@ pub struct TaskPathMapper {
 impl TaskPathMapper {
     pub fn new(task_dir: PathBuf) -> Self {
         Self { task_dir }
+    }
+
+    pub fn task_dir(&self) -> &PathBuf {
+        &self.task_dir
     }
 }
 
@@ -82,6 +93,10 @@ impl PathMapper for TaskPathMapper {
             .ok_or_else(|| WdlError::RuntimeError {
                 message: format!("Invalid path: {}", path.display()),
             })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -181,6 +196,11 @@ impl StdLib {
         if self.is_task_context {
             self.register_function(Box::new(StdoutFunction));
             self.register_function(Box::new(StderrFunction));
+
+            // glob() function is only available in task context
+            if let Some(task_mapper) = self.path_mapper.as_any().downcast_ref::<TaskPathMapper>() {
+                self.register_function(io::create_glob(task_mapper.task_dir().clone()));
+            }
         }
 
         self.register_function(Box::new(WriteLinesFunction));

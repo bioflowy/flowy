@@ -105,36 +105,36 @@ impl TaskContext {
 
     /// Execute the task
     pub fn execute(&mut self) -> RuntimeResult<TaskResult> {
-        self.start_time = Some(Instant::now());
+        let start_time = Instant::now();
+        self.start_time = Some(start_time);
 
-        // Validate inputs against task requirements
-        self.validate_inputs()?;
-
-        // Prepare task environment
-        self.prepare_environment()?;
-
-        // Generate command string
+        // Generate the command string from the task's command block
         let command_str = self.generate_command()?;
 
-        // Execute command
-        let command_result = self.execute_command(&command_str)?;
+        // Execute the command based on configuration
+        let command_result = if self.config.container.enabled {
+            self.execute_command_in_container(&command_str)?
+        } else {
+            self.execute_command_directly(&command_str)?
+        };
 
-        // Process outputs with command result context
+        // Generate outputs based on task definition and command results
         let outputs = self.collect_outputs(&command_result)?;
 
-        let duration = self.start_time.unwrap().elapsed();
+        let duration = start_time.elapsed();
 
         Ok(TaskResult {
             outputs,
             exit_status: command_result.exit_status,
-            stdout: command_result.stdout_path.clone(),
-            stderr: command_result.stderr_path.clone(),
+            stdout: command_result.stdout_path,
+            stderr: command_result.stderr_path,
             duration,
             work_dir: self.task_dir.clone(),
         })
     }
 
     /// Validate that all required inputs are provided
+    #[allow(dead_code)]
     fn validate_inputs(&self) -> RuntimeResult<()> {
         if let Some(inputs) = &self.task.inputs {
             for input_decl in inputs {
@@ -234,14 +234,20 @@ impl TaskContext {
 
         // Evaluate command expression
         let command_value = command_expr.eval(&eval_env, &stdlib).map_err(|e| {
+            eprintln!("Command evaluation error: {}", e);
+            eprintln!("Available variables in environment:");
+            for binding in eval_env.iter() {
+                eprintln!("  {} = {:?}", binding.name(), binding.value());
+            }
             RuntimeError::run_failed(
-                "Failed to evaluate task command".to_string(),
+                format!("Failed to evaluate task command: {}", e),
                 e,
                 Some(command_expr.pos().clone()),
             )
         })?;
 
         if let Value::String { value: cmd, .. } = command_value {
+            eprintln!("Generated command: {}", cmd);
             Ok(cmd)
         } else {
             Err(RuntimeError::OutputError {
@@ -250,17 +256,6 @@ impl TaskContext {
                 actual: format!("{:?}", command_value.wdl_type()),
                 pos: Some(command_expr.pos().clone()),
             })
-        }
-    }
-
-    /// Execute the generated command
-    pub fn execute_command(&self, command_str: &str) -> RuntimeResult<CommandResult> {
-        // Check if container execution is enabled
-        if self.config.container.enabled && self.config.container.backend != ContainerBackend::None
-        {
-            self.execute_command_in_container(command_str)
-        } else {
-            self.execute_command_directly(command_str)
         }
     }
 
@@ -819,7 +814,7 @@ mod tests {
         let command_str = "echo 'Hello stdout' && echo 'Hello stderr' >&2";
 
         // Execute command
-        let result = context.execute_command(command_str).unwrap();
+        let result = context.execute_command_directly(command_str).unwrap();
 
         // Check that CommandResult contains URLs
         assert!(result.stdout_path.scheme() == "file");

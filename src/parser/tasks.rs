@@ -425,7 +425,7 @@ fn parse_command_block_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<S
                 current_text.push_str(&text);
                 stream.next();
             }
-            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+            Some(Token::TildeBrace) => {
                 // Save any accumulated text as a StringPart::Text
                 if !current_text.is_empty() {
                     parts.push(StringPart::Text(current_text.clone()));
@@ -492,7 +492,7 @@ fn parse_heredoc_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<StringP
                 current_text.push_str(&text);
                 stream.next();
             }
-            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+            Some(Token::TildeBrace) => {
                 // Save any accumulated text as a StringPart::Text
                 if !current_text.is_empty() {
                     parts.push(StringPart::Text(current_text.clone()));
@@ -560,7 +560,7 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
                 // Found the end marker
                 break;
             }
-            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+            Some(Token::TildeBrace) => {
                 // Start of placeholder - for now just record it
                 content.push_str(&buffer);
                 buffer.clear();
@@ -572,10 +572,8 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
                 let placeholder_text = parse_placeholder_content(stream)?;
 
                 // For now, just include placeholder as literal text
-                match placeholder_type {
-                    Token::TildeBrace => content.push_str(&format!("~{{{}}}", placeholder_text)),
-                    Token::DollarBrace => content.push_str(&format!("${{{}}}", placeholder_text)),
-                    _ => {}
+                if placeholder_type == Token::TildeBrace {
+                    content.push_str(&format!("~{{{}}}", placeholder_text));
                 }
             }
             Some(token) => {
@@ -614,7 +612,7 @@ fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
 
     while !stream.is_eof() && depth > 0 {
         match stream.peek_token() {
-            Some(Token::LeftBrace) | Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+            Some(Token::LeftBrace) | Some(Token::TildeBrace) => {
                 depth += 1;
                 content.push_str(&format!("{}", stream.peek_token().unwrap()));
                 stream.next();
@@ -659,7 +657,7 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
                     break;
                 }
             }
-            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+            Some(Token::TildeBrace) => {
                 // Start of placeholder
                 let placeholder_type = stream.peek_token().unwrap().clone();
                 stream.next();
@@ -668,10 +666,8 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
                 let placeholder_text = parse_placeholder_content(stream)?;
 
                 // For now, just include placeholder as literal text
-                match placeholder_type {
-                    Token::TildeBrace => content.push_str(&format!("~{{{}}}", placeholder_text)),
-                    Token::DollarBrace => content.push_str(&format!("${{{}}}", placeholder_text)),
-                    _ => {}
+                if placeholder_type == Token::TildeBrace {
+                    content.push_str(&format!("~{{{}}}", placeholder_text));
                 }
             }
             Some(token) => {
@@ -1100,7 +1096,7 @@ mod tests {
             }
             
             command {
-                echo "${message}"
+                echo "~{message}"
             }
             
             output {
@@ -1415,8 +1411,8 @@ mod tests {
                 String name = "World"
             }
             command {
-                echo "Hello, ${name}!"
-                mkdir ${name}_dir
+                echo "Hello, ~{name}!"
+                mkdir ~{name}_dir
             }
         }"#;
 
@@ -1529,7 +1525,7 @@ mod tests {
                 String name = "World"
             }
             command {
-                echo "Hello, ${name}!"
+                echo "Hello, ~{name}!"
             }
         }"#;
 
@@ -1601,7 +1597,7 @@ mod tests {
                 String greeting = "Hello"
             }
             command <<<
-                echo "${greeting}, ${person}!"
+                echo "~{greeting}, ~{person}!"
                 echo "Welcome to WDL"
             >>>
         }"#;
@@ -1661,7 +1657,7 @@ mod tests {
                 String separator = ","
             }
             command {
-                cat ${filename} | cut -d'${separator}' -f1
+                cat ~{filename} | cut -d'~{separator}' -f1
             }
         }"#;
 
