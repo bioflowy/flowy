@@ -37,6 +37,8 @@ pub enum TestStatus {
     Failed,
     Error,
     Skipped,
+    XFail,          // Expected failure that failed as expected
+    UnexpectedPass, // Expected failure that unexpectedly passed
 }
 
 /// Main spec test runner
@@ -265,6 +267,9 @@ impl SpecTestRunner {
     ) -> Result<TestResult, Box<dyn std::error::Error>> {
         let start_time = SystemTime::now();
 
+        // Check if this is an expected failure test
+        let is_xfail = self.is_expected_failure(test_case);
+
         // Use shared directory directly without creating subdirectories
         let test_dir = &self.shared_test_dir;
         // Directory already created in setup_shared_test_directory()
@@ -289,8 +294,17 @@ impl SpecTestRunner {
 
         let test_result = match result {
             Ok(output) => {
-                if let Some(expected) = &test_case.expected_output {
-                    // Compare with expected output
+                if is_xfail {
+                    // Expected to fail but passed - this is unexpected
+                    TestResult {
+                        name: test_case.name.clone(),
+                        status: TestStatus::UnexpectedPass,
+                        message: Some("Test was expected to fail but passed".to_string()),
+                        duration_ms: duration,
+                        actual_output: Some(output),
+                    }
+                } else if let Some(expected) = &test_case.expected_output {
+                    // Regular test with expected output - compare results
                     if self.compare_outputs(&output, expected) {
                         TestResult {
                             name: test_case.name.clone(),
@@ -309,7 +323,7 @@ impl SpecTestRunner {
                         }
                     }
                 } else {
-                    // No expected output, consider success if no error
+                    // Regular test with no expected output - consider success if no error
                     TestResult {
                         name: test_case.name.clone(),
                         status: TestStatus::Passed,
@@ -319,16 +333,38 @@ impl SpecTestRunner {
                     }
                 }
             }
-            Err(error) => TestResult {
-                name: test_case.name.clone(),
-                status: TestStatus::Error,
-                message: Some(error),
-                duration_ms: duration,
-                actual_output: None,
-            },
+            Err(error) => {
+                if is_xfail {
+                    // Expected to fail and did fail - this is correct
+                    TestResult {
+                        name: test_case.name.clone(),
+                        status: TestStatus::XFail,
+                        message: Some(format!("Expected failure: {}", error)),
+                        duration_ms: duration,
+                        actual_output: None,
+                    }
+                } else {
+                    // Regular test that failed
+                    TestResult {
+                        name: test_case.name.clone(),
+                        status: TestStatus::Error,
+                        message: Some(error),
+                        duration_ms: duration,
+                        actual_output: None,
+                    }
+                }
+            }
         };
 
         Ok(test_result)
+    }
+
+    /// Check if a test case is expected to fail
+    fn is_expected_failure(&self, test_case: &SpecTestCase) -> bool {
+        // Following miniwdl pattern: tests ending with "fail" are expected to fail
+        test_case.name.contains("fail")
+            || test_case.name.ends_with("_fail")
+            || test_case.name.ends_with("_fail_task")
     }
 
     /// Set up the shared test directory for this execution
@@ -653,9 +689,11 @@ fn main() {
             if !results.is_empty() {
                 print_summary(&results);
 
-                let has_failures = results
-                    .iter()
-                    .any(|r| r.status == TestStatus::Failed || r.status == TestStatus::Error);
+                let has_failures = results.iter().any(|r| {
+                    r.status == TestStatus::Failed
+                        || r.status == TestStatus::Error
+                        || r.status == TestStatus::UnexpectedPass
+                });
                 if has_failures {
                     std::process::exit(1);
                 }
@@ -674,6 +712,10 @@ fn print_summary(results: &[TestResult]) {
         .iter()
         .filter(|r| r.status == TestStatus::Passed)
         .count();
+    let xfail_tests: Vec<&TestResult> = results
+        .iter()
+        .filter(|r| r.status == TestStatus::XFail)
+        .collect();
     let failed_tests: Vec<&TestResult> = results
         .iter()
         .filter(|r| r.status == TestStatus::Failed)
@@ -682,6 +724,13 @@ fn print_summary(results: &[TestResult]) {
         .iter()
         .filter(|r| r.status == TestStatus::Error)
         .collect();
+    let unexpected_pass_tests: Vec<&TestResult> = results
+        .iter()
+        .filter(|r| r.status == TestStatus::UnexpectedPass)
+        .collect();
+
+    // Calculate successful tests (Passed + XFail)
+    let successful = passed + xfail_tests.len();
 
     // Display failed test names if any
     if !failed_tests.is_empty() {
@@ -699,9 +748,23 @@ fn print_summary(results: &[TestResult]) {
         }
     }
 
+    // Display unexpected pass tests (these are problematic)
+    if !unexpected_pass_tests.is_empty() {
+        println!("\n=== Unexpected Pass Tests ===");
+        for test in &unexpected_pass_tests {
+            println!("  {} (expected to fail but passed)", test.name);
+        }
+    }
+
     println!("\n=== Summary ===");
     println!("Total: {}", results.len());
-    println!("Passed: {}", passed);
+    println!(
+        "Successful: {} (Passed: {}, XFail: {})",
+        successful,
+        passed,
+        xfail_tests.len()
+    );
     println!("Failed: {}", failed_tests.len());
     println!("Errors: {}", error_tests.len());
+    println!("Unexpected Passes: {}", unexpected_pass_tests.len());
 }

@@ -430,7 +430,8 @@ pub mod utils {
                 ])),
                 members,
                 None,
-            ).unwrap();
+            )
+            .unwrap();
 
             // Test the JSON conversion
             let json_result = wdl_value_to_json(&struct_value);
@@ -479,7 +480,8 @@ pub mod utils {
                 },
                 members,
                 None,
-            ).unwrap();
+            )
+            .unwrap();
 
             // Create a plain Object type (like "Object" declaration)
             let object_type = Type::object(HashMap::new());

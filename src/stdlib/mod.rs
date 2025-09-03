@@ -194,6 +194,8 @@ impl StdLib {
         // Map functions
         self.register_function(Box::new(KeysFunction));
         self.register_function(Box::new(ValuesFunction));
+        self.register_function(Box::new(ContainsKeyFunction));
+        self.register_function(Box::new(AsPairsFunction));
 
         // String functions
         self.register_function(Box::new(SubFunction));

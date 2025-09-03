@@ -471,6 +471,9 @@ impl WorkflowEngine {
         // Track all bindings that were created in the scatter
         let mut aggregated_bindings: HashMap<String, Vec<Value>> = HashMap::new();
 
+        // Get the original context bindings before scatter to know what was pre-existing
+        let original_bindings = &context.bindings;
+
         // Collect values from each scatter iteration
         for scatter_binding in &scatter_results {
             for binding in scatter_binding.iter() {
@@ -483,6 +486,12 @@ impl WorkflowEngine {
 
                 // Skip qualified task outputs for now (they need special handling)
                 if name.contains('.') {
+                    continue;
+                }
+
+                // IMPORTANT: Only aggregate variables that were NOT in the original context
+                // This prevents input variables from being aggregated into arrays
+                if original_bindings.has_binding(&name) {
                     continue;
                 }
 
@@ -513,7 +522,7 @@ impl WorkflowEngine {
                 wdl_type: array_type,
             };
 
-            // Bind the array to the context
+            // Bind the array to the context (this preserves existing bindings)
             context.bindings = context.bindings.bind(name, array_value, None);
         }
 
@@ -575,6 +584,8 @@ impl WorkflowEngine {
                 }
 
                 // Create array bindings for task outputs using the binding name (not storage name)
+                // Build up new bindings properly to preserve existing context
+                let mut new_bindings = context.bindings.clone();
                 for (output_name, values) in task_outputs {
                     let qualified_name = format!("{}.{}", binding_call_name, output_name);
 
@@ -592,9 +603,12 @@ impl WorkflowEngine {
                         wdl_type: array_type,
                     };
 
-                    // Bind to context
-                    context.bindings = context.bindings.bind(qualified_name, array_value, None);
+                    // Bind to new bindings
+                    new_bindings = new_bindings.bind(qualified_name, array_value, None);
                 }
+
+                // Update context with the new bindings that preserve all previous bindings
+                context.bindings = new_bindings;
             }
         }
 

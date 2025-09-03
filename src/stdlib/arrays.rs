@@ -895,34 +895,49 @@ impl Function for KeysFunction {
             });
         }
 
-        if let Type::Map { key_type, .. } = &args[0] {
-            Ok(Type::array(key_type.as_ref().clone(), false, false))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "keys() expects Map argument".to_string(),
-            })
+        match &args[0] {
+            Type::Map { key_type, .. } => {
+                // Map[X, Y] -> Array[X]
+                Ok(Type::array(key_type.as_ref().clone(), false, false))
+            }
+            Type::StructInstance { .. } => {
+                // Struct -> Array[String]
+                Ok(Type::array(Type::string(false), false, false))
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "keys() expects Map or Struct argument".to_string(),
+            }),
         }
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Map {
-            pairs, wdl_type, ..
-        } = &args[0]
-        {
-            let keys: Vec<Value> = pairs.iter().map(|(k, _)| k.clone()).collect();
+        match &args[0] {
+            Value::Map {
+                pairs, wdl_type, ..
+            } => {
+                let keys: Vec<Value> = pairs.iter().map(|(k, _)| k.clone()).collect();
 
-            // Get key type from map type
-            let key_type = if let Type::Map { key_type, .. } = wdl_type {
-                key_type.as_ref().clone()
-            } else {
-                Type::any()
-            };
+                // Get key type from map type
+                let key_type = if let Type::Map { key_type, .. } = wdl_type {
+                    key_type.as_ref().clone()
+                } else {
+                    Type::any()
+                };
 
-            Ok(Value::array(key_type, keys))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "keys() expects Map argument".to_string(),
-            })
+                Ok(Value::array(key_type, keys))
+            }
+            Value::Struct { members, .. } => {
+                // Get struct member names as string keys
+                let keys: Vec<Value> = members
+                    .keys()
+                    .map(|name| Value::string(name.clone()))
+                    .collect();
+
+                Ok(Value::array(Type::string(false), keys))
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "keys() expects Map or Struct argument".to_string(),
+            }),
         }
     }
 }
@@ -972,6 +987,413 @@ impl Function for ValuesFunction {
             Err(WdlError::RuntimeError {
                 message: "values() expects Map argument".to_string(),
             })
+        }
+    }
+}
+/// Check if a map/object contains a specific key
+pub struct ContainsKeyFunction;
+
+/// Convert Map[X,Y] to Array[Pair[X,Y]] - WDL 1.2 as_pairs function
+pub struct AsPairsFunction;
+
+impl Function for AsPairsFunction {
+    fn name(&self) -> &str {
+        "as_pairs"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "as_pairs".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        match &args[0] {
+            Type::Map {
+                key_type,
+                value_type,
+                ..
+            } => {
+                let pair_type = Type::pair(
+                    key_type.as_ref().clone(),
+                    value_type.as_ref().clone(),
+                    false,
+                );
+                Ok(Type::array(pair_type, false, false))
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "as_pairs() expects Map argument".to_string(),
+            }),
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: "as_pairs() expects exactly 1 argument".to_string(),
+            });
+        }
+
+        match &args[0] {
+            Value::Map { pairs, wdl_type } => {
+                // Extract key and value types from the map type
+                if let Type::Map {
+                    key_type,
+                    value_type,
+                    ..
+                } = wdl_type
+                {
+                    // Create Pair type for the array elements
+                    let pair_type = Type::pair(
+                        key_type.as_ref().clone(),
+                        value_type.as_ref().clone(),
+                        false,
+                    );
+
+                    // Convert each (key, value) pair to a Pair value
+                    let mut pair_values: Vec<Value> = Vec::new();
+                    for (key, value) in pairs {
+                        // Use correct argument order: left_type, right_type, left, right
+                        let pair_value = Value::pair(
+                            key_type.as_ref().clone(),
+                            value_type.as_ref().clone(),
+                            key.clone(),
+                            value.clone(),
+                        );
+                        pair_values.push(pair_value);
+                    }
+
+                    // Create Array[Pair[X,Y]] type
+                    let array_type = Type::array(pair_type, false, false);
+                    Ok(Value::Array {
+                        values: pair_values,
+                        wdl_type: array_type,
+                    })
+                } else {
+                    Err(WdlError::RuntimeError {
+                        message: "as_pairs() argument must have Map type".to_string(),
+                    })
+                }
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "as_pairs() expects Map argument".to_string(),
+            }),
+        }
+    }
+}
+
+impl Function for ContainsKeyFunction {
+    fn name(&self) -> &str {
+        "contains_key"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 2,
+                actual: args.len(),
+            });
+        }
+
+        // All overloads return Boolean
+        Ok(Type::boolean(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 2,
+                actual: args.len(),
+            });
+        }
+
+        match (&args[0], &args[1]) {
+            // contains_key(Map[P, Y], P) - check if map contains key
+            (Value::Map { pairs, .. }, key_value) => {
+                let contains = pairs.iter().any(|(k, _)| k == key_value);
+                Ok(Value::boolean(contains))
+            }
+
+            // contains_key(Object, String) - check if object has member
+            (Value::Struct { members, .. }, Value::String { value: key, .. }) => {
+                let contains = members.contains_key(key);
+                Ok(Value::boolean(contains))
+            }
+
+            // contains_key(Map/Struct/Object, Array[String]) - compound key check
+            (container, Value::Array { values, .. }) => {
+                // Convert array to string keys
+                let mut keys: Vec<String> = Vec::new();
+                for val in values {
+                    match val {
+                        Value::String { value, .. } => keys.push(value.clone()),
+                        _ => {
+                            return Err(WdlError::RuntimeError {
+                                message: "contains_key with Array argument requires Array[String]"
+                                    .to_string(),
+                            });
+                        }
+                    }
+                }
+
+                // Check compound key recursively
+                let contains = self.check_compound_key(container, &keys)?;
+                Ok(Value::boolean(contains))
+            }
+
+            _ => Err(WdlError::RuntimeError {
+                message: format!(
+                    "contains_key() unsupported argument types: {:?} and {:?}",
+                    args[0].wdl_type(),
+                    args[1].wdl_type()
+                ),
+            }),
+        }
+    }
+}
+
+impl ContainsKeyFunction {
+    /// Check for compound key presence recursively
+    fn check_compound_key(&self, container: &Value, keys: &[String]) -> Result<bool, WdlError> {
+        if keys.is_empty() {
+            return Ok(true);
+        }
+
+        let first_key = &keys[0];
+        let remaining_keys = &keys[1..];
+
+        match container {
+            Value::Map { pairs, .. } => {
+                // Look for the first key in the map
+                for (k, v) in pairs {
+                    if let Value::String { value: key_str, .. } = k {
+                        if key_str == first_key {
+                            if remaining_keys.is_empty() {
+                                return Ok(true);
+                            } else {
+                                return self.check_compound_key(v, remaining_keys);
+                            }
+                        }
+                    }
+                }
+                Ok(false)
+            }
+
+            Value::Struct { members, .. } => {
+                if let Some(value) = members.get(first_key) {
+                    if remaining_keys.is_empty() {
+                        Ok(true)
+                    } else {
+                        self.check_compound_key(value, remaining_keys)
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+
+            _ => Ok(false),
+        }
+    }
+}
+#[cfg(test)]
+mod contains_key_tests {
+    use super::*;
+    use crate::types::Type;
+    use crate::value::Value;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_contains_key_map() {
+        let function = ContainsKeyFunction;
+
+        // Create a map: {"a": 1, "b": 2}
+        let map_value = Value::map(
+            Type::string(false),
+            Type::int(false),
+            vec![
+                (Value::string("a".to_string()), Value::int(1)),
+                (Value::string("b".to_string()), Value::int(2)),
+            ],
+        );
+
+        // Test existing key
+        let result = function
+            .eval(&[map_value.clone(), Value::string("a".to_string())])
+            .unwrap();
+        assert_eq!(result.as_bool().unwrap(), true);
+
+        // Test non-existing key
+        let result = function
+            .eval(&[map_value.clone(), Value::string("c".to_string())])
+            .unwrap();
+        assert_eq!(result.as_bool().unwrap(), false);
+    }
+
+    #[test]
+    fn test_contains_key_struct() {
+        let function = ContainsKeyFunction;
+
+        // Create a struct with members
+        let mut members = HashMap::new();
+        members.insert("name".to_string(), Value::string("John".to_string()));
+        members.insert("age".to_string(), Value::int(30));
+
+        let struct_type = Type::StructInstance {
+            type_name: "Person".to_string(),
+            members: None,
+            optional: false,
+        };
+
+        let struct_value = Value::struct_value_unchecked(struct_type, members, None);
+
+        // Test existing member
+        let result = function
+            .eval(&[struct_value.clone(), Value::string("name".to_string())])
+            .unwrap();
+        assert_eq!(result.as_bool().unwrap(), true);
+
+        // Test non-existing member
+        let result = function
+            .eval(&[struct_value.clone(), Value::string("email".to_string())])
+            .unwrap();
+        assert_eq!(result.as_bool().unwrap(), false);
+    }
+
+    #[test]
+    fn test_contains_key_compound() {
+        let function = ContainsKeyFunction;
+
+        // Create nested structure: {"details": {"phone": "123"}}
+        let mut inner_members = HashMap::new();
+        inner_members.insert(
+            "phone".to_string(),
+            Value::string("123-456-7890".to_string()),
+        );
+
+        let inner_struct_type = Type::StructInstance {
+            type_name: "Details".to_string(),
+            members: None,
+            optional: false,
+        };
+        let inner_struct = Value::struct_value_unchecked(inner_struct_type, inner_members, None);
+
+        let mut outer_members = HashMap::new();
+        outer_members.insert("name".to_string(), Value::string("John".to_string()));
+        outer_members.insert("details".to_string(), inner_struct);
+
+        let outer_struct_type = Type::StructInstance {
+            type_name: "Person".to_string(),
+            members: None,
+            optional: false,
+        };
+        let outer_struct = Value::struct_value_unchecked(outer_struct_type, outer_members, None);
+
+        // Test compound key ["details", "phone"] - should exist
+        let keys_array = Value::array(
+            Type::string(false),
+            vec![
+                Value::string("details".to_string()),
+                Value::string("phone".to_string()),
+            ],
+        );
+
+        let result = function.eval(&[outer_struct.clone(), keys_array]).unwrap();
+        assert_eq!(result.as_bool().unwrap(), true);
+
+        // Test compound key ["details", "email"] - should not exist
+        let keys_array = Value::array(
+            Type::string(false),
+            vec![
+                Value::string("details".to_string()),
+                Value::string("email".to_string()),
+            ],
+        );
+
+        let result = function.eval(&[outer_struct.clone(), keys_array]).unwrap();
+        assert_eq!(result.as_bool().unwrap(), false);
+    }
+
+    #[test]
+    fn test_as_pairs_function_is_implemented() {
+        // This test confirms that as_pairs is now implemented
+        use crate::stdlib::StdLib;
+        let stdlib = StdLib::new("1.2");
+
+        // Try to find the as_pairs function - should return Some now
+        let as_pairs_fn = stdlib.get_function("as_pairs");
+        assert!(
+            as_pairs_fn.is_some(),
+            "as_pairs function should be implemented"
+        );
+
+        // Verify function name
+        if let Some(func) = as_pairs_fn {
+            assert_eq!(func.name(), "as_pairs");
+        }
+    }
+
+    #[test]
+    fn test_as_pairs_function_expected_behavior() {
+        // This test validates the actual behavior of as_pairs function
+        use crate::types::Type;
+        use crate::value::Value;
+
+        // Create a test map: {"a": 1, "b": 2}
+        let pairs = vec![
+            (Value::string("a".to_string()), Value::int(1)),
+            (Value::string("b".to_string()), Value::int(2)),
+        ];
+        let test_map = Value::Map {
+            pairs,
+            wdl_type: Type::map(Type::string(false), Type::int(false), false),
+        };
+
+        // Function should now be implemented
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+        if let Some(as_pairs_fn) = stdlib.get_function("as_pairs") {
+            let result = as_pairs_fn.eval(&[test_map]);
+
+            // Should return Array[Pair[String, Int]]
+            // Expected: [("a", 1), ("b", 2)]
+            assert!(result.is_ok());
+
+            if let Ok(array_value) = result {
+                if let Value::Array { values, .. } = array_value {
+                    assert_eq!(values.len(), 2);
+
+                    // Check pairs (order may vary for maps, so check both exist)
+                    let mut found_a = false;
+                    let mut found_b = false;
+
+                    for value in &values {
+                        if let Value::Pair { left, right, .. } = value {
+                            let key = left.as_string().unwrap();
+                            if key == "a" {
+                                assert_eq!(right.as_int().unwrap(), 1);
+                                found_a = true;
+                            } else if key == "b" {
+                                assert_eq!(right.as_int().unwrap(), 2);
+                                found_b = true;
+                            }
+                        } else {
+                            panic!("Expected Pair value");
+                        }
+                    }
+
+                    assert!(found_a, "Should find pair ('a', 1)");
+                    assert!(found_b, "Should find pair ('b', 2)");
+                } else {
+                    panic!("Expected Array value");
+                }
+            } else {
+                panic!("Function evaluation should succeed");
+            }
+        } else {
+            panic!("as_pairs function not found in standard library");
         }
     }
 }

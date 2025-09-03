@@ -241,12 +241,12 @@ pub fn parse_expr_infix(stream: &mut TokenStream, min_precedence: u8) -> ParseRe
     Ok(left)
 }
 
-/// Parse expressions (may include ternary ? : operator)
-/// Note: This handles the C-style ternary operator, not the if-then-else expression
+/// Parse expressions (may include ternary ? : operator and WDL if-else expressions)
+/// Note: This handles C-style ternary, WDL if-then-else, and WDL value-if-else expressions
 pub fn parse_expr_with_ternary(stream: &mut TokenStream) -> ParseResult<Expression> {
     let expr = parse_expr_infix(stream, 0)?;
 
-    // Check for ternary operator
+    // Check for C-style ternary operator
     if stream.peek_token() == Some(Token::Question) {
         let pos = stream.current_position();
         stream.next(); // consume ?
@@ -256,6 +256,42 @@ pub fn parse_expr_with_ternary(stream: &mut TokenStream) -> ParseResult<Expressi
         let if_false = parse_expression(stream)?;
 
         Ok(Expression::if_then_else(pos, expr, if_true, if_false))
+    }
+    // Check for WDL-style conditional expression: value if condition else other_value
+    else if let Some(Token::Keyword(kw)) = stream.peek_token() {
+        if kw == "if" {
+            let pos = stream.current_position();
+            stream.next(); // consume 'if'
+
+            let condition = parse_expr_infix(stream, 0)?;
+
+            // Expect 'else' keyword
+            if let Some(Token::Keyword(else_kw)) = stream.peek_token() {
+                if else_kw == "else" {
+                    stream.next(); // consume 'else'
+                    let else_value = parse_expression(stream)?;
+
+                    // WDL conditional: expr if condition else else_value
+                    Ok(Expression::if_then_else(pos, condition, expr, else_value))
+                } else {
+                    Err(WdlError::syntax_error(
+                        stream.current_position(),
+                        "Expected 'else' after conditional expression".to_string(),
+                        "1.0".to_string(),
+                        None,
+                    ))
+                }
+            } else {
+                Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Expected 'else' after conditional expression".to_string(),
+                    "1.0".to_string(),
+                    None,
+                ))
+            }
+        } else {
+            Ok(expr)
+        }
     } else {
         Ok(expr)
     }
@@ -707,6 +743,32 @@ mod tests {
             assert!(matches!(false_expr.as_ref(), Expression::Int { .. }));
         } else {
             panic!("Expected if-then-else expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_value_if_condition_else() {
+        let mut stream = TokenStream::new("x if x > 0 else 0", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::IfThenElse {
+            condition,
+            true_expr,
+            false_expr,
+            ..
+        } = expr
+        {
+            // Verify it's a value-if-else expression
+            // condition should be x > 0
+            assert!(matches!(condition.as_ref(), Expression::BinaryOp { .. }));
+            // true_expr should be x
+            assert!(matches!(true_expr.as_ref(), Expression::Ident { .. }));
+            // false_expr should be 0
+            assert!(matches!(false_expr.as_ref(), Expression::Int { .. }));
+        } else {
+            panic!("Expected value-if-else expression");
         }
     }
 
