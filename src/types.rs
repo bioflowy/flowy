@@ -584,6 +584,37 @@ impl Type {
     }
 }
 
+impl Type {
+    /// Resolve a StructInstance type using struct definitions from the document
+    pub fn resolve_struct_type(
+        &self,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        match self {
+            Type::StructInstance {
+                type_name,
+                members: None,
+                optional,
+            } => {
+                // Find the struct definition
+                if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
+                    Ok(Type::StructInstance {
+                        type_name: type_name.clone(),
+                        members: Some(struct_def.members.clone()),
+                        optional: *optional,
+                    })
+                } else {
+                    Err(WdlError::validation_error(
+                        SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                        format!("Unknown struct type: {}", type_name),
+                    ))
+                }
+            }
+            // Already resolved or not a struct
+            _ => Ok(self.clone()),
+        }
+    }
+}
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let base_str = match self {

@@ -497,8 +497,12 @@ mod tests {
         assert_eq!(import.uri, "lib.wdl");
         assert_eq!(import.namespace, "lib".to_string()); // Should be inferred from filename
         assert_eq!(import.aliases.len(), 2);
-        assert!(import.aliases.contains(&("task1".to_string(), "MyTask".to_string())));
-        assert!(import.aliases.contains(&("task2".to_string(), "OtherTask".to_string())));
+        assert!(import
+            .aliases
+            .contains(&("task1".to_string(), "MyTask".to_string())));
+        assert!(import
+            .aliases
+            .contains(&("task2".to_string(), "OtherTask".to_string())));
     }
 
     #[test]

@@ -137,7 +137,7 @@ impl ExpressionBase for Expression {
                     .map(|(k, v)| (k.clone(), v.wdl_type().clone()))
                     .collect();
 
-                Ok(Value::struct_value(
+                Ok(Value::struct_value_unchecked(
                     Type::object(member_types),
                     member_values,
                     None,

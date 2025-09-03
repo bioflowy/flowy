@@ -164,8 +164,51 @@ impl Value {
         }
     }
 
-    /// Create a new Struct value
+    /// Create a new Struct value with validation
     pub fn struct_value(
+        struct_type: Type,
+        mut members: HashMap<String, Value>,
+        extra_keys: Option<HashSet<String>>,
+    ) -> Result<Self, WdlError> {
+        let mut final_extra_keys = extra_keys.unwrap_or_default();
+
+        // If struct type has resolved members, validate and fill in missing optional members
+        if let Type::StructInstance {
+            members: Some(struct_members),
+            ..
+        } = &struct_type
+        {
+            // Fill in null for any omitted optional members
+            for (name, member_type) in struct_members {
+                if !members.contains_key(name) {
+                    if member_type.is_optional() {
+                        members.insert(name.clone(), Value::null());
+                    } else {
+                        return Err(WdlError::validation_error(
+                            SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                            format!("Missing required struct member: {}", name),
+                        ));
+                    }
+                }
+            }
+
+            // Track extra keys that don't correspond to struct members
+            for key in members.keys() {
+                if !struct_members.contains_key(key) {
+                    final_extra_keys.insert(key.clone());
+                }
+            }
+        }
+
+        Ok(Value::Struct {
+            members,
+            extra_keys: final_extra_keys,
+            wdl_type: struct_type,
+        })
+    }
+
+    /// Create a new Struct value without validation (for backward compatibility)
+    pub fn struct_value_unchecked(
         struct_type: Type,
         members: HashMap<String, Value>,
         extra_keys: Option<HashSet<String>>,
@@ -214,7 +257,7 @@ impl Value {
                     .map(|(k, v)| (k.clone(), v.wdl_type().clone()))
                     .collect();
 
-                Value::struct_value(Type::object(member_types), members, None)
+                Value::struct_value_unchecked(Type::object(member_types), members, None)
             }
         }
     }
@@ -479,6 +522,91 @@ impl Value {
                         coerced_pairs?,
                     ))
                 }
+                Type::StructInstance {
+                    members: Some(struct_members),
+                    ..
+                } => {
+                    // Convert map to struct - validate that map keys match struct members
+                    let mut struct_values = HashMap::new();
+                    let mut extra_keys = HashSet::new();
+
+                    // Convert map pairs to string keys for lookup
+                    for (key_value, value_value) in pairs {
+                        let key_str = match key_value {
+                            Value::String { value, .. } => value.clone(),
+                            Value::Int { value, .. } => value.to_string(),
+                            Value::Float { value, .. } => value.to_string(),
+                            Value::Boolean { value, .. } => value.to_string(),
+                            Value::File { value, .. } | Value::Directory { value, .. } => {
+                                value.clone()
+                            }
+                            _ => {
+                                return Err(WdlError::validation_error(
+                                    SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                                    format!(
+                                        "Cannot convert {:?} key to struct member name",
+                                        key_value
+                                    ),
+                                ))
+                            }
+                        };
+
+                        if let Some(expected_type) = struct_members.get(&key_str) {
+                            // This key matches a struct member - coerce the value
+                            match value_value.coerce(expected_type) {
+                                Ok(coerced_value) => {
+                                    struct_values.insert(key_str, coerced_value);
+                                }
+                                Err(e) => {
+                                    return Err(WdlError::validation_error(
+                                        SourcePosition::new(
+                                            "".to_string(),
+                                            "".to_string(),
+                                            0,
+                                            0,
+                                            0,
+                                            0,
+                                        ),
+                                        format!(
+                                            "Cannot coerce value for struct member {}: {}",
+                                            key_str, e
+                                        ),
+                                    ))
+                                }
+                            }
+                        } else {
+                            // This key doesn't match any struct member - this is an error
+                            extra_keys.insert(key_str);
+                        }
+                    }
+
+                    // Check if we have extra keys that don't belong to the struct
+                    if !extra_keys.is_empty() {
+                        return Err(WdlError::validation_error(
+                            SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                            format!(
+                                "Map keys {:?} do not match struct members {:?}",
+                                extra_keys.iter().collect::<Vec<_>>(),
+                                struct_members.keys().collect::<Vec<_>>()
+                            ),
+                        ));
+                    }
+
+                    // Use the validated constructor
+                    Ok(Value::struct_value(
+                        desired_type.clone(),
+                        struct_values,
+                        Some(extra_keys),
+                    )?)
+                }
+                Type::StructInstance { members: None, .. } => {
+                    // Cannot coerce to unresolved struct - need struct definition
+                    Err(WdlError::validation_error(
+                        SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                        "Cannot coerce Map to unresolved struct type. Struct definition needed."
+                            .to_string(),
+                    ))
+                }
                 // Handle coercion to String (map representation)
                 Type::String { .. } => self.coerce_base(desired_type),
                 // Other coercions fall back to base
@@ -550,11 +678,11 @@ impl Value {
                         coerced_members = members.clone();
                     }
 
-                    Ok(Value::struct_value(
+                    Value::struct_value(
                         desired_type.clone(),
                         coerced_members,
                         Some(extra_keys.clone()),
-                    ))
+                    )
                 }
                 Type::Object {
                     members: target_members,
@@ -583,11 +711,11 @@ impl Value {
                         }
                     }
 
-                    Ok(Value::struct_value(
+                    Value::struct_value(
                         desired_type.clone(),
                         coerced_members,
                         Some(extra_keys.clone()),
-                    ))
+                    )
                 }
                 // Handle coercion to String (struct representation)
                 Type::String { .. } => self.coerce_base(desired_type),

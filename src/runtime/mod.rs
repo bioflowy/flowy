@@ -409,6 +409,156 @@ pub mod utils {
         }
     }
 
+    #[cfg(test)]
+    mod value_tests {
+        use super::*;
+        use crate::types::Type;
+        use crate::value::Value;
+        use std::collections::HashMap;
+
+        #[test]
+        fn test_wdl_value_to_json_struct() {
+            // Create a struct value with members
+            let mut members = HashMap::new();
+            members.insert("a".to_string(), Value::int(10));
+            members.insert("b".to_string(), Value::string("hello".to_string()));
+
+            let struct_value = Value::struct_value(
+                Type::object(HashMap::from([
+                    ("a".to_string(), Type::int(false)),
+                    ("b".to_string(), Type::string(false)),
+                ])),
+                members,
+                None,
+            ).unwrap();
+
+            // Test the JSON conversion
+            let json_result = wdl_value_to_json(&struct_value);
+
+            println!("JSON result: {:?}", json_result);
+
+            // Check that it's an object with the expected fields
+            if json_result.is_object() {
+                let json_obj = json_result.as_object().unwrap();
+                println!("Object keys: {:?}", json_obj.keys().collect::<Vec<_>>());
+
+                assert_eq!(
+                    json_obj.get("a"),
+                    Some(&serde_json::Value::Number(serde_json::Number::from(10)))
+                );
+                assert_eq!(
+                    json_obj.get("b"),
+                    Some(&serde_json::Value::String("hello".to_string()))
+                );
+            } else {
+                panic!("Expected object, got: {:?}", json_result);
+            }
+        }
+
+        #[test]
+        fn test_struct_coerce_to_object() {
+            use crate::types::Type;
+            use crate::value::{Value, ValueBase};
+            use std::collections::HashMap;
+
+            // Create a struct value with members
+            let mut members = HashMap::new();
+            members.insert("a".to_string(), Value::int(10));
+            members.insert("b".to_string(), Value::string("hello".to_string()));
+
+            let struct_value = Value::struct_value(
+                Type::StructInstance {
+                    type_name: "TestStruct".to_string(),
+                    members: Some(
+                        members
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.wdl_type().clone()))
+                            .collect(),
+                    ),
+                    optional: false,
+                },
+                members,
+                None,
+            ).unwrap();
+
+            // Create a plain Object type (like "Object" declaration)
+            let object_type = Type::object(HashMap::new());
+
+            // Test coercion
+            let coerced = struct_value.coerce(&object_type).unwrap();
+
+            // Check that the coerced value preserves the members
+            if let Value::Struct { members, .. } = coerced {
+                println!("Coerced members: {:?}", members);
+                assert!(members.contains_key("a"));
+                assert!(members.contains_key("b"));
+                assert_eq!(members.get("a").unwrap(), &Value::int(10));
+                assert_eq!(
+                    members.get("b").unwrap(),
+                    &Value::string("hello".to_string())
+                );
+            } else {
+                panic!("Expected struct value after coercion");
+            }
+        }
+
+        #[test]
+        fn test_map_coerce_to_specific_struct() {
+            use crate::types::Type;
+            use crate::value::{Value, ValueBase};
+            use std::collections::HashMap;
+
+            // Create a Map value (like { "a": 10, "b": 11, "c": 12 })
+            // Note: We use the actual struct member names as map keys for the test to succeed
+            let mut pairs = Vec::new();
+            pairs.push((Value::string("a".to_string()), Value::int(10)));
+            pairs.push((Value::string("b".to_string()), Value::int(11)));
+            pairs.push((Value::string("c".to_string()), Value::int(12)));
+
+            let map_value = Value::map(Type::string(false), Type::int(false), pairs);
+
+            // Create a specific struct type (like Words struct with members a, b, c)
+            let mut struct_members = HashMap::new();
+            struct_members.insert("a".to_string(), Type::int(false));
+            struct_members.insert("b".to_string(), Type::int(false));
+            struct_members.insert("c".to_string(), Type::int(false));
+
+            let words_struct_type = Type::StructInstance {
+                type_name: "Words".to_string(),
+                members: Some(struct_members),
+                optional: false,
+            };
+
+            // Test coercion - this should now succeed with our implementation
+            let result = map_value.coerce(&words_struct_type);
+
+            match result {
+                Ok(coerced_value) => {
+                    if let Value::Struct { members, .. } = coerced_value {
+                        println!("Map to struct coercion succeeded! Members: {:?}", members);
+                        assert!(members.contains_key("a"));
+                        assert!(members.contains_key("b"));
+                        assert!(members.contains_key("c"));
+                        assert_eq!(members.get("a").unwrap(), &Value::int(10));
+                        assert_eq!(members.get("b").unwrap(), &Value::int(11));
+                        assert_eq!(members.get("c").unwrap(), &Value::int(12));
+                    } else {
+                        panic!(
+                            "Expected struct value after coercion, got: {:?}",
+                            coerced_value
+                        );
+                    }
+                }
+                Err(e) => {
+                    panic!(
+                        "Expected Map to struct coercion to succeed, but it failed: {:?}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+
     /// Create default configuration with common settings
     pub fn default_config() -> Config {
         Config::default()

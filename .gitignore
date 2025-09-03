@@ -25,3 +25,4 @@ miniwdl/
 # Runtime output directories
 /tmp/
 run_*/
+spectest_*/

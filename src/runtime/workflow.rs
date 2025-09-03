@@ -82,6 +82,16 @@ impl WorkflowEngine {
         }
     }
 
+    /// Resolve struct types using document struct definitions
+    fn resolve_struct_type(&self, ty: &Type) -> Type {
+        if let Some(document) = &self.document {
+            ty.resolve_struct_type(&document.struct_typedefs)
+                .unwrap_or_else(|_| ty.clone())
+        } else {
+            ty.clone()
+        }
+    }
+
     /// Execute a workflow
     pub fn execute_workflow(
         &self,
@@ -912,7 +922,8 @@ impl WorkflowEngine {
 
                     // Try to coerce the output value to the expected type
                     let expected_type = &output_decl.decl_type;
-                    let output_value = output_value.coerce(expected_type).map_err(|_e| {
+                    let resolved_type = self.resolve_struct_type(expected_type);
+                    let output_value = output_value.coerce(&resolved_type).map_err(|_e| {
                         WdlError::output_error(
                             format!(
                                 "Cannot coerce workflow output '{}' to expected type",

@@ -302,11 +302,9 @@ impl SpecTestRunner {
     ) -> Result<TestResult, Box<dyn std::error::Error>> {
         let start_time = SystemTime::now();
 
-        // Create individual test directory within shared directory
-        let test_dir = self
-            .shared_test_dir
-            .join(format!("test_{}", test_case.name));
-        fs::create_dir_all(&test_dir)?;
+        // Use shared directory directly without creating subdirectories
+        let test_dir = &self.shared_test_dir;
+        // Directory already created in setup_shared_test_directory()
 
         // Write WDL file
         let wdl_path = test_dir.join(format!("{}.wdl", test_case.name));
