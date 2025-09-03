@@ -79,6 +79,85 @@ impl SpecTestRunner {
         self.debug = debug;
         self
     }
+
+    /// Unified test execution method that handles all scenarios
+    pub fn run_unified<P: AsRef<Path>>(
+        &mut self,
+        spec_path: P,
+        data_dir: P,
+        list_only: bool,
+        test_name: Option<String>,
+        pattern: Option<String>,
+    ) -> Result<Vec<TestResult>, Box<dyn std::error::Error>> {
+        let parser = SpecParser::new();
+        let test_cases = parser.parse_spec_file(spec_path)?;
+
+        // Handle --list option
+        if list_only {
+            println!("Available tests ({} total):", test_cases.len());
+            for (index, test_case) in test_cases.iter().enumerate() {
+                println!("  {}: {}", index + 1, test_case.name);
+            }
+            return Ok(Vec::new());
+        }
+
+        // Filter test cases based on options
+        let filtered_cases: Vec<_> = if let Some(ref name) = test_name {
+            // Run single test by name
+            test_cases
+                .into_iter()
+                .filter(|tc| tc.name == *name)
+                .collect()
+        } else if let Some(ref pat) = pattern {
+            // Run tests matching pattern
+            test_cases
+                .into_iter()
+                .filter(|tc| tc.name.contains(pat))
+                .collect()
+        } else {
+            // Run all tests
+            test_cases
+        };
+
+        if filtered_cases.is_empty() {
+            if let Some(ref name) = test_name {
+                println!("Test '{}' not found", name);
+            } else if let Some(ref pat) = pattern {
+                println!("No tests found matching pattern '{}'", pat);
+            }
+            return Ok(Vec::new());
+        }
+
+        println!("Found {} test case(s) to execute", filtered_cases.len());
+
+        // Setup shared test directory
+        self.setup_shared_test_directory()?;
+
+        // Execute filtered tests
+        let mut results = Vec::new();
+        for test_case in filtered_cases {
+            // Print test details for single test execution
+            if test_name.is_some() {
+                self.print_test_details(&test_case);
+            }
+
+            let result = self.execute_test_case(&test_case, data_dir.as_ref())?;
+
+            // Print result for single test execution
+            if test_name.is_some() {
+                self.print_test_result(&result);
+            }
+
+            results.push(result);
+        }
+
+        // Clean up shared directory if not keeping files
+        if !self.keep_files {
+            let _ = fs::remove_dir_all(&self.shared_test_dir);
+        }
+
+        Ok(results)
+    }
 }
 
 /// WDL specification parser following miniwdl pattern
@@ -178,122 +257,6 @@ impl SpecParser {
 }
 
 impl SpecTestRunner {
-    /// Run all test cases
-    pub fn run_all_tests<P: AsRef<Path>>(
-        &mut self,
-        spec_path: P,
-        data_dir: P,
-    ) -> Result<Vec<TestResult>, Box<dyn std::error::Error>> {
-        let parser = SpecParser::new();
-        let test_cases = parser.parse_spec_file(spec_path)?;
-
-        println!("Found {} test cases", test_cases.len());
-
-        // Create the shared test directory
-        self.setup_shared_test_directory()?;
-
-        let mut results = Vec::new();
-        for test_case in test_cases {
-            let result = self.execute_test_case(&test_case, data_dir.as_ref())?;
-            results.push(result);
-        }
-
-        // Clean up shared directory if not keeping files
-        if !self.keep_files {
-            let _ = fs::remove_dir_all(&self.shared_test_dir);
-        }
-
-        Ok(results)
-    }
-
-    /// Run tests matching a pattern
-    pub fn run_tests_matching<P: AsRef<Path>>(
-        &mut self,
-        spec_path: P,
-        data_dir: P,
-        pattern: &str,
-    ) -> Result<Vec<TestResult>, Box<dyn std::error::Error>> {
-        let parser = SpecParser::new();
-        let test_cases = parser.parse_spec_file(spec_path)?;
-
-        let filtered_cases: Vec<_> = test_cases
-            .into_iter()
-            .filter(|tc| tc.name.contains(pattern))
-            .collect();
-
-        println!(
-            "Found {} test cases matching pattern '{}'",
-            filtered_cases.len(),
-            pattern
-        );
-
-        // Create the shared test directory
-        self.setup_shared_test_directory()?;
-
-        let mut results = Vec::new();
-        for test_case in filtered_cases {
-            let result = self.execute_test_case(&test_case, data_dir.as_ref())?;
-            results.push(result);
-        }
-
-        // Clean up shared directory if not keeping files
-        if !self.keep_files {
-            let _ = fs::remove_dir_all(&self.shared_test_dir);
-        }
-
-        Ok(results)
-    }
-
-    /// Run a single test by name
-    pub fn run_single_test<P: AsRef<Path>>(
-        &mut self,
-        spec_path: P,
-        data_dir: P,
-        test_name: &str,
-    ) -> Result<Option<TestResult>, Box<dyn std::error::Error>> {
-        let parser = SpecParser::new();
-        let test_cases = parser.parse_spec_file(spec_path)?;
-
-        if let Some(test_case) = test_cases.into_iter().find(|tc| tc.name == test_name) {
-            println!("Running test: {}", test_case.name);
-            self.print_test_details(&test_case);
-
-            // Create the shared test directory
-            self.setup_shared_test_directory()?;
-
-            let result = self.execute_test_case(&test_case, data_dir.as_ref())?;
-            self.print_test_result(&result);
-
-            // Clean up shared directory if not keeping files
-            if !self.keep_files {
-                let _ = fs::remove_dir_all(&self.shared_test_dir);
-            }
-
-            Ok(Some(result))
-        } else {
-            println!("Test '{}' not found", test_name);
-            Ok(None)
-        }
-    }
-
-    /// List all available test names
-    pub fn list_tests<P: AsRef<Path>>(
-        &self,
-        spec_path: P,
-    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let parser = SpecParser::new();
-        let test_cases = parser.parse_spec_file(spec_path)?;
-
-        let test_names: Vec<String> = test_cases.iter().map(|tc| tc.name.clone()).collect();
-
-        println!("Available tests ({} total):", test_names.len());
-        for (index, name) in test_names.iter().enumerate() {
-            println!("  {}: {}", index + 1, name);
-        }
-
-        Ok(test_names)
-    }
-
     /// Execute a single test case
     fn execute_test_case(
         &mut self,
@@ -397,9 +360,8 @@ impl SpecTestRunner {
             cmd.arg("-i").arg(input_file);
         }
 
-        if self.debug {
-            cmd.arg("--debug");
-        }
+        // Note: --debug flag is for spec_tests logging, not for the main miniwdl-rust binary
+        // The main binary doesn't support --debug flag
 
         match cmd.output() {
             Ok(output) => {
@@ -415,34 +377,160 @@ impl SpecTestRunner {
 
     /// Compare actual output with expected output (following miniwdl's subset comparison logic)
     fn compare_outputs(&self, actual: &str, expected: &str) -> bool {
-        if let (Ok(actual_json), Ok(expected_json)) = (
-            serde_json::from_str::<serde_json::Value>(actual),
-            serde_json::from_str::<serde_json::Value>(expected),
-        ) {
-            // Follow miniwdl's logic: check only that expected keys exist in actual and match
-            if let (Some(actual_obj), Some(expected_obj)) =
-                (actual_json.as_object(), expected_json.as_object())
-            {
-                // For each expected key-value pair, check if actual has the same key with same value
-                for (key, expected_value) in expected_obj {
-                    if let Some(actual_value) = actual_obj.get(key) {
-                        if actual_value != expected_value {
-                            return false;
+        if self.debug {
+            eprintln!("DEBUG: Comparing outputs");
+            eprintln!("DEBUG: Expected: {}", expected);
+            eprintln!("DEBUG: Actual: {}", actual);
+        }
+
+        // First try to parse both as JSON
+        let actual_result = serde_json::from_str::<serde_json::Value>(actual);
+        let expected_result = serde_json::from_str::<serde_json::Value>(expected);
+
+        if self.debug {
+            eprintln!(
+                "DEBUG: Expected JSON parse result: {:?}",
+                expected_result.is_ok()
+            );
+            eprintln!(
+                "DEBUG: Actual JSON parse result: {:?}",
+                actual_result.is_ok()
+            );
+        }
+
+        match (actual_result, expected_result) {
+            (Ok(actual_json), Ok(expected_json)) => {
+                if self.debug {
+                    eprintln!("DEBUG: Both are valid JSON, comparing values");
+                }
+                // Both are valid JSON - compare as JSON
+                self.compare_json_values(&actual_json, &expected_json)
+            }
+            (Ok(actual_json), Err(expected_error)) => {
+                if self.debug {
+                    eprintln!("DEBUG: Expected JSON is invalid: {:?}", expected_error);
+                    eprintln!("DEBUG: Trying to clean up expected JSON");
+                }
+                // Actual is valid JSON, expected is not - try to clean up expected and reparse
+                let cleaned_expected = self.clean_invalid_json(expected);
+                if self.debug {
+                    eprintln!("DEBUG: Cleaned expected: {}", cleaned_expected);
+                }
+                if let Ok(expected_json) =
+                    serde_json::from_str::<serde_json::Value>(&cleaned_expected)
+                {
+                    if self.debug {
+                        eprintln!("DEBUG: Cleaned expected JSON successfully, retrying comparison");
+                    }
+                    // Retry comparison with cleaned expected
+                    self.compare_json_values(&actual_json, &expected_json)
+                } else {
+                    if self.debug {
+                        eprintln!("DEBUG: Still can't parse expected JSON, falling back to string comparison");
+                    }
+                    // Still can't parse expected - fall back to string comparison
+                    actual.trim() == cleaned_expected.trim()
+                }
+            }
+            (Err(actual_error), Ok(expected_json)) => {
+                if self.debug {
+                    eprintln!("DEBUG: Actual JSON is invalid: {:?}", actual_error);
+                }
+                // Expected is valid JSON, actual is not - unlikely but handle it
+                let cleaned_actual = self.clean_invalid_json(actual);
+                if let Ok(actual_json) = serde_json::from_str::<serde_json::Value>(&cleaned_actual)
+                {
+                    self.compare_json_values(&actual_json, &expected_json)
+                } else {
+                    false // Actual should be valid JSON from our runtime
+                }
+            }
+            (Err(_), Err(_)) => {
+                if self.debug {
+                    eprintln!("DEBUG: Both JSON parse failed, using string comparison");
+                }
+                // Neither is valid JSON - fallback to string comparison
+                actual.trim() == expected.trim()
+            }
+        }
+    }
+
+    /// Clean up invalid JSON by removing trailing commas
+    fn clean_invalid_json(&self, json_str: &str) -> String {
+        // Simple but effective approach: use regex-like logic to remove trailing commas
+        let mut result = json_str.to_string();
+
+        // Remove trailing commas before closing braces
+        result = result.replace(",\n  }", "\n  }");
+        result = result.replace(",\n    }", "\n    }");
+        result = result.replace(",\n      }", "\n      }");
+        result = result.replace(",\n        }", "\n        }");
+        result = result.replace(",\n}", "\n}");
+
+        // Remove trailing commas before closing brackets
+        result = result.replace(",\n  ]", "\n  ]");
+        result = result.replace(",\n    ]", "\n    ]");
+        result = result.replace(",\n      ]", "\n      ]");
+        result = result.replace(",\n        ]", "\n        ]");
+        result = result.replace(",\n]", "\n]");
+
+        // Handle cases with different whitespace patterns
+        result = result.replace(",\r\n  }", "\r\n  }");
+        result = result.replace(",\r\n}", "\r\n}");
+        result = result.replace(",\r\n  ]", "\r\n  ]");
+        result = result.replace(",\r\n]", "\r\n]");
+
+        // Handle the specific case we're seeing: comma followed by whitespace and closing brace
+        let lines: Vec<&str> = result.lines().collect();
+        let mut cleaned_lines = Vec::new();
+
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.ends_with(',') && i + 1 < lines.len() {
+                let next_line = lines[i + 1].trim();
+                if next_line == "}" || next_line == "]" {
+                    // Remove the trailing comma
+                    let without_comma = line.trim_end_matches(',');
+                    cleaned_lines.push(without_comma.to_string());
+                } else {
+                    cleaned_lines.push(line.to_string());
+                }
+            } else {
+                cleaned_lines.push(line.to_string());
+            }
+        }
+
+        cleaned_lines.join("\n")
+    }
+
+    /// Helper method to compare two JSON values
+    fn compare_json_values(
+        &self,
+        actual: &serde_json::Value,
+        expected: &serde_json::Value,
+    ) -> bool {
+        if let (Some(actual_obj), Some(expected_obj)) = (actual.as_object(), expected.as_object()) {
+            for (key, expected_value) in expected_obj {
+                if let Some(actual_value) = actual_obj.get(key) {
+                    if actual_value != expected_value {
+                        if self.debug {
+                            eprintln!(
+                                "DEBUG: Value mismatch for key '{}': expected {:?}, actual {:?}",
+                                key, expected_value, actual_value
+                            );
                         }
-                    } else {
-                        // Missing key in actual output
                         return false;
                     }
+                } else {
+                    if self.debug {
+                        eprintln!("DEBUG: Missing key in actual output: '{}'", key);
+                    }
+                    return false;
                 }
-                // All expected keys matched - success (ignore extra keys in actual)
-                true
-            } else {
-                // Not objects - fall back to strict equality
-                actual_json == expected_json
             }
+            true
         } else {
-            // Fallback to string comparison
-            actual.trim() == expected.trim()
+            actual == expected
         }
     }
 
@@ -535,7 +623,8 @@ fn main() {
     let mut test_name: Option<String> = None;
     let mut pattern: Option<String> = None;
 
-    let mut i = 3; // Start from index 3 since we now have spec_file and data_dir
+    // Parse command line arguments
+    let mut i = 3;
     while i < args.len() {
         match args[i].as_str() {
             "--list" => list_tests = true,
@@ -558,57 +647,16 @@ fn main() {
         i += 1;
     }
 
-    let result = if list_tests {
-        runner.list_tests(&spec_file).map(|_| Vec::new())
-    } else if let Some(name) = test_name {
-        runner
-            .run_single_test(&spec_file, &data_dir, &name)
-            .map(|r| r.into_iter().collect())
-    } else if let Some(pat) = pattern {
-        runner.run_tests_matching(&spec_file, &data_dir, &pat)
-    } else {
-        runner.run_all_tests(&spec_file, &data_dir)
-    };
-
-    match result {
+    // Execute unified workflow
+    match runner.run_unified(&spec_file, &data_dir, list_tests, test_name, pattern) {
         Ok(results) => {
             if !results.is_empty() {
-                let passed = results
+                print_summary(&results);
+
+                let has_failures = results
                     .iter()
-                    .filter(|r| r.status == TestStatus::Passed)
-                    .count();
-                let failed_tests: Vec<&TestResult> = results
-                    .iter()
-                    .filter(|r| r.status == TestStatus::Failed)
-                    .collect();
-                let error_tests: Vec<&TestResult> = results
-                    .iter()
-                    .filter(|r| r.status == TestStatus::Error)
-                    .collect();
-
-                // Display failed test names if any
-                if !failed_tests.is_empty() {
-                    println!("\n=== Failed Tests ===");
-                    for test in &failed_tests {
-                        println!("  {}", test.name);
-                    }
-                }
-
-                // Display error test names if any
-                if !error_tests.is_empty() {
-                    println!("\n=== Error Tests ===");
-                    for test in &error_tests {
-                        println!("  {}", test.name);
-                    }
-                }
-
-                println!("\n=== Summary ===");
-                println!("Total: {}", results.len());
-                println!("Passed: {}", passed);
-                println!("Failed: {}", failed_tests.len());
-                println!("Errors: {}", error_tests.len());
-
-                if !failed_tests.is_empty() || !error_tests.is_empty() {
+                    .any(|r| r.status == TestStatus::Failed || r.status == TestStatus::Error);
+                if has_failures {
                     std::process::exit(1);
                 }
             }
@@ -618,4 +666,42 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// Print test execution summary
+fn print_summary(results: &[TestResult]) {
+    let passed = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Passed)
+        .count();
+    let failed_tests: Vec<&TestResult> = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Failed)
+        .collect();
+    let error_tests: Vec<&TestResult> = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Error)
+        .collect();
+
+    // Display failed test names if any
+    if !failed_tests.is_empty() {
+        println!("\n=== Failed Tests ===");
+        for test in &failed_tests {
+            println!("  {}", test.name);
+        }
+    }
+
+    // Display error test names if any
+    if !error_tests.is_empty() {
+        println!("\n=== Error Tests ===");
+        for test in &error_tests {
+            println!("  {}", test.name);
+        }
+    }
+
+    println!("\n=== Summary ===");
+    println!("Total: {}", results.len());
+    println!("Passed: {}", passed);
+    println!("Failed: {}", failed_tests.len());
+    println!("Errors: {}", error_tests.len());
 }

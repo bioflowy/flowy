@@ -608,3 +608,40 @@ mod tests {
         assert!(doc.workflow.is_none());
     }
 }
+#[test]
+fn test_parse_undefined_variable_error() {
+    // Test that undefined variables can be parsed syntactically
+    // (semantic validation like undefined variable checking happens at a different stage)
+    let wdl_content = r#"
+version 1.2
+
+workflow test_undefined_vars {
+  input {
+    Map[String, Int] m
+    String key1
+  }
+  
+  output {
+    Int? i1 = m[s1] if contains_key(m, key1) else None
+  }
+}
+"#;
+
+    let result = parse_document(wdl_content, "test.wdl");
+    // Parser should succeed - it only does syntax analysis, not semantic validation
+    assert!(
+        result.is_ok(),
+        "Parser should succeed for syntactically valid WDL, semantic validation (undefined variables) happens later"
+    );
+
+    if let Ok(document) = result {
+        // Verify the document was parsed correctly
+        assert!(document.workflow.is_some());
+        let workflow = document.workflow.as_ref().unwrap();
+        assert_eq!(workflow.name, "test_undefined_vars");
+        assert_eq!(workflow.outputs.len(), 1);
+
+        // The undefined variable 's1' should be parsed as an identifier
+        // but semantic validation would catch this later
+    }
+}
