@@ -901,11 +901,14 @@ impl WorkflowEngine {
         stdlib: &crate::stdlib::StdLib,
     ) -> RuntimeResult<Bindings<Value>> {
         let mut outputs = Bindings::new();
+        // Create a mutable copy of context bindings to include evaluated outputs
+        let mut extended_bindings = context.bindings.clone();
 
         if !workflow.outputs.is_empty() {
             for output_decl in &workflow.outputs {
                 if let Some(output_expr) = &output_decl.expr {
-                    let output_value = output_expr.eval(&context.bindings, stdlib)?;
+                    // Evaluate using extended bindings that include previously evaluated outputs
+                    let output_value = output_expr.eval(&extended_bindings, stdlib)?;
 
                     // Try to coerce the output value to the expected type
                     let expected_type = &output_decl.decl_type;
@@ -921,7 +924,12 @@ impl WorkflowEngine {
                         )
                     })?;
 
-                    outputs = outputs.bind(output_decl.name.clone(), output_value, None);
+                    // Add to output bindings
+                    outputs = outputs.bind(output_decl.name.clone(), output_value.clone(), None);
+
+                    // Also add to extended bindings so subsequent outputs can reference this one
+                    extended_bindings =
+                        extended_bindings.bind(output_decl.name.clone(), output_value, None);
                 } else {
                     return Err(WdlError::workflow_validation_error(
                         format!("Workflow output missing expression: {}", output_decl.name),

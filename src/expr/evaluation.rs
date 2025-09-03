@@ -219,17 +219,17 @@ impl ExpressionBase for Expression {
                             })
                         }
                     }
-                    (Value::Map { pairs, .. }, Value::String { value: key, .. }) => {
+                    (Value::Map { pairs, .. }, _) => {
+                        // Maps can have any type as key, not just String
                         for (map_key, map_value) in pairs {
-                            if let Value::String { value: key_str, .. } = map_key {
-                                if key_str == key {
-                                    return Ok(map_value.clone());
-                                }
+                            // Compare values directly - this handles all value types
+                            if map_key == &idx {
+                                return Ok(map_value.clone());
                             }
                         }
                         Err(WdlError::validation_error(
                             HasSourcePosition::source_position(self).clone(),
-                            format!("Key '{}' not found in map", key),
+                            "Key not found in map".to_string(),
                         ))
                     }
                     (Value::Struct { members, .. }, Value::String { value: member, .. }) => {

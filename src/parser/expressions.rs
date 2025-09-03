@@ -310,6 +310,12 @@ pub fn parse_expr_core_base(stream: &mut TokenStream) -> ParseResult<Expression>
                 // if-then-else expression
                 parse_if_then_else(stream)
             }
+            Token::Keyword(kw) if kw == "object" => {
+                // object literal: object { ... }
+                let pos = stream.current_position();
+                stream.next(); // consume 'object'
+                parse_object_literal(stream, "object".to_string(), pos)
+            }
             Token::HeredocStart => {
                 // Multistring (heredoc): <<<...>>>
                 parse_multistring(stream)
@@ -736,6 +742,22 @@ mod tests {
             assert_eq!(members[1].0, "age");
         } else {
             panic!("Expected struct expression");
+        }
+    }
+
+    #[test]
+    fn test_parse_object_keyword_literal() {
+        let mut stream = TokenStream::new("object { a: 10, b: \"hello\" }", "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::Struct { members, .. } = expr {
+            assert_eq!(members.len(), 2);
+            assert_eq!(members[0].0, "a");
+            assert_eq!(members[1].0, "b");
+        } else {
+            panic!("Expected struct expression, got: {:?}", expr);
         }
     }
 

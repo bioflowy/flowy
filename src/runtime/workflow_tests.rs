@@ -2249,4 +2249,45 @@ mod tests {
 
         // Expected results would be ["Hello, Alyssa!", "Hello, Ben!"] if round-trip worked
     }
+
+    #[test]
+    fn test_output_variable_ordering() {
+        let wdl = r#"
+version 1.2
+
+workflow test_output_ordering {
+  output {
+    Int first = 42
+    Int second = first + 8
+  }
+}
+"#;
+
+        let mut fixture = WorkflowTestFixture::new().expect("Failed to create fixture");
+        let result = fixture.test_workflow(wdl, None, None, None);
+
+        match result {
+            Ok(json_outputs) => {
+                println!("Outputs: {:?}", json_outputs);
+                // Check if outputs exist with correct values - keys don't have workflow prefix in test fixture
+                let first_val = json_outputs.get("first");
+                let second_val = json_outputs.get("second");
+
+                println!("first: {:?}, second: {:?}", first_val, second_val);
+
+                assert_eq!(
+                    first_val,
+                    Some(&serde_json::Value::Number(serde_json::Number::from(42)))
+                );
+                assert_eq!(
+                    second_val,
+                    Some(&serde_json::Value::Number(serde_json::Number::from(50)))
+                );
+                println!("✅ Output variable ordering test passed");
+            }
+            Err(e) => {
+                panic!("Output variable ordering test failed: {:?}", e);
+            }
+        }
+    }
 }

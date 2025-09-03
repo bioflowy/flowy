@@ -260,35 +260,21 @@ impl ValueBase for Value {
             Value::Array { values, .. } => {
                 JsonValue::Array(values.iter().map(|v| v.to_json()).collect())
             }
-            Value::Map {
-                pairs, wdl_type, ..
-            } => {
-                // Convert to JSON object if keys can be coerced to strings
-                if let Type::Map { key_type, .. } = wdl_type {
-                    if key_type.coerces(&Type::string(false), true) {
-                        let mut obj = JsonMap::new();
-                        for (k, v) in pairs {
-                            if let Ok(str_key) = k.coerce(&Type::string(false)) {
-                                if let Value::String { value: key_str, .. } = str_key {
-                                    obj.insert(key_str, v.to_json());
-                                }
-                            }
-                        }
-                        return JsonValue::Object(obj);
-                    }
+            Value::Map { pairs, .. } => {
+                // Try to convert to JSON object by stringifying keys
+                let mut obj = JsonMap::new();
+                for (k, v) in pairs {
+                    let key_str = match k {
+                        Value::String { value, .. } => value.clone(),
+                        Value::Int { value, .. } => value.to_string(),
+                        Value::Float { value, .. } => value.to_string(),
+                        Value::Boolean { value, .. } => value.to_string(),
+                        Value::File { value, .. } | Value::Directory { value, .. } => value.clone(),
+                        _ => format!("{:?}", k), // Fallback for complex types
+                    };
+                    obj.insert(key_str, v.to_json());
                 }
-                // Fallback: represent as array of key-value pairs
-                JsonValue::Array(
-                    pairs
-                        .iter()
-                        .map(|(k, v)| {
-                            let mut pair_obj = JsonMap::new();
-                            pair_obj.insert("key".to_string(), k.to_json());
-                            pair_obj.insert("value".to_string(), v.to_json());
-                            JsonValue::Object(pair_obj)
-                        })
-                        .collect(),
-                )
+                JsonValue::Object(obj)
             }
             Value::Pair { left, right, .. } => {
                 let mut obj = JsonMap::new();
@@ -558,6 +544,10 @@ impl Value {
                                 coerced_members.insert(name.clone(), Value::null());
                             }
                         }
+                    } else {
+                        // For StructInstance with no specific members (like plain Object type),
+                        // preserve all original members
+                        coerced_members = members.clone();
                     }
 
                     Ok(Value::struct_value(
@@ -572,18 +562,24 @@ impl Value {
                     // Coerce to Object type
                     let mut coerced_members = HashMap::new();
 
-                    for (name, target_type) in target_members {
-                        if let Some(current_value) = members.get(name) {
-                            coerced_members
-                                .insert(name.clone(), current_value.coerce(target_type)?);
-                        } else if !target_type.is_optional() {
-                            return Err(WdlError::validation_error(
-                                SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
-                                format!("Missing required object member: {}", name),
-                            ));
-                        } else {
-                            // Optional member missing - insert null
-                            coerced_members.insert(name.clone(), Value::null());
+                    if target_members.is_empty() {
+                        // For plain Object type with no specific members, preserve all original members
+                        coerced_members = members.clone();
+                    } else {
+                        // For Object with specific member constraints, enforce them
+                        for (name, target_type) in target_members {
+                            if let Some(current_value) = members.get(name) {
+                                coerced_members
+                                    .insert(name.clone(), current_value.coerce(target_type)?);
+                            } else if !target_type.is_optional() {
+                                return Err(WdlError::validation_error(
+                                    SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                                    format!("Missing required object member: {}", name),
+                                ));
+                            } else {
+                                // Optional member missing - insert null
+                                coerced_members.insert(name.clone(), Value::null());
+                            }
                         }
                     }
 
