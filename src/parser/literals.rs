@@ -298,8 +298,8 @@ pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression>
         }
     };
 
-    // Switch lexer to string literal mode
-    stream.push_lexer_mode(crate::parser::lexer::LexerMode::StringLiteral);
+    // Switch lexer to string literal mode with the specific quote character
+    stream.push_lexer_mode(crate::parser::lexer::LexerMode::StringLiteral(quote_char));
 
     let mut parts = Vec::new();
 
@@ -395,8 +395,8 @@ pub fn parse_simple_string_value(stream: &mut TokenStream) -> ParseResult<String
         }
     };
 
-    // Switch lexer to string literal mode
-    stream.push_lexer_mode(crate::parser::lexer::LexerMode::StringLiteral);
+    // Switch lexer to string literal mode with the specific quote character
+    stream.push_lexer_mode(crate::parser::lexer::LexerMode::StringLiteral(quote_char));
 
     let mut result = String::new();
 

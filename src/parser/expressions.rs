@@ -262,34 +262,50 @@ pub fn parse_expr_with_ternary(stream: &mut TokenStream) -> ParseResult<Expressi
     // Check for WDL-style conditional expression: value if condition else other_value
     else if let Some(Token::Keyword(kw)) = stream.peek_token() {
         if kw == "if" {
-            let pos = stream.current_position();
-            stream.next(); // consume 'if'
+            // Check if this is a conditional statement vs WDL conditional expression
+            // Conditional statement: if (condition) { ... }
+            // WDL conditional expr: value if condition else other_value
 
-            let condition = parse_expr_infix(stream, 0)?;
-
-            // Expect 'else' keyword
-            if let Some(Token::Keyword(else_kw)) = stream.peek_token() {
-                if else_kw == "else" {
-                    stream.next(); // consume 'else'
-                    let else_value = parse_expression(stream)?;
-
-                    // WDL conditional: expr if condition else else_value
-                    Ok(Expression::if_then_else(pos, condition, expr, else_value))
-                } else {
-                    Err(WdlError::syntax_error(
-                        stream.current_position(),
-                        "Expected 'else' after conditional expression".to_string(),
-                        "1.0".to_string(),
-                        None,
-                    ))
+            // Look ahead to see what follows "if"
+            match stream.peek_ahead(1) {
+                Some(located_token) if matches!(located_token.token, Token::LeftParen) => {
+                    // This looks like "if (" which suggests a conditional statement
+                    // This should NOT be parsed as part of the expression
+                    // Return the expression as-is and let the statement parser handle the if
+                    Ok(expr)
                 }
-            } else {
-                Err(WdlError::syntax_error(
-                    stream.current_position(),
-                    "Expected 'else' after conditional expression".to_string(),
-                    "1.0".to_string(),
-                    None,
-                ))
+                _ => {
+                    // This should be a WDL conditional expression: value if condition else other
+                    let pos = stream.current_position();
+                    stream.next(); // consume 'if'
+
+                    let condition = parse_expr_infix(stream, 0)?;
+
+                    // Expect 'else' keyword
+                    if let Some(Token::Keyword(else_kw)) = stream.peek_token() {
+                        if else_kw == "else" {
+                            stream.next(); // consume 'else'
+                            let else_value = parse_expression(stream)?;
+
+                            // WDL conditional: expr if condition else else_value
+                            Ok(Expression::if_then_else(pos, condition, expr, else_value))
+                        } else {
+                            Err(WdlError::syntax_error(
+                                stream.current_position(),
+                                "Expected 'else' after conditional expression".to_string(),
+                                "1.0".to_string(),
+                                None,
+                            ))
+                        }
+                    } else {
+                        Err(WdlError::syntax_error(
+                            stream.current_position(),
+                            "Expected 'else' after conditional expression".to_string(),
+                            "1.0".to_string(),
+                            None,
+                        ))
+                    }
+                }
             }
         } else {
             Ok(expr)
@@ -348,10 +364,7 @@ pub fn parse_expr_core_base(stream: &mut TokenStream) -> ParseResult<Expression>
             Token::Keyword(kw) if kw == "true" || kw == "false" || kw == "None" => {
                 parse_literal(stream)
             }
-            Token::Keyword(kw) if kw == "if" => {
-                // if-then-else expression
-                parse_if_then_else(stream)
-            }
+            Token::Keyword(kw) if kw == "if" => parse_if_then_else(stream),
             Token::Keyword(kw) if kw == "object" => {
                 // object literal: object { ... }
                 let pos = stream.current_position();

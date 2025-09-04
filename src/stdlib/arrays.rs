@@ -1051,6 +1051,9 @@ impl Function for ValuesFunction {
 /// Check if a map/object contains a specific key
 pub struct ContainsKeyFunction;
 
+/// Check if an array contains a specific value
+pub struct ContainsFunction;
+
 /// Convert Map[X,Y] to Array[Pair[X,Y]] - WDL 1.2 as_pairs function
 pub struct AsPairsFunction;
 
@@ -1321,6 +1324,50 @@ impl Function for ContainsKeyFunction {
                     "contains_key() unsupported argument types: {:?} and {:?}",
                     args[0].wdl_type(),
                     args[1].wdl_type()
+                ),
+            }),
+        }
+    }
+}
+impl Function for ContainsFunction {
+    fn name(&self) -> &str {
+        "contains"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 2,
+                actual: args.len(),
+            });
+        }
+
+        // contains always returns Boolean
+        Ok(Type::boolean(false))
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 2,
+                actual: args.len(),
+            });
+        }
+
+        match &args[0] {
+            // contains(Array[X], X) - check if array contains the element
+            Value::Array { values, .. } => {
+                let search_value = &args[1];
+                let contains = values.iter().any(|v| v == search_value);
+                Ok(Value::boolean(contains))
+            }
+
+            _ => Err(WdlError::RuntimeError {
+                message: format!(
+                    "contains() requires Array as first argument, got: {:?}",
+                    args[0].wdl_type()
                 ),
             }),
         }

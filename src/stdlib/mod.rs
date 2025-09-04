@@ -195,6 +195,7 @@ impl StdLib {
         self.register_function(Box::new(KeysFunction));
         self.register_function(Box::new(ValuesFunction));
         self.register_function(Box::new(ContainsKeyFunction));
+        self.register_function(Box::new(ContainsFunction));
         self.register_function(Box::new(AsPairsFunction));
         self.register_function(Box::new(AsMapFunction));
 
@@ -263,7 +264,7 @@ impl StdLib {
         self.register_function(Box::new(LogicalAndOperator));
         self.register_function(Box::new(LogicalOrOperator));
         self.register_function(Box::new(LogicalNotOperator));
-        
+
         // Unary operators
         self.register_function(Box::new(NegateOperator));
     }

@@ -23,8 +23,8 @@ pub enum LexerMode {
     Normal,
     /// Inside command{} or <<<>>>
     Command,
-    /// Inside string literal
-    StringLiteral,
+    /// Inside string literal with the opening quote character
+    StringLiteral(char),
     /// Inside placeholder ${} or ~{}
     Placeholder,
 }
@@ -81,7 +81,7 @@ impl Lexer {
     pub fn preserve_whitespace(&self) -> bool {
         matches!(
             self.current_mode(),
-            LexerMode::Command | LexerMode::StringLiteral
+            LexerMode::Command | LexerMode::StringLiteral(_)
         )
     }
 }
@@ -342,6 +342,7 @@ pub fn command_mode_token_with_filename<'a>(
 pub fn string_literal_mode_token_with_filename<'a>(
     _version: &'a str,
     filename: &'a str,
+    quote_char: char,
 ) -> impl Fn(Span) -> IResult<Span, LocatedToken> + 'a {
     move |input: Span| {
         let pos = span_to_position(input, filename);
@@ -349,11 +350,10 @@ pub fn string_literal_mode_token_with_filename<'a>(
             // Check for placeholder start sequences
             value(Token::TildeBrace, tag("~{")),
             value(Token::DollarBrace, tag("${")),
-            // Check for string end quotes
-            map(char('\''), Token::StringEnd),
-            map(char('"'), Token::StringEnd),
-            // Handle string text content
-            string_literal_text,
+            // Check for string end quote - only the matching quote character
+            map(char(quote_char), Token::StringEnd),
+            // Handle string text content with quote-aware parsing
+            move |input| string_literal_text_with_quote(input, quote_char),
         ))(input)?;
 
         Ok((input, LocatedToken::new(token, pos)))
@@ -381,14 +381,68 @@ pub fn placeholder_mode_token_with_filename<'a>(
     }
 }
 
-/// Parse string literal text content
+/// Parse string literal text content (legacy function)
 pub fn string_literal_text(input: Span) -> IResult<Span, Token> {
-    let (input, text) = take_while1(|c: char| {
-        // Stop at quote, placeholder start, or end of input
-        c != '\'' && c != '"' && c != '~' && c != '$'
-    })(input)?;
+    string_literal_text_with_quote(input, '"') // Default to double quote
+}
 
-    Ok((input, Token::StringText(text.fragment().to_string())))
+/// Parse string literal text content with quote character awareness
+/// This function handles content within string literals, including escape sequences
+pub fn string_literal_text_with_quote(input: Span, quote_char: char) -> IResult<Span, Token> {
+    let mut result = String::new();
+    let mut remaining = input;
+
+    while !remaining.fragment().is_empty() {
+        let c = remaining.fragment().chars().next().unwrap();
+
+        match c {
+            // Stop at placeholder start sequences
+            '~' | '$'
+                if remaining.fragment().starts_with("~{")
+                    || remaining.fragment().starts_with("${") =>
+            {
+                break;
+            }
+            // Stop only at the matching quote character
+            c if c == quote_char => {
+                break;
+            }
+            // Handle escape sequences
+            '\\' if remaining.fragment().len() > 1 => {
+                let next_char = remaining.fragment().chars().nth(1).unwrap();
+                match next_char {
+                    'n' => result.push('\n'),
+                    't' => result.push('\t'),
+                    'r' => result.push('\r'),
+                    '\\' => result.push('\\'),
+                    '\'' => result.push('\''),
+                    '"' => result.push('"'),
+                    _ => {
+                        // Unknown escape sequence - keep as is
+                        result.push('\\');
+                        result.push(next_char);
+                    }
+                }
+                // Skip both the backslash and the escaped character
+                remaining = Span::new(&remaining.fragment()[2..]);
+            }
+            // Regular character
+            _ => {
+                result.push(c);
+                remaining = Span::new(&remaining.fragment()[1..]);
+            }
+        }
+    }
+
+    if result.is_empty() && input == remaining {
+        // No content was consumed
+        Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::TakeWhile1,
+        )))
+    } else {
+        Ok((remaining, Token::StringText(result)))
+    }
 }
 
 /// Parse operators
@@ -444,8 +498,10 @@ pub fn stateful_token(lexer: &Lexer) -> impl Fn(Span) -> IResult<Span, LocatedTo
         LexerMode::Command => {
             command_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
         }
-        LexerMode::StringLiteral => {
-            string_literal_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
+        LexerMode::StringLiteral(quote_char) => {
+            string_literal_mode_token_with_filename(&lexer.version, &lexer.filename, quote_char)(
+                input,
+            )
         }
         LexerMode::Placeholder => {
             placeholder_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
