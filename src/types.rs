@@ -518,10 +518,8 @@ impl Type {
             (Type::Any { .. }, _) | (_, Type::Any { .. }) => true,
             (Type::Object { .. }, _) | (_, Type::Object { .. }) => false,
 
-            // Int/Float can be equated at top level but not in compound types
-            (Type::Int { .. }, Type::Float { .. }) | (Type::Float { .. }, Type::Int { .. }) => {
-                !compound
-            }
+            // Int/Float can be equated even in compound types (arrays, maps, etc)
+            (Type::Int { .. }, Type::Float { .. }) | (Type::Float { .. }, Type::Int { .. }) => true,
 
             // Same type variants are equatable
             (Type::Boolean { .. }, Type::Boolean { .. })
@@ -896,8 +894,8 @@ mod tests {
         // Int and Float are equatable at top level
         assert!(int_type.equatable(&float_type, false));
 
-        // But not in compound types
-        assert!(!int_type.equatable(&float_type, true));
+        // Also equatable in compound types (arrays, maps, etc.)
+        assert!(int_type.equatable(&float_type, true));
 
         // Same types are always equatable
         assert!(string_type.equatable(&string_type, true));

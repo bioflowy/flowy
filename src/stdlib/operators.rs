@@ -298,7 +298,9 @@ impl Function for EqualOperator {
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        Ok(Value::boolean(args[0] == args[1]))
+        // Use Value::equals method which properly handles type coercion
+        let result = args[0].equals(&args[1])?;
+        Ok(Value::boolean(result))
     }
 }
 
@@ -322,7 +324,9 @@ impl Function for NotEqualOperator {
     }
 
     fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        Ok(Value::boolean(args[0] != args[1]))
+        // Use Value::equals method which properly handles type coercion
+        let result = args[0].equals(&args[1])?;
+        Ok(Value::boolean(!result))
     }
 }
 
