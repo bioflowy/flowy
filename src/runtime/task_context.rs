@@ -194,6 +194,11 @@ impl TaskContext {
                 if let Some(default_expr) = &input.expr {
                     let value = default_expr.eval(&eval_env, &stdlib)?;
                     eval_env = eval_env.bind(input.name.clone(), value, None);
+                } else {
+                    // For optional inputs without defaults, bind null value
+                    if input.decl_type.is_optional() {
+                        eval_env = eval_env.bind(input.name.clone(), Value::Null, None);
+                    }
                 }
             }
         }
@@ -243,9 +248,11 @@ impl TaskContext {
         // Evaluate command expression
         let command_value = command_expr.eval(&eval_env, &stdlib).map_err(|e| {
             eprintln!("Command evaluation error: {}", e);
-            eprintln!("Available variables in environment:");
-            for binding in eval_env.iter() {
-                eprintln!("  {} = {:?}", binding.name(), binding.value());
+            if self.config.debug {
+                eprintln!("Available variables in environment:");
+                for binding in eval_env.iter() {
+                    eprintln!("  {} = {:?}", binding.name(), binding.value());
+                }
             }
             e // Return the original error directly instead of wrapping it
         })?;
@@ -559,18 +566,7 @@ impl TaskContext {
 
                 // Try to coerce the output value to the expected type
                 let expected_type = &output_decl.decl_type;
-                let output_value =
-                    output_value
-                        .coerce(expected_type)
-                        .map_err(|e| RuntimeError::OutputError {
-                            message: format!(
-                                "Cannot coerce output '{}' to expected type",
-                                output_decl.name
-                            ),
-                            expected_type: format!("{:?}", expected_type),
-                            actual: format!("{:?}", output_value.wdl_type()),
-                            pos: Some(output_decl.pos.clone()),
-                        })?;
+                let output_value = output_value.coerce(expected_type)?;
 
                 // Validate output type matches declaration (after coercion)
                 if !self.value_matches_type(&output_value, expected_type) {

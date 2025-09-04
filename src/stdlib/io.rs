@@ -554,8 +554,7 @@ impl Function for ReadTsvFunction {
                 })
             }
             2 => {
-                // read_tsv(File, Boolean) -> Array[Map[String,String]]
-                // This will coerce to Array[Object] when needed
+                // read_tsv(File, Boolean) -> Array[Object] (per WDL spec)
                 if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
                     return Err(WdlError::RuntimeError {
                         message: "read_tsv() first argument must be String or File".to_string(),
@@ -567,19 +566,15 @@ impl Function for ReadTsvFunction {
                     });
                 }
                 Ok(Type::Array {
-                    item_type: Box::new(Type::Map {
-                        key_type: Box::new(Type::String { optional: false }),
-                        value_type: Box::new(Type::String { optional: false }),
-                        optional: false,
-                        literal_keys: None,
+                    item_type: Box::new(Type::Object {
+                        members: std::collections::HashMap::new(),
                     }),
                     optional: false,
                     nonempty: false,
                 })
             }
             3 => {
-                // read_tsv(File, Boolean, Array[String]) -> Array[Map[String,String]]
-                // This will coerce to Array[Object] when needed
+                // read_tsv(File, Boolean, Array[String]) -> Array[Object] (per WDL spec)
                 if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
                     return Err(WdlError::RuntimeError {
                         message: "read_tsv() first argument must be String or File".to_string(),
@@ -596,11 +591,8 @@ impl Function for ReadTsvFunction {
                     });
                 }
                 Ok(Type::Array {
-                    item_type: Box::new(Type::Map {
-                        key_type: Box::new(Type::String { optional: false }),
-                        value_type: Box::new(Type::String { optional: false }),
-                        optional: false,
-                        literal_keys: None,
+                    item_type: Box::new(Type::Object {
+                        members: std::collections::HashMap::new(),
                     }),
                     optional: false,
                     nonempty: false,
@@ -822,7 +814,7 @@ impl ReadTsvFunction {
         })
     }
 
-    /// Parse TSV content as Array[Map[String,String]] (which coerces to Array[Object])
+    /// Parse TSV content as Array[Object] (per WDL spec)
     fn parse_as_objects(
         &self,
         content: &str,
@@ -838,11 +830,8 @@ impl ReadTsvFunction {
             return Ok(Value::Array {
                 values: Vec::new(),
                 wdl_type: Type::Array {
-                    item_type: Box::new(Type::Map {
-                        key_type: Box::new(Type::String { optional: false }),
-                        value_type: Box::new(Type::String { optional: false }),
-                        optional: false,
-                        literal_keys: None,
+                    item_type: Box::new(Type::Object {
+                        members: std::collections::HashMap::new(),
                     }),
                     optional: false,
                     nonempty: false,
@@ -850,13 +839,15 @@ impl ReadTsvFunction {
             });
         }
 
-        let (headers, data_start_idx) = if has_headers {
-            // Use first line as headers
+        let (headers, data_start_idx) = if let Some(names) = field_names {
+            // When field_names is provided, it overrides file headers
+            // If has_headers=true, skip the header line
+            let start_idx = if has_headers { 1 } else { 0 };
+            (names, start_idx)
+        } else if has_headers {
+            // Use first line as headers when field_names is not provided
             let header: Vec<&str> = lines[0].split('\t').collect();
             (header.into_iter().map(|s| s.to_string()).collect(), 1)
-        } else if let Some(names) = field_names {
-            // Use provided field names
-            (names, 0)
         } else {
             return Err(WdlError::RuntimeError {
                 message: "read_tsv() with has_headers=false must provide field names".to_string(),
@@ -865,7 +856,7 @@ impl ReadTsvFunction {
 
         let mut objects = Vec::new();
 
-        // Parse data rows
+        // Parse data rows - create Objects (using struct values)
         for line in &lines[data_start_idx..] {
             let fields: Vec<&str> = line.split('\t').collect();
             if fields.len() != headers.len() {
@@ -874,38 +865,28 @@ impl ReadTsvFunction {
                 });
             }
 
-            let mut pairs = Vec::new();
+            let mut object_members = std::collections::HashMap::new();
             for (header, field) in headers.iter().zip(fields.iter()) {
-                let key_value = Value::String {
-                    value: header.clone(),
-                    wdl_type: Type::String { optional: false },
-                };
-                let value_value = Value::String {
+                let value = Value::String {
                     value: field.to_string(),
                     wdl_type: Type::String { optional: false },
                 };
-                pairs.push((key_value, value_value));
+                object_members.insert(header.clone(), value);
             }
 
-            objects.push(Value::Map {
-                pairs,
-                wdl_type: Type::Map {
-                    key_type: Box::new(Type::String { optional: false }),
-                    value_type: Box::new(Type::String { optional: false }),
-                    optional: false,
-                    literal_keys: None,
-                },
-            });
+            // Create Object as struct value with Object type
+            let object_type = Type::Object {
+                members: std::collections::HashMap::new(),
+            };
+            let object_value = Value::struct_value_unchecked(object_type, object_members, None);
+            objects.push(object_value);
         }
 
         Ok(Value::Array {
             values: objects,
             wdl_type: Type::Array {
-                item_type: Box::new(Type::Map {
-                    key_type: Box::new(Type::String { optional: false }),
-                    value_type: Box::new(Type::String { optional: false }),
-                    optional: false,
-                    literal_keys: None,
+                item_type: Box::new(Type::Object {
+                    members: std::collections::HashMap::new(),
                 }),
                 optional: false,
                 nonempty: false,
@@ -1308,55 +1289,655 @@ pub fn create_write_lines() -> Box<dyn Function> {
     ))
 }
 
-/// Helper function to create write_tsv function
-pub fn create_write_tsv() -> Box<dyn Function> {
-    Box::new(WriteFileFunction::new(
-        "write_tsv",
-        Type::Array {
-            item_type: Box::new(Type::Array {
-                item_type: Box::new(Type::String { optional: false }),
-                optional: false,
-                nonempty: false,
-            }),
-            optional: false,
-            nonempty: false,
-        },
-        |value| {
-            let array = value.as_array().ok_or_else(|| WdlError::RuntimeError {
-                message: "write_tsv() argument must be Array[Array[String]]".to_string(),
+/// Multi-signature write_tsv function that supports multiple variants:
+/// 1. write_tsv(Array[Array[String]]) -> File (no headers)
+/// 2. write_tsv(Array[Array[String]], true, Array[String]) -> File (with custom headers)
+/// 3. write_tsv(Array[Struct]) -> File (no headers, fields in definition order)
+/// 4. write_tsv(Array[Struct], Boolean) -> File (optional headers from field names)
+/// 5. write_tsv(Array[Struct], Boolean, Array[String]) -> File (optional headers with custom names)
+pub struct WriteTsvFunction;
+
+impl Function for WriteTsvFunction {
+    fn name(&self) -> &str {
+        "write_tsv"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.is_empty() || args.len() > 3 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "write_tsv".to_string(),
+                expected: 1, // Can be 1, 2, or 3, but we'll validate in detail below
+                actual: args.len(),
+            });
+        }
+
+        match args.len() {
+            1 => {
+                // write_tsv(Array[Array[String]]) or write_tsv(Array[Struct])
+                match &args[0] {
+                    Type::Array { item_type, .. } => {
+                        match item_type.as_ref() {
+                            Type::Array {
+                                item_type: inner, ..
+                            } => {
+                                // Array[Array[String]]
+                                if let Type::String { .. } = inner.as_ref() {
+                                    Ok(Type::file(false))
+                                } else {
+                                    Err(WdlError::TypeMismatch {
+                                        expected: Type::Array {
+                                            item_type: Box::new(Type::Array {
+                                                item_type: Box::new(Type::string(false)),
+                                                optional: false,
+                                                nonempty: false,
+                                            }),
+                                            optional: false,
+                                            nonempty: false,
+                                        },
+                                        actual: args[0].clone(),
+                                    })
+                                }
+                            }
+                            Type::StructInstance { .. } => {
+                                // Array[Struct]
+                                Ok(Type::file(false))
+                            }
+                            _ => Err(WdlError::TypeMismatch {
+                                expected: Type::Array {
+                                    item_type: Box::new(Type::Array {
+                                        item_type: Box::new(Type::string(false)),
+                                        optional: false,
+                                        nonempty: false,
+                                    }),
+                                    optional: false,
+                                    nonempty: false,
+                                },
+                                actual: args[0].clone(),
+                            }),
+                        }
+                    }
+                    _ => Err(WdlError::TypeMismatch {
+                        expected: Type::Array {
+                            item_type: Box::new(Type::Array {
+                                item_type: Box::new(Type::string(false)),
+                                optional: false,
+                                nonempty: false,
+                            }),
+                            optional: false,
+                            nonempty: false,
+                        },
+                        actual: args[0].clone(),
+                    }),
+                }
+            }
+            2 => {
+                // write_tsv(Array[Struct], Boolean)
+                match &args[0] {
+                    Type::Array { item_type, .. } => {
+                        if let Type::StructInstance { .. } = item_type.as_ref() {
+                            if let Type::Boolean { .. } = &args[1] {
+                                Ok(Type::file(false))
+                            } else {
+                                Err(WdlError::TypeMismatch {
+                                    expected: Type::boolean(false),
+                                    actual: args[1].clone(),
+                                })
+                            }
+                        } else {
+                            Err(WdlError::TypeMismatch {
+                                expected: Type::Array {
+                                    item_type: Box::new(Type::StructInstance {
+                                        type_name: "Any".to_string(),
+                                        members: Some(std::collections::HashMap::new()),
+                                        optional: false,
+                                    }),
+                                    optional: false,
+                                    nonempty: false,
+                                },
+                                actual: args[0].clone(),
+                            })
+                        }
+                    }
+                    _ => Err(WdlError::TypeMismatch {
+                        expected: Type::Array {
+                            item_type: Box::new(Type::StructInstance {
+                                type_name: "Any".to_string(),
+                                members: Some(std::collections::HashMap::new()),
+                                optional: false,
+                            }),
+                            optional: false,
+                            nonempty: false,
+                        },
+                        actual: args[0].clone(),
+                    }),
+                }
+            }
+            3 => {
+                // write_tsv(Array[Array[String]], true, Array[String]) or
+                // write_tsv(Array[Struct], Boolean, Array[String])
+                match &args[0] {
+                    Type::Array { item_type, .. } => {
+                        match item_type.as_ref() {
+                            Type::Array {
+                                item_type: inner, ..
+                            } => {
+                                // Array[Array[String]], true, Array[String]
+                                if let Type::String { .. } = inner.as_ref() {
+                                    // Second argument must be Boolean (will be true at runtime)
+                                    if let Type::Boolean { .. } = &args[1] {
+                                        // Third argument must be Array[String]
+                                        if let Type::Array {
+                                            item_type: header_type,
+                                            ..
+                                        } = &args[2]
+                                        {
+                                            if let Type::String { .. } = header_type.as_ref() {
+                                                Ok(Type::file(false))
+                                            } else {
+                                                Err(WdlError::TypeMismatch {
+                                                    expected: Type::Array {
+                                                        item_type: Box::new(Type::string(false)),
+                                                        optional: false,
+                                                        nonempty: false,
+                                                    },
+                                                    actual: args[2].clone(),
+                                                })
+                                            }
+                                        } else {
+                                            Err(WdlError::TypeMismatch {
+                                                expected: Type::Array {
+                                                    item_type: Box::new(Type::string(false)),
+                                                    optional: false,
+                                                    nonempty: false,
+                                                },
+                                                actual: args[2].clone(),
+                                            })
+                                        }
+                                    } else {
+                                        Err(WdlError::TypeMismatch {
+                                            expected: Type::boolean(false),
+                                            actual: args[1].clone(),
+                                        })
+                                    }
+                                } else {
+                                    Err(WdlError::TypeMismatch {
+                                        expected: Type::Array {
+                                            item_type: Box::new(Type::Array {
+                                                item_type: Box::new(Type::string(false)),
+                                                optional: false,
+                                                nonempty: false,
+                                            }),
+                                            optional: false,
+                                            nonempty: false,
+                                        },
+                                        actual: args[0].clone(),
+                                    })
+                                }
+                            }
+                            Type::StructInstance { .. } => {
+                                // Array[Struct], Boolean, Array[String]
+                                if let Type::Boolean { .. } = &args[1] {
+                                    if let Type::Array {
+                                        item_type: header_type,
+                                        ..
+                                    } = &args[2]
+                                    {
+                                        if let Type::String { .. } = header_type.as_ref() {
+                                            Ok(Type::file(false))
+                                        } else {
+                                            Err(WdlError::TypeMismatch {
+                                                expected: Type::Array {
+                                                    item_type: Box::new(Type::string(false)),
+                                                    optional: false,
+                                                    nonempty: false,
+                                                },
+                                                actual: args[2].clone(),
+                                            })
+                                        }
+                                    } else {
+                                        Err(WdlError::TypeMismatch {
+                                            expected: Type::Array {
+                                                item_type: Box::new(Type::string(false)),
+                                                optional: false,
+                                                nonempty: false,
+                                            },
+                                            actual: args[2].clone(),
+                                        })
+                                    }
+                                } else {
+                                    Err(WdlError::TypeMismatch {
+                                        expected: Type::boolean(false),
+                                        actual: args[1].clone(),
+                                    })
+                                }
+                            }
+                            _ => Err(WdlError::TypeMismatch {
+                                expected: Type::Array {
+                                    item_type: Box::new(Type::Array {
+                                        item_type: Box::new(Type::string(false)),
+                                        optional: false,
+                                        nonempty: false,
+                                    }),
+                                    optional: false,
+                                    nonempty: false,
+                                },
+                                actual: args[0].clone(),
+                            }),
+                        }
+                    }
+                    _ => Err(WdlError::TypeMismatch {
+                        expected: Type::Array {
+                            item_type: Box::new(Type::Array {
+                                item_type: Box::new(Type::string(false)),
+                                optional: false,
+                                nonempty: false,
+                            }),
+                            optional: false,
+                            nonempty: false,
+                        },
+                        actual: args[0].clone(),
+                    }),
+                }
+            }
+            _ => unreachable!("Already checked arg length"),
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        use std::io::Write;
+
+        if args.is_empty() || args.len() > 3 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "write_tsv".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let content = match args.len() {
+            1 => {
+                // write_tsv(Array[Array[String]]) or write_tsv(Array[Struct])
+                // For Array[Struct], include headers by default per WDL spec expectation
+                let include_headers_for_struct = if let Value::Array { values, .. } = &args[0] {
+                    if let Some(first_item) = values.first() {
+                        matches!(first_item, Value::Struct { .. })
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                self.generate_tsv_content(&args[0], include_headers_for_struct, None)?
+            }
+            2 => {
+                // write_tsv(Array[Struct], Boolean)
+                let write_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+                self.generate_tsv_content(&args[0], write_headers, None)?
+            }
+            3 => {
+                // write_tsv(Array[Array[String]], true, Array[String]) or
+                // write_tsv(Array[Struct], Boolean, Array[String])
+                let write_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+
+                let custom_headers = match &args[2] {
+                    Value::Array { values, .. } => {
+                        let mut headers = Vec::new();
+                        for val in values {
+                            match val {
+                                Value::String { value, .. } => headers.push(value.clone()),
+                                _ => {
+                                    return Err(WdlError::RuntimeError {
+                                        message: "write_tsv() third argument must be Array[String]"
+                                            .to_string(),
+                                    })
+                                }
+                            }
+                        }
+                        Some(headers)
+                    }
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv() third argument must be Array[String]".to_string(),
+                        })
+                    }
+                };
+
+                // For Array[Array[String]], true, Array[String] - headers must be true
+                if let Value::Array { values, .. } = &args[0] {
+                    if let Some(first_item) = values.first() {
+                        if let Value::Array { .. } = first_item {
+                            // This is Array[Array[String]] case - second arg must be true
+                            if !write_headers {
+                                return Err(WdlError::RuntimeError {
+                                    message: "write_tsv() with Array[Array[String]] and Array[String] headers requires second argument to be true".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+
+                self.generate_tsv_content(&args[0], write_headers, custom_headers)?
+            }
+            _ => unreachable!("Already checked arg length"),
+        };
+
+        // Create a temporary file
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push(format!(
+            "write_tsv_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
+        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create temporary file: {}", e),
+        })?;
+
+        file.write_all(content.as_bytes())
+            .map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write to file: {}", e),
             })?;
 
-            let mut rows = Vec::new();
-            for row_value in array {
-                let row_array = row_value.as_array().ok_or_else(|| WdlError::RuntimeError {
-                    message: "write_tsv() argument must be Array[Array[String]]".to_string(),
-                })?;
+        Value::file(temp_file.to_string_lossy().to_string())
+    }
 
-                let mut columns = Vec::new();
-                for col_value in row_array {
-                    let col_str = match col_value {
-                        Value::String { value, .. } => value.clone(),
-                        _ => col_value.to_string(),
-                    };
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        use std::io::Write;
 
-                    // Validate that the string doesn't contain tabs or newlines
-                    if col_str.contains('\t') || col_str.contains('\n') {
+        if args.is_empty() || args.len() > 3 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "write_tsv".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let content = match args.len() {
+            1 => {
+                // write_tsv(Array[Array[String]]) or write_tsv(Array[Struct])
+                // For Array[Struct], include headers by default per WDL spec expectation
+                let include_headers_for_struct = if let Value::Array { values, .. } = &args[0] {
+                    if let Some(first_item) = values.first() {
+                        matches!(first_item, Value::Struct { .. })
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                self.generate_tsv_content(&args[0], include_headers_for_struct, None)?
+            }
+            2 => {
+                // write_tsv(Array[Struct], Boolean)
+                let write_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
                         return Err(WdlError::RuntimeError {
-                            message: format!(
-                                "write_tsv() cannot write string containing tab or newline: '{}'",
-                                col_str
-                            ),
+                            message: "write_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+                self.generate_tsv_content(&args[0], write_headers, None)?
+            }
+            3 => {
+                // write_tsv(Array[Array[String]], true, Array[String]) or
+                // write_tsv(Array[Struct], Boolean, Array[String])
+                let write_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+
+                let custom_headers = match &args[2] {
+                    Value::Array { values, .. } => {
+                        let mut headers = Vec::new();
+                        for val in values {
+                            match val {
+                                Value::String { value, .. } => headers.push(value.clone()),
+                                _ => {
+                                    return Err(WdlError::RuntimeError {
+                                        message: "write_tsv() third argument must be Array[String]"
+                                            .to_string(),
+                                    })
+                                }
+                            }
+                        }
+                        Some(headers)
+                    }
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv() third argument must be Array[String]".to_string(),
+                        })
+                    }
+                };
+
+                // For Array[Array[String]], true, Array[String] - headers must be true
+                if let Value::Array { values, .. } = &args[0] {
+                    if let Some(first_item) = values.first() {
+                        if let Value::Array { .. } = first_item {
+                            // This is Array[Array[String]] case - second arg must be true
+                            if !write_headers {
+                                return Err(WdlError::RuntimeError {
+                                    message: "write_tsv() with Array[Array[String]] and Array[String] headers requires second argument to be true".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+
+                self.generate_tsv_content(&args[0], write_headers, custom_headers)?
+            }
+            _ => unreachable!("Already checked arg length"),
+        };
+
+        // Create a temporary file
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push(format!(
+            "write_tsv_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
+        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create temporary file: {}", e),
+        })?;
+
+        file.write_all(content.as_bytes())
+            .map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write to file: {}", e),
+            })?;
+
+        // Use path mapper to virtualize the filename
+        let virtual_path = stdlib.path_mapper().virtualize_filename(&temp_file)?;
+        Value::file(virtual_path)
+    }
+}
+
+impl WriteTsvFunction {
+    /// Generate TSV content based on the input array and options
+    fn generate_tsv_content(
+        &self,
+        array_value: &Value,
+        write_headers: bool,
+        custom_headers: Option<Vec<String>>,
+    ) -> Result<String, WdlError> {
+        let array = array_value
+            .as_array()
+            .ok_or_else(|| WdlError::RuntimeError {
+                message: "write_tsv() first argument must be an Array".to_string(),
+            })?;
+
+        if array.is_empty() {
+            return Ok(String::new());
+        }
+
+        let mut rows = Vec::new();
+
+        // Check if this is Array[Array[String]] or Array[Struct]
+        match &array[0] {
+            Value::Array { .. } => {
+                // Array[Array[String]] case
+                if write_headers {
+                    if let Some(headers) = custom_headers {
+                        // Validate headers match data width
+                        if let Value::Array {
+                            values: row_values, ..
+                        } = &array[0]
+                        {
+                            if headers.len() != row_values.len() {
+                                return Err(WdlError::RuntimeError {
+                                    message: format!(
+                                        "write_tsv(): header count ({}) doesn't match data column count ({})",
+                                        headers.len(), row_values.len()
+                                    ),
+                                });
+                            }
+                        }
+                        rows.push(headers.join("\t"));
+                    } else {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv(): Array[Array[String]] with headers requires custom header names".to_string(),
                         });
                     }
-
-                    columns.push(col_str);
                 }
-                rows.push(columns.join("\t"));
-            }
 
-            Ok(rows.join("\n") + "\n")
-        },
-    ))
+                // Process data rows
+                for row_value in array {
+                    let row_array = row_value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                        message: "write_tsv() argument must be Array[Array[String]]".to_string(),
+                    })?;
+
+                    let mut columns = Vec::new();
+                    for col_value in row_array {
+                        let col_str = match col_value {
+                            Value::String { value, .. } => value.clone(),
+                            _ => col_value.to_string(),
+                        };
+
+                        // Validate that the string doesn't contain tabs or newlines
+                        if col_str.contains('\t') || col_str.contains('\n') {
+                            return Err(WdlError::RuntimeError {
+                                message: format!(
+                                    "write_tsv() cannot write string containing tab or newline: '{}'",
+                                    col_str
+                                ),
+                            });
+                        }
+
+                        columns.push(col_str);
+                    }
+                    rows.push(columns.join("\t"));
+                }
+            }
+            Value::Struct { members, .. } => {
+                // Array[Struct] case
+                let mut field_names: Vec<String> = members.keys().cloned().collect();
+                field_names.sort(); // Ensure consistent ordering
+
+                if write_headers {
+                    let header_names = if let Some(custom_headers) = custom_headers {
+                        // Validate custom headers count matches struct fields
+                        if custom_headers.len() != field_names.len() {
+                            return Err(WdlError::RuntimeError {
+                                message: format!(
+                                    "write_tsv(): header count ({}) doesn't match struct field count ({})",
+                                    custom_headers.len(), field_names.len()
+                                ),
+                            });
+                        }
+                        custom_headers
+                    } else {
+                        field_names.clone()
+                    };
+                    rows.push(header_names.join("\t"));
+                }
+
+                // Process data rows
+                for struct_value in array {
+                    if let Value::Struct {
+                        members: struct_members,
+                        ..
+                    } = struct_value
+                    {
+                        let mut columns = Vec::new();
+
+                        // Output fields in the same order as the first struct
+                        for field_name in &field_names {
+                            if let Some(field_value) = struct_members.get(field_name) {
+                                let field_str = match field_value {
+                                    Value::String { value, .. } => value.clone(),
+                                    _ => field_value.to_string(),
+                                };
+
+                                // Validate that the string doesn't contain tabs or newlines
+                                if field_str.contains('\t') || field_str.contains('\n') {
+                                    return Err(WdlError::RuntimeError {
+                                        message: format!(
+                                            "write_tsv() cannot write string containing tab or newline: '{}'",
+                                            field_str
+                                        ),
+                                    });
+                                }
+
+                                columns.push(field_str);
+                            } else {
+                                return Err(WdlError::RuntimeError {
+                                    message: format!(
+                                        "write_tsv(): struct missing field '{}'",
+                                        field_name
+                                    ),
+                                });
+                            }
+                        }
+                        rows.push(columns.join("\t"));
+                    } else {
+                        return Err(WdlError::RuntimeError {
+                            message: "write_tsv() array contains non-struct values".to_string(),
+                        });
+                    }
+                }
+            }
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message:
+                        "write_tsv() first argument must be Array[Array[String]] or Array[Struct]"
+                            .to_string(),
+                });
+            }
+        }
+
+        Ok(rows.join("\n") + "\n")
+    }
+}
+
+/// Helper function to create write_tsv function
+pub fn create_write_tsv() -> Box<dyn Function> {
+    Box::new(WriteTsvFunction)
 }
 
 /// Helper function to create write_map function
@@ -1986,6 +2567,96 @@ mod tests {
                 if let Some(Value::String { value, .. }) = name_value {
                     assert_eq!(value, "row1", "First row name should be 'row1'");
                 }
+            }
+        }
+
+        // Clean up
+        std::fs::remove_file(temp_file).ok();
+    }
+
+    #[test]
+    fn test_read_tsv_object_coercion_issue() {
+        use crate::{value::ValueBase, Type};
+        use std::io::Write;
+
+        let stdlib = StdLib::new("1.2");
+
+        // Create a test TSV file with headers
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push("test_object_coercion.tsv");
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        writeln!(file, "header1\theader2").unwrap();
+        writeln!(file, "row1\tvalue1").unwrap();
+        writeln!(file, "row2\tvalue2").unwrap();
+
+        let read_tsv_func = stdlib.get_function("read_tsv").unwrap();
+
+        // Test: WDL expects Array[Object] but we return Array[Map[String,String]]
+        let args = vec![
+            Value::String {
+                value: temp_file.to_string_lossy().to_string(),
+                wdl_type: Type::String { optional: false },
+            },
+            Value::Boolean {
+                value: true,
+                wdl_type: Type::Boolean { optional: false },
+            },
+        ];
+
+        // This should return Array[Object] according to WDL spec
+        let result_type = read_tsv_func.infer_type(&[
+            Type::String { optional: false },
+            Type::Boolean { optional: false },
+        ]);
+
+        println!(
+            "read_tsv(File, Boolean) infer_type result: {:?}",
+            result_type
+        );
+
+        // The issue: we return Array[Map[String,String]] but WDL expects Array[Object]
+        // This should demonstrate the coercion issue
+        let result = read_tsv_func.eval(&args);
+
+        if let Ok(value) = &result {
+            // Check what type we actually get
+            match value {
+                Value::Array {
+                    wdl_type, values, ..
+                } => {
+                    println!("Returned Array with type: {:?}", wdl_type);
+                    if let Some(first) = values.first() {
+                        match first {
+                            Value::Map {
+                                wdl_type: map_type, ..
+                            } => {
+                                println!("First element is Map with type: {:?}", map_type);
+                            }
+                            _ => println!("First element is not a Map: {:?}", first),
+                        }
+                    }
+                }
+                _ => println!("Result is not an Array: {:?}", value),
+            }
+
+            // Try to coerce to Array[Object]
+            let object_array_type = Type::Array {
+                item_type: Box::new(Type::Object {
+                    members: std::collections::HashMap::new(),
+                }),
+                optional: false,
+                nonempty: false,
+            };
+
+            let coerced = value.coerce(&object_array_type);
+            println!("Coercion to Array[Object] result: {:?}", coerced.is_ok());
+
+            if let Err(e) = coerced {
+                println!("Coercion error: {:?}", e);
+                // This demonstrates our problem - Map can't coerce to Object
+                println!("SUCCESS: Test reproduced the bug - Map cannot coerce to Object");
+            } else {
+                println!("WARNING: Coercion succeeded, but we expected it to fail");
             }
         }
 
