@@ -145,22 +145,41 @@ pub fn int_literal(input: Span) -> IResult<Span, Token> {
 
 /// Parse a float literal (positive only, minus handled as separate token)
 pub fn float_literal(input: Span) -> IResult<Span, Token> {
-    map(
-        recognize(tuple((
-            digit1,
-            char('.'),
-            digit1,
-            opt(tuple((
-                alt((char('e'), char('E'))),
-                opt(alt((char('+'), char('-')))),
+    alt((
+        // Standard format: digits.digits[exponent]
+        map(
+            recognize(tuple((
                 digit1,
+                char('.'),
+                digit1,
+                opt(tuple((
+                    alt((char('e'), char('E'))),
+                    opt(alt((char('+'), char('-')))),
+                    digit1,
+                ))),
             ))),
-        ))),
-        |s: Span| {
-            let num = s.fragment().parse::<f64>().unwrap_or(0.0);
-            Token::FloatLiteral(num)
-        },
-    )(input)
+            |s: Span| {
+                let num = s.fragment().parse::<f64>().unwrap_or(0.0);
+                Token::FloatLiteral(num)
+            },
+        ),
+        // Decimal-only format: .digits[exponent]
+        map(
+            recognize(tuple((
+                char('.'),
+                digit1,
+                opt(tuple((
+                    alt((char('e'), char('E'))),
+                    opt(alt((char('+'), char('-')))),
+                    digit1,
+                ))),
+            ))),
+            |s: Span| {
+                let num = s.fragment().parse::<f64>().unwrap_or(0.0);
+                Token::FloatLiteral(num)
+            },
+        ),
+    ))(input)
 }
 
 /// Parse a boolean literal
@@ -492,6 +511,20 @@ mod tests {
         assert!(result.is_ok());
         let (_, token) = result.unwrap();
         assert_eq!(token, Token::FloatLiteral(2.5e10));
+
+        // Float starting with decimal point (e.g., .14)
+        let input = Span::new(".14");
+        let result = float_literal(input);
+        assert!(result.is_ok(), "Should parse .14 as float literal");
+        let (_, token) = result.unwrap();
+        assert_eq!(token, Token::FloatLiteral(0.14));
+
+        // Float starting with decimal point with exponent (e.g., .5e10)
+        let input = Span::new(".5e10");
+        let result = float_literal(input);
+        assert!(result.is_ok(), "Should parse .5e10 as float literal");
+        let (_, token) = result.unwrap();
+        assert_eq!(token, Token::FloatLiteral(0.5e10));
 
         // Negative numbers should fail (handled by parser as unary minus)
         let input = Span::new("-2.5e10");

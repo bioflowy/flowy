@@ -395,22 +395,9 @@ impl Value {
             return Ok(Value::string(str_repr));
         }
 
-        // Handle T -> Array[T] promotion (only for non-arrays)
-        // Following miniwdl's logic: promote single value to array
-        if let Type::Array { item_type, .. } = desired_type {
-            if !matches!(self, Value::Array { .. }) {
-                // Only promote non-arrays to arrays, and only if this value's type
-                // can coerce to the array's item type
-                if self.wdl_type().coerces(item_type, false) {
-                    let coerced_item = self.coerce(item_type)?;
-                    return Ok(Value::array(item_type.as_ref().clone(), vec![coerced_item]));
-                }
-            }
-        }
-
         // Specific type coercions for simple types
         match (self, desired_type) {
-            // Null coercions
+            // Null coercions - handle first to prevent unwanted array promotion
             (Value::Null, ty) => {
                 if !ty.is_optional() && !matches!(ty, Type::Any { .. }) {
                     return Err(WdlError::NullValue {
@@ -418,6 +405,24 @@ impl Value {
                     });
                 }
                 Ok(self.clone())
+            }
+
+            // Handle T -> Array[T] promotion (only for non-null, non-arrays)
+            // Following miniwdl's logic: promote single value to array
+            (value, Type::Array { item_type, .. }) if !matches!(value, Value::Array { .. }) => {
+                // Only promote non-arrays to arrays, and only if this value's type
+                // can coerce to the array's item type
+                if self.wdl_type().coerces(item_type, false) {
+                    let coerced_item = self.coerce(item_type)?;
+                    Ok(Value::array(item_type.as_ref().clone(), vec![coerced_item]))
+                } else {
+                    Err(WdlError::static_type_mismatch(
+                        SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                        desired_type.to_string(),
+                        self.wdl_type().to_string(),
+                        format!("Cannot coerce {} to {}", self.wdl_type(), desired_type),
+                    ))
+                }
             }
 
             // Int to Float coercion

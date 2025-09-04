@@ -211,31 +211,40 @@ fn parse_args() -> Args {
     }
 
     let mut debug = false;
+    let mut filtered_args = Vec::new();
+
+    // Filter out --debug flag and set the debug variable
+    for arg in &args[1..] {
+        if arg == "--debug" {
+            debug = true;
+        } else {
+            filtered_args.push(arg.clone());
+        }
+    }
+
+    // If no args left after filtering, show help
+    if filtered_args.is_empty() {
+        print_help(&args[0]);
+        process::exit(1);
+    }
 
     // Check if first argument is a command
-    let command = match args[1].as_str() {
-        "run" => parse_run_command(&args[2..]),
+    let command = match filtered_args[0].as_str() {
+        "run" => {
+            if filtered_args.len() > 1 {
+                parse_run_command(&filtered_args[1..])
+            } else {
+                eprintln!("Error: WDL file required");
+                process::exit(1);
+            }
+        }
         "-h" | "--help" => {
             print_help(&args[0]);
             process::exit(0);
         }
-        "--debug" => {
-            debug = true;
-            if args.len() < 3 {
-                print_help(&args[0]);
-                process::exit(1);
-            }
-            match args[2].as_str() {
-                "run" => parse_run_command(&args[3..]),
-                _ => {
-                    // Assume it's a WDL file for backward compatibility
-                    parse_run_command(&args[1..])
-                }
-            }
-        }
         _ => {
             // Assume it's a WDL file for backward compatibility
-            parse_run_command(&args[1..])
+            parse_run_command(&filtered_args)
         }
     };
 
@@ -292,6 +301,9 @@ fn parse_run_command(args: &[String]) -> Command {
                     eprintln!("Error: --config requires a file path");
                     process::exit(1);
                 }
+            }
+            "--debug" => {
+                // Skip --debug flag, it's handled in parse_args()
             }
             _ => {
                 if wdl_file.is_none() && !args[i].starts_with('-') {

@@ -58,7 +58,8 @@ pub fn parse_primitive_type(stream: &mut TokenStream) -> ParseResult<Type> {
 }
 
 /// Parse an array type like Array[String] or Array[Array[Int]]
-pub fn parse_array_type(stream: &mut TokenStream) -> ParseResult<Type> {
+/// Returns (Type, consumed_optional_marker)
+fn parse_array_type_internal(stream: &mut TokenStream) -> ParseResult<(Type, bool)> {
     // Expect "Array" keyword
     match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "Array" => {
@@ -78,15 +79,30 @@ pub fn parse_array_type(stream: &mut TokenStream) -> ParseResult<Type> {
     let inner_type = parse_type(stream)?;
     stream.expect(Token::RightBracket)?;
 
-    // Check for non-empty array marker (+)
-    let nonempty = if stream.peek_token() == Some(Token::Plus) {
-        stream.next();
-        true
-    } else {
-        false
+    // Check for non-empty array marker (+) or (+?)
+    let next_token = stream.peek_token();
+    let (nonempty, consumed_optional) = match next_token {
+        Some(Token::Plus) => {
+            stream.next();
+            (true, false)
+        }
+        Some(Token::PlusQuestion) => {
+            stream.next();
+            (true, true) // nonempty=true, and we consumed the optional marker
+        }
+        _ => (false, false),
     };
 
-    Ok(Type::array(inner_type, false, nonempty))
+    Ok((
+        Type::array(inner_type, consumed_optional, nonempty),
+        consumed_optional,
+    ))
+}
+
+/// Parse an array type like Array[String] or Array[Array[Int]]
+pub fn parse_array_type(stream: &mut TokenStream) -> ParseResult<Type> {
+    let (array_type, _) = parse_array_type_internal(stream)?;
+    Ok(array_type)
 }
 
 /// Parse a map type like Map[String, Int]
@@ -190,24 +206,27 @@ pub fn parse_struct_type(stream: &mut TokenStream) -> ParseResult<Type> {
 
 /// Parse a WDL type
 pub fn parse_type(stream: &mut TokenStream) -> ParseResult<Type> {
-    // Try to parse the base type
-    let base_type = match stream.peek_token() {
+    // Try to parse the base type, handling arrays specially to detect +? tokens
+    let (base_type, array_consumed_optional) = match stream.peek_token() {
         Some(Token::Keyword(kw)) => {
             match kw.as_str() {
-                "Array" => parse_array_type(stream)?,
-                "Map" => parse_map_type(stream)?,
-                "Pair" => parse_pair_type(stream)?,
-                "Object" => parse_object_type(stream)?,
+                "Array" => {
+                    let (array_type, consumed_optional) = parse_array_type_internal(stream)?;
+                    (array_type, consumed_optional)
+                }
+                "Map" => (parse_map_type(stream)?, false),
+                "Pair" => (parse_pair_type(stream)?, false),
+                "Object" => (parse_object_type(stream)?, false),
                 "String" | "Int" | "Float" | "Boolean" | "File" | "Directory" | "None" => {
-                    parse_primitive_type(stream)?
+                    (parse_primitive_type(stream)?, false)
                 }
                 _ => {
                     // Could be a struct type that happens to be a keyword
-                    parse_struct_type(stream)?
+                    (parse_struct_type(stream)?, false)
                 }
             }
         }
-        Some(Token::Identifier(_)) => parse_struct_type(stream)?,
+        Some(Token::Identifier(_)) => (parse_struct_type(stream)?, false),
         _ => {
             return Err(WdlError::syntax_error(
                 stream.current_position(),
@@ -218,8 +237,8 @@ pub fn parse_type(stream: &mut TokenStream) -> ParseResult<Type> {
         }
     };
 
-    // Check for optional suffix (?)
-    if stream.peek_token() == Some(Token::Question) {
+    // Check for optional suffix (?), but only if arrays didn't already consume it
+    if !array_consumed_optional && stream.peek_token() == Some(Token::Question) {
         stream.next();
 
         // Set optional flag on the type
@@ -402,5 +421,67 @@ mod tests {
         assert_eq!(types[0].to_string(), "String");
         assert_eq!(types[1].to_string(), "Int");
         assert_eq!(types[2].to_string(), "Array[File]");
+    }
+
+    #[test]
+    fn test_parse_nonempty_array() {
+        // Test Array[Int]+
+        let mut stream = TokenStream::new("Array[Int]+", "1.2").unwrap();
+        let result = parse_type(&mut stream);
+        assert!(result.is_ok(), "Failed to parse Array[Int]+");
+        let type_ = result.unwrap();
+        match type_ {
+            Type::Array {
+                nonempty, optional, ..
+            } => {
+                assert!(nonempty, "Array should be marked as non-empty");
+                assert!(!optional, "Array should not be marked as optional");
+            }
+            _ => panic!("Expected Array type"),
+        }
+
+        // Test Array[Int]+?
+        let mut stream = TokenStream::new("Array[Int]+?", "1.2").unwrap();
+        let result = parse_type(&mut stream);
+        assert!(result.is_ok(), "Failed to parse Array[Int]+?");
+        let type_ = result.unwrap();
+        eprintln!("Parsed Array[Int]+? as: {:?}", type_);
+        match type_ {
+            Type::Array {
+                nonempty, optional, ..
+            } => {
+                eprintln!("nonempty: {}, optional: {}", nonempty, optional);
+                assert!(nonempty, "Array should be marked as non-empty");
+                assert!(optional, "Array should be marked as optional");
+            }
+            _ => panic!("Expected Array type"),
+        }
+
+        // Test Array[Int?]+
+        let mut stream = TokenStream::new("Array[Int?]+", "1.2").unwrap();
+        let result = parse_type(&mut stream);
+        assert!(result.is_ok(), "Failed to parse Array[Int?]+");
+        let type_ = result.unwrap();
+        match type_ {
+            Type::Array {
+                nonempty,
+                optional,
+                item_type,
+                ..
+            } => {
+                assert!(nonempty, "Array should be marked as non-empty");
+                assert!(!optional, "Array itself should not be marked as optional");
+                match item_type.as_ref() {
+                    Type::Int {
+                        optional: item_optional,
+                        ..
+                    } => {
+                        assert!(*item_optional, "Array item type should be optional");
+                    }
+                    _ => panic!("Expected Int item type"),
+                }
+            }
+            _ => panic!("Expected Array type"),
+        }
     }
 }

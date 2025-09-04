@@ -4,6 +4,7 @@
 //! and executes test cases using miniwdl-rust.
 
 use regex::Regex;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -47,6 +48,7 @@ pub struct SpecTestRunner {
     pub execution_timestamp: u64,
     pub keep_files: bool,
     pub debug: bool,
+    pub xfail_tests: HashSet<String>,
 }
 
 impl Default for SpecTestRunner {
@@ -69,6 +71,7 @@ impl SpecTestRunner {
             execution_timestamp: timestamp,
             keep_files: false,
             debug: false,
+            xfail_tests: HashSet::new(),
         }
     }
 
@@ -82,6 +85,45 @@ impl SpecTestRunner {
         self
     }
 
+    /// Load xfail test names from config.txt in the same directory as SPEC.md
+    pub fn load_xfail_config<P: AsRef<Path>>(
+        &mut self,
+        spec_path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let spec_dir = spec_path.as_ref().parent().unwrap_or(Path::new("."));
+        let config_path = spec_dir.join("config.txt");
+
+        if config_path.exists() {
+            let content = fs::read_to_string(&config_path)?;
+
+            for line in content.lines() {
+                // Remove comments (everything after #) and trim whitespace
+                let cleaned_line = if let Some(comment_pos) = line.find('#') {
+                    &line[..comment_pos]
+                } else {
+                    line
+                };
+
+                let test_name = cleaned_line.trim();
+                if !test_name.is_empty() {
+                    self.xfail_tests.insert(test_name.to_string());
+                }
+            }
+
+            if self.debug && !self.xfail_tests.is_empty() {
+                eprintln!(
+                    "DEBUG: Loaded {} xfail tests from config.txt",
+                    self.xfail_tests.len()
+                );
+                for test_name in &self.xfail_tests {
+                    eprintln!("DEBUG: xfail test: {}", test_name);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Unified test execution method that handles all scenarios
     pub fn run_unified<P: AsRef<Path>>(
         &mut self,
@@ -91,6 +133,9 @@ impl SpecTestRunner {
         test_name: Option<String>,
         pattern: Option<String>,
     ) -> Result<Vec<TestResult>, Box<dyn std::error::Error>> {
+        // Load xfail tests from config.txt if it exists
+        self.load_xfail_config(&spec_path)?;
+
         let parser = SpecParser::new();
         let test_cases = parser.parse_spec_file(spec_path)?;
 
@@ -98,7 +143,9 @@ impl SpecTestRunner {
         if list_only {
             println!("Available tests ({} total):", test_cases.len());
             for (index, test_case) in test_cases.iter().enumerate() {
-                println!("  {}: {}", index + 1, test_case.name);
+                let is_xfail = self.xfail_tests.contains(&test_case.name);
+                let suffix = if is_xfail { " (xfail)" } else { "" };
+                println!("  {}: {}{}", index + 1, test_case.name, suffix);
             }
             return Ok(Vec::new());
         }
@@ -361,6 +408,11 @@ impl SpecTestRunner {
 
     /// Check if a test case is expected to fail
     fn is_expected_failure(&self, test_case: &SpecTestCase) -> bool {
+        // Check if test is in config.txt xfail list
+        if self.xfail_tests.contains(&test_case.name) {
+            return true;
+        }
+
         // Following miniwdl pattern: tests ending with "fail" are expected to fail
         test_case.name.contains("fail")
             || test_case.name.ends_with("_fail")
