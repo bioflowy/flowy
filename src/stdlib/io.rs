@@ -1906,7 +1906,7 @@ mod tests {
 
     #[test]
     fn test_read_tsv_with_headers_now_implemented() {
-        let mut stdlib = StdLib::new("1.2");
+        let stdlib = StdLib::new("1.2");
 
         // This test now verifies that read_tsv supports multiple arguments
         let read_tsv_func = stdlib
@@ -1938,7 +1938,7 @@ mod tests {
     #[test]
     fn test_read_tsv_with_headers_expected_behavior() {
         use std::io::Write;
-        let mut stdlib = StdLib::new("1.2");
+        let stdlib = StdLib::new("1.2");
 
         // Create a test TSV file with headers
         let mut temp_file = std::env::temp_dir();

@@ -69,6 +69,11 @@ pub enum Token {
     SingleQuote,
     DoubleQuote,
 
+    // String components for interpolation parsing
+    StringStart(char),  // Opening quote (' or ")
+    StringText(String), // Literal text within string
+    StringEnd(char),    // Closing quote (' or ")
+
     // Command content (raw text in command blocks)
     CommandText(String),
 
@@ -105,6 +110,7 @@ impl Token {
                 | Token::FloatLiteral(_)
                 | Token::BoolLiteral(_)
                 | Token::StringLiteral(_)
+                | Token::StringText(_)
                 | Token::CommandText(_)
         )
     }
@@ -184,6 +190,10 @@ impl fmt::Display for Token {
 
             Token::SingleQuote => write!(f, "'"),
             Token::DoubleQuote => write!(f, "\""),
+
+            Token::StringStart(c) => write!(f, "{}", c),
+            Token::StringText(s) => write!(f, "{}", s),
+            Token::StringEnd(c) => write!(f, "{}", c),
 
             Token::CommandText(s) => write!(f, "{}", s),
             Token::CommandPlaceholder(s) => write!(f, "{}", s),

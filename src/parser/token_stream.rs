@@ -148,6 +148,19 @@ impl TokenStream {
         self.lexer.current_mode()
     }
 
+    /// Push a lexer mode onto the mode stack
+    pub fn push_lexer_mode(&mut self, mode: LexerMode) {
+        self.lexer.push_mode(mode);
+        self.current_token = None; // Reset current token so next generation uses new mode
+    }
+
+    /// Pop the current lexer mode from the mode stack
+    pub fn pop_lexer_mode(&mut self) -> Option<LexerMode> {
+        let result = self.lexer.pop_mode();
+        self.current_token = None; // Reset current token so next generation uses new mode
+        result
+    }
+
     /// Parse command content using command-mode tokenization
     /// This method allows re-tokenizing specific content with command-mode rules
     pub fn parse_command_content(&self, command_text: &str) -> Result<Vec<LocatedToken>, WdlError> {

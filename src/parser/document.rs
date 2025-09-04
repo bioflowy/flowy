@@ -1,5 +1,6 @@
 //! Token-based document parsing for WDL (top-level parser)
 
+use super::literals::parse_simple_string_value;
 use super::parser_utils::ParseResult;
 use super::tasks::{parse_task, parse_workflow};
 use super::token_stream::TokenStream;
@@ -77,12 +78,17 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
         }
     }
 
-    // Parse URI
+    // Parse URI using the new string parsing approach
     let uri = match stream.peek_token() {
         Some(Token::StringLiteral(s)) => {
+            // Legacy: Handle old-style string literal tokens if present
             let uri = s.clone();
             stream.next();
             uri
+        }
+        Some(Token::SingleQuote) | Some(Token::DoubleQuote) => {
+            // New approach: Parse using token-based string parsing
+            parse_simple_string_value(stream)?
         }
         _ => {
             return Err(WdlError::syntax_error(

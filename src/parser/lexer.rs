@@ -7,7 +7,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_until, take_while, take_while1},
     character::complete::{alpha1, alphanumeric1, char, digit1, line_ending},
-    combinator::{map, opt, recognize, value},
+    combinator::{map, opt, peek, recognize, value},
     multi::many0,
     sequence::{delimited, pair, preceded, tuple},
     IResult,
@@ -338,6 +338,59 @@ pub fn command_mode_token_with_filename<'a>(
     }
 }
 
+/// Parse a single token in string literal mode with filename information
+pub fn string_literal_mode_token_with_filename<'a>(
+    _version: &'a str,
+    filename: &'a str,
+) -> impl Fn(Span) -> IResult<Span, LocatedToken> + 'a {
+    move |input: Span| {
+        let pos = span_to_position(input, filename);
+        let (input, token) = alt((
+            // Check for placeholder start sequences
+            value(Token::TildeBrace, tag("~{")),
+            value(Token::DollarBrace, tag("${")),
+            // Check for string end quotes
+            map(char('\''), Token::StringEnd),
+            map(char('"'), Token::StringEnd),
+            // Handle string text content
+            string_literal_text,
+        ))(input)?;
+
+        Ok((input, LocatedToken::new(token, pos)))
+    }
+}
+
+/// Parse a single token in placeholder mode with filename information
+pub fn placeholder_mode_token_with_filename<'a>(
+    version: &'a str,
+    filename: &'a str,
+) -> impl Fn(Span) -> IResult<Span, LocatedToken> + 'a {
+    move |input: Span| {
+        let pos = span_to_position(input, filename);
+        let (input, token) = alt((
+            // Check for placeholder end
+            value(Token::PlaceholderEnd, char('}')),
+            // Handle normal tokens within placeholders
+            |input| {
+                let (input, token) = normal_token_with_filename(version, filename)(input)?;
+                Ok((input, token.token))
+            },
+        ))(input)?;
+
+        Ok((input, LocatedToken::new(token, pos)))
+    }
+}
+
+/// Parse string literal text content
+pub fn string_literal_text(input: Span) -> IResult<Span, Token> {
+    let (input, text) = take_while1(|c: char| {
+        // Stop at quote, placeholder start, or end of input
+        c != '\'' && c != '"' && c != '~' && c != '$'
+    })(input)?;
+
+    Ok((input, Token::StringText(text.fragment().to_string())))
+}
+
 /// Parse operators
 pub fn operator(input: Span) -> IResult<Span, Token> {
     alt((
@@ -386,20 +439,16 @@ pub fn punctuation(input: Span) -> IResult<Span, Token> {
 
 /// Parse a single token based on lexer mode (stateful)
 pub fn stateful_token(lexer: &Lexer) -> impl Fn(Span) -> IResult<Span, LocatedToken> + '_ {
-    move |input: Span| {
-        match lexer.current_mode() {
-            LexerMode::Normal => normal_token_with_filename(&lexer.version, &lexer.filename)(input),
-            LexerMode::Command => {
-                command_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
-            }
-            LexerMode::StringLiteral => {
-                // TODO: Implement string literal mode if needed
-                normal_token_with_filename(&lexer.version, &lexer.filename)(input)
-            }
-            LexerMode::Placeholder => {
-                // TODO: Implement placeholder mode if needed
-                normal_token_with_filename(&lexer.version, &lexer.filename)(input)
-            }
+    move |input: Span| match lexer.current_mode() {
+        LexerMode::Normal => normal_token_with_filename(&lexer.version, &lexer.filename)(input),
+        LexerMode::Command => {
+            command_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
+        }
+        LexerMode::StringLiteral => {
+            string_literal_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
+        }
+        LexerMode::Placeholder => {
+            placeholder_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
         }
     }
 }
@@ -411,8 +460,10 @@ pub fn normal_token(version: &str) -> impl Fn(Span) -> IResult<Span, LocatedToke
         let (input, token) = alt((
             command_placeholder, // Must come before identifiers (has underscores)
             command_tokens,      // Must come before operators due to overlaps
-            string_literal,      // Must come before other literals
-            float_literal,       // Must come before int_literal
+            // Handle string start quotes - removed old string_literal to use new approach
+            value(Token::SingleQuote, char('\'')),
+            value(Token::DoubleQuote, char('"')),
+            float_literal, // Must come before int_literal
             int_literal,
             bool_literal,
             identifier_or_keyword(version),
@@ -438,8 +489,10 @@ pub fn normal_token_with_filename<'a>(
         let (input, token) = alt((
             command_placeholder, // Must come before identifiers (has underscores)
             command_tokens,      // Must come before operators due to overlaps
-            string_literal,      // Must come before other literals
-            float_literal,       // Must come before int_literal
+            // Handle string start quotes - removed old string_literal to use new approach
+            value(Token::SingleQuote, char('\'')),
+            value(Token::DoubleQuote, char('"')),
+            float_literal, // Must come before int_literal
             int_literal,
             bool_literal,
             identifier_or_keyword(version),

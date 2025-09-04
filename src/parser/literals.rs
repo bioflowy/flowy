@@ -88,117 +88,90 @@ pub fn parse_none_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     }
 }
 
-/// Parse a string literal
-/// Note: In the token-based approach, string parsing is simplified
-/// as the lexer has already handled escape sequences and basic structure
+/// Parse a string literal with proper lexer mode switching
+/// This handles interpolation by switching lexer modes during tokenization
 pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
     let pos = stream.current_position();
 
-    match stream.peek_token() {
-        Some(Token::StringLiteral(s)) => {
-            let content = s.clone();
-            stream.next();
-
-            // Parse string content for interpolation
-            let parts = parse_string_interpolation(&content)?;
-            Ok(Expression::string(pos, parts))
+    // Check for the start of a string literal (quote character)
+    let quote_char = match stream.peek_token() {
+        Some(Token::SingleQuote) => {
+            stream.next(); // consume opening quote
+            '\''
         }
-        _ => Err(WdlError::syntax_error(
-            pos,
-            "Expected string literal".to_string(),
-            "1.0".to_string(),
-            None,
-        )),
-    }
-}
+        Some(Token::DoubleQuote) => {
+            stream.next(); // consume opening quote
+            '"'
+        }
+        _ => {
+            return Err(WdlError::syntax_error(
+                pos,
+                "Expected string literal (opening quote)".to_string(),
+                "1.0".to_string(),
+                None,
+            ));
+        }
+    };
 
-/// Parse string content for interpolation placeholders
-fn parse_string_interpolation(content: &str) -> ParseResult<Vec<StringPart>> {
+    // Switch lexer to string literal mode
+    stream.push_lexer_mode(crate::parser::lexer::LexerMode::StringLiteral);
+
     let mut parts = Vec::new();
-    let mut current_text = String::new();
-    let mut chars = content.chars().peekable();
 
-    while let Some(ch) = chars.next() {
-        if ch == '~' && chars.peek() == Some(&'{') {
-            // Found placeholder start
-            chars.next(); // consume '{'
-
-            // Save any accumulated text
-            if !current_text.is_empty() {
-                parts.push(StringPart::Text(current_text.clone()));
-                current_text.clear();
+    loop {
+        match stream.peek_token() {
+            // String end - matching closing quote
+            Some(Token::StringEnd(c)) if c == quote_char => {
+                stream.next(); // consume closing quote
+                stream.pop_lexer_mode(); // Return to normal mode
+                break;
             }
 
-            // Extract placeholder content
-            let mut placeholder_content = String::new();
-            let mut brace_count = 1;
-
-            for inner_ch in chars.by_ref() {
-                if inner_ch == '{' {
-                    brace_count += 1;
-                    placeholder_content.push(inner_ch);
-                } else if inner_ch == '}' {
-                    brace_count -= 1;
-                    if brace_count == 0 {
-                        break; // Found matching closing brace
-                    } else {
-                        placeholder_content.push(inner_ch);
-                    }
-                } else {
-                    placeholder_content.push(inner_ch);
-                }
+            // String text content
+            Some(Token::StringText(text)) => {
+                let text_content = text.clone();
+                stream.next();
+                parts.push(StringPart::Text(text_content));
             }
 
-            if brace_count != 0 {
+            // Placeholder start
+            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                stream.next(); // consume placeholder start
+                stream.push_lexer_mode(crate::parser::lexer::LexerMode::Placeholder);
+
+                // Parse the expression inside the placeholder
+                let expr = parse_expression(stream)?;
+
+                // Expect placeholder end
+                stream.expect(Token::PlaceholderEnd)?;
+                stream.pop_lexer_mode(); // Return to string literal mode
+
+                parts.push(StringPart::Placeholder {
+                    expr: Box::new(expr),
+                    options: std::collections::HashMap::new(),
+                });
+            }
+
+            // Unexpected end of input
+            None => {
                 return Err(WdlError::syntax_error(
-                    SourcePosition::new("string".to_string(), "string".to_string(), 1, 1, 1, 1),
-                    "Unclosed placeholder in string literal".to_string(),
+                    stream.current_position(),
+                    "Unterminated string literal".to_string(),
                     "1.0".to_string(),
                     None,
                 ));
             }
 
-            // Parse the placeholder expression
-            let mut placeholder_stream =
-                crate::parser::token_stream::TokenStream::new(&placeholder_content, "1.0")
-                    .map_err(|e| {
-                        WdlError::syntax_error(
-                            SourcePosition::new(
-                                "string".to_string(),
-                                "string".to_string(),
-                                1,
-                                1,
-                                1,
-                                1,
-                            ),
-                            format!("Failed to parse placeholder content: {}", e),
-                            "1.0".to_string(),
-                            None,
-                        )
-                    })?;
-
-            let expr = crate::parser::expressions::parse_expression(&mut placeholder_stream)
-                .map_err(|e| {
-                    WdlError::syntax_error(
-                        SourcePosition::new("string".to_string(), "string".to_string(), 1, 1, 1, 1),
-                        format!("Invalid expression in placeholder: {}", e),
-                        "1.0".to_string(),
-                        None,
-                    )
-                })?;
-
-            parts.push(StringPart::Placeholder {
-                expr: Box::new(expr),
-                options: std::collections::HashMap::new(),
-            });
-        } else {
-            current_text.push(ch);
+            // Other tokens should not appear in string literal mode
+            Some(token) => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    format!("Unexpected token in string literal: {:?}", token),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
         }
-    }
-
-    // Add any remaining text
-    if !current_text.is_empty() {
-        parts.push(StringPart::Text(current_text));
     }
 
     // If no parts were added, add an empty text part
@@ -206,7 +179,88 @@ fn parse_string_interpolation(content: &str) -> ParseResult<Vec<StringPart>> {
         parts.push(StringPart::Text(String::new()));
     }
 
-    Ok(parts)
+    Ok(Expression::string(pos, parts))
+}
+
+/// Parse a simple string literal value (for imports and other non-interpolated contexts)
+/// Returns the string content directly, not as an Expression
+pub fn parse_simple_string_value(stream: &mut TokenStream) -> ParseResult<String> {
+    let pos = stream.current_position();
+
+    // Check for the start of a string literal (quote character)
+    let quote_char = match stream.peek_token() {
+        Some(Token::SingleQuote) => {
+            stream.next(); // consume opening quote
+            '\''
+        }
+        Some(Token::DoubleQuote) => {
+            stream.next(); // consume opening quote
+            '"'
+        }
+        _ => {
+            return Err(WdlError::syntax_error(
+                pos,
+                "Expected string literal (opening quote)".to_string(),
+                "1.0".to_string(),
+                None,
+            ));
+        }
+    };
+
+    // Switch lexer to string literal mode
+    stream.push_lexer_mode(crate::parser::lexer::LexerMode::StringLiteral);
+
+    let mut result = String::new();
+
+    loop {
+        match stream.peek_token() {
+            // String end - matching closing quote
+            Some(Token::StringEnd(c)) if c == quote_char => {
+                stream.next(); // consume closing quote
+                stream.pop_lexer_mode(); // Return to normal mode
+                break;
+            }
+
+            // String text content
+            Some(Token::StringText(text)) => {
+                let text_content = text.clone();
+                stream.next();
+                result.push_str(&text_content);
+            }
+
+            // Placeholder start - not supported for simple strings
+            Some(Token::TildeBrace) | Some(Token::DollarBrace) => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "String interpolation not supported in this context".to_string(),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
+
+            // Unexpected end of input
+            None => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    "Unterminated string literal".to_string(),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
+
+            // Other tokens should not appear in string literal mode
+            Some(token) => {
+                return Err(WdlError::syntax_error(
+                    stream.current_position(),
+                    format!("Unexpected token in string literal: {:?}", token),
+                    "1.0".to_string(),
+                    None,
+                ));
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Parse any literal expression
@@ -218,6 +272,7 @@ pub fn parse_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
             Token::FloatLiteral(_) => parse_float_literal(stream),
             Token::BoolLiteral(_) => parse_bool_literal(stream),
             Token::StringLiteral(_) => parse_string_literal(stream),
+            Token::SingleQuote | Token::DoubleQuote => parse_string_literal(stream),
             Token::Keyword(kw) if kw == "true" || kw == "false" => parse_bool_literal(stream),
             Token::Keyword(kw) if kw == "None" => parse_none_literal(stream),
             _ => {

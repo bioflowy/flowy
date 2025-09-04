@@ -339,6 +339,10 @@ pub fn parse_expr_core_base(stream: &mut TokenStream) -> ParseResult<Expression>
             | Token::FloatLiteral(_)
             | Token::BoolLiteral(_)
             | Token::StringLiteral(_) => parse_literal(stream),
+            Token::SingleQuote | Token::DoubleQuote => {
+                // String literal with new parsing approach
+                parse_literal(stream)
+            }
             Token::Keyword(kw) if kw == "true" || kw == "false" || kw == "None" => {
                 parse_literal(stream)
             }
