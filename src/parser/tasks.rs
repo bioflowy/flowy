@@ -2,6 +2,7 @@
 
 use super::declarations::{parse_input_section, parse_output_section};
 use super::expressions::parse_expression;
+use super::literals::parse_placeholder_options;
 use super::parser_utils::ParseResult;
 use super::statements::parse_workflow_element;
 use super::token_stream::TokenStream;

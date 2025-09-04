@@ -409,6 +409,22 @@ pub mod utils {
         }
     }
 
+    /// Create default configuration with common settings
+    pub fn default_config() -> Config {
+        Config::default()
+            .with_task_timeout(Duration::from_secs(3600)) // 1 hour
+            .with_max_concurrent_tasks(1) // Sequential for now
+            .with_debug(false)
+    }
+
+    /// Create development configuration with debug settings
+    pub fn dev_config() -> Config {
+        Config::default()
+            .with_task_timeout(Duration::from_secs(300)) // 5 minutes
+            .with_max_concurrent_tasks(1)
+            .with_debug(true)
+    }
+
     #[cfg(test)]
     mod value_tests {
         use super::*;
@@ -512,10 +528,11 @@ pub mod utils {
 
             // Create a Map value (like { "a": 10, "b": 11, "c": 12 })
             // Note: We use the actual struct member names as map keys for the test to succeed
-            let mut pairs = Vec::new();
-            pairs.push((Value::string("a".to_string()), Value::int(10)));
-            pairs.push((Value::string("b".to_string()), Value::int(11)));
-            pairs.push((Value::string("c".to_string()), Value::int(12)));
+            let pairs = vec![
+                (Value::string("a".to_string()), Value::int(10)),
+                (Value::string("b".to_string()), Value::int(11)),
+                (Value::string("c".to_string()), Value::int(12)),
+            ];
 
             let map_value = Value::map(Type::string(false), Type::int(false), pairs);
 
@@ -559,22 +576,6 @@ pub mod utils {
                 }
             }
         }
-    }
-
-    /// Create default configuration with common settings
-    pub fn default_config() -> Config {
-        Config::default()
-            .with_task_timeout(Duration::from_secs(3600)) // 1 hour
-            .with_max_concurrent_tasks(1) // Sequential for now
-            .with_debug(false)
-    }
-
-    /// Create development configuration with debug settings
-    pub fn dev_config() -> Config {
-        Config::default()
-            .with_task_timeout(Duration::from_secs(300)) // 5 minutes
-            .with_max_concurrent_tasks(1)
-            .with_debug(true)
     }
 }
 

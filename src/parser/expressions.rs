@@ -3,7 +3,9 @@
 //! This module implements expression parsing following the Python miniwdl grammar structure.
 //! Each function corresponds to a specific grammar rule from miniwdl/WDL/_grammar.py
 
-use super::literals::{parse_array_literal, parse_literal, parse_map_literal};
+use super::literals::{
+    parse_array_literal, parse_literal, parse_map_literal, parse_placeholder_options,
+};
 use super::parser_utils::{parse_delimited_list, ParseResult};
 use super::token_stream::TokenStream;
 use super::tokens::Token;
@@ -518,11 +520,16 @@ pub fn parse_multistring(stream: &mut TokenStream) -> ParseResult<Expression> {
 
                 // Parse placeholder
                 stream.next(); // consume ~{
+
+                // Parse placeholder options first
+                let options = parse_placeholder_options(stream)?;
+
+                // Then parse the expression
                 let expr = parse_expr(stream)?;
                 stream.expect(Token::PlaceholderEnd)?;
                 parts.push(StringPart::Placeholder {
                     expr: Box::new(expr),
-                    options: std::collections::HashMap::new(),
+                    options,
                 });
             }
             Some(Token::CommandText(text)) => {

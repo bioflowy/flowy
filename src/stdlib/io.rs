@@ -2189,6 +2189,279 @@ pub type ReadIntFunction = ReadFileFunction<fn(&str) -> Result<Value, WdlError>>
 pub type ReadFloatFunction = ReadFileFunction<fn(&str) -> Result<Value, WdlError>>;
 pub type ReadBooleanFunction = ReadFileFunction<fn(&str) -> Result<Value, WdlError>>;
 
+/// Size function that calculates the size of files, directories, or compound values
+pub struct SizeFunction;
+
+impl Function for SizeFunction {
+    fn name(&self) -> &str {
+        "size"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "size".to_string(),
+                expected: 1, // Can be 1 or 2, but we'll check in eval
+                actual: args.len(),
+            });
+        }
+
+        // First argument can be File, Directory, Array, Map, StructInstance, or compound types
+        match &args[0] {
+            Type::File { .. } | Type::Directory { .. } => {}
+            Type::Array { .. } | Type::Map { .. } | Type::StructInstance { .. } => {}
+            _ => {
+                return Err(WdlError::TypeMismatch {
+                    expected: Type::File { optional: false },
+                    actual: args[0].clone(),
+                });
+            }
+        }
+
+        // Second argument (if present) must be String (unit)
+        if args.len() == 2 {
+            match &args[1] {
+                Type::String { .. } => {}
+                _ => {
+                    return Err(WdlError::TypeMismatch {
+                        expected: Type::String { optional: false },
+                        actual: args[1].clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(Type::Float { optional: false })
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "size".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let unit = if args.len() == 2 {
+            match &args[1] {
+                Value::String { value, .. } => value.as_str(),
+                _ => "B", // Default to bytes
+            }
+        } else {
+            "B" // Default to bytes
+        };
+
+        let size_bytes = calculate_size(&args[0])?;
+        let size_in_unit = convert_bytes_to_unit(size_bytes, unit)?;
+
+        Ok(Value::Float {
+            value: size_in_unit,
+            wdl_type: Type::Float { optional: false },
+        })
+    }
+
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "size".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let unit = if args.len() == 2 {
+            match &args[1] {
+                Value::String { value, .. } => value.as_str(),
+                _ => "B", // Default to bytes
+            }
+        } else {
+            "B" // Default to bytes
+        };
+
+        // Calculate size with path resolution through stdlib
+        let size_bytes = calculate_size_with_stdlib(&args[0], stdlib)?;
+        let size_in_unit = convert_bytes_to_unit(size_bytes, unit)?;
+
+        Ok(Value::Float {
+            value: size_in_unit,
+            wdl_type: Type::Float { optional: false },
+        })
+    }
+}
+
+/// Calculate the total size of a value in bytes with path resolution
+fn calculate_size_with_stdlib(
+    value: &Value,
+    stdlib: &crate::stdlib::StdLib,
+) -> Result<f64, WdlError> {
+    match value {
+        Value::File { value: path, .. } => {
+            // Resolve the file path using the path mapper
+            let resolved_path = stdlib.path_mapper().devirtualize_filename(path)?;
+            if resolved_path.exists() {
+                if resolved_path.is_file() {
+                    std::fs::metadata(&resolved_path)
+                        .map_err(|e| WdlError::RuntimeError {
+                            message: format!("Failed to get file size for {}: {}", path, e),
+                        })
+                        .map(|m| m.len() as f64)
+                } else {
+                    Ok(0.0) // Non-file paths have size 0
+                }
+            } else {
+                Ok(0.0) // Non-existent files have size 0
+            }
+        }
+        Value::Directory { value: path, .. } => {
+            // Resolve the directory path using the path mapper
+            let resolved_path = stdlib.path_mapper().devirtualize_filename(path)?;
+            if resolved_path.exists() && resolved_path.is_dir() {
+                calculate_directory_size(&resolved_path)
+            } else {
+                Ok(0.0) // Non-existent directories have size 0
+            }
+        }
+        Value::Array { values, .. } => {
+            let mut total = 0.0;
+            for item in values {
+                total += calculate_size_with_stdlib(item, stdlib)?;
+            }
+            Ok(total)
+        }
+        Value::Map { pairs, .. } => {
+            let mut total = 0.0;
+            for (_key, val) in pairs {
+                total += calculate_size_with_stdlib(val, stdlib)?;
+            }
+            Ok(total)
+        }
+        Value::Struct { members, .. } => {
+            let mut total = 0.0;
+            for val in members.values() {
+                total += calculate_size_with_stdlib(val, stdlib)?;
+            }
+            Ok(total)
+        }
+        Value::Pair { left, right, .. } => {
+            Ok(calculate_size_with_stdlib(left, stdlib)?
+                + calculate_size_with_stdlib(right, stdlib)?)
+        }
+        // For non-file values, treat as 0 bytes
+        Value::Null => Ok(0.0),
+        _ => Ok(0.0),
+    }
+}
+
+/// Calculate the total size of a value in bytes
+fn calculate_size(value: &Value) -> Result<f64, WdlError> {
+    match value {
+        Value::File { value: path, .. } => {
+            let file_path = Path::new(path);
+            if file_path.exists() {
+                if file_path.is_file() {
+                    std::fs::metadata(file_path)
+                        .map_err(|e| WdlError::RuntimeError {
+                            message: format!("Failed to get file size for {}: {}", path, e),
+                        })
+                        .map(|m| m.len() as f64)
+                } else {
+                    Ok(0.0) // Non-existent files have size 0
+                }
+            } else {
+                Ok(0.0) // Non-existent files have size 0
+            }
+        }
+        Value::Directory { value: path, .. } => {
+            let dir_path = Path::new(path);
+            if dir_path.exists() && dir_path.is_dir() {
+                calculate_directory_size(dir_path)
+            } else {
+                Ok(0.0) // Non-existent directories have size 0
+            }
+        }
+        Value::Array { values, .. } => {
+            let mut total = 0.0;
+            for item in values {
+                total += calculate_size(item)?;
+            }
+            Ok(total)
+        }
+        Value::Map { pairs, .. } => {
+            let mut total = 0.0;
+            for (_key, val) in pairs {
+                total += calculate_size(val)?;
+            }
+            Ok(total)
+        }
+        Value::Struct { members, .. } => {
+            let mut total = 0.0;
+            for val in members.values() {
+                total += calculate_size(val)?;
+            }
+            Ok(total)
+        }
+        Value::Pair { left, right, .. } => Ok(calculate_size(left)? + calculate_size(right)?),
+        // For non-file values, treat as 0 bytes
+        Value::Null => Ok(0.0),
+        _ => Ok(0.0),
+    }
+}
+
+/// Recursively calculate directory size
+fn calculate_directory_size(dir_path: &Path) -> Result<f64, WdlError> {
+    let mut total = 0.0;
+
+    let entries = std::fs::read_dir(dir_path).map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read directory {}: {}", dir_path.display(), e),
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to read directory entry: {}", e),
+        })?;
+
+        let path = entry.path();
+        if path.is_file() {
+            let metadata = std::fs::metadata(&path).map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to get metadata for {}: {}", path.display(), e),
+            })?;
+            total += metadata.len() as f64;
+        } else if path.is_dir() {
+            total += calculate_directory_size(&path)?;
+        }
+    }
+
+    Ok(total)
+}
+
+/// Convert bytes to the specified unit
+fn convert_bytes_to_unit(bytes: f64, unit: &str) -> Result<f64, WdlError> {
+    match unit.to_uppercase().as_str() {
+        "B" => Ok(bytes),
+        "K" | "KB" => Ok(bytes / 1024.0),
+        "M" | "MB" => Ok(bytes / (1024.0 * 1024.0)),
+        "G" | "GB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0)),
+        "T" | "TB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0)),
+        "P" | "PB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0)),
+        _ => Err(WdlError::RuntimeError {
+            message: format!(
+                "Invalid size unit: {}. Valid units are B, K, M, G, T, P",
+                unit
+            ),
+        }),
+    }
+}
+
+/// Helper function to create size function
+pub fn create_size() -> Box<dyn Function> {
+    Box::new(SizeFunction)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2997,277 +3270,4 @@ mod tests {
             panic!("Expected ArgumentCountMismatch");
         }
     }
-}
-
-/// Size function that calculates the size of files, directories, or compound values
-pub struct SizeFunction;
-
-impl Function for SizeFunction {
-    fn name(&self) -> &str {
-        "size"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.is_empty() || args.len() > 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: "size".to_string(),
-                expected: 1, // Can be 1 or 2, but we'll check in eval
-                actual: args.len(),
-            });
-        }
-
-        // First argument can be File, Directory, Array, Map, StructInstance, or compound types
-        match &args[0] {
-            Type::File { .. } | Type::Directory { .. } => {}
-            Type::Array { .. } | Type::Map { .. } | Type::StructInstance { .. } => {}
-            _ => {
-                return Err(WdlError::TypeMismatch {
-                    expected: Type::File { optional: false },
-                    actual: args[0].clone(),
-                });
-            }
-        }
-
-        // Second argument (if present) must be String (unit)
-        if args.len() == 2 {
-            match &args[1] {
-                Type::String { .. } => {}
-                _ => {
-                    return Err(WdlError::TypeMismatch {
-                        expected: Type::String { optional: false },
-                        actual: args[1].clone(),
-                    });
-                }
-            }
-        }
-
-        Ok(Type::Float { optional: false })
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if args.is_empty() || args.len() > 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: "size".to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        let unit = if args.len() == 2 {
-            match &args[1] {
-                Value::String { value, .. } => value.as_str(),
-                _ => "B", // Default to bytes
-            }
-        } else {
-            "B" // Default to bytes
-        };
-
-        let size_bytes = calculate_size(&args[0])?;
-        let size_in_unit = convert_bytes_to_unit(size_bytes, unit)?;
-
-        Ok(Value::Float {
-            value: size_in_unit,
-            wdl_type: Type::Float { optional: false },
-        })
-    }
-
-    fn eval_with_stdlib(
-        &self,
-        args: &[Value],
-        stdlib: &crate::stdlib::StdLib,
-    ) -> Result<Value, WdlError> {
-        if args.is_empty() || args.len() > 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: "size".to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        let unit = if args.len() == 2 {
-            match &args[1] {
-                Value::String { value, .. } => value.as_str(),
-                _ => "B", // Default to bytes
-            }
-        } else {
-            "B" // Default to bytes
-        };
-
-        // Calculate size with path resolution through stdlib
-        let size_bytes = calculate_size_with_stdlib(&args[0], stdlib)?;
-        let size_in_unit = convert_bytes_to_unit(size_bytes, unit)?;
-
-        Ok(Value::Float {
-            value: size_in_unit,
-            wdl_type: Type::Float { optional: false },
-        })
-    }
-}
-
-/// Calculate the total size of a value in bytes with path resolution
-fn calculate_size_with_stdlib(
-    value: &Value,
-    stdlib: &crate::stdlib::StdLib,
-) -> Result<f64, WdlError> {
-    match value {
-        Value::File { value: path, .. } => {
-            // Resolve the file path using the path mapper
-            let resolved_path = stdlib.path_mapper().devirtualize_filename(path)?;
-            if resolved_path.exists() {
-                if resolved_path.is_file() {
-                    std::fs::metadata(&resolved_path)
-                        .map_err(|e| WdlError::RuntimeError {
-                            message: format!("Failed to get file size for {}: {}", path, e),
-                        })
-                        .map(|m| m.len() as f64)
-                } else {
-                    Ok(0.0) // Non-file paths have size 0
-                }
-            } else {
-                Ok(0.0) // Non-existent files have size 0
-            }
-        }
-        Value::Directory { value: path, .. } => {
-            // Resolve the directory path using the path mapper
-            let resolved_path = stdlib.path_mapper().devirtualize_filename(path)?;
-            if resolved_path.exists() && resolved_path.is_dir() {
-                calculate_directory_size(&resolved_path)
-            } else {
-                Ok(0.0) // Non-existent directories have size 0
-            }
-        }
-        Value::Array { values, .. } => {
-            let mut total = 0.0;
-            for item in values {
-                total += calculate_size_with_stdlib(item, stdlib)?;
-            }
-            Ok(total)
-        }
-        Value::Map { pairs, .. } => {
-            let mut total = 0.0;
-            for (_key, val) in pairs {
-                total += calculate_size_with_stdlib(val, stdlib)?;
-            }
-            Ok(total)
-        }
-        Value::Struct { members, .. } => {
-            let mut total = 0.0;
-            for val in members.values() {
-                total += calculate_size_with_stdlib(val, stdlib)?;
-            }
-            Ok(total)
-        }
-        Value::Pair { left, right, .. } => {
-            Ok(calculate_size_with_stdlib(left, stdlib)?
-                + calculate_size_with_stdlib(right, stdlib)?)
-        }
-        // For non-file values, treat as 0 bytes
-        Value::Null => Ok(0.0),
-        _ => Ok(0.0),
-    }
-}
-
-/// Calculate the total size of a value in bytes
-fn calculate_size(value: &Value) -> Result<f64, WdlError> {
-    match value {
-        Value::File { value: path, .. } => {
-            let file_path = Path::new(path);
-            if file_path.exists() {
-                if file_path.is_file() {
-                    std::fs::metadata(file_path)
-                        .map_err(|e| WdlError::RuntimeError {
-                            message: format!("Failed to get file size for {}: {}", path, e),
-                        })
-                        .map(|m| m.len() as f64)
-                } else {
-                    Ok(0.0) // Non-existent files have size 0
-                }
-            } else {
-                Ok(0.0) // Non-existent files have size 0
-            }
-        }
-        Value::Directory { value: path, .. } => {
-            let dir_path = Path::new(path);
-            if dir_path.exists() && dir_path.is_dir() {
-                calculate_directory_size(dir_path)
-            } else {
-                Ok(0.0) // Non-existent directories have size 0
-            }
-        }
-        Value::Array { values, .. } => {
-            let mut total = 0.0;
-            for item in values {
-                total += calculate_size(item)?;
-            }
-            Ok(total)
-        }
-        Value::Map { pairs, .. } => {
-            let mut total = 0.0;
-            for (_key, val) in pairs {
-                total += calculate_size(val)?;
-            }
-            Ok(total)
-        }
-        Value::Struct { members, .. } => {
-            let mut total = 0.0;
-            for val in members.values() {
-                total += calculate_size(val)?;
-            }
-            Ok(total)
-        }
-        Value::Pair { left, right, .. } => Ok(calculate_size(left)? + calculate_size(right)?),
-        // For non-file values, treat as 0 bytes
-        Value::Null => Ok(0.0),
-        _ => Ok(0.0),
-    }
-}
-
-/// Recursively calculate directory size
-fn calculate_directory_size(dir_path: &Path) -> Result<f64, WdlError> {
-    let mut total = 0.0;
-
-    let entries = std::fs::read_dir(dir_path).map_err(|e| WdlError::RuntimeError {
-        message: format!("Failed to read directory {}: {}", dir_path.display(), e),
-    })?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to read directory entry: {}", e),
-        })?;
-
-        let path = entry.path();
-        if path.is_file() {
-            let metadata = std::fs::metadata(&path).map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to get metadata for {}: {}", path.display(), e),
-            })?;
-            total += metadata.len() as f64;
-        } else if path.is_dir() {
-            total += calculate_directory_size(&path)?;
-        }
-    }
-
-    Ok(total)
-}
-
-/// Convert bytes to the specified unit
-fn convert_bytes_to_unit(bytes: f64, unit: &str) -> Result<f64, WdlError> {
-    match unit.to_uppercase().as_str() {
-        "B" => Ok(bytes),
-        "K" | "KB" => Ok(bytes / 1024.0),
-        "M" | "MB" => Ok(bytes / (1024.0 * 1024.0)),
-        "G" | "GB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0)),
-        "T" | "TB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0)),
-        "P" | "PB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0)),
-        _ => Err(WdlError::RuntimeError {
-            message: format!(
-                "Invalid size unit: {}. Valid units are B, K, M, G, T, P",
-                unit
-            ),
-        }),
-    }
-}
-
-/// Helper function to create size function
-pub fn create_size() -> Box<dyn Function> {
-    Box::new(SizeFunction)
 }

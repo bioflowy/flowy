@@ -592,3 +592,48 @@ impl Function for LogicalNotOperator {
         Ok(Value::boolean(!bool_val))
     }
 }
+
+/// Negation operator (-)
+pub struct NegateOperator;
+
+impl Function for NegateOperator {
+    fn name(&self) -> &str {
+        "_neg"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        match &args[0] {
+            Type::Int { .. } => Ok(Type::int(false)),
+            Type::Float { .. } => Ok(Type::float(false)),
+            _ => Err(WdlError::RuntimeError {
+                message: format!("Cannot negate {:?}", args[0]),
+            }),
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        match &args[0] {
+            Value::Int { value, .. } => Ok(Value::int(-value)),
+            Value::Float { value, .. } => Ok(Value::float(-value)),
+            _ => Err(WdlError::RuntimeError {
+                message: format!("Cannot negate {:?}", args[0]),
+            }),
+        }
+    }
+}

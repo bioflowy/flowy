@@ -263,6 +263,9 @@ impl StdLib {
         self.register_function(Box::new(LogicalAndOperator));
         self.register_function(Box::new(LogicalOrOperator));
         self.register_function(Box::new(LogicalNotOperator));
+        
+        // Unary operators
+        self.register_function(Box::new(NegateOperator));
     }
 
     /// Register a function with the library

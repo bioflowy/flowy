@@ -66,15 +66,48 @@ impl ExpressionBase for Expression {
                                 }
                                 // Otherwise add nothing for null values
                             } else {
-                                // For string interpolation, extract the raw value without quotes
-                                match &val {
-                                    Value::String { value, .. }
-                                    | Value::File { value, .. }
-                                    | Value::Directory { value, .. } => {
-                                        result.push_str(value);
+                                // Handle sep option for arrays
+                                if let Some(sep) = options.get("sep") {
+                                    match &val {
+                                        Value::Array { values, .. } => {
+                                            let string_values: Vec<String> = values
+                                                .iter()
+                                                .map(|v| match v {
+                                                    Value::String { value, .. }
+                                                    | Value::File { value, .. }
+                                                    | Value::Directory { value, .. } => {
+                                                        value.clone()
+                                                    }
+                                                    _ => format!("{}", v),
+                                                })
+                                                .collect();
+                                            result.push_str(&string_values.join(sep));
+                                        }
+                                        _ => {
+                                            // For non-arrays, just convert to string (sep has no effect)
+                                            match &val {
+                                                Value::String { value, .. }
+                                                | Value::File { value, .. }
+                                                | Value::Directory { value, .. } => {
+                                                    result.push_str(value);
+                                                }
+                                                _ => {
+                                                    result.push_str(&format!("{}", val));
+                                                }
+                                            }
+                                        }
                                     }
-                                    _ => {
-                                        result.push_str(&format!("{}", val));
+                                } else {
+                                    // No sep option - use default string conversion
+                                    match &val {
+                                        Value::String { value, .. }
+                                        | Value::File { value, .. }
+                                        | Value::Directory { value, .. } => {
+                                            result.push_str(value);
+                                        }
+                                        _ => {
+                                            result.push_str(&format!("{}", val));
+                                        }
                                     }
                                 }
                             }
@@ -373,24 +406,30 @@ impl ExpressionBase for Expression {
 
             Expression::UnaryOp { op, operand, .. } => {
                 let operand_val = operand.eval(env, stdlib)?;
-                match op {
-                    UnaryOperator::Not => {
-                        let bool_val = operand_val.as_bool().ok_or_else(|| {
-                            WdlError::validation_error(
-                                HasSourcePosition::source_position(&**operand).clone(),
-                                "Operand must be Boolean".to_string(),
-                            )
-                        })?;
-                        Ok(Value::boolean(!bool_val))
-                    }
-                    UnaryOperator::Negate => match operand_val {
-                        Value::Int { value, .. } => Ok(Value::int(-value)),
-                        Value::Float { value, .. } => Ok(Value::float(-value)),
-                        _ => Err(WdlError::validation_error(
-                            HasSourcePosition::source_position(&**operand).clone(),
-                            "Operand must be numeric".to_string(),
-                        )),
-                    },
+
+                let function_name = match op {
+                    UnaryOperator::Not => "_not",
+                    UnaryOperator::Negate => "_neg",
+                };
+
+                if let Some(function) = stdlib.get_function(function_name) {
+                    function
+                        .eval_with_stdlib(&[operand_val], stdlib)
+                        .map_err(|e| match e {
+                            WdlError::RuntimeError { message } => WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                message,
+                            ),
+                            other => other,
+                        })
+                } else {
+                    Err(WdlError::validation_error(
+                        HasSourcePosition::source_position(self).clone(),
+                        format!(
+                            "Unary operator function '{}' not found in stdlib",
+                            function_name
+                        ),
+                    ))
                 }
             }
         }

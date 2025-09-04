@@ -504,7 +504,7 @@ mod tests {
                     // For String? return type with no match, should be Value::Null
                     if value.is_null() {
                         // This is correct - no match returns None (represented as Null)
-                        assert!(true);
+                        // Test passes
                     } else {
                         panic!(
                             "find should return None (Null) for no match, got: {:?}",

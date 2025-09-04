@@ -1395,13 +1395,13 @@ mod contains_key_tests {
         let result = function
             .eval(&[map_value.clone(), Value::string("a".to_string())])
             .unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+        assert!(result.as_bool().unwrap());
 
         // Test non-existing key
         let result = function
             .eval(&[map_value.clone(), Value::string("c".to_string())])
             .unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+        assert!(!result.as_bool().unwrap());
     }
 
     #[test]
@@ -1425,13 +1425,13 @@ mod contains_key_tests {
         let result = function
             .eval(&[struct_value.clone(), Value::string("name".to_string())])
             .unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+        assert!(result.as_bool().unwrap());
 
         // Test non-existing member
         let result = function
             .eval(&[struct_value.clone(), Value::string("email".to_string())])
             .unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+        assert!(!result.as_bool().unwrap());
     }
 
     #[test]
@@ -1473,7 +1473,7 @@ mod contains_key_tests {
         );
 
         let result = function.eval(&[outer_struct.clone(), keys_array]).unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+        assert!(result.as_bool().unwrap());
 
         // Test compound key ["details", "email"] - should not exist
         let keys_array = Value::array(
@@ -1485,7 +1485,7 @@ mod contains_key_tests {
         );
 
         let result = function.eval(&[outer_struct.clone(), keys_array]).unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+        assert!(!result.as_bool().unwrap());
     }
 
     #[test]
