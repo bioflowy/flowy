@@ -196,11 +196,14 @@ impl StdLib {
         self.register_function(Box::new(ValuesFunction));
         self.register_function(Box::new(ContainsKeyFunction));
         self.register_function(Box::new(AsPairsFunction));
+        self.register_function(Box::new(AsMapFunction));
 
         // String functions
+        self.register_function(Box::new(FindFunction));
         self.register_function(Box::new(SubFunction));
         self.register_function(Box::new(BasenameFunction));
         self.register_function(Box::new(SepFunction));
+        self.register_function(Box::new(JoinPathsFunction));
 
         // Type functions
         self.register_function(Box::new(DefinedFunction));
@@ -234,6 +237,9 @@ impl StdLib {
         self.register_function(io::create_read_map());
         self.register_function(io::create_read_objects());
         self.register_function(io::create_read_object());
+
+        // File system functions
+        self.register_function(io::create_size());
     }
 
     /// Register all operators

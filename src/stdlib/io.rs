@@ -5,7 +5,7 @@ use crate::error::WdlError;
 use crate::types::Type;
 use crate::value::Value;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Stdout function - returns reference to stdout file
 pub struct StdoutFunction;
@@ -523,46 +523,27 @@ pub fn create_read_json() -> Box<dyn Function> {
     ))
 }
 
-/// Helper function to create read_tsv function
-pub fn create_read_tsv() -> Box<dyn Function> {
-    Box::new(ReadFileFunction::new(
-        "read_tsv",
-        Type::Array {
-            item_type: Box::new(Type::Array {
-                item_type: Box::new(Type::String { optional: false }),
-                optional: false,
-                nonempty: false,
-            }),
-            optional: false,
-            nonempty: false,
-        },
-        |content| {
-            let mut rows = Vec::new();
-            for line in content.lines() {
-                if line.trim().is_empty() {
-                    continue; // Skip empty lines
+/// Enhanced read_tsv function that supports multiple variants:
+/// 1. read_tsv(File) -> Array[Array[String]]
+/// 2. read_tsv(File, Boolean) -> Array[Object] (when true, first line is headers)
+/// 3. read_tsv(File, Boolean, Array[String]) -> Array[Object] (custom field names)
+pub struct ReadTsvFunction;
+
+impl Function for ReadTsvFunction {
+    fn name(&self) -> &str {
+        "read_tsv"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        match args.len() {
+            1 => {
+                // read_tsv(File) -> Array[Array[String]]
+                if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_tsv() first argument must be String or File".to_string(),
+                    });
                 }
-                let fields: Vec<Value> = line
-                    .split('\t')
-                    .map(|field| Value::String {
-                        value: field.to_string(),
-                        wdl_type: Type::String { optional: false },
-                    })
-                    .collect();
-
-                rows.push(Value::Array {
-                    values: fields,
-                    wdl_type: Type::Array {
-                        item_type: Box::new(Type::String { optional: false }),
-                        optional: false,
-                        nonempty: false,
-                    },
-                });
-            }
-
-            Ok(Value::Array {
-                values: rows,
-                wdl_type: Type::Array {
+                Ok(Type::Array {
                     item_type: Box::new(Type::Array {
                         item_type: Box::new(Type::String { optional: false }),
                         optional: false,
@@ -570,10 +551,372 @@ pub fn create_read_tsv() -> Box<dyn Function> {
                     }),
                     optional: false,
                     nonempty: false,
+                })
+            }
+            2 => {
+                // read_tsv(File, Boolean) -> Array[Map[String,String]]
+                // This will coerce to Array[Object] when needed
+                if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_tsv() first argument must be String or File".to_string(),
+                    });
+                }
+                if !matches!(args[1], Type::Boolean { .. }) {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_tsv() second argument must be Boolean".to_string(),
+                    });
+                }
+                Ok(Type::Array {
+                    item_type: Box::new(Type::Map {
+                        key_type: Box::new(Type::String { optional: false }),
+                        value_type: Box::new(Type::String { optional: false }),
+                        optional: false,
+                        literal_keys: None,
+                    }),
+                    optional: false,
+                    nonempty: false,
+                })
+            }
+            3 => {
+                // read_tsv(File, Boolean, Array[String]) -> Array[Map[String,String]]
+                // This will coerce to Array[Object] when needed
+                if !matches!(args[0], Type::String { .. } | Type::File { .. }) {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_tsv() first argument must be String or File".to_string(),
+                    });
+                }
+                if !matches!(args[1], Type::Boolean { .. }) {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_tsv() second argument must be Boolean".to_string(),
+                    });
+                }
+                if !matches!(args[2], Type::Array { .. }) {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_tsv() third argument must be Array[String]".to_string(),
+                    });
+                }
+                Ok(Type::Array {
+                    item_type: Box::new(Type::Map {
+                        key_type: Box::new(Type::String { optional: false }),
+                        value_type: Box::new(Type::String { optional: false }),
+                        optional: false,
+                        literal_keys: None,
+                    }),
+                    optional: false,
+                    nonempty: false,
+                })
+            }
+            _ => Err(WdlError::ArgumentCountMismatch {
+                function: self.name().to_string(),
+                expected: 1,
+                actual: args.len(),
+            }),
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_tsv() first argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Read the file content (without path mapping for default implementation)
+        let content = match std::fs::read_to_string(&filename) {
+            Ok(content) => content,
+            Err(e) => {
+                return Err(WdlError::RuntimeError {
+                    message: format!("Failed to read file {}: {}", filename, e),
+                })
+            }
+        };
+
+        match args.len() {
+            1 => {
+                // read_tsv(File) -> Array[Array[String]] - original behavior
+                self.parse_as_string_arrays(&content)
+            }
+            2 => {
+                // read_tsv(File, Boolean) -> Array[Object]
+                let has_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "read_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+                self.parse_as_objects(&content, has_headers, None)
+            }
+            3 => {
+                // read_tsv(File, Boolean, Array[String]) -> Array[Object]
+                let has_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "read_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+                let field_names = match &args[2] {
+                    Value::Array { values, .. } => {
+                        let mut names = Vec::new();
+                        for value in values {
+                            match value {
+                                Value::String { value, .. } => names.push(value.clone()),
+                                _ => {
+                                    return Err(WdlError::RuntimeError {
+                                        message: "read_tsv() third argument must be Array[String]"
+                                            .to_string(),
+                                    })
+                                }
+                            }
+                        }
+                        Some(names)
+                    }
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "read_tsv() third argument must be Array[String]".to_string(),
+                        })
+                    }
+                };
+                self.parse_as_objects(&content, has_headers, field_names)
+            }
+            _ => Err(WdlError::ArgumentCountMismatch {
+                function: "read_tsv".to_string(),
+                expected: 1,
+                actual: args.len(),
+            }),
+        }
+    }
+
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        let filename = match &args[0] {
+            Value::String { value, .. } => value.clone(),
+            Value::File { value, .. } => value.clone(),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "read_tsv() first argument must be String or File".to_string(),
+                })
+            }
+        };
+
+        // Use path mapper to devirtualize filename
+        let real_path = stdlib.path_mapper().devirtualize_filename(&filename)?;
+
+        // Read the file content
+        let content = match std::fs::read_to_string(&real_path) {
+            Ok(content) => content,
+            Err(e) => {
+                return Err(WdlError::RuntimeError {
+                    message: format!("Failed to read file {}: {}", real_path.display(), e),
+                })
+            }
+        };
+
+        match args.len() {
+            1 => {
+                // read_tsv(File) -> Array[Array[String]] - original behavior
+                self.parse_as_string_arrays(&content)
+            }
+            2 => {
+                // read_tsv(File, Boolean) -> Array[Object]
+                let has_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "read_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+                self.parse_as_objects(&content, has_headers, None)
+            }
+            3 => {
+                // read_tsv(File, Boolean, Array[String]) -> Array[Object]
+                let has_headers = match &args[1] {
+                    Value::Boolean { value, .. } => *value,
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "read_tsv() second argument must be Boolean".to_string(),
+                        })
+                    }
+                };
+                let field_names = match &args[2] {
+                    Value::Array { values, .. } => {
+                        let mut names = Vec::new();
+                        for value in values {
+                            match value {
+                                Value::String { value, .. } => names.push(value.clone()),
+                                _ => {
+                                    return Err(WdlError::RuntimeError {
+                                        message: "read_tsv() third argument must be Array[String]"
+                                            .to_string(),
+                                    })
+                                }
+                            }
+                        }
+                        Some(names)
+                    }
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: "read_tsv() third argument must be Array[String]".to_string(),
+                        })
+                    }
+                };
+                self.parse_as_objects(&content, has_headers, field_names)
+            }
+            _ => Err(WdlError::ArgumentCountMismatch {
+                function: "read_tsv".to_string(),
+                expected: 1,
+                actual: args.len(),
+            }),
+        }
+    }
+}
+
+impl ReadTsvFunction {
+    /// Parse TSV content as Array[Array[String]] (original behavior)
+    fn parse_as_string_arrays(&self, content: &str) -> Result<Value, WdlError> {
+        let mut rows = Vec::new();
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue; // Skip empty lines
+            }
+            let fields: Vec<Value> = line
+                .split('\t')
+                .map(|field| Value::String {
+                    value: field.to_string(),
+                    wdl_type: Type::String { optional: false },
+                })
+                .collect();
+
+            rows.push(Value::Array {
+                values: fields,
+                wdl_type: Type::Array {
+                    item_type: Box::new(Type::String { optional: false }),
+                    optional: false,
+                    nonempty: false,
                 },
-            })
-        },
-    ))
+            });
+        }
+
+        Ok(Value::Array {
+            values: rows,
+            wdl_type: Type::Array {
+                item_type: Box::new(Type::Array {
+                    item_type: Box::new(Type::String { optional: false }),
+                    optional: false,
+                    nonempty: false,
+                }),
+                optional: false,
+                nonempty: false,
+            },
+        })
+    }
+
+    /// Parse TSV content as Array[Map[String,String]] (which coerces to Array[Object])
+    fn parse_as_objects(
+        &self,
+        content: &str,
+        has_headers: bool,
+        field_names: Option<Vec<String>>,
+    ) -> Result<Value, WdlError> {
+        let lines: Vec<&str> = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
+
+        if lines.is_empty() {
+            return Ok(Value::Array {
+                values: Vec::new(),
+                wdl_type: Type::Array {
+                    item_type: Box::new(Type::Map {
+                        key_type: Box::new(Type::String { optional: false }),
+                        value_type: Box::new(Type::String { optional: false }),
+                        optional: false,
+                        literal_keys: None,
+                    }),
+                    optional: false,
+                    nonempty: false,
+                },
+            });
+        }
+
+        let (headers, data_start_idx) = if has_headers {
+            // Use first line as headers
+            let header: Vec<&str> = lines[0].split('\t').collect();
+            (header.into_iter().map(|s| s.to_string()).collect(), 1)
+        } else if let Some(names) = field_names {
+            // Use provided field names
+            (names, 0)
+        } else {
+            return Err(WdlError::RuntimeError {
+                message: "read_tsv() with has_headers=false must provide field names".to_string(),
+            });
+        };
+
+        let mut objects = Vec::new();
+
+        // Parse data rows
+        for line in &lines[data_start_idx..] {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() != headers.len() {
+                return Err(WdlError::RuntimeError {
+                    message: "read_tsv(): inconsistent number of fields".to_string(),
+                });
+            }
+
+            let mut pairs = Vec::new();
+            for (header, field) in headers.iter().zip(fields.iter()) {
+                let key_value = Value::String {
+                    value: header.clone(),
+                    wdl_type: Type::String { optional: false },
+                };
+                let value_value = Value::String {
+                    value: field.to_string(),
+                    wdl_type: Type::String { optional: false },
+                };
+                pairs.push((key_value, value_value));
+            }
+
+            objects.push(Value::Map {
+                pairs,
+                wdl_type: Type::Map {
+                    key_type: Box::new(Type::String { optional: false }),
+                    value_type: Box::new(Type::String { optional: false }),
+                    optional: false,
+                    literal_keys: None,
+                },
+            });
+        }
+
+        Ok(Value::Array {
+            values: objects,
+            wdl_type: Type::Array {
+                item_type: Box::new(Type::Map {
+                    key_type: Box::new(Type::String { optional: false }),
+                    value_type: Box::new(Type::String { optional: false }),
+                    optional: false,
+                    literal_keys: None,
+                }),
+                optional: false,
+                nonempty: false,
+            },
+        })
+    }
+}
+
+/// Helper function to create read_tsv function
+pub fn create_read_tsv() -> Box<dyn Function> {
+    Box::new(ReadTsvFunction)
 }
 
 /// Helper function to create read_map function
@@ -1268,10 +1611,12 @@ pub type ReadBooleanFunction = ReadFileFunction<fn(&str) -> Result<Value, WdlErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stdlib::StdLib;
     use crate::Type;
     use crate::Value;
     use crate::WdlError;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn create_test_file(content: &str) -> (TempDir, String) {
@@ -1557,6 +1902,95 @@ mod tests {
         } else {
             panic!("Expected Array value");
         }
+    }
+
+    #[test]
+    fn test_read_tsv_with_headers_now_implemented() {
+        let mut stdlib = StdLib::new("1.2");
+
+        // This test now verifies that read_tsv supports multiple arguments
+        let read_tsv_func = stdlib
+            .get_function("read_tsv")
+            .expect("read_tsv function should exist");
+
+        // Test type inference for 2 arguments
+        let args = vec![
+            Type::String { optional: false },
+            Type::Boolean { optional: false },
+        ];
+        let result = read_tsv_func.infer_type(&args);
+        assert!(result.is_ok(), "read_tsv should now accept 2 arguments");
+
+        // Test type inference for 3 arguments
+        let args = vec![
+            Type::String { optional: false },
+            Type::Boolean { optional: false },
+            Type::Array {
+                item_type: Box::new(Type::String { optional: false }),
+                optional: false,
+                nonempty: false,
+            },
+        ];
+        let result = read_tsv_func.infer_type(&args);
+        assert!(result.is_ok(), "read_tsv should now accept 3 arguments");
+    }
+
+    #[test]
+    fn test_read_tsv_with_headers_expected_behavior() {
+        use std::io::Write;
+        let mut stdlib = StdLib::new("1.2");
+
+        // Create a test TSV file with headers
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push("test_headers.tsv");
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        writeln!(file, "name\tvalue").unwrap();
+        writeln!(file, "row1\tvalue1").unwrap();
+        writeln!(file, "row2\tvalue2").unwrap();
+
+        let read_tsv_func = stdlib.get_function("read_tsv").unwrap();
+
+        // Test read_tsv(file, true) - use headers from file
+        let args = vec![
+            Value::String {
+                value: temp_file.to_string_lossy().to_string(),
+                wdl_type: Type::String { optional: false },
+            },
+            Value::Boolean {
+                value: true,
+                wdl_type: Type::Boolean { optional: false },
+            },
+        ];
+
+        let result = read_tsv_func.eval(&args);
+        assert!(result.is_ok(), "read_tsv with headers should work");
+
+        if let Ok(Value::Array { values, .. }) = result {
+            assert_eq!(values.len(), 2, "Should have 2 data rows");
+
+            // Check first object
+            if let Value::Map { pairs, .. } = &values[0] {
+                assert_eq!(pairs.len(), 2, "Each object should have 2 fields");
+                // Find the "name" field
+                let name_value = pairs
+                    .iter()
+                    .find(|(k, _)| {
+                        if let Value::String { value, .. } = k {
+                            value == "name"
+                        } else {
+                            false
+                        }
+                    })
+                    .map(|(_, v)| v);
+
+                if let Some(Value::String { value, .. }) = name_value {
+                    assert_eq!(value, "row1", "First row name should be 'row1'");
+                }
+            }
+        }
+
+        // Clean up
+        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
@@ -1892,4 +2326,277 @@ mod tests {
             panic!("Expected ArgumentCountMismatch");
         }
     }
+}
+
+/// Size function that calculates the size of files, directories, or compound values
+pub struct SizeFunction;
+
+impl Function for SizeFunction {
+    fn name(&self) -> &str {
+        "size"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "size".to_string(),
+                expected: 1, // Can be 1 or 2, but we'll check in eval
+                actual: args.len(),
+            });
+        }
+
+        // First argument can be File, Directory, Array, Map, StructInstance, or compound types
+        match &args[0] {
+            Type::File { .. } | Type::Directory { .. } => {}
+            Type::Array { .. } | Type::Map { .. } | Type::StructInstance { .. } => {}
+            _ => {
+                return Err(WdlError::TypeMismatch {
+                    expected: Type::File { optional: false },
+                    actual: args[0].clone(),
+                });
+            }
+        }
+
+        // Second argument (if present) must be String (unit)
+        if args.len() == 2 {
+            match &args[1] {
+                Type::String { .. } => {}
+                _ => {
+                    return Err(WdlError::TypeMismatch {
+                        expected: Type::String { optional: false },
+                        actual: args[1].clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(Type::Float { optional: false })
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "size".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let unit = if args.len() == 2 {
+            match &args[1] {
+                Value::String { value, .. } => value.as_str(),
+                _ => "B", // Default to bytes
+            }
+        } else {
+            "B" // Default to bytes
+        };
+
+        let size_bytes = calculate_size(&args[0])?;
+        let size_in_unit = convert_bytes_to_unit(size_bytes, unit)?;
+
+        Ok(Value::Float {
+            value: size_in_unit,
+            wdl_type: Type::Float { optional: false },
+        })
+    }
+
+    fn eval_with_stdlib(
+        &self,
+        args: &[Value],
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "size".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        let unit = if args.len() == 2 {
+            match &args[1] {
+                Value::String { value, .. } => value.as_str(),
+                _ => "B", // Default to bytes
+            }
+        } else {
+            "B" // Default to bytes
+        };
+
+        // Calculate size with path resolution through stdlib
+        let size_bytes = calculate_size_with_stdlib(&args[0], stdlib)?;
+        let size_in_unit = convert_bytes_to_unit(size_bytes, unit)?;
+
+        Ok(Value::Float {
+            value: size_in_unit,
+            wdl_type: Type::Float { optional: false },
+        })
+    }
+}
+
+/// Calculate the total size of a value in bytes with path resolution
+fn calculate_size_with_stdlib(
+    value: &Value,
+    stdlib: &crate::stdlib::StdLib,
+) -> Result<f64, WdlError> {
+    match value {
+        Value::File { value: path, .. } => {
+            // Resolve the file path using the path mapper
+            let resolved_path = stdlib.path_mapper().devirtualize_filename(path)?;
+            if resolved_path.exists() {
+                if resolved_path.is_file() {
+                    std::fs::metadata(&resolved_path)
+                        .map_err(|e| WdlError::RuntimeError {
+                            message: format!("Failed to get file size for {}: {}", path, e),
+                        })
+                        .map(|m| m.len() as f64)
+                } else {
+                    Ok(0.0) // Non-file paths have size 0
+                }
+            } else {
+                Ok(0.0) // Non-existent files have size 0
+            }
+        }
+        Value::Directory { value: path, .. } => {
+            // Resolve the directory path using the path mapper
+            let resolved_path = stdlib.path_mapper().devirtualize_filename(path)?;
+            if resolved_path.exists() && resolved_path.is_dir() {
+                calculate_directory_size(&resolved_path)
+            } else {
+                Ok(0.0) // Non-existent directories have size 0
+            }
+        }
+        Value::Array { values, .. } => {
+            let mut total = 0.0;
+            for item in values {
+                total += calculate_size_with_stdlib(item, stdlib)?;
+            }
+            Ok(total)
+        }
+        Value::Map { pairs, .. } => {
+            let mut total = 0.0;
+            for (_key, val) in pairs {
+                total += calculate_size_with_stdlib(val, stdlib)?;
+            }
+            Ok(total)
+        }
+        Value::Struct { members, .. } => {
+            let mut total = 0.0;
+            for val in members.values() {
+                total += calculate_size_with_stdlib(val, stdlib)?;
+            }
+            Ok(total)
+        }
+        Value::Pair { left, right, .. } => {
+            Ok(calculate_size_with_stdlib(left, stdlib)?
+                + calculate_size_with_stdlib(right, stdlib)?)
+        }
+        // For non-file values, treat as 0 bytes
+        Value::Null => Ok(0.0),
+        _ => Ok(0.0),
+    }
+}
+
+/// Calculate the total size of a value in bytes
+fn calculate_size(value: &Value) -> Result<f64, WdlError> {
+    match value {
+        Value::File { value: path, .. } => {
+            let file_path = Path::new(path);
+            if file_path.exists() {
+                if file_path.is_file() {
+                    std::fs::metadata(file_path)
+                        .map_err(|e| WdlError::RuntimeError {
+                            message: format!("Failed to get file size for {}: {}", path, e),
+                        })
+                        .map(|m| m.len() as f64)
+                } else {
+                    Ok(0.0) // Non-existent files have size 0
+                }
+            } else {
+                Ok(0.0) // Non-existent files have size 0
+            }
+        }
+        Value::Directory { value: path, .. } => {
+            let dir_path = Path::new(path);
+            if dir_path.exists() && dir_path.is_dir() {
+                calculate_directory_size(dir_path)
+            } else {
+                Ok(0.0) // Non-existent directories have size 0
+            }
+        }
+        Value::Array { values, .. } => {
+            let mut total = 0.0;
+            for item in values {
+                total += calculate_size(item)?;
+            }
+            Ok(total)
+        }
+        Value::Map { pairs, .. } => {
+            let mut total = 0.0;
+            for (_key, val) in pairs {
+                total += calculate_size(val)?;
+            }
+            Ok(total)
+        }
+        Value::Struct { members, .. } => {
+            let mut total = 0.0;
+            for val in members.values() {
+                total += calculate_size(val)?;
+            }
+            Ok(total)
+        }
+        Value::Pair { left, right, .. } => Ok(calculate_size(left)? + calculate_size(right)?),
+        // For non-file values, treat as 0 bytes
+        Value::Null => Ok(0.0),
+        _ => Ok(0.0),
+    }
+}
+
+/// Recursively calculate directory size
+fn calculate_directory_size(dir_path: &Path) -> Result<f64, WdlError> {
+    let mut total = 0.0;
+
+    let entries = std::fs::read_dir(dir_path).map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read directory {}: {}", dir_path.display(), e),
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to read directory entry: {}", e),
+        })?;
+
+        let path = entry.path();
+        if path.is_file() {
+            let metadata = std::fs::metadata(&path).map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to get metadata for {}: {}", path.display(), e),
+            })?;
+            total += metadata.len() as f64;
+        } else if path.is_dir() {
+            total += calculate_directory_size(&path)?;
+        }
+    }
+
+    Ok(total)
+}
+
+/// Convert bytes to the specified unit
+fn convert_bytes_to_unit(bytes: f64, unit: &str) -> Result<f64, WdlError> {
+    match unit.to_uppercase().as_str() {
+        "B" => Ok(bytes),
+        "K" | "KB" => Ok(bytes / 1024.0),
+        "M" | "MB" => Ok(bytes / (1024.0 * 1024.0)),
+        "G" | "GB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0)),
+        "T" | "TB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0)),
+        "P" | "PB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0)),
+        _ => Err(WdlError::RuntimeError {
+            message: format!(
+                "Invalid size unit: {}. Valid units are B, K, M, G, T, P",
+                unit
+            ),
+        }),
+    }
+}
+
+/// Helper function to create size function
+pub fn create_size() -> Box<dyn Function> {
+    Box::new(SizeFunction)
 }

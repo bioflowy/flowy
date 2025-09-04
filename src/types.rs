@@ -430,6 +430,28 @@ impl Type {
                 Ok(())
             }
 
+            // Map to Object (reverse coercion for WDL compatibility)
+            (
+                Type::Map {
+                    key_type,
+                    value_type,
+                    ..
+                },
+                Type::Object { members },
+            ) => {
+                // Map keys must be strings
+                key_type.check_coercion(&Type::string(false), check_quant)?;
+                // If Object has specific member types, check value type coerces to each
+                if !members.is_empty() {
+                    for member_type in members.values() {
+                        value_type.check_coercion(member_type, check_quant)?;
+                    }
+                } else {
+                    // Empty Object (from parser) accepts any Map[String, T]
+                }
+                Ok(())
+            }
+
             // Default: types don't coerce
             _ => Err(WdlError::static_type_mismatch(
                 SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),

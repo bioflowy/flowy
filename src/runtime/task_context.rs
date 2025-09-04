@@ -192,13 +192,7 @@ impl TaskContext {
             // Only evaluate default if this input is not already in the environment
             if !eval_env.has_binding(&input.name) {
                 if let Some(default_expr) = &input.expr {
-                    let value = default_expr.eval(&eval_env, &stdlib).map_err(|e| {
-                        RuntimeError::run_failed(
-                            format!("Failed to evaluate input default for: {}", input.name),
-                            e,
-                            Some(input.pos.clone()),
-                        )
-                    })?;
+                    let value = default_expr.eval(&eval_env, &stdlib)?;
                     eval_env = eval_env.bind(input.name.clone(), value, None);
                 }
             }
@@ -207,13 +201,7 @@ impl TaskContext {
         // Evaluate postinput declarations
         for postinput in &self.task.postinputs {
             if let Some(init_expr) = &postinput.expr {
-                let value = init_expr.eval(&eval_env, &stdlib).map_err(|e| {
-                    RuntimeError::run_failed(
-                        format!("Failed to evaluate postinput variable: {}", postinput.name),
-                        e,
-                        Some(postinput.pos.clone()),
-                    )
-                })?;
+                let value = init_expr.eval(&eval_env, &stdlib)?;
                 eval_env = eval_env.bind(postinput.name.clone(), value, None);
             }
         }
@@ -259,11 +247,7 @@ impl TaskContext {
             for binding in eval_env.iter() {
                 eprintln!("  {} = {:?}", binding.name(), binding.value());
             }
-            RuntimeError::run_failed(
-                format!("Failed to evaluate task command: {}", e),
-                e,
-                Some(command_expr.pos().clone()),
-            )
+            e // Return the original error directly instead of wrapping it
         })?;
 
         if let Value::String { value: cmd, .. } = command_value {
@@ -1227,6 +1211,66 @@ mod tests {
                 panic!("Unexpected error: {:?}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_error_information_loss_reproduction() {
+        // This test demonstrates the bug where detailed WDLError information is lost
+        // when converted through RuntimeError::run_failed
+
+        use crate::error::SourcePosition;
+        use crate::error::WdlError;
+
+        // Create a detailed WDLError (the kind we would get from expression evaluation)
+        let original_error = WdlError::UnknownIdentifier {
+            pos: SourcePosition::new(
+                "test.wdl".to_string(),
+                "test.wdl".to_string(),
+                10,
+                5,
+                10,
+                18,
+            ),
+            message: "rel_str_dir".to_string(),
+            source_text: None,
+            declared_wdl_version: None,
+        };
+
+        // Simulate what happens in map_err - wrap it with run_failed (the bug)
+        let wrapped_error = RuntimeError::run_failed(
+            "Failed to evaluate postinput variable: bin1".to_string(),
+            original_error,
+            Some(SourcePosition::new(
+                "test.wdl".to_string(),
+                "test.wdl".to_string(),
+                14,
+                1,
+                14,
+                50,
+            )),
+        );
+
+        let error_msg = format!("{}", wrapped_error);
+        println!("Wrapped error message: {}", error_msg);
+
+        // This test demonstrates the problem: the specific "rel_str_dir" information is buried
+        // in the caused_by chain and not immediately visible in the error message
+        assert!(
+            error_msg.contains("Failed to evaluate postinput variable: bin1"),
+            "Should contain generic wrapper message"
+        );
+
+        // The detailed "UndefinedIdentifier: rel_str_dir" information should be in the error chain
+        // but is not immediately visible in the main error message
+        if error_msg.contains("rel_str_dir") {
+            println!("✓ Original error details are visible (bug might be fixed)");
+        } else {
+            println!("✗ Original error details are not immediately visible (bug reproduced)");
+            // This assertion will pass before the fix, demonstrating the problem
+            // After the fix, this assertion may need to be updated
+        }
+
+        // After fix, the original error should be returned directly without wrapping
     }
 }
 

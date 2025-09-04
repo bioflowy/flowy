@@ -996,6 +996,9 @@ pub struct ContainsKeyFunction;
 /// Convert Map[X,Y] to Array[Pair[X,Y]] - WDL 1.2 as_pairs function
 pub struct AsPairsFunction;
 
+/// Convert Array[Pair[X,Y]] to Map[X,Y] - WDL 1.2 as_map function
+pub struct AsMapFunction;
+
 impl Function for AsPairsFunction {
     fn name(&self) -> &str {
         "as_pairs"
@@ -1079,6 +1082,116 @@ impl Function for AsPairsFunction {
             }
             _ => Err(WdlError::RuntimeError {
                 message: "as_pairs() expects Map argument".to_string(),
+            }),
+        }
+    }
+}
+impl Function for AsMapFunction {
+    fn name(&self) -> &str {
+        "as_map"
+    }
+
+    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::ArgumentCountMismatch {
+                function: "as_map".to_string(),
+                expected: 1,
+                actual: args.len(),
+            });
+        }
+
+        match &args[0] {
+            Type::Array { item_type, .. } => {
+                // Check if it's Array[Pair[X,Y]]
+                if let Type::Pair {
+                    left_type,
+                    right_type,
+                    ..
+                } = item_type.as_ref()
+                {
+                    // Return Map[X,Y]
+                    Ok(Type::map(
+                        left_type.as_ref().clone(),
+                        right_type.as_ref().clone(),
+                        false,
+                    ))
+                } else {
+                    Err(WdlError::RuntimeError {
+                        message: "as_map() expects Array[Pair[X,Y]] argument".to_string(),
+                    })
+                }
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "as_map() expects Array argument".to_string(),
+            }),
+        }
+    }
+
+    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: "as_map() expects exactly 1 argument".to_string(),
+            });
+        }
+
+        match &args[0] {
+            Value::Array { values, wdl_type } => {
+                // Extract the array element type
+                if let Type::Array { item_type, .. } = wdl_type {
+                    // Verify it's Pair type
+                    if let Type::Pair {
+                        left_type,
+                        right_type,
+                        ..
+                    } = item_type.as_ref()
+                    {
+                        // Convert each Pair value to (key, value) for the map
+                        let mut map_pairs: Vec<(Value, Value)> = Vec::new();
+                        let mut seen_keys = std::collections::HashSet::new();
+
+                        for pair_value in values {
+                            if let Value::Pair { left, right, .. } = pair_value {
+                                // Check for duplicate keys
+                                let key_str = format!("{:?}", left);
+                                if seen_keys.contains(&key_str) {
+                                    return Err(WdlError::RuntimeError {
+                                        message: format!("as_map() duplicate key: {:?}", left),
+                                    });
+                                }
+                                seen_keys.insert(key_str);
+
+                                map_pairs.push((left.as_ref().clone(), right.as_ref().clone()));
+                            } else {
+                                return Err(WdlError::RuntimeError {
+                                    message: "as_map() expects Array[Pair[X,Y]]".to_string(),
+                                });
+                            }
+                        }
+
+                        // Create Map[X,Y] type
+                        let map_type = Type::map(
+                            left_type.as_ref().clone(),
+                            right_type.as_ref().clone(),
+                            false,
+                        );
+
+                        Ok(Value::Map {
+                            pairs: map_pairs,
+                            wdl_type: map_type,
+                        })
+                    } else {
+                        Err(WdlError::RuntimeError {
+                            message: "as_map() expects Array[Pair[X,Y]]".to_string(),
+                        })
+                    }
+                } else {
+                    Err(WdlError::RuntimeError {
+                        message: "as_map() argument must have Array type".to_string(),
+                    })
+                }
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "as_map() expects Array argument".to_string(),
             }),
         }
     }
@@ -1394,6 +1507,89 @@ mod contains_key_tests {
             }
         } else {
             panic!("as_pairs function not found in standard library");
+        }
+    }
+
+    #[test]
+    fn test_as_map_function_is_implemented() {
+        // Test that as_map function is now implemented
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+
+        // Try to get as_map function - should succeed
+        let result = stdlib.get_function("as_map");
+        assert!(result.is_some(), "as_map function should be implemented");
+
+        // Verify the function name
+        if let Some(as_map_fn) = result {
+            assert_eq!(as_map_fn.name(), "as_map");
+        }
+    }
+
+    #[test]
+    fn test_as_map_function_expected_behavior() {
+        // Test the expected behavior of as_map once implemented
+        // This test should fail until as_map is implemented
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+
+        if let Some(as_map_fn) = stdlib.get_function("as_map") {
+            use crate::types::Type;
+            use crate::value::Value;
+
+            // Create Array[Pair[String, Int]] = [("a", 1), ("b", 2)]
+            let pair1 = Value::pair(
+                Type::string(false),
+                Type::int(false),
+                Value::string("a".to_string()),
+                Value::int(1),
+            );
+            let pair2 = Value::pair(
+                Type::string(false),
+                Type::int(false),
+                Value::string("b".to_string()),
+                Value::int(2),
+            );
+
+            let pairs_array = Value::array(
+                Type::pair(Type::string(false), Type::int(false), false),
+                vec![pair1, pair2],
+            );
+
+            // Test type inference
+            let inferred_type = as_map_fn.infer_type(&[pairs_array.wdl_type().clone()]);
+            assert!(inferred_type.is_ok());
+
+            if let Ok(map_type) = inferred_type {
+                assert!(matches!(map_type, Type::Map { .. }));
+            }
+
+            // Test evaluation
+            let result = as_map_fn.eval(&[pairs_array]);
+            assert!(
+                result.is_ok(),
+                "as_map should successfully convert Array[Pair] to Map"
+            );
+
+            if let Ok(map_value) = result {
+                // Should be a Map with {"a": 1, "b": 2}
+                if let Value::Map { pairs, .. } = map_value {
+                    assert_eq!(pairs.len(), 2);
+                    // Check the map contains the expected key-value pairs
+                    let keys: Vec<String> = pairs
+                        .iter()
+                        .map(|(k, _)| {
+                            if let Value::String { value, .. } = k {
+                                value.clone()
+                            } else {
+                                panic!("Key should be string")
+                            }
+                        })
+                        .collect();
+                    assert!(keys.contains(&"a".to_string()));
+                    assert!(keys.contains(&"b".to_string()));
+                }
+            }
+        } else {
+            panic!("as_map function should be implemented");
         }
     }
 }

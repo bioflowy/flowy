@@ -607,6 +607,55 @@ impl Value {
                             .to_string(),
                     ))
                 }
+                Type::Object { members } => {
+                    // Convert Map to Object (Struct value with Object type)
+                    let mut object_members = HashMap::new();
+
+                    // Convert map pairs to object members
+                    for (key_value, value_value) in pairs {
+                        let key_str = match key_value {
+                            Value::String { value, .. } => value.clone(),
+                            Value::Int { value, .. } => value.to_string(),
+                            Value::Float { value, .. } => value.to_string(),
+                            Value::Boolean { value, .. } => value.to_string(),
+                            Value::File { value, .. } | Value::Directory { value, .. } => {
+                                value.clone()
+                            }
+                            _ => {
+                                return Err(WdlError::validation_error(
+                                    SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                                    format!(
+                                        "Cannot convert {:?} key to object member name",
+                                        key_value
+                                    ),
+                                ))
+                            }
+                        };
+
+                        // If Object has specific member types, coerce to them
+                        let coerced_value = if let Some(expected_type) = members.get(&key_str) {
+                            value_value.coerce(expected_type)?
+                        } else if members.is_empty() {
+                            // Empty Object (from parser) - accept any values as-is
+                            value_value.clone()
+                        } else {
+                            // This key doesn't match any expected member
+                            return Err(WdlError::validation_error(
+                                SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                                format!("Unexpected object member: {}", key_str),
+                            ));
+                        };
+
+                        object_members.insert(key_str, coerced_value);
+                    }
+
+                    // Create struct value with Object type
+                    Ok(Value::struct_value_unchecked(
+                        desired_type.clone(),
+                        object_members,
+                        None,
+                    ))
+                }
                 // Handle coercion to String (map representation)
                 Type::String { .. } => self.coerce_base(desired_type),
                 // Other coercions fall back to base
