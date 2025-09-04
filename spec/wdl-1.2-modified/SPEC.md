@@ -696,7 +696,7 @@ In multi-line strings, leading *whitespace* is removed according to the followin
       String hw1 = <<<hello  world>>>
       String hw2 = <<<   hello  world   >>>
       String hw3 = <<<   
-          hello world>>>
+          hello  world>>>
       String hw4 = <<<   
           hello  world
           >>>
@@ -733,13 +733,13 @@ In multi-line strings, leading *whitespace* is removed according to the followin
   
   ```json
   {
-    "multiline_strings2.hw0": "hello  world"
-    "multiline_strings2.hw1": "hello  world"
-    "multiline_strings2.hw2": "hello  world"
-    "multiline_strings2.hw3": "hello  world"
-    "multiline_strings2.hw4": "hello  world"
-    "multiline_strings2.hw5": "hello  world"
-    "multiline_strings2.hw6": "hello  world"
+    "multiline_strings2.hw0": "hello  world",
+    "multiline_strings2.hw1": "hello  world",
+    "multiline_strings2.hw2": "hello  world",
+    "multiline_strings2.hw3": "hello  world",
+    "multiline_strings2.hw4": "hello  world",
+    "multiline_strings2.hw5": "hello  world",
+    "multiline_strings2.hw6": "hello  world",
     "multiline_strings2.not_equivalent": "hello \\\n  world"
   }
   ```
@@ -802,10 +802,10 @@ Common leading whitespace is also removed from blank lines that contain whitespa
   
   ```json
   {
-    "multiline_strings3.multi_line_A": "\nthis is a\n\n  multi-line string\n"
-    "multiline_strings3.multi_line_B": "\nthis is a\n\n  multi-line string\n"
-    "multiline_strings3.multi_line_C": "\nthis is a\n\n  multi-line string\n"
-    "multiline_strings3.multi_line_D": "\nthis is a\n\n  multi-line string\n"
+    "multiline_strings3.multi_line_A": "\nthis is a\n\n  multi-line string\n",
+    "multiline_strings3.multi_line_B": "\nthis is a\n\n  multi-line string\n",
+    "multiline_strings3.multi_line_C": "\nthis is a\n\n  multi-line string",
+    "multiline_strings3.multi_line_D": "\nthis is a\n\n  multi-line string"
   }
   ```
   </p>
@@ -7734,8 +7734,8 @@ Example output:
 
 ```json
 {
-  "test_find.match1": "ello",
-  "test_matches.is_read1": null
+  "find_string.match1": "ello",
+  "find_string.match2": null
 }
 ```
 </p>

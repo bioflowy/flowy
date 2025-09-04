@@ -364,11 +364,7 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
 
             stream.expect(Token::RightBrace)?;
 
-            Ok(Expression::String {
-                pos,
-                parts,
-                inferred_type: None,
-            })
+            Ok(Expression::task_command(pos, parts))
         }
         Some(Token::HeredocStart) => {
             stream.next();
@@ -381,11 +377,7 @@ fn parse_command_section(stream: &mut TokenStream) -> ParseResult<Expression> {
 
             stream.expect(Token::HeredocEnd)?;
 
-            Ok(Expression::String {
-                pos,
-                parts,
-                inferred_type: None,
-            })
+            Ok(Expression::task_command(pos, parts))
         }
         _ => Err(WdlError::syntax_error(
             stream.current_position(),

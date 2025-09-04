@@ -1,6 +1,6 @@
 //! Expression evaluation logic
 
-use super::{BinaryOperator, Expression, ExpressionBase, StringPart, UnaryOperator};
+use super::{BinaryOperator, Expression, ExpressionBase, StringPart, StringType, UnaryOperator};
 use crate::env::Bindings;
 use crate::error::{HasSourcePosition, SourcePosition, WdlError};
 use crate::types::Type;
@@ -53,68 +53,29 @@ impl ExpressionBase for Expression {
             Expression::Boolean { value, .. } => Ok(Value::boolean(*value)),
             Expression::Int { value, .. } => Ok(Value::int(*value)),
             Expression::Float { value, .. } => Ok(Value::float(*value)),
-            Expression::String { parts, .. } => {
-                let mut result = String::new();
-                for part in parts {
-                    match part {
-                        StringPart::Text(text) => result.push_str(text),
-                        StringPart::Placeholder { expr, options } => {
-                            let val = expr.eval(env, stdlib)?;
-                            if val.is_null() {
-                                if let Some(default) = options.get("default") {
-                                    result.push_str(default);
-                                }
-                                // Otherwise add nothing for null values
-                            } else {
-                                // Handle sep option for arrays
-                                if let Some(sep) = options.get("sep") {
-                                    match &val {
-                                        Value::Array { values, .. } => {
-                                            let string_values: Vec<String> = values
-                                                .iter()
-                                                .map(|v| match v {
-                                                    Value::String { value, .. }
-                                                    | Value::File { value, .. }
-                                                    | Value::Directory { value, .. } => {
-                                                        value.clone()
-                                                    }
-                                                    _ => format!("{}", v),
-                                                })
-                                                .collect();
-                                            result.push_str(&string_values.join(sep));
-                                        }
-                                        _ => {
-                                            // For non-arrays, just convert to string (sep has no effect)
-                                            match &val {
-                                                Value::String { value, .. }
-                                                | Value::File { value, .. }
-                                                | Value::Directory { value, .. } => {
-                                                    result.push_str(value);
-                                                }
-                                                _ => {
-                                                    result.push_str(&format!("{}", val));
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    // No sep option - use default string conversion
-                                    match &val {
-                                        Value::String { value, .. }
-                                        | Value::File { value, .. }
-                                        | Value::Directory { value, .. } => {
-                                            result.push_str(value);
-                                        }
-                                        _ => {
-                                            result.push_str(&format!("{}", val));
-                                        }
-                                    }
-                                }
-                            }
-                        }
+            Expression::String {
+                parts, string_type, ..
+            } => {
+                eprintln!("DEBUG: Evaluating string with type: {:?}", string_type);
+                let result = match string_type {
+                    StringType::MultiLine => {
+                        eprintln!("DEBUG: Processing as MultiLine string");
+                        // Process multiline strings with special handling
+                        eval_multiline_string(parts, env, stdlib)?
                     }
-                }
-                Ok(Value::string(result))
+                    StringType::TaskCommand => {
+                        eprintln!("DEBUG: Processing as TaskCommand string");
+                        // Process task commands with dedent but no escape removal
+                        eval_task_command(parts, env, stdlib)?
+                    }
+                    StringType::Regular => {
+                        eprintln!("DEBUG: Processing as Regular string");
+                        // Regular string processing
+                        eval_regular_string(parts, env, stdlib)?
+                    }
+                };
+                eprintln!("DEBUG: Result: {:?}", result);
+                Ok(result)
             }
             Expression::Null { .. } => Ok(Value::null()),
 
@@ -503,19 +464,407 @@ impl ExpressionBase for Expression {
             Expression::Boolean { value, .. } => Some(Value::boolean(*value)),
             Expression::Int { value, .. } => Some(Value::int(*value)),
             Expression::Float { value, .. } => Some(Value::float(*value)),
-            Expression::String { parts, .. } => {
+            Expression::String {
+                parts, string_type, ..
+            } => {
                 // Only return literal value if all parts are text
-                let mut result = String::new();
-                for part in parts {
-                    match part {
-                        StringPart::Text(text) => result.push_str(text),
-                        StringPart::Placeholder { .. } => return None,
-                    }
+                if parts
+                    .iter()
+                    .any(|p| matches!(p, StringPart::Placeholder { .. }))
+                {
+                    return None;
                 }
+
+                // Collect all text parts
+                let text_parts: Vec<String> = parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        StringPart::Text(text) => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect();
+
+                // Apply appropriate processing based on string type
+                let result = match string_type {
+                    StringType::MultiLine => {
+                        // Apply multiline processing to the text
+                        process_multiline_text(text_parts)
+                    }
+                    StringType::TaskCommand => {
+                        // Apply dedent to task command text
+                        dedent_parts(&text_parts)
+                    }
+                    StringType::Regular => {
+                        // Just join the parts
+                        text_parts.join("")
+                    }
+                };
+
                 Some(Value::string(result))
             }
             Expression::Null { .. } => Some(Value::null()),
             _ => None,
         }
     }
+}
+
+/// Helper function to evaluate regular strings
+fn eval_regular_string(
+    parts: &[StringPart],
+    env: &Bindings<Value>,
+    stdlib: &crate::stdlib::StdLib,
+) -> Result<Value, WdlError> {
+    let mut result = String::new();
+    for part in parts {
+        match part {
+            StringPart::Text(text) => result.push_str(text),
+            StringPart::Placeholder { expr, options } => {
+                let val = expr.eval(env, stdlib)?;
+                if val.is_null() {
+                    if let Some(default) = options.get("default") {
+                        result.push_str(default);
+                    }
+                    // Otherwise add nothing for null values
+                } else {
+                    // Handle sep option for arrays
+                    if let Some(sep) = options.get("sep") {
+                        match &val {
+                            Value::Array { values, .. } => {
+                                let string_values: Vec<String> = values
+                                    .iter()
+                                    .map(|v| match v {
+                                        Value::String { value, .. }
+                                        | Value::File { value, .. }
+                                        | Value::Directory { value, .. } => value.clone(),
+                                        _ => format!("{}", v),
+                                    })
+                                    .collect();
+                                result.push_str(&string_values.join(sep));
+                            }
+                            _ => {
+                                // For non-arrays, just convert to string (sep has no effect)
+                                match &val {
+                                    Value::String { value, .. }
+                                    | Value::File { value, .. }
+                                    | Value::Directory { value, .. } => {
+                                        result.push_str(value);
+                                    }
+                                    _ => {
+                                        result.push_str(&format!("{}", val));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // No sep option - use default string conversion
+                        match &val {
+                            Value::String { value, .. }
+                            | Value::File { value, .. }
+                            | Value::Directory { value, .. } => {
+                                result.push_str(value);
+                            }
+                            _ => {
+                                result.push_str(&format!("{}", val));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(Value::string(result))
+}
+
+/// Helper function to evaluate multiline strings
+fn eval_multiline_string(
+    parts: &[StringPart],
+    env: &Bindings<Value>,
+    stdlib: &crate::stdlib::StdLib,
+) -> Result<Value, WdlError> {
+    // First, process parts to handle escaped newlines
+    let mut processed_parts = Vec::new();
+
+    for part in parts {
+        match part {
+            StringPart::Text(text) => {
+                // Remove escaped newlines and following whitespace
+                let processed = remove_escaped_newlines(text);
+                processed_parts.push(StringPart::Text(processed));
+            }
+            StringPart::Placeholder { .. } => {
+                processed_parts.push(part.clone());
+            }
+        }
+    }
+
+    // Evaluate all placeholders
+    let mut text_parts = Vec::new();
+    for part in &processed_parts {
+        match part {
+            StringPart::Text(text) => {
+                // Decode escape sequences for multiline strings
+                let decoded = decode_escape_sequences(text);
+                text_parts.push(decoded);
+            }
+            StringPart::Placeholder { expr, options } => {
+                let val = expr.eval(env, stdlib)?;
+                let text = if val.is_null() {
+                    if let Some(default) = options.get("default") {
+                        default.clone()
+                    } else {
+                        String::new()
+                    }
+                } else if let Some(sep) = options.get("sep") {
+                    if let Value::Array { values, .. } = &val {
+                        let string_values: Vec<String> = values
+                            .iter()
+                            .map(|v| match v {
+                                Value::String { value, .. }
+                                | Value::File { value, .. }
+                                | Value::Directory { value, .. } => value.clone(),
+                                _ => format!("{}", v),
+                            })
+                            .collect();
+                        string_values.join(sep)
+                    } else {
+                        match &val {
+                            Value::String { value, .. }
+                            | Value::File { value, .. }
+                            | Value::Directory { value, .. } => value.clone(),
+                            _ => format!("{}", val),
+                        }
+                    }
+                } else {
+                    match &val {
+                        Value::String { value, .. }
+                        | Value::File { value, .. }
+                        | Value::Directory { value, .. } => value.clone(),
+                        _ => format!("{}", val),
+                    }
+                };
+                text_parts.push(text);
+            }
+        }
+    }
+
+    // Apply multiline processing
+    let result = process_multiline_text(text_parts);
+    Ok(Value::string(result))
+}
+
+/// Helper function to evaluate task command strings
+fn eval_task_command(
+    parts: &[StringPart],
+    env: &Bindings<Value>,
+    stdlib: &crate::stdlib::StdLib,
+) -> Result<Value, WdlError> {
+    // Process parts - don't remove escaped newlines for task commands
+    let mut text_parts = Vec::new();
+    for part in parts {
+        match part {
+            StringPart::Text(text) => {
+                // Task commands don't decode escape sequences
+                // They are passed as-is to the shell
+                text_parts.push(text.clone());
+            }
+            StringPart::Placeholder { expr, options } => {
+                let val = expr.eval(env, stdlib)?;
+                let text = if val.is_null() {
+                    if let Some(default) = options.get("default") {
+                        default.clone()
+                    } else {
+                        String::new()
+                    }
+                } else if let Some(sep) = options.get("sep") {
+                    if let Value::Array { values, .. } = &val {
+                        let string_values: Vec<String> = values
+                            .iter()
+                            .map(|v| match v {
+                                Value::String { value, .. }
+                                | Value::File { value, .. }
+                                | Value::Directory { value, .. } => value.clone(),
+                                _ => format!("{}", v),
+                            })
+                            .collect();
+                        string_values.join(sep)
+                    } else {
+                        match &val {
+                            Value::String { value, .. }
+                            | Value::File { value, .. }
+                            | Value::Directory { value, .. } => value.clone(),
+                            _ => format!("{}", val),
+                        }
+                    }
+                } else {
+                    match &val {
+                        Value::String { value, .. }
+                        | Value::File { value, .. }
+                        | Value::Directory { value, .. } => value.clone(),
+                        _ => format!("{}", val),
+                    }
+                };
+                text_parts.push(text);
+            }
+        }
+    }
+
+    // Apply dedenting (without trimming)
+    let result = dedent_parts(&text_parts);
+    Ok(Value::string(result))
+}
+
+/// Process multiline text: trim whitespace and apply dedent
+fn process_multiline_text(text_parts: Vec<String>) -> String {
+    let mut content = text_parts.join("");
+
+    // Trim whitespace from the left of the first line
+    if let Some(newline_pos) = content.find('\n') {
+        let first_line = &content[..newline_pos];
+        if first_line.trim().is_empty() {
+            // Remove the entire first line if it's only whitespace
+            content = content[newline_pos + 1..].to_string();
+        } else {
+            // Just trim leading whitespace from first line
+            let trimmed = first_line.trim_start();
+            content = format!("{}{}", trimmed, &content[newline_pos..]);
+        }
+    } else {
+        // Single line - just trim leading whitespace
+        content = content.trim_start().to_string();
+    }
+
+    // Trim whitespace from the right of the last line
+    if let Some(last_newline_pos) = content.rfind('\n') {
+        let last_line = &content[last_newline_pos + 1..];
+        if last_line.trim().is_empty() {
+            // Remove the entire last line if it's only whitespace
+            content = content[..last_newline_pos].to_string();
+        } else {
+            // Just trim trailing whitespace from last line
+            let trimmed = last_line.trim_end();
+            content = format!("{}{}", &content[..last_newline_pos + 1], trimmed);
+        }
+    } else {
+        // Single line - just trim trailing whitespace
+        content = content.trim_end().to_string();
+    }
+
+    // Now apply dedent
+    dedent(&content)
+}
+
+/// Remove escaped newlines and following whitespace
+fn remove_escaped_newlines(text: &str) -> String {
+    let mut result = String::new();
+    let mut chars = text.chars().peekable();
+    let mut backslash_count = 0;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            backslash_count += 1;
+            result.push(ch);
+        } else if ch == '\n' {
+            if backslash_count % 2 == 1 {
+                // Odd number of backslashes - newline is escaped
+                // Remove the last backslash
+                result.pop();
+                // Skip any following whitespace
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch == ' ' || next_ch == '\t' {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            } else {
+                // Even number of backslashes - newline is not escaped
+                result.push(ch);
+            }
+            backslash_count = 0;
+        } else {
+            result.push(ch);
+            backslash_count = 0;
+        }
+    }
+
+    result
+}
+
+/// Decode escape sequences in a string (for multiline strings)
+fn decode_escape_sequences(text: &str) -> String {
+    let mut result = String::new();
+    let mut chars = text.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next_ch) = chars.next() {
+                match next_ch {
+                    'n' => result.push('\n'),
+                    't' => result.push('\t'),
+                    'r' => result.push('\r'),
+                    '\\' => result.push('\\'),
+                    '\'' => result.push('\''),
+                    '"' => result.push('"'),
+                    _ => {
+                        // Unknown escape sequence - keep as is
+                        result.push('\\');
+                        result.push(next_ch);
+                    }
+                }
+            } else {
+                // Backslash at end of string
+                result.push('\\');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
+}
+
+/// Dedent text by removing common leading whitespace
+fn dedent(text: &str) -> String {
+    dedent_parts(&[text.to_string()])
+}
+
+/// Dedent multiple text parts
+fn dedent_parts(parts: &[String]) -> String {
+    let combined = parts.join("");
+    let lines: Vec<&str> = combined.lines().collect();
+
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    // Find minimum indentation among non-blank lines
+    let mut min_indent: Option<usize> = None;
+    for line in &lines {
+        if !line.trim().is_empty() {
+            let indent = line.len() - line.trim_start().len();
+            min_indent = Some(match min_indent {
+                None => indent,
+                Some(current_min) => current_min.min(indent),
+            });
+        }
+    }
+
+    let indent_to_remove = min_indent.unwrap_or(0);
+
+    // Remove the common indentation
+    let dedented_lines: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            if line.len() > indent_to_remove {
+                line[indent_to_remove..].to_string()
+            } else if line.trim().is_empty() {
+                // Keep blank lines as empty strings
+                String::new()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+
+    dedented_lines.join("\n")
 }

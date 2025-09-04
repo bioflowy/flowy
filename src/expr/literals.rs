@@ -1,6 +1,6 @@
 //! Literal expression constructors and utilities
 
-use super::{Expression, StringPart};
+use super::{Expression, StringPart, StringType};
 use crate::error::SourcePosition;
 
 impl Expression {
@@ -31,20 +31,40 @@ impl Expression {
         }
     }
 
-    /// Create a new String expression
     pub fn string(pos: SourcePosition, parts: Vec<StringPart>) -> Self {
         Expression::String {
             pos,
             parts,
+            string_type: StringType::Regular,
             inferred_type: None,
         }
     }
 
-    /// Create a new simple string literal
+    /// Create a new multiline string expression
+    pub fn multiline_string(pos: SourcePosition, parts: Vec<StringPart>) -> Self {
+        Expression::String {
+            pos,
+            parts,
+            string_type: StringType::MultiLine,
+            inferred_type: None,
+        }
+    }
+
+    /// Create a new task command string expression  
+    pub fn task_command(pos: SourcePosition, parts: Vec<StringPart>) -> Self {
+        Expression::String {
+            pos,
+            parts,
+            string_type: StringType::TaskCommand,
+            inferred_type: None,
+        }
+    }
+
     pub fn string_literal(pos: SourcePosition, value: String) -> Self {
         Expression::String {
             pos,
             parts: vec![StringPart::Text(value)],
+            string_type: StringType::Regular,
             inferred_type: None,
         }
     }

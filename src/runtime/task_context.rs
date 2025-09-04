@@ -688,6 +688,7 @@ mod tests {
                     }),
                     options: HashMap::new(),
                 }],
+                string_type: crate::expr::StringType::TaskCommand,
                 inferred_type: None,
             },
             vec![
@@ -1123,6 +1124,7 @@ mod tests {
                                 23,
                             ),
                             parts: vec![StringPart::Text("first".to_string())],
+                            string_type: crate::expr::StringType::Regular,
                             inferred_type: None,
                         },
                         Expression::String {
@@ -1135,6 +1137,7 @@ mod tests {
                                 33,
                             ),
                             parts: vec![StringPart::Text("second".to_string())],
+                            string_type: crate::expr::StringType::Regular,
                             inferred_type: None,
                         },
                     ],
@@ -1167,6 +1170,7 @@ mod tests {
                     }),
                     options: HashMap::new(),
                 }],
+                string_type: crate::expr::StringType::TaskCommand,
                 inferred_type: None,
             },
             vec![],         // outputs

@@ -49,6 +49,16 @@ pub trait ExpressionBase {
     fn literal(&self) -> Option<Value>;
 }
 
+/// Type of string literal
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StringType {
+    /// Regular string literal with quotes
+    Regular,
+    /// Multi-line string literal with <<<...>>>
+    MultiLine,
+    /// Task command string
+    TaskCommand,
+}
 /// WDL expression AST node
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expression {
@@ -77,6 +87,7 @@ pub enum Expression {
     String {
         pos: SourcePosition,
         parts: Vec<StringPart>,
+        string_type: StringType,
         inferred_type: Option<Type>,
     },
 

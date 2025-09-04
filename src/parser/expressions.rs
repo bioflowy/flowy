@@ -571,7 +571,7 @@ pub fn parse_multistring(stream: &mut TokenStream) -> ParseResult<Expression> {
     }
 
     stream.exit_command_mode();
-    Ok(Expression::string(pos, parts))
+    Ok(Expression::multiline_string(pos, parts))
 }
 
 /// Parse object literal
