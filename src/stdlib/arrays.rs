@@ -141,10 +141,68 @@ impl Function for SelectAllFunction {
                 .collect();
 
             if let Type::Array { item_type, .. } = wdl_type {
-                Ok(Value::array(
-                    item_type.clone().with_optional(false),
-                    non_null_values,
-                ))
+                // Create the correct return type: Array[T] (non-optional item type)
+                // For select_all, we need to infer the actual concrete type from values
+                let actual_item_type = if non_null_values.is_empty() {
+                    // If no non-null values, use the original item type but make it non-optional
+                    item_type.clone().with_optional(false)
+                } else {
+                    // Infer from the first non-null value and make it non-optional
+                    let first_value_type = non_null_values[0].wdl_type();
+                    first_value_type.clone().with_optional(false)
+                };
+
+                // Convert each value to have the non-optional type
+                let converted_values: Result<Vec<Value>, WdlError> = non_null_values
+                    .into_iter()
+                    .map(|v| {
+                        // For select_all, we need to create new values with non-optional types
+                        // since the coercion of Int? to Int fails when value is not null
+                        match (&v, &actual_item_type) {
+                            (Value::Int { value, .. }, Type::Int { .. }) => Ok(Value::Int {
+                                value: *value,
+                                wdl_type: actual_item_type.clone(),
+                            }),
+                            (Value::Float { value, .. }, Type::Float { .. }) => Ok(Value::Float {
+                                value: *value,
+                                wdl_type: actual_item_type.clone(),
+                            }),
+                            (Value::String { value, .. }, Type::String { .. }) => {
+                                Ok(Value::String {
+                                    value: value.clone(),
+                                    wdl_type: actual_item_type.clone(),
+                                })
+                            }
+                            (Value::Boolean { value, .. }, Type::Boolean { .. }) => {
+                                Ok(Value::Boolean {
+                                    value: *value,
+                                    wdl_type: actual_item_type.clone(),
+                                })
+                            }
+                            (Value::File { value, .. }, Type::File { .. }) => Ok(Value::File {
+                                value: value.clone(),
+                                wdl_type: actual_item_type.clone(),
+                            }),
+                            (Value::Directory { value, .. }, Type::Directory { .. }) => {
+                                Ok(Value::Directory {
+                                    value: value.clone(),
+                                    wdl_type: actual_item_type.clone(),
+                                })
+                            }
+                            // For complex types or mismatched types, fall back to coercion
+                            _ => v.coerce(&actual_item_type),
+                        }
+                    })
+                    .collect();
+
+                let converted_values = converted_values?;
+                let result_array_type =
+                    Type::array(actual_item_type, false, !converted_values.is_empty());
+
+                Ok(Value::Array {
+                    values: converted_values,
+                    wdl_type: result_array_type,
+                })
             } else {
                 unreachable!()
             }

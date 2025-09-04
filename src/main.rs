@@ -77,12 +77,15 @@ fn display_error_with_location(error: &WdlError, wdl_file: Option<&std::path::Pa
 
         if let Ok(content) = std::fs::read_to_string(file_to_read) {
             let lines: Vec<&str> = content.lines().collect();
-            if let Some(error_line) = lines.get((pos.line - 1) as usize) {
-                eprintln!("    {}", error_line);
+            if pos.line > 0 {
+                if let Some(error_line) = lines.get((pos.line - 1) as usize) {
+                    eprintln!("    {}", error_line);
 
-                // Create a caret pointer to show exact position
-                let pointer = " ".repeat((pos.column - 1) as usize) + "^";
-                eprintln!("    {}", pointer);
+                    // Create a caret pointer to show exact position
+                    let pointer_pos = if pos.column > 0 { pos.column - 1 } else { 0 };
+                    let pointer = " ".repeat(pointer_pos as usize) + "^";
+                    eprintln!("    {}", pointer);
+                }
             }
         }
     };

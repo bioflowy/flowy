@@ -373,8 +373,14 @@ impl WorkflowEngine {
         let call_name = if let Some(alias) = &call.alias {
             alias.clone()
         } else {
-            // Use the full task name including namespace for proper resolution
-            call.task.clone()
+            // Extract just the task name (after the last dot) from qualified names
+            // For "if_else.greet", this gives "greet"
+            // For "greet", this gives "greet"
+            call.task
+                .split('.')
+                .next_back()
+                .unwrap_or(&call.task)
+                .to_string()
         };
         let unique_run_id = format!("{}_{}", run_id, call_name.replace('.', "_"));
 
@@ -698,7 +704,18 @@ impl WorkflowEngine {
                 }
                 WorkflowElement::Call(call) => {
                     // Task calls create qualified variable names
-                    let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
+                    let call_name = if let Some(alias) = &call.alias {
+                        alias.clone()
+                    } else {
+                        // Extract just the task name (after the last dot) from qualified names
+                        // For "if_else.greet", this gives "greet"
+                        // For "greet", this gives "greet"
+                        call.task
+                            .split('.')
+                            .next_back()
+                            .unwrap_or(&call.task)
+                            .to_string()
+                    };
 
                     // Find the task definition to get output names using resolved callee
                     let task_opt = if let Some(ref callee) = call.callee {
@@ -750,7 +767,18 @@ impl WorkflowEngine {
                     variables.push(decl.name.clone());
                 }
                 WorkflowElement::Call(call) => {
-                    let call_name = call.alias.as_ref().unwrap_or(&call.task).clone();
+                    let call_name = if let Some(alias) = &call.alias {
+                        alias.clone()
+                    } else {
+                        // Extract just the task name (after the last dot) from qualified names
+                        // For "if_else.greet", this gives "greet"
+                        // For "greet", this gives "greet"
+                        call.task
+                            .split('.')
+                            .next_back()
+                            .unwrap_or(&call.task)
+                            .to_string()
+                    };
 
                     // Find the task definition to get output names using resolved callee
                     let task_opt = if let Some(ref callee) = call.callee {
@@ -937,11 +965,11 @@ impl WorkflowEngine {
                     // Try to coerce the output value to the expected type
                     let expected_type = &output_decl.decl_type;
                     let resolved_type = self.resolve_struct_type(expected_type);
-                    let output_value = output_value.coerce(&resolved_type).map_err(|_e| {
+                    let output_value = output_value.coerce(&resolved_type).map_err(|e| {
                         WdlError::output_error(
                             format!(
-                                "Cannot coerce workflow output '{}' to expected type",
-                                output_decl.name
+                                "Cannot coerce workflow output '{}' to expected type: {}",
+                                output_decl.name, e
                             ),
                             format!("{:?}", expected_type),
                             format!("{:?}", output_value.wdl_type()),

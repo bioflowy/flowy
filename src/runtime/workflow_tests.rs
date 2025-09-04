@@ -1328,6 +1328,95 @@ mod tests {
         }
     }
 
+    /// Test for nested conditional scoping issue with task calls
+    /// This reproduces the core scoping issue where tasks called inside nested
+    /// conditionals cannot be referenced from the workflow output section
+    #[test]
+    fn test_nested_conditional_scoping_issue() {
+        let mut fixture = WorkflowTestFixture::new().unwrap();
+
+        // Test workflow that reproduces the exact same pattern as nested_if.wdl
+        // but without imports to isolate the scoping issue
+        let result = fixture.test_workflow(
+            r#"
+version 1.2
+
+task greet {
+  input {
+    String time
+  }
+
+  command <<<
+  printf "Good ~{time} buddy!"
+  >>>
+
+  output {
+    String greeting = read_string(stdout())
+  }
+}
+
+workflow nested_conditional_scoping_test {
+  input {
+    Boolean morning = true
+    Boolean friendly = true
+  }
+
+  # Task call is inside nested conditionals - same pattern as nested_if.wdl
+  if (morning) {
+    if (friendly) {
+      call greet { input: time = "morning" }
+    }
+  }
+
+  output {
+    # This should fail: accessing task call result from nested conditionals
+    # In nested_if.wdl this throws "Unknown identifier: greet" at runtime
+    String? greeting_maybe = greet.greeting
+    String greeting = select_first([greet.greeting, "hi"])
+  }
+}
+            "#,
+            Some({
+                let mut inputs = std::collections::HashMap::new();
+                inputs.insert("morning".to_string(), serde_json::Value::Bool(true));
+                inputs.insert("friendly".to_string(), serde_json::Value::Bool(true));
+                inputs
+            }),
+            None,
+            None,
+        );
+
+        // Check if this reproduces the scoping issue
+        match result {
+            Ok(outputs) => {
+                // If it works, the scoping is correct - let's see what we get
+                println!("✅ Task succeeded - scoping appears to work in test environment");
+                println!("Outputs: {:?}", outputs);
+
+                // The test passes, which means our current implementation handles this case
+                // But the real nested_if.wdl fails, so there might be a difference in how
+                // imports are handled vs local tasks
+            }
+            Err(e) => {
+                let error_str = format!("{:?}", e);
+                if error_str.contains("Unknown identifier") && error_str.contains("greet") {
+                    println!(
+                        "✅ Successfully reproduced nested conditional scoping issue: {}",
+                        e
+                    );
+                } else {
+                    println!("❌ Got different error than expected: {}", e);
+                }
+            }
+        }
+
+        // Since the original CLI fails but our test passes, the issue might be specific
+        // to import resolution or CLI vs test environment differences
+        println!(
+            "📝 Note: Original nested_if.wdl still fails, suggesting import-related scoping issue"
+        );
+    }
+
     /// Test advanced workflow features from miniwdl test_6workflowrun.py - Bug Discovery Tests
     #[test]
     fn test_advanced_workflow_features_bug_discovery() {

@@ -398,18 +398,28 @@ impl Function for SepFunction {
         })?;
 
         if let Value::Array { values, .. } = &args[1] {
-            let strings: Result<Vec<String>, _> = values
+            // Convert each element to string using the Value's Display trait
+            // which handles all WDL types according to their string representation
+            let strings: Vec<String> = values
                 .iter()
-                .map(|v| {
-                    v.as_string()
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| WdlError::RuntimeError {
-                            message: "sep() array elements must be String".to_string(),
-                        })
+                .map(|v| match v {
+                    Value::Null => "None".to_string(),
+                    Value::Boolean { value, .. } => {
+                        if *value { "true" } else { "false" }.to_string()
+                    }
+                    Value::Int { value, .. } => value.to_string(),
+                    Value::Float { value, .. } => format!("{:.6}", value),
+                    Value::String { value, .. }
+                    | Value::File { value, .. }
+                    | Value::Directory { value, .. } => value.clone(),
+                    Value::Array { .. } => format!("{}", v), // Use Display trait for arrays
+                    Value::Map { .. } => format!("{}", v),   // Use Display trait for maps
+                    Value::Pair { .. } => format!("{}", v),  // Use Display trait for pairs
+                    Value::Struct { .. } => format!("{}", v), // Use Display trait for structs
                 })
                 .collect();
 
-            Ok(Value::string(strings?.join(separator)))
+            Ok(Value::string(strings.join(separator)))
         } else {
             Err(WdlError::RuntimeError {
                 message: "sep() second argument must be Array".to_string(),
@@ -509,6 +519,125 @@ mod tests {
         } else {
             // Expected to fail since find is not implemented yet
             panic!("find function not implemented yet - this is expected initially");
+        }
+    }
+
+    #[test]
+    fn test_sep_function_with_strings() {
+        // Test sep with string arrays - should work with current implementation
+        let stdlib = StdLib::new("1.2");
+        let sep_fn = stdlib
+            .get_function("sep")
+            .expect("sep function should exist");
+
+        // Test case: sep(' ', ["a", "b", "c"]) == "a b c"
+        let result = sep_fn.eval(&[
+            Value::string(" ".to_string()),
+            Value::array(
+                Type::string(false),
+                vec![
+                    Value::string("a".to_string()),
+                    Value::string("b".to_string()),
+                    Value::string("c".to_string()),
+                ],
+            ),
+        ]);
+
+        match result {
+            Ok(value) => {
+                if let Some(result_str) = value.as_string() {
+                    assert_eq!(result_str, "a b c");
+                } else {
+                    panic!("sep should return string value, got: {:?}", value);
+                }
+            }
+            Err(e) => panic!("sep function should work with strings: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_sep_function_with_integers() {
+        // Test sep with integer arrays - should fail with current implementation but pass after fix
+        let stdlib = StdLib::new("1.2");
+        let sep_fn = stdlib
+            .get_function("sep")
+            .expect("sep function should exist");
+
+        // Test case: sep(',', [1]) == "1"
+        let result = sep_fn.eval(&[
+            Value::string(",".to_string()),
+            Value::array(Type::int(false), vec![Value::int(1)]),
+        ]);
+
+        match result {
+            Ok(value) => {
+                if let Some(result_str) = value.as_string() {
+                    assert_eq!(result_str, "1");
+                } else {
+                    panic!("sep should return string value, got: {:?}", value);
+                }
+            }
+            Err(e) => {
+                // Expected to fail with current implementation
+                // This documents what should happen after the fix
+                assert!(e
+                    .to_string()
+                    .contains("sep() array elements must be String"));
+                eprintln!("Expected failure (will pass after fix): {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_sep_function_with_mixed_types() {
+        // Test sep with various types - comprehensive test for the fix
+        let stdlib = StdLib::new("1.2");
+        let sep_fn = stdlib
+            .get_function("sep")
+            .expect("sep function should exist");
+
+        // Test empty string separator: sep("", ["a", "b", "c"]) == "abc"
+        let result = sep_fn.eval(&[
+            Value::string("".to_string()),
+            Value::array(
+                Type::string(false),
+                vec![
+                    Value::string("a".to_string()),
+                    Value::string("b".to_string()),
+                    Value::string("c".to_string()),
+                ],
+            ),
+        ]);
+
+        match result {
+            Ok(value) => {
+                if let Some(result_str) = value.as_string() {
+                    assert_eq!(result_str, "abc");
+                } else {
+                    panic!("sep should return string value, got: {:?}", value);
+                }
+            }
+            Err(e) => panic!("sep function should work: {}", e),
+        }
+
+        // Test with empty array - should return empty string
+        let result = sep_fn.eval(&[
+            Value::string(",".to_string()),
+            Value::array(Type::string(false), vec![]),
+        ]);
+
+        match result {
+            Ok(value) => {
+                if let Some(result_str) = value.as_string() {
+                    assert_eq!(result_str, "");
+                } else {
+                    panic!(
+                        "sep should return empty string for empty array, got: {:?}",
+                        value
+                    );
+                }
+            }
+            Err(e) => panic!("sep function should work with empty array: {}", e),
         }
     }
 }

@@ -1107,4 +1107,183 @@ mod tests {
         let null_val = Value::null();
         assert_eq!(format!("{}", null_val), "None");
     }
+
+    #[test]
+    fn test_coercion_error_details() {
+        // Test that coercion errors provide detailed information
+        // This reproduces the issue in test_conditional.wdl where error details are suppressed
+
+        // Try to coerce Array[Int?] with None values to Array[Int] (non-optional)
+        // This should fail and provide detailed error information
+        let optional_int_array = Value::array(
+            Type::int(true), // Optional int type
+            vec![
+                Value::int(1),
+                Value::null(), // This None should cause coercion to fail
+                Value::int(3),
+            ],
+        );
+
+        let non_optional_int_array_type = Type::array(Type::int(false), false, false); // Non-optional int array
+
+        let coercion_result = optional_int_array.coerce(&non_optional_int_array_type);
+
+        match coercion_result {
+            Ok(_) => {
+                panic!("Coercion should have failed when trying to coerce Array[Int?] with None values to Array[Int]");
+            }
+            Err(error) => {
+                let error_message = error.to_string();
+                eprintln!("Coercion error (should be detailed): {}", error_message);
+
+                // The error should contain specific information about what went wrong
+                // Accept "Null value" as a valid error message format
+                assert!(
+                    error_message.contains("Cannot coerce")
+                        || error_message.contains("NullValue")
+                        || error_message.contains("null")
+                        || error_message.contains("Null value")
+                );
+
+                // This test documents what the error looks like before improvement
+                println!("Current error detail level: {}", error_message);
+            }
+        }
+    }
+
+    #[test]
+    fn test_workflow_output_error_reproduction() {
+        // Simulate the exact pattern from test_conditional.wdl
+        // Array[Int?] -> Array[Int] coercion failure in workflow output context
+
+        let maybe_results = Value::array(
+            Type::int(true), // Array[Int?] - optional int elements
+            vec![
+                Value::int(2), // Some valid values
+                Value::null(), // None value that should cause problems
+                Value::int(8),
+            ],
+        );
+
+        // Try to coerce to Array[Int] (non-optional elements)
+        let result_array_type = Type::array(Type::int(false), false, false);
+
+        let coercion_result = maybe_results.coerce(&result_array_type);
+
+        match coercion_result {
+            Ok(_) => {
+                panic!("Expected coercion to fail when Array[Int?] contains None and target is Array[Int]");
+            }
+            Err(error) => {
+                println!("Detailed coercion error: {:?}", error);
+                println!("Error message: {}", error);
+
+                // This should provide enough detail to understand what went wrong
+                // After the fix, this should show the specific element that failed and why
+                assert!(!error.to_string().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn test_select_all_type_conversion() {
+        // Test that select_all properly converts Array[Int?] to Array[Int]
+        // This reproduces the exact issue from test_conditional.wdl
+
+        use crate::stdlib::StdLib;
+        let stdlib = StdLib::new("1.2");
+        let select_all_fn = stdlib
+            .get_function("select_all")
+            .expect("select_all function should exist");
+
+        // Create Array[Int?] with some None values
+        let optional_int_array = Value::array(
+            Type::int(true), // Array[Int?] - optional int elements
+            vec![
+                Value::int(1),
+                Value::null(), // This should be filtered out
+                Value::int(3),
+                Value::null(), // This should also be filtered out
+                Value::int(5),
+            ],
+        );
+
+        println!("Input array type: {:?}", optional_int_array.wdl_type());
+
+        // Call select_all
+        let result = select_all_fn
+            .eval(&[optional_int_array])
+            .expect("select_all should succeed");
+
+        println!("Result array type: {:?}", result.wdl_type());
+
+        // Check that result is Array[Int] (non-optional elements)
+        if let Value::Array { values, wdl_type } = &result {
+            // Should have 3 elements (1, 3, 5)
+            assert_eq!(values.len(), 3);
+
+            // Check the array type
+            if let Type::Array {
+                item_type,
+                optional,
+                nonempty,
+            } = wdl_type
+            {
+                println!("Item type: {:?}", item_type);
+
+                // The item type should be Int (non-optional)
+                match item_type.as_ref() {
+                    Type::Int {
+                        optional: item_optional,
+                        ..
+                    } => {
+                        assert!(
+                            !item_optional,
+                            "select_all should return Array[Int] not Array[Int?]"
+                        );
+                    }
+                    _ => panic!("Expected Int item type, got: {:?}", item_type),
+                }
+
+                assert!(!optional, "Array itself should not be optional");
+                assert!(*nonempty, "Array should be nonempty since we have elements");
+            } else {
+                panic!("Expected Array type, got: {:?}", wdl_type);
+            }
+
+            // Check individual values
+            for (i, value) in values.iter().enumerate() {
+                match value {
+                    Value::Int {
+                        value: int_val,
+                        wdl_type,
+                    } => match wdl_type {
+                        Type::Int { optional, .. } => {
+                            assert!(
+                                !optional,
+                                "Individual elements should be non-optional Int, not Int?"
+                            );
+                        }
+                        _ => panic!("Expected Int type for element {}", i),
+                    },
+                    _ => panic!("Expected Int value for element {}, got: {:?}", i, value),
+                }
+            }
+
+            // Values should be [1, 3, 5]
+            assert_eq!(values[0].as_int(), Some(1));
+            assert_eq!(values[1].as_int(), Some(3));
+            assert_eq!(values[2].as_int(), Some(5));
+        } else {
+            panic!("Expected Array result, got: {:?}", result);
+        }
+
+        // Now test coercion to Array[Int] - this should work
+        let target_type = Type::array(Type::int(false), false, false); // Array[Int]
+        let coerced = result
+            .coerce(&target_type)
+            .expect("Should be able to coerce select_all result to Array[Int]");
+
+        println!("Coercion successful: {:?}", coerced.wdl_type());
+    }
 }
