@@ -40,6 +40,10 @@ impl Function for AddOperator {
                     Value::String { value, .. } => value.clone(),
                     Value::Int { value, .. } => value.to_string(),
                     Value::Float { value, .. } => format!("{:.6}", value),
+                    Value::Null => {
+                        // Per WDL 1.2 spec: String + None = None in placeholder context
+                        return Ok(Value::Null);
+                    }
                     _ => {
                         return Err(WdlError::RuntimeError {
                             message: format!("Cannot concatenate String with {:?}", b),
@@ -52,6 +56,10 @@ impl Function for AddOperator {
                 let a_str = match a {
                     Value::Int { value, .. } => value.to_string(),
                     Value::Float { value, .. } => format!("{:.6}", value),
+                    Value::Null => {
+                        // Per WDL 1.2 spec: None + String = None in placeholder context
+                        return Ok(Value::Null);
+                    }
                     _ => {
                         return Err(WdlError::RuntimeError {
                             message: format!("Cannot concatenate {:?} with String", a),
