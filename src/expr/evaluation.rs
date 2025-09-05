@@ -53,28 +53,24 @@ impl ExpressionBase for Expression {
             Expression::Boolean { value, .. } => Ok(Value::boolean(*value)),
             Expression::Int { value, .. } => Ok(Value::int(*value)),
             Expression::Float { value, .. } => Ok(Value::float(*value)),
+
             Expression::String {
                 parts, string_type, ..
             } => {
-                eprintln!("DEBUG: Evaluating string with type: {:?}", string_type);
                 let result = match string_type {
                     StringType::MultiLine => {
-                        eprintln!("DEBUG: Processing as MultiLine string");
                         // Process multiline strings with special handling
                         eval_multiline_string(parts, env, stdlib)?
                     }
                     StringType::TaskCommand => {
-                        eprintln!("DEBUG: Processing as TaskCommand string");
                         // Process task commands with dedent but no escape removal
                         eval_task_command(parts, env, stdlib)?
                     }
                     StringType::Regular => {
-                        eprintln!("DEBUG: Processing as Regular string");
                         // Regular string processing
                         eval_regular_string(parts, env, stdlib)?
                     }
                 };
-                eprintln!("DEBUG: Result: {:?}", result);
                 Ok(result)
             }
             Expression::Null { .. } => Ok(Value::null()),
@@ -125,14 +121,10 @@ impl ExpressionBase for Expression {
                 inferred_type,
                 ..
             } => {
-                eprintln!("DEBUG: Evaluating struct with {} members", members.len());
-                eprintln!("DEBUG: Inferred type: {:?}", inferred_type);
-
                 let mut member_values = HashMap::new();
 
                 // First, add all explicitly provided members
                 for (name, expr) in members {
-                    eprintln!("DEBUG: Evaluating member {}", name);
                     member_values.insert(name.clone(), expr.eval(env, stdlib)?);
                 }
 
@@ -144,20 +136,15 @@ impl ExpressionBase for Expression {
 
                 let struct_type = if let Some(inferred) = inferred_type {
                     // Use the inferred type if available, which may have more complete information
-                    eprintln!("DEBUG: Using inferred type: {:?}", inferred);
                     inferred.clone()
                 } else {
                     // Fallback to creating type from available members
-                    eprintln!("DEBUG: Creating type from available members");
                     Type::object(member_types)
                 };
-
-                eprintln!("DEBUG: Final struct type: {:?}", struct_type);
 
                 // Use the new function that completes missing optional members
                 let result = Value::struct_value_with_completion(struct_type, member_values, None);
 
-                eprintln!("DEBUG: Struct result: {:?}", result);
                 Ok(result)
             }
 

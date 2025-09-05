@@ -25,6 +25,7 @@ use crate::runtime::error::RuntimeError;
 pub struct DockerRuntime {
     // Note: We create clients dynamically rather than storing them
     // because ContainerRuntime trait methods take &self, not &mut self
+    debug: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Default for DockerRuntime {
@@ -36,7 +37,9 @@ impl Default for DockerRuntime {
 impl DockerRuntime {
     /// Create a new Docker runtime instance
     pub fn new() -> Self {
-        Self {}
+        Self {
+            debug: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 
     /// Create Docker client connection
@@ -52,24 +55,42 @@ impl DockerRuntime {
     }
 
     /// Convert ContainerExecution to Docker container configuration
-    fn create_docker_config(execution: &ContainerExecution) -> DockerConfig<String> {
+    fn create_docker_config(execution: &ContainerExecution, debug: bool) -> DockerConfig<String> {
+        // Debug: Print equivalent docker command
+        if debug {
+            eprintln!("DEBUG: Equivalent Docker command:");
+        }
+        let mut docker_cmd = format!("docker run --rm -w {}", execution.working_dir);
+
         // Prepare environment variables
         let env: Vec<String> = execution
             .environment
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
+            .map(|(k, v)| {
+                docker_cmd.push_str(&format!(" -e {}={}", k, v));
+                format!("{}={}", k, v)
+            })
             .collect();
 
         // Prepare volume mounts
         let mounts: Vec<Mount> = execution
             .path_mappings
             .iter()
-            .map(|mapping| Mount {
-                typ: Some(MountTypeEnum::BIND),
-                source: Some(mapping.host_path.to_string_lossy().to_string()),
-                target: Some(mapping.container_path.to_string_lossy().to_string()),
-                read_only: Some(mapping.read_only),
-                ..Default::default()
+            .map(|mapping| {
+                let mount_flag = if mapping.read_only { ":ro" } else { "" };
+                docker_cmd.push_str(&format!(
+                    " -v {}:{}{}",
+                    mapping.host_path.to_string_lossy(),
+                    mapping.container_path.to_string_lossy(),
+                    mount_flag
+                ));
+                Mount {
+                    typ: Some(MountTypeEnum::BIND),
+                    source: Some(mapping.host_path.to_string_lossy().to_string()),
+                    target: Some(mapping.container_path.to_string_lossy().to_string()),
+                    read_only: Some(mapping.read_only),
+                    ..Default::default()
+                }
             })
             .collect();
 
@@ -91,10 +112,18 @@ impl DockerRuntime {
         // Set memory limits
         if let Some(memory_limit) = execution.memory_limit {
             host_config.memory = Some(memory_limit as i64);
+            docker_cmd.push_str(&format!(" --memory {}", memory_limit));
         }
 
         if let Some(memory_reservation) = execution.memory_reservation {
             host_config.memory_reservation = Some(memory_reservation as i64);
+        }
+
+        // Complete the docker command with image and command
+        docker_cmd.push_str(&format!(" {} ", execution.image));
+        docker_cmd.push_str(&execution.command.join(" "));
+        if debug {
+            eprintln!("{}", docker_cmd);
         }
 
         DockerConfig {
@@ -110,7 +139,11 @@ impl DockerRuntime {
 
 #[async_trait::async_trait]
 impl ContainerRuntime for DockerRuntime {
-    async fn global_init(&self, _config: &Config) -> ContainerResult<()> {
+    async fn global_init(&self, config: &Config) -> ContainerResult<()> {
+        // Store debug flag
+        self.debug
+            .store(config.debug, std::sync::atomic::Ordering::Relaxed);
+
         // Test Docker connection
         let client = Self::create_client().await?;
 
@@ -126,8 +159,6 @@ impl ContainerRuntime for DockerRuntime {
                 )))),
                 container_id: None,
             })?;
-
-        // TODO: Store client in self (requires refactoring to use Arc<Mutex<>>)
 
         Ok(())
     }
@@ -168,7 +199,8 @@ impl ContainerRuntime for DockerRuntime {
     ) -> ContainerResult<String> {
         let client = Self::create_client().await?;
 
-        let config = Self::create_docker_config(execution);
+        let debug = self.debug.load(std::sync::atomic::Ordering::Relaxed);
+        let config = Self::create_docker_config(execution, debug);
         let container_name = format!("miniwdl_{}", run_id);
 
         let options = CreateContainerOptions {
@@ -336,7 +368,8 @@ mod tests {
         let runtime = DockerRuntime::new();
         // DockerRuntime should be created successfully
         // Client connections are created dynamically as needed
-        assert_eq!(std::mem::size_of_val(&runtime), 0); // Zero-sized struct
+        // Size is now larger due to the AtomicBool debug field
+        assert!(std::mem::size_of_val(&runtime) > 0);
     }
 
     #[test]
@@ -360,7 +393,7 @@ mod tests {
             memory_reservation: None,
         };
 
-        let config = DockerRuntime::create_docker_config(&execution);
+        let config = DockerRuntime::create_docker_config(&execution, false);
 
         assert_eq!(config.image, Some("ubuntu:20.04".to_string()));
         assert_eq!(

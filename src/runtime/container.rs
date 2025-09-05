@@ -132,6 +132,7 @@ pub fn prepare_container_execution(
     task: &Task,
     runtime_env: &Bindings<Value>,
     run_dir: &Path,
+    input_file_mappings: &[(String, String)],
 ) -> ContainerResult<ContainerExecution> {
     // Extract runtime values
     let docker_image = runtime_env
@@ -170,12 +171,21 @@ pub fn prepare_container_execution(
         }
     }
 
-    // Set up basic path mappings (run directory)
-    let path_mappings = vec![PathMapping {
+    // Set up path mappings starting with the run directory
+    let mut path_mappings = vec![PathMapping {
         host_path: run_dir.to_path_buf(),
         container_path: PathBuf::from("/tmp/work"),
         read_only: false,
     }];
+
+    // Add individual input file mappings for container execution
+    for (host_path, container_path) in input_file_mappings {
+        path_mappings.push(PathMapping {
+            host_path: PathBuf::from(host_path),
+            container_path: PathBuf::from(container_path),
+            read_only: true, // Input files are read-only
+        });
+    }
 
     // Extract resource limits
     let cpu_limit = runtime_env

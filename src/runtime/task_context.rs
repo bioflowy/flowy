@@ -45,6 +45,8 @@ pub struct TaskContext {
     pub resource_limits: ResourceLimits,
     /// Evaluation environment including postinput declarations
     pub eval_env: Option<Bindings<Value>>,
+    /// Input file mappings for container execution: (host_path, container_path)
+    pub input_file_mappings: Vec<(String, String)>,
 }
 
 /// Result of command execution
@@ -103,6 +105,7 @@ impl TaskContext {
             start_time: None,
             resource_limits: config.resources,
             eval_env: None,
+            input_file_mappings: Vec::new(),
         })
     }
 
@@ -111,15 +114,23 @@ impl TaskContext {
         let start_time = Instant::now();
         self.start_time = Some(start_time);
 
+        // Prepare environment (stage input files)
+        self.prepare_environment()?;
+
         // Generate the command string from the task's command block
         let command_str = self.generate_command()?;
 
-        // Execute the command based on configuration
-        let command_result = if self.config.container.enabled {
-            self.execute_command_in_container(&command_str)?
-        } else {
-            self.execute_command_directly(&command_str)?
-        };
+        // Check if task requires container execution
+        let has_container_requirement = self.task.requirements.contains_key("container");
+        let has_docker_runtime = self.task.runtime.contains_key("docker");
+
+        // Execute the command based on configuration and task requirements
+        let command_result =
+            if self.config.container.enabled || has_container_requirement || has_docker_runtime {
+                self.execute_command_in_container(&command_str)?
+            } else {
+                self.execute_command_directly(&command_str)?
+            };
 
         // Generate outputs based on task definition and command results
         let outputs = self.collect_outputs(&command_result)?;
@@ -155,9 +166,18 @@ impl TaskContext {
         Ok(())
     }
 
-    /// Prepare the execution environment
-    pub fn prepare_environment(&self) -> RuntimeResult<()> {
-        // Create input files symlinks/copies if needed
+    /// Prepare the execution environment by staging input files
+    pub fn prepare_environment(&mut self) -> RuntimeResult<()> {
+        // Clone inputs to allow modification
+        let mut updated_inputs = self.inputs.clone();
+        let mut input_file_mappings = Vec::new();
+
+        // Check if we're going to run in a container
+        let will_use_container = self.config.container.enabled
+            || self.task.requirements.contains_key("container")
+            || self.task.runtime.contains_key("docker");
+
+        // Create input files symlinks/copies if needed and update bindings
         for binding in self.inputs.iter() {
             let name = binding.name();
             let value = binding.value();
@@ -165,14 +185,40 @@ impl TaskContext {
                 value: file_path, ..
             } = value
             {
-                let dest = self.task_dir.join(name);
-                if self.config.copy_input_files {
-                    crate::runtime::fs_utils::copy_file(file_path, &dest)?;
+                if will_use_container {
+                    // For container execution, create mapping for individual file mounts
+                    let container_path = format!(
+                        "/mnt/miniwdl_task_container/work/_miniwdl_inputs/0/{}",
+                        name
+                    );
+                    input_file_mappings.push((file_path.clone(), container_path.clone()));
+
+                    // Update the input binding to use container path
+                    let updated_value = Value::File {
+                        value: container_path,
+                        wdl_type: value.wdl_type().clone(),
+                    };
+                    updated_inputs = updated_inputs.bind(name.to_string(), updated_value, None);
                 } else {
-                    crate::runtime::fs_utils::symlink(file_path, &dest)?;
+                    // For host execution, use traditional staging approach
+                    let dest = self.task_dir.join(name);
+                    if self.config.copy_input_files {
+                        crate::runtime::fs_utils::copy_file(file_path, &dest)?;
+                    } else {
+                        crate::runtime::fs_utils::symlink(file_path, &dest)?;
+                    }
+
+                    // Keep the original path for host execution
+                    // No need to update the binding for host execution
                 }
             }
         }
+
+        // Store the file mappings for container execution
+        self.input_file_mappings = input_file_mappings;
+
+        // Update the inputs with the modified bindings
+        self.inputs = updated_inputs;
         Ok(())
     }
 
@@ -260,7 +306,9 @@ impl TaskContext {
         if let Value::String { value: cmd, .. } = command_value {
             // Save the complete evaluation environment for use in output evaluation
             self.eval_env = Some(eval_env);
-            eprintln!("Generated command: {}", cmd);
+            if self.config.debug {
+                eprintln!("Generated command: {}", cmd);
+            }
             Ok(cmd)
         } else {
             Err(RuntimeError::OutputError {
@@ -333,8 +381,20 @@ impl TaskContext {
         &self,
         command_str: &str,
     ) -> RuntimeResult<CommandResult> {
-        // Create container runtime
-        let runtime = ContainerFactory::create_runtime(&self.config.container.backend)?;
+        // If backend is None but we need container execution, use Docker as default
+        let actual_backend =
+            if self.config.container.backend == crate::runtime::ContainerBackend::None {
+                // Default to Docker when container execution is required
+                if self.config.debug {
+                    eprintln!("DEBUG: No container backend configured, defaulting to Docker");
+                }
+                crate::runtime::ContainerBackend::Docker
+            } else {
+                self.config.container.backend.clone()
+            };
+
+        // Create container runtime with actual backend
+        let runtime = ContainerFactory::create_runtime(&actual_backend)?;
 
         // Initialize container runtime
         runtime.global_init(&self.config).await?;
@@ -342,10 +402,7 @@ impl TaskContext {
         // Check if container runtime is available
         if !runtime.is_available().await {
             return Err(RuntimeError::ContainerError {
-                message: format!(
-                    "Container backend {:?} is not available",
-                    self.config.container.backend
-                ),
+                message: format!("Container backend {:?} is not available", actual_backend),
                 cause: Some(Box::new(RuntimeError::ConfigurationError {
                     message: "Container daemon not running or not accessible".to_string(),
                     key: None,
@@ -375,24 +432,62 @@ impl TaskContext {
             }
         }
 
+        // Also check requirements section for container (WDL 1.2 style)
+        if runtime_env.resolve("docker").is_none() {
+            // Check if container is specified in requirements section
+            if let Some(container_expr) = self.task.requirements.get("container") {
+                let stdlib = crate::stdlib::task_output::create_task_output_stdlib(
+                    "1.2",
+                    self.task_dir.clone(),
+                );
+                let input_env = self.inputs.clone();
+                if let Ok(container_value) = container_expr.eval(&input_env, &stdlib) {
+                    // Map container to docker for compatibility
+                    runtime_env = runtime_env.bind("docker".to_string(), container_value, None);
+                }
+            }
+        }
+
         // Ensure docker image is specified
         if runtime_env.resolve("docker").is_none() {
             return Err(RuntimeError::ContainerError {
-                message: "No docker image specified in task runtime section".to_string(),
+                message: "No docker image specified in task runtime or requirements section".to_string(),
                 cause: Some(Box::new(RuntimeError::ConfigurationError {
-                    message: "Container execution requires 'docker' in runtime section".to_string(),
-                    key: Some("docker".to_string()),
+                    message: "Container execution requires 'docker' in runtime section or 'container' in requirements section".to_string(),
+                    key: Some("docker/container".to_string()),
                 })),
                 container_id: None,
             });
         }
 
         // Prepare container execution configuration
-        let container_execution =
-            prepare_container_execution(&self.task, &runtime_env, &self.task_dir)?;
+        let container_execution = prepare_container_execution(
+            &self.task,
+            &runtime_env,
+            &self.task_dir,
+            &self.input_file_mappings,
+        )?;
 
         // Generate unique run ID for this container
         let run_id = format!("task_{}_{}", self.task.name, std::process::id());
+
+        // Debug: Print container execution details
+        if self.config.debug {
+            eprintln!("DEBUG: Docker execution details:");
+            eprintln!("  Image: {}", container_execution.image);
+            eprintln!("  Working dir: {}", container_execution.working_dir);
+            eprintln!("  Command: {:?}", container_execution.command);
+            eprintln!("  Environment: {:?}", container_execution.environment);
+            eprintln!("  Path mappings:");
+            for mapping in &container_execution.path_mappings {
+                eprintln!(
+                    "    {} -> {} (ro: {})",
+                    mapping.host_path.display(),
+                    mapping.container_path.display(),
+                    mapping.read_only
+                );
+            }
+        }
 
         // Create and start container
         let container_id = runtime
@@ -405,6 +500,16 @@ impl TaskContext {
             "#!/bin/bash\nset -euo pipefail\ncd /tmp/work\n{}\n",
             command_str
         );
+
+        // Debug: Print the actual command being executed
+        if self.config.debug {
+            eprintln!(
+                "DEBUG: Script content being written to {}:",
+                script_path.display()
+            );
+            eprintln!("{}", script_content);
+        }
+
         write_file_atomic(&script_path, script_content)?;
         crate::runtime::fs_utils::make_executable(&script_path)?;
 
@@ -414,6 +519,14 @@ impl TaskContext {
             "/bin/bash".to_string(),
             "/tmp/work/container_command.sh".to_string(),
         ];
+
+        // Debug: Print updated Docker command
+        if self.config.debug {
+            eprintln!(
+                "DEBUG: Updated Docker command: {:?}",
+                updated_execution.command
+            );
+        }
 
         // Create a new container with updated command
         runtime.cleanup_container(&container_id).await?;
@@ -430,29 +543,26 @@ impl TaskContext {
         // Get logs
         let (stdout, stderr) = runtime.get_logs(&container_id).await?;
 
+        // Debug: Print container output
+        if self.config.debug {
+            eprintln!("DEBUG: Container stdout:");
+            eprintln!("{}", stdout);
+            eprintln!("DEBUG: Container stderr:");
+            eprintln!("{}", stderr);
+            eprintln!("DEBUG: Container exit code: {}", stats.exit_code);
+        }
+
         // Clean up container
         runtime.cleanup_container(&container_id).await?;
-
-        // Convert exit code to ExitStatus
-        #[cfg(unix)]
-        let exit_status = ExitStatus::from_raw(stats.exit_code << 8);
-        #[cfg(not(unix))]
-        let exit_status = {
-            // For non-Unix systems, we need to create a mock ExitStatus
-            // This is a simplified approach - in a real implementation you'd want proper Windows support
-            if stats.exit_code == 0 {
-                std::process::Command::new("true").status().unwrap()
-            } else {
-                std::process::Command::new("false").status().unwrap()
-            }
-        };
 
         // Write stdout and stderr to files
         let stdout_path = self.task_dir.join("stdout.txt");
         let stderr_path = self.task_dir.join("stderr.txt");
 
-        // Write outputs to files
+        // Write stdout to file
         write_file_atomic(&stdout_path, stdout.as_bytes())?;
+
+        // Write stderr to file
         write_file_atomic(&stderr_path, stderr.as_bytes())?;
 
         // Convert paths to file URLs
@@ -471,6 +581,12 @@ impl TaskContext {
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"),
             )
         })?;
+
+        // Create exit status from container exit code
+        let exit_status = match stats.exit_code {
+            0 => std::process::ExitStatus::from_raw(0),
+            code => std::process::ExitStatus::from_raw(code << 8), // Standard Unix convention
+        };
 
         Ok(CommandResult {
             exit_status,
@@ -798,7 +914,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
 
-        let context = TaskContext::new(
+        let mut context = TaskContext::new(
             task.clone(),
             inputs,
             config.clone(),
@@ -857,7 +973,7 @@ mod tests {
         let config = Config::default();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
 
-        let context = TaskContext::new(
+        let mut context = TaskContext::new(
             task.clone(),
             inputs,
             config.clone(),
@@ -900,7 +1016,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let workflow_dir = WorkflowDirectory::create(temp_dir.path(), "test_run").unwrap();
 
-        let context = TaskContext::new(
+        let mut context = TaskContext::new(
             task.clone(),
             inputs,
             config.clone(),
