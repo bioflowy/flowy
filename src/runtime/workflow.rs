@@ -324,7 +324,7 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    /// Execute a task call
+    /// Execute a call (task or workflow)
     fn execute_call(
         &self,
         call: &Call,
@@ -341,19 +341,24 @@ impl WorkflowEngine {
         }
 
         // Use resolved callee if available, otherwise fall back to document search
-        let task = if let Some(ref callee) = call.callee {
+        if let Some(ref callee) = call.callee {
             match callee {
-                crate::tree::CalleeRef::Task(task) => task.clone(),
-                crate::tree::CalleeRef::Workflow(_) => {
-                    return Err(RuntimeError::WorkflowValidationError {
-                        message: format!("Cannot execute workflow '{}' as a task call", call.task),
-                        pos: call.pos.clone(),
-                    });
+                crate::tree::CalleeRef::Task(task) => {
+                    self.execute_task_call(call, task.clone(), call_inputs, context, run_id)?;
+                }
+                crate::tree::CalleeRef::Workflow(workflow) => {
+                    self.execute_workflow_call(
+                        call,
+                        workflow.clone(),
+                        call_inputs,
+                        context,
+                        run_id,
+                    )?;
                 }
             }
         } else if let Some(ref document) = self.document {
             // Fall back to old behavior for backwards compatibility
-            document
+            let task = document
                 .tasks
                 .iter()
                 .find(|t| t.name == call.task)
@@ -361,7 +366,8 @@ impl WorkflowEngine {
                 .ok_or_else(|| RuntimeError::WorkflowValidationError {
                     message: format!("Task '{}' not found in document", call.task),
                     pos: call.pos.clone(),
-                })?
+                })?;
+            self.execute_task_call(call, task, call_inputs, context, run_id)?;
         } else {
             return Err(RuntimeError::WorkflowValidationError {
                 message: "No document available for task resolution".to_string(),
@@ -369,6 +375,18 @@ impl WorkflowEngine {
             });
         };
 
+        Ok(())
+    }
+
+    /// Execute a task call
+    fn execute_task_call(
+        &self,
+        call: &Call,
+        task: crate::tree::Task,
+        call_inputs: Bindings<Value>,
+        context: &mut WorkflowContext,
+        run_id: &str,
+    ) -> RuntimeResult<()> {
         // Execute task
         let call_name = if let Some(alias) = &call.alias {
             alias.clone()
@@ -398,6 +416,65 @@ impl WorkflowEngine {
 
         // Store task result using the call name that the aggregation expects
         context.task_results.insert(call_name, task_result);
+
+        Ok(())
+    }
+
+    /// Execute a workflow call (sub-workflow)
+    fn execute_workflow_call(
+        &self,
+        call: &Call,
+        workflow: crate::tree::Workflow,
+        call_inputs: Bindings<Value>,
+        context: &mut WorkflowContext,
+        run_id: &str,
+    ) -> RuntimeResult<()> {
+        // Determine the call name for output binding
+        let call_name = if let Some(alias) = &call.alias {
+            alias.clone()
+        } else {
+            // Extract just the workflow name (after the last dot) from qualified names
+            // For "lib.other", this gives "other"
+            // For "other", this gives "other"
+            call.task
+                .split('.')
+                .next_back()
+                .unwrap_or(&call.task)
+                .to_string()
+        };
+
+        let unique_run_id = format!("{}_{}", run_id, call_name.replace('.', "_"));
+
+        if self.config.debug {
+            eprintln!(
+                "DEBUG: Executing workflow call '{}' as '{}'",
+                call.task, call_name
+            );
+        }
+
+        // Execute the sub-workflow
+        let sub_workflow_result = self.execute_workflow(workflow, call_inputs, &unique_run_id)?;
+
+        // Add workflow outputs to main workflow context
+        for binding in sub_workflow_result.outputs.iter() {
+            let qualified_name = format!("{}.{}", call_name, binding.name());
+            context.bindings = context
+                .bindings
+                .bind(qualified_name, binding.value().clone(), None);
+        }
+
+        // Store workflow task results with prefixed names to avoid conflicts
+        for (task_name, task_result) in sub_workflow_result.task_results {
+            let prefixed_task_name = format!("{}_{}", call_name, task_name);
+            context.task_results.insert(prefixed_task_name, task_result);
+        }
+
+        if self.config.debug {
+            eprintln!(
+                "DEBUG: Workflow call '{}' completed successfully",
+                call_name
+            );
+        }
 
         Ok(())
     }
