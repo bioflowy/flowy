@@ -425,18 +425,31 @@ fn parse_command_block_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<S
                     current_text.clear();
                 }
 
-                // Parse the placeholder expression
+                // Parse the placeholder expression directly
                 stream.next(); // consume ~{ or ${
-                let placeholder_content = parse_placeholder_content(stream)?;
-
-                // Create a TokenStream for the placeholder content and parse options + expression
-                let mut placeholder_stream = TokenStream::new(&placeholder_content, "1.0")?;
+                stream.push_lexer_mode(crate::parser::lexer::LexerMode::Normal);
 
                 // Parse placeholder options first
-                let options = parse_placeholder_options(&mut placeholder_stream)?;
+                let options = parse_placeholder_options(stream)?;
 
                 // Then parse the expression
-                let expr = parse_expression(&mut placeholder_stream)?;
+                let expr = parse_expression(stream)?;
+
+                // Expect placeholder end (either PlaceholderEnd or RightBrace in Normal mode)
+                match stream.peek_token() {
+                    Some(Token::PlaceholderEnd) | Some(Token::RightBrace) => {
+                        stream.next(); // consume closing }
+                    }
+                    _ => {
+                        return Err(WdlError::syntax_error(
+                            stream.current_position(),
+                            "Expected '}' to close placeholder".to_string(),
+                            "1.0".to_string(),
+                            None,
+                        ));
+                    }
+                }
+                stream.pop_lexer_mode(); // Return to command mode
 
                 parts.push(StringPart::Placeholder {
                     expr: Box::new(expr),
@@ -497,18 +510,31 @@ fn parse_heredoc_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<StringP
                     current_text.clear();
                 }
 
-                // Parse the placeholder expression
+                // Parse the placeholder expression directly
                 stream.next(); // consume ~{ or ${
-                let placeholder_content = parse_placeholder_content(stream)?;
-
-                // Create a TokenStream for the placeholder content and parse options + expression
-                let mut placeholder_stream = TokenStream::new(&placeholder_content, "1.0")?;
+                stream.push_lexer_mode(crate::parser::lexer::LexerMode::Normal);
 
                 // Parse placeholder options first
-                let options = parse_placeholder_options(&mut placeholder_stream)?;
+                let options = parse_placeholder_options(stream)?;
 
                 // Then parse the expression
-                let expr = parse_expression(&mut placeholder_stream)?;
+                let expr = parse_expression(stream)?;
+
+                // Expect placeholder end (either PlaceholderEnd or RightBrace in Normal mode)
+                match stream.peek_token() {
+                    Some(Token::PlaceholderEnd) | Some(Token::RightBrace) => {
+                        stream.next(); // consume closing }
+                    }
+                    _ => {
+                        return Err(WdlError::syntax_error(
+                            stream.current_position(),
+                            "Expected '}' to close placeholder".to_string(),
+                            "1.0".to_string(),
+                            None,
+                        ));
+                    }
+                }
+                stream.pop_lexer_mode(); // Return to command mode
 
                 parts.push(StringPart::Placeholder {
                     expr: Box::new(expr),
@@ -571,8 +597,30 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
                 let placeholder_type = stream.peek_token().unwrap().clone();
                 stream.next();
 
-                // Parse placeholder content until }
-                let placeholder_text = parse_placeholder_content(stream)?;
+                // Parse placeholder content until } (simplified handling)
+                let mut placeholder_text = String::new();
+                let mut depth = 1;
+                while !stream.is_eof() && depth > 0 {
+                    match stream.peek_token() {
+                        Some(Token::LeftBrace) | Some(Token::TildeBrace) => {
+                            depth += 1;
+                            placeholder_text.push_str(&format!("{}", stream.peek_token().unwrap()));
+                            stream.next();
+                        }
+                        Some(Token::RightBrace) | Some(Token::PlaceholderEnd) => {
+                            depth -= 1;
+                            if depth > 0 {
+                                placeholder_text.push('}');
+                            }
+                            stream.next();
+                        }
+                        Some(token) => {
+                            placeholder_text.push_str(&format!("{}", token));
+                            stream.next();
+                        }
+                        None => break,
+                    }
+                }
 
                 // For now, just include placeholder as literal text
                 if placeholder_type == Token::TildeBrace {
@@ -608,36 +656,6 @@ fn parse_heredoc_content(stream: &mut TokenStream) -> ParseResult<String> {
     Ok(content)
 }
 
-/// Parse placeholder content until }
-fn parse_placeholder_content(stream: &mut TokenStream) -> ParseResult<String> {
-    let mut content = String::new();
-    let mut depth = 1;
-
-    while !stream.is_eof() && depth > 0 {
-        match stream.peek_token() {
-            Some(Token::LeftBrace) | Some(Token::TildeBrace) => {
-                depth += 1;
-                content.push_str(&format!("{}", stream.peek_token().unwrap()));
-                stream.next();
-            }
-            Some(Token::RightBrace) | Some(Token::PlaceholderEnd) => {
-                depth -= 1;
-                if depth > 0 {
-                    content.push('}');
-                }
-                stream.next();
-            }
-            Some(token) => {
-                content.push_str(&format!("{}", token));
-                stream.next();
-            }
-            None => break,
-        }
-    }
-
-    Ok(content)
-}
-
 /// Parse command block content (simplified)
 #[allow(dead_code)]
 fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> {
@@ -665,8 +683,30 @@ fn parse_command_block_content(stream: &mut TokenStream) -> ParseResult<String> 
                 let placeholder_type = stream.peek_token().unwrap().clone();
                 stream.next();
 
-                // Parse placeholder content until }
-                let placeholder_text = parse_placeholder_content(stream)?;
+                // Parse placeholder content until } (simplified handling)
+                let mut placeholder_text = String::new();
+                let mut depth = 1;
+                while !stream.is_eof() && depth > 0 {
+                    match stream.peek_token() {
+                        Some(Token::LeftBrace) | Some(Token::TildeBrace) => {
+                            depth += 1;
+                            placeholder_text.push_str(&format!("{}", stream.peek_token().unwrap()));
+                            stream.next();
+                        }
+                        Some(Token::RightBrace) | Some(Token::PlaceholderEnd) => {
+                            depth -= 1;
+                            if depth > 0 {
+                                placeholder_text.push('}');
+                            }
+                            stream.next();
+                        }
+                        Some(token) => {
+                            placeholder_text.push_str(&format!("{}", token));
+                            stream.next();
+                        }
+                        None => break,
+                    }
+                }
 
                 // For now, just include placeholder as literal text
                 if placeholder_type == Token::TildeBrace {

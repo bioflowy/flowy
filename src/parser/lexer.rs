@@ -25,8 +25,6 @@ pub enum LexerMode {
     Command,
     /// Inside string literal with the opening quote character
     StringLiteral(char),
-    /// Inside placeholder ${} or ~{}
-    Placeholder,
 }
 
 /// Stateful lexer for WDL
@@ -360,27 +358,6 @@ pub fn string_literal_mode_token_with_filename<'a>(
     }
 }
 
-/// Parse a single token in placeholder mode with filename information
-pub fn placeholder_mode_token_with_filename<'a>(
-    version: &'a str,
-    filename: &'a str,
-) -> impl Fn(Span) -> IResult<Span, LocatedToken> + 'a {
-    move |input: Span| {
-        let pos = span_to_position(input, filename);
-        let (input, token) = alt((
-            // Check for placeholder end
-            value(Token::PlaceholderEnd, char('}')),
-            // Handle normal tokens within placeholders
-            |input| {
-                let (input, token) = normal_token_with_filename(version, filename)(input)?;
-                Ok((input, token.token))
-            },
-        ))(input)?;
-
-        Ok((input, LocatedToken::new(token, pos)))
-    }
-}
-
 /// Parse string literal text content (legacy function)
 pub fn string_literal_text(input: Span) -> IResult<Span, Token> {
     string_literal_text_with_quote(input, '"') // Default to double quote
@@ -503,9 +480,6 @@ pub fn stateful_token(lexer: &Lexer) -> impl Fn(Span) -> IResult<Span, LocatedTo
                 input,
             )
         }
-        LexerMode::Placeholder => {
-            placeholder_mode_token_with_filename(&lexer.version, &lexer.filename)(input)
-        }
     }
 }
 
@@ -577,8 +551,8 @@ mod tests {
         assert_eq!(lexer.current_mode(), LexerMode::Command);
         assert!(lexer.preserve_whitespace());
 
-        lexer.push_mode(LexerMode::Placeholder);
-        assert_eq!(lexer.current_mode(), LexerMode::Placeholder);
+        lexer.push_mode(LexerMode::StringLiteral('"'));
+        assert_eq!(lexer.current_mode(), LexerMode::StringLiteral('"'));
 
         lexer.pop_mode();
         assert_eq!(lexer.current_mode(), LexerMode::Command);

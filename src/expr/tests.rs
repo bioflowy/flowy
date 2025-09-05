@@ -923,12 +923,15 @@ task test_task {
             // Check what's left for the expression
             let remaining_token = stream.peek_token();
             println!("Remaining token for expression: {:?}", remaining_token);
-            
+
             // Verify the expected options were parsed
             let actual_true_value = options.get("true").unwrap();
             println!("Actual 'true' value length: {}", actual_true_value.len());
-            println!("Actual 'true' value bytes: {:?}", actual_true_value.as_bytes());
-            
+            println!(
+                "Actual 'true' value bytes: {:?}",
+                actual_true_value.as_bytes()
+            );
+
             // For now, just check that parsing succeeded and we have some value
             assert!(options.contains_key("true"));
             assert!(options.contains_key("false"));
