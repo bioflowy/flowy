@@ -154,7 +154,7 @@ impl WorkflowEngine {
             // If no workflow, try to find a single task to execute
             if document.tasks.len() == 1 {
                 let task = document.tasks.into_iter().next().unwrap();
-                let task_result = self
+                let task_result = engine_with_doc
                     .task_engine
                     .execute_task_default(task, inputs, run_id)?;
 
@@ -374,7 +374,7 @@ impl WorkflowEngine {
             alias.clone()
         } else {
             // Extract just the task name (after the last dot) from qualified names
-            // For "if_else.greet", this gives "greet"
+            // For "hello.hello_task", this gives "hello_task"
             // For "greet", this gives "greet"
             call.task
                 .split('.')
@@ -547,9 +547,23 @@ impl WorkflowEngine {
     ) -> RuntimeResult<()> {
         use std::collections::HashMap;
 
+        if self.config.debug {
+            eprintln!(
+                "DEBUG: Aggregating task call outputs for {} iterations",
+                num_iterations
+            );
+        }
+
         // Find task calls in the scatter body
         for element in &scatter.body {
             if let WorkflowElement::Call(call) = element {
+                if self.config.debug {
+                    eprintln!(
+                        "DEBUG: Processing call: task={}, alias={:?}",
+                        call.task, call.alias
+                    );
+                }
+
                 // Track outputs for this task across all iterations
                 let mut task_outputs: HashMap<String, Vec<Value>> = HashMap::new();
 
@@ -559,32 +573,60 @@ impl WorkflowEngine {
                 let binding_call_name = if let Some(alias) = &call.alias {
                     alias.clone()
                 } else if call.task.contains('.') {
-                    // For namespaced calls, use just the task name part
+                    // For namespaced calls, use just the task name part (last segment)
                     call.task.split('.').next_back().unwrap().to_string()
                 } else {
                     call.task.clone()
                 };
 
-                // The task results are stored using the full call name with index
+                if self.config.debug {
+                    eprintln!("DEBUG: binding_call_name = {}", binding_call_name);
+                }
+
+                // The task results are stored using the same logic as execute_call
                 let storage_call_name = if let Some(alias) = &call.alias {
                     alias.clone()
+                } else if call.task.contains('.') {
+                    // For namespaced calls, use just the task name part (last segment)
+                    call.task.split('.').next_back().unwrap().to_string()
                 } else {
                     call.task.clone()
                 };
+
+                if self.config.debug {
+                    eprintln!("DEBUG: storage_call_name = {}", storage_call_name);
+                }
 
                 // Collect outputs from each iteration
                 for i in 0..num_iterations {
                     // The key format matches what execute_scatter creates: "{name}_{index}"
                     let indexed_name = format!("{}_{}", storage_call_name, i);
 
+                    if self.config.debug {
+                        eprintln!("DEBUG: Looking for task result: {}", indexed_name);
+                    }
+
                     if let Some(task_result) = context.task_results.get(&indexed_name) {
+                        if self.config.debug {
+                            eprintln!("DEBUG: Found task result for {}", indexed_name);
+                        }
+
                         // Collect each output field
                         for output in task_result.outputs.iter() {
                             let output_name = output.name().to_string();
+                            if self.config.debug {
+                                eprintln!("DEBUG: Collecting output: {}", output_name);
+                            }
                             task_outputs
                                 .entry(output_name)
                                 .or_default()
                                 .push(output.value().clone());
+                        }
+                    } else if self.config.debug {
+                        eprintln!("DEBUG: No task result found for {}", indexed_name);
+                        eprintln!("DEBUG: Available task results:");
+                        for key in context.task_results.keys() {
+                            eprintln!("  {}", key);
                         }
                     }
                 }
@@ -594,6 +636,14 @@ impl WorkflowEngine {
                 let mut new_bindings = context.bindings.clone();
                 for (output_name, values) in task_outputs {
                     let qualified_name = format!("{}.{}", binding_call_name, output_name);
+
+                    if self.config.debug {
+                        eprintln!(
+                            "DEBUG: Binding array output: {} with {} values",
+                            qualified_name,
+                            values.len()
+                        );
+                    }
 
                     // Determine array element type
                     let element_type = if let Some(first_value) = values.first() {
@@ -955,6 +1005,14 @@ impl WorkflowEngine {
         let mut outputs = Bindings::new();
         // Create a mutable copy of context bindings to include evaluated outputs
         let mut extended_bindings = context.bindings.clone();
+
+        // Debug: Print available bindings
+        if self.config.debug {
+            eprintln!("DEBUG: Available bindings in workflow outputs:");
+            for binding in extended_bindings.iter() {
+                eprintln!("  {} = {:?}", binding.name(), binding.value().wdl_type());
+            }
+        }
 
         if !workflow.outputs.is_empty() {
             for output_decl in &workflow.outputs {

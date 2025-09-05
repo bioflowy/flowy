@@ -570,7 +570,13 @@ impl Call {
 
     /// Get the effective name of this call (alias if present, otherwise task name)
     pub fn name(&self) -> &str {
-        self.alias.as_ref().unwrap_or(&self.task)
+        match &self.alias {
+            Some(alias) => alias,
+            None => {
+                // For namespaced calls like "hello.hello_task", return the last segment "hello_task"
+                self.task.split('.').next_back().unwrap_or(&self.task)
+            }
+        }
     }
 }
 

@@ -831,10 +831,22 @@ fn dedent(text: &str) -> String {
 /// Dedent multiple text parts
 fn dedent_parts(parts: &[String]) -> String {
     let combined = parts.join("");
+
+    if combined.is_empty() {
+        return String::new();
+    }
+
+    // Check if the original string ends with a newline
+    let ends_with_newline = combined.ends_with('\n');
+
     let lines: Vec<&str> = combined.lines().collect();
 
     if lines.is_empty() {
-        return String::new();
+        return if ends_with_newline {
+            "\n".to_string()
+        } else {
+            String::new()
+        };
     }
 
     // Find minimum indentation among non-blank lines
@@ -866,5 +878,12 @@ fn dedent_parts(parts: &[String]) -> String {
         })
         .collect();
 
-    dedented_lines.join("\n")
+    let mut result = dedented_lines.join("\n");
+
+    // Preserve the original trailing newline behavior
+    if ends_with_newline && !result.ends_with('\n') {
+        result.push('\n');
+    }
+
+    result
 }
