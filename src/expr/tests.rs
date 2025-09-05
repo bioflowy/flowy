@@ -1398,3 +1398,126 @@ mod stdlib_function_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod placeholder_error_tests {
+    use super::*;
+
+    #[test]
+    fn test_placeholder_with_none_value() {
+        let pos = test_pos();
+        let env: Bindings<Value> = Bindings::new();
+        let stdlib = StdLib::new("1.2");
+
+        // Test placeholder with None value should return empty string
+        let none_expr = Expression::String {
+            pos: pos.clone(),
+            parts: vec![StringPart::Placeholder {
+                expr: Box::new(Expression::null(pos.clone())),
+                options: std::collections::HashMap::new(),
+            }],
+            string_type: crate::expr::StringType::Regular,
+            inferred_type: None,
+        };
+
+        let result = none_expr.eval(&env, &stdlib).unwrap();
+        assert_eq!(result, Value::string("".to_string()));
+    }
+
+    #[test]
+    fn test_placeholder_with_error_expression() {
+        let pos = test_pos();
+        let mut env: Bindings<Value> = Bindings::new();
+
+        // Add an optional variable with None value
+        env = env.bind("foo".to_string(), Value::null(), None);
+
+        let stdlib = StdLib::new("1.2");
+
+        // Test placeholder with select_first([None]) should return empty string when error occurs
+        let error_expr = Expression::String {
+            pos: pos.clone(),
+            parts: vec![
+                StringPart::Text("Foo is ".to_string()),
+                StringPart::Placeholder {
+                    expr: Box::new(Expression::Apply {
+                        pos: pos.clone(),
+                        function_name: "select_first".to_string(),
+                        arguments: vec![Expression::Array {
+                            pos: pos.clone(),
+                            items: vec![Expression::Ident {
+                                pos: pos.clone(),
+                                name: "foo".to_string(),
+                                inferred_type: None,
+                            }],
+                            inferred_type: None,
+                        }],
+                        inferred_type: None,
+                    }),
+                    options: std::collections::HashMap::new(),
+                },
+            ],
+            string_type: crate::expr::StringType::Regular,
+            inferred_type: None,
+        };
+
+        let result = error_expr.eval(&env, &stdlib).unwrap();
+        assert_eq!(result, Value::string("Foo is ".to_string()));
+    }
+
+    #[test]
+    fn test_placeholder_with_mixed_content() {
+        let pos = test_pos();
+        let mut env: Bindings<Value> = Bindings::new();
+
+        // Add valid and invalid expressions
+        env = env.bind(
+            "valid".to_string(),
+            Value::string("world".to_string()),
+            None,
+        );
+        env = env.bind("invalid".to_string(), Value::null(), None);
+
+        let stdlib = StdLib::new("1.2");
+
+        // Test string with valid placeholder, error placeholder, and text
+        let mixed_expr = Expression::String {
+            pos: pos.clone(),
+            parts: vec![
+                StringPart::Text("Hello ".to_string()),
+                StringPart::Placeholder {
+                    expr: Box::new(Expression::Ident {
+                        pos: pos.clone(),
+                        name: "valid".to_string(),
+                        inferred_type: None,
+                    }),
+                    options: std::collections::HashMap::new(),
+                },
+                StringPart::Text(" and ".to_string()),
+                StringPart::Placeholder {
+                    expr: Box::new(Expression::Apply {
+                        pos: pos.clone(),
+                        function_name: "select_first".to_string(),
+                        arguments: vec![Expression::Array {
+                            pos: pos.clone(),
+                            items: vec![Expression::Ident {
+                                pos: pos.clone(),
+                                name: "invalid".to_string(),
+                                inferred_type: None,
+                            }],
+                            inferred_type: None,
+                        }],
+                        inferred_type: None,
+                    }),
+                    options: std::collections::HashMap::new(),
+                },
+                StringPart::Text("!".to_string()),
+            ],
+            string_type: crate::expr::StringType::Regular,
+            inferred_type: None,
+        };
+
+        let result = mixed_expr.eval(&env, &stdlib).unwrap();
+        assert_eq!(result, Value::string("Hello world and !".to_string()));
+    }
+}

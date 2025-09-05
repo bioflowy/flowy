@@ -544,7 +544,15 @@ fn evaluate_placeholder(
     env: &Bindings<Value>,
     stdlib: &crate::stdlib::StdLib,
 ) -> Result<String, WdlError> {
-    let val = expr.eval(env, stdlib)?;
+    // Per WDL spec: If an expression within a placeholder evaluates to None,
+    // or causes an error, then the placeholder is replaced by the empty string.
+    let val = match expr.eval(env, stdlib) {
+        Ok(value) => value,
+        Err(_) => {
+            // Return empty string for any evaluation error
+            return Ok(String::new());
+        }
+    };
 
     if val.is_null() {
         if let Some(default) = options.get("default") {
