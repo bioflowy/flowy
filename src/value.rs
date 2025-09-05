@@ -990,9 +990,12 @@ impl Value {
             (Value::Float { value: a, .. }, Value::Float { value: b, .. }) => a == b,
             (Value::Int { value: a, .. }, Value::Float { value: b, .. }) => (*a as f64) == *b,
             (Value::Float { value: a, .. }, Value::Int { value: b, .. }) => *a == (*b as f64),
+            // String, File, and Directory comparisons (all treated as string comparisons per WDL spec)
             (Value::String { value: a, .. }, Value::String { value: b, .. })
             | (Value::File { value: a, .. }, Value::File { value: b, .. })
-            | (Value::Directory { value: a, .. }, Value::Directory { value: b, .. }) => a == b,
+            | (Value::Directory { value: a, .. }, Value::Directory { value: b, .. })
+            | (Value::String { value: a, .. }, Value::File { value: b, .. })
+            | (Value::File { value: a, .. }, Value::String { value: b, .. }) => a == b,
             (Value::Array { values: a, .. }, Value::Array { values: b, .. }) => {
                 if a.len() != b.len() {
                     false
@@ -1198,6 +1201,12 @@ mod tests {
         // Int and Float equality
         let float_val = Value::float(42.0);
         assert!(int1.equals(&float_val).unwrap());
+
+        // File and String equality per WDL spec
+        let file_val = Value::file("hello.txt".to_string()).unwrap();
+        let string_val = Value::string("hello.txt".to_string());
+        assert!(file_val.equals(&string_val).unwrap());
+        assert!(string_val.equals(&file_val).unwrap());
     }
 
     #[test]

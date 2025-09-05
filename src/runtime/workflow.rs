@@ -317,7 +317,12 @@ impl WorkflowEngine {
                 // Execute variable declaration
                 if let Some(expr) = &decl.expr {
                     let value = expr.eval(&context.bindings, stdlib)?;
-                    context.bindings = context.bindings.bind(decl.name.clone(), value, None);
+                    // Coerce the value to the declared type
+                    let coerced_value = value.coerce(&decl.decl_type)?;
+                    context.bindings =
+                        context
+                            .bindings
+                            .bind(decl.name.clone(), coerced_value, None);
                 }
             }
         }

@@ -11,6 +11,13 @@ use crate::tree::Declaration;
 /// Parse a declaration: Type name = expression
 pub fn parse_declaration(stream: &mut TokenStream, id_prefix: &str) -> ParseResult<Declaration> {
     let pos = stream.current_position();
+    let mut is_env = false;
+
+    // Check for 'env' modifier (it's a keyword in WDL 1.2+)
+    if stream.peek_token() == Some(Token::Keyword("env".to_string())) {
+        is_env = true;
+        stream.next(); // consume 'env'
+    }
 
     // Parse the type
     let decl_type = parse_type(stream)?;
@@ -40,7 +47,16 @@ pub fn parse_declaration(stream: &mut TokenStream, id_prefix: &str) -> ParseResu
         None
     };
 
-    Ok(Declaration::new(pos, decl_type, name, expr, id_prefix))
+    let mut declaration = Declaration::new(pos, decl_type, name, expr, id_prefix);
+
+    // Add env modifier to decor if present
+    if is_env {
+        declaration
+            .decor
+            .insert("env".to_string(), serde_json::Value::Bool(true));
+    }
+
+    Ok(declaration)
 }
 
 /// Parse an input declaration (may have no initializer in inputs section)

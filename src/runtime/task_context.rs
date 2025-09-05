@@ -95,6 +95,26 @@ impl TaskContext {
             env_vars.insert(key.clone(), value.clone());
         }
 
+        // Add environment variables from task inputs with env modifier
+        for input_decl in &task.inputs {
+            if let Some(serde_json::Value::Bool(true)) = input_decl.decor.get("env") {
+                // This input has the env modifier, so it should be available as an environment variable
+                if let Some(input_value) = inputs.resolve(&input_decl.name) {
+                    // Convert the value to a string for the environment variable
+                    let env_value = match input_value {
+                        Value::String { value, .. } => value.clone(),
+                        Value::Int { value, .. } => value.to_string(),
+                        Value::Float { value, .. } => value.to_string(),
+                        Value::Boolean { value, .. } => value.to_string(),
+                        Value::File { value, .. } => value.clone(),
+                        Value::Directory { value, .. } => value.clone(),
+                        _ => format!("{:?}", input_value), // Fallback for complex types
+                    };
+                    env_vars.insert(input_decl.name.clone(), env_value);
+                }
+            }
+        }
+
         Ok(Self {
             task,
             inputs,

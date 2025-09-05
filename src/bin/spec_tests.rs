@@ -4,7 +4,7 @@
 //! and executes test cases using miniwdl-rust.
 
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -17,7 +17,7 @@ pub struct SpecTestCase {
     pub wdl_source: String,
     pub input_json: Option<String>,
     pub expected_output: Option<String>,
-    pub config_json: Option<String>,
+    pub config_json: Option<HashMap<String, serde_json::Value>>,
     pub line_number: Option<usize>,
 }
 
@@ -279,7 +279,11 @@ impl SpecParser {
                         .config_regex
                         .captures(block_text)
                         .and_then(|m| m.get(1))
-                        .map(|m| m.as_str().trim().to_string());
+                        .and_then(|m| {
+                            let json_str = m.as_str().trim();
+                            serde_json::from_str::<HashMap<String, serde_json::Value>>(json_str)
+                                .ok()
+                        });
 
                     // Calculate line number (approximate)
                     let line_number = content[..details_match.get(0).unwrap().start()]
@@ -411,6 +415,15 @@ impl SpecTestRunner {
         // Check if test is in config.txt xfail list
         if self.xfail_tests.contains(&test_case.name) {
             return true;
+        }
+
+        // Check if config_json has "fail": true
+        if let Some(ref config) = test_case.config_json {
+            if let Some(fail_value) = config.get("fail") {
+                if let Some(fail_bool) = fail_value.as_bool() {
+                    return fail_bool;
+                }
+            }
         }
 
         // Following miniwdl pattern: tests ending with "fail" are expected to fail
@@ -647,7 +660,9 @@ impl SpecTestRunner {
 
         if let Some(ref config) = test_case.config_json {
             println!("\nTest Config:");
-            println!("{}", config);
+            if let Ok(config_str) = serde_json::to_string_pretty(config) {
+                println!("{}", config_str);
+            }
         }
     }
 

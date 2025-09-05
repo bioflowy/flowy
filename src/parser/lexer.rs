@@ -177,6 +177,21 @@ pub fn float_literal(input: Span) -> IResult<Span, Token> {
                 Token::FloatLiteral(num)
             },
         ),
+        // Scientific notation without decimal point: digits[exponent] (e.g., 1E10, 5e-3)
+        map(
+            recognize(tuple((
+                digit1,
+                tuple((
+                    alt((char('e'), char('E'))),
+                    opt(alt((char('+'), char('-')))),
+                    digit1,
+                )),
+            ))),
+            |s: Span| {
+                let num = s.fragment().parse::<f64>().unwrap_or(0.0);
+                Token::FloatLiteral(num)
+            },
+        ),
     ))(input)
 }
 
@@ -608,6 +623,34 @@ mod tests {
         assert!(result.is_ok(), "Should parse .5e10 as float literal");
         let (_, token) = result.unwrap();
         assert_eq!(token, Token::FloatLiteral(0.5e10));
+
+        // Scientific notation without decimal point (e.g., 1E10)
+        let input = Span::new("1E10");
+        let result = float_literal(input);
+        assert!(result.is_ok(), "Should parse 1E10 as float literal");
+        let (_, token) = result.unwrap();
+        assert_eq!(token, Token::FloatLiteral(1E10));
+
+        // Scientific notation with negative exponent (e.g., 1E-10)
+        let input = Span::new("1E-10");
+        let result = float_literal(input);
+        assert!(result.is_ok(), "Should parse 1E-10 as float literal");
+        let (_, token) = result.unwrap();
+        assert_eq!(token, Token::FloatLiteral(1E-10));
+
+        // Scientific notation with positive exponent (e.g., 5e+3)
+        let input = Span::new("5e+3");
+        let result = float_literal(input);
+        assert!(result.is_ok(), "Should parse 5e+3 as float literal");
+        let (_, token) = result.unwrap();
+        assert_eq!(token, Token::FloatLiteral(5e+3));
+
+        // Large integer with scientific notation (e.g., 123E-5)
+        let input = Span::new("123E-5");
+        let result = float_literal(input);
+        assert!(result.is_ok(), "Should parse 123E-5 as float literal");
+        let (_, token) = result.unwrap();
+        assert_eq!(token, Token::FloatLiteral(123E-5));
 
         // Negative numbers should fail (handled by parser as unary minus)
         let input = Span::new("-2.5e10");

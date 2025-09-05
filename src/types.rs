@@ -521,6 +521,11 @@ impl Type {
             // Int/Float can be equated even in compound types (arrays, maps, etc)
             (Type::Int { .. }, Type::Float { .. }) | (Type::Float { .. }, Type::Int { .. }) => true,
 
+            // File and String are equatable per WDL spec: "File is substituted as if it were a String"
+            (Type::File { .. }, Type::String { .. }) | (Type::String { .. }, Type::File { .. }) => {
+                true
+            }
+
             // Same type variants are equatable
             (Type::Boolean { .. }, Type::Boolean { .. })
             | (Type::Int { .. }, Type::Int { .. })
@@ -890,6 +895,7 @@ mod tests {
         let int_type = Type::int(false);
         let float_type = Type::float(false);
         let string_type = Type::string(false);
+        let file_type = Type::file(false);
 
         // Int and Float are equatable at top level
         assert!(int_type.equatable(&float_type, false));
@@ -899,6 +905,13 @@ mod tests {
 
         // Same types are always equatable
         assert!(string_type.equatable(&string_type, true));
+
+        // File and String should be equatable for placeholder coercion
+        // per WDL spec: "File is substituted as if it were a String"
+        assert!(file_type.equatable(&string_type, false));
+        assert!(string_type.equatable(&file_type, false));
+        assert!(file_type.equatable(&string_type, true));
+        assert!(string_type.equatable(&file_type, true));
     }
 
     #[test]
