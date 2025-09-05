@@ -537,6 +537,73 @@ impl ExpressionBase for Expression {
     }
 }
 
+/// Helper function to evaluate a placeholder and return its string representation
+fn evaluate_placeholder(
+    expr: &Expression,
+    options: &std::collections::HashMap<String, String>,
+    env: &Bindings<Value>,
+    stdlib: &crate::stdlib::StdLib,
+) -> Result<String, WdlError> {
+    let val = expr.eval(env, stdlib)?;
+
+    if val.is_null() {
+        if let Some(default) = options.get("default") {
+            return Ok(default.clone());
+        }
+        // Otherwise return empty string for null values
+        return Ok(String::new());
+    }
+
+    // Handle true/false options for Boolean values first
+    if let Value::Boolean {
+        value: bool_val, ..
+    } = &val
+    {
+        if *bool_val {
+            if let Some(true_option) = options.get("true") {
+                return Ok(true_option.clone());
+            }
+        } else if let Some(false_option) = options.get("false") {
+            return Ok(false_option.clone());
+        }
+    }
+
+    // Handle sep option for arrays
+    if let Some(sep) = options.get("sep") {
+        match &val {
+            Value::Array { values, .. } => {
+                let string_values: Vec<String> = values
+                    .iter()
+                    .map(|v| match v {
+                        Value::String { value, .. }
+                        | Value::File { value, .. }
+                        | Value::Directory { value, .. } => value.clone(),
+                        _ => format!("{}", v),
+                    })
+                    .collect();
+                return Ok(string_values.join(sep));
+            }
+            _ => {
+                // For non-arrays, just convert to string (sep has no effect)
+                return Ok(match &val {
+                    Value::String { value, .. }
+                    | Value::File { value, .. }
+                    | Value::Directory { value, .. } => value.clone(),
+                    _ => format!("{}", val),
+                });
+            }
+        }
+    }
+
+    // No special options - use default string conversion
+    Ok(match &val {
+        Value::String { value, .. }
+        | Value::File { value, .. }
+        | Value::Directory { value, .. } => value.clone(),
+        _ => format!("{}", val),
+    })
+}
+
 /// Helper function to evaluate regular strings
 fn eval_regular_string(
     parts: &[StringPart],
@@ -548,72 +615,8 @@ fn eval_regular_string(
         match part {
             StringPart::Text(text) => result.push_str(text),
             StringPart::Placeholder { expr, options } => {
-                let val = expr.eval(env, stdlib)?;
-                if val.is_null() {
-                    if let Some(default) = options.get("default") {
-                        result.push_str(default);
-                    }
-                    // Otherwise add nothing for null values
-                } else {
-                    // Handle true/false options for Boolean values
-                    if let Value::Boolean {
-                        value: bool_val, ..
-                    } = &val
-                    {
-                        if *bool_val {
-                            if let Some(true_option) = options.get("true") {
-                                result.push_str(true_option);
-                                continue;
-                            }
-                        } else if let Some(false_option) = options.get("false") {
-                            result.push_str(false_option);
-                            continue;
-                        }
-                    }
-
-                    // Handle sep option for arrays
-                    if let Some(sep) = options.get("sep") {
-                        match &val {
-                            Value::Array { values, .. } => {
-                                let string_values: Vec<String> = values
-                                    .iter()
-                                    .map(|v| match v {
-                                        Value::String { value, .. }
-                                        | Value::File { value, .. }
-                                        | Value::Directory { value, .. } => value.clone(),
-                                        _ => format!("{}", v),
-                                    })
-                                    .collect();
-                                result.push_str(&string_values.join(sep));
-                            }
-                            _ => {
-                                // For non-arrays, just convert to string (sep has no effect)
-                                match &val {
-                                    Value::String { value, .. }
-                                    | Value::File { value, .. }
-                                    | Value::Directory { value, .. } => {
-                                        result.push_str(value);
-                                    }
-                                    _ => {
-                                        result.push_str(&format!("{}", val));
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // No sep option - use default string conversion
-                        match &val {
-                            Value::String { value, .. }
-                            | Value::File { value, .. }
-                            | Value::Directory { value, .. } => {
-                                result.push_str(value);
-                            }
-                            _ => {
-                                result.push_str(&format!("{}", val));
-                            }
-                        }
-                    }
-                }
+                let placeholder_text = evaluate_placeholder(expr, options, env, stdlib)?;
+                result.push_str(&placeholder_text);
             }
         }
     }
@@ -652,60 +655,8 @@ fn eval_multiline_string(
                 text_parts.push(decoded);
             }
             StringPart::Placeholder { expr, options } => {
-                let val = expr.eval(env, stdlib)?;
-                let text = if val.is_null() {
-                    if let Some(default) = options.get("default") {
-                        default.clone()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    // Handle true/false options for Boolean values first
-                    if let Value::Boolean {
-                        value: bool_val, ..
-                    } = &val
-                    {
-                        if *bool_val {
-                            if let Some(true_option) = options.get("true") {
-                                true_option.clone()
-                            } else {
-                                format!("{}", val)
-                            }
-                        } else if let Some(false_option) = options.get("false") {
-                            false_option.clone()
-                        } else {
-                            format!("{}", val)
-                        }
-                    } else if let Some(sep) = options.get("sep") {
-                        if let Value::Array { values, .. } = &val {
-                            let string_values: Vec<String> = values
-                                .iter()
-                                .map(|v| match v {
-                                    Value::String { value, .. }
-                                    | Value::File { value, .. }
-                                    | Value::Directory { value, .. } => value.clone(),
-                                    _ => format!("{}", v),
-                                })
-                                .collect();
-                            string_values.join(sep)
-                        } else {
-                            match &val {
-                                Value::String { value, .. }
-                                | Value::File { value, .. }
-                                | Value::Directory { value, .. } => value.clone(),
-                                _ => format!("{}", val),
-                            }
-                        }
-                    } else {
-                        match &val {
-                            Value::String { value, .. }
-                            | Value::File { value, .. }
-                            | Value::Directory { value, .. } => value.clone(),
-                            _ => format!("{}", val),
-                        }
-                    }
-                };
-                text_parts.push(text);
+                let placeholder_text = evaluate_placeholder(expr, options, env, stdlib)?;
+                text_parts.push(placeholder_text);
             }
         }
     }
@@ -731,60 +682,8 @@ fn eval_task_command(
                 text_parts.push(text.clone());
             }
             StringPart::Placeholder { expr, options } => {
-                let val = expr.eval(env, stdlib)?;
-                let text = if val.is_null() {
-                    if let Some(default) = options.get("default") {
-                        default.clone()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    // Handle true/false options for Boolean values first
-                    if let Value::Boolean {
-                        value: bool_val, ..
-                    } = &val
-                    {
-                        if *bool_val {
-                            if let Some(true_option) = options.get("true") {
-                                true_option.clone()
-                            } else {
-                                format!("{}", val)
-                            }
-                        } else if let Some(false_option) = options.get("false") {
-                            false_option.clone()
-                        } else {
-                            format!("{}", val)
-                        }
-                    } else if let Some(sep) = options.get("sep") {
-                        if let Value::Array { values, .. } = &val {
-                            let string_values: Vec<String> = values
-                                .iter()
-                                .map(|v| match v {
-                                    Value::String { value, .. }
-                                    | Value::File { value, .. }
-                                    | Value::Directory { value, .. } => value.clone(),
-                                    _ => format!("{}", v),
-                                })
-                                .collect();
-                            string_values.join(sep)
-                        } else {
-                            match &val {
-                                Value::String { value, .. }
-                                | Value::File { value, .. }
-                                | Value::Directory { value, .. } => value.clone(),
-                                _ => format!("{}", val),
-                            }
-                        }
-                    } else {
-                        match &val {
-                            Value::String { value, .. }
-                            | Value::File { value, .. }
-                            | Value::Directory { value, .. } => value.clone(),
-                            _ => format!("{}", val),
-                        }
-                    }
-                };
-                text_parts.push(text);
+                let placeholder_text = evaluate_placeholder(expr, options, env, stdlib)?;
+                text_parts.push(placeholder_text);
             }
         }
     }

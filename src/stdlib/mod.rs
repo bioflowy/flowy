@@ -86,13 +86,22 @@ impl PathMapper for TaskPathMapper {
     }
 
     fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError> {
-        // For virtualization, we could potentially make paths relative to task_dir
-        // For now, just return the absolute path
-        path.to_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| WdlError::RuntimeError {
-                message: format!("Invalid path: {}", path.display()),
-            })
+        // Make paths relative to task_dir if they're within it
+        if let Ok(relative_path) = path.strip_prefix(&self.task_dir) {
+            relative_path
+                .to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| WdlError::RuntimeError {
+                    message: format!("Invalid path: {}", path.display()),
+                })
+        } else {
+            // For paths outside task_dir, return absolute path
+            path.to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| WdlError::RuntimeError {
+                    message: format!("Invalid path: {}", path.display()),
+                })
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -165,6 +174,15 @@ impl StdLib {
     /// Get the WDL version this standard library was initialized for
     pub fn wdl_version(&self) -> &str {
         &self.wdl_version
+    }
+
+    /// Get the task directory if using TaskPathMapper, None otherwise
+    pub fn task_dir(&self) -> Option<&PathBuf> {
+        if let Some(task_mapper) = self.path_mapper.as_any().downcast_ref::<TaskPathMapper>() {
+            Some(task_mapper.task_dir())
+        } else {
+            None
+        }
     }
 
     /// Register all built-in functions

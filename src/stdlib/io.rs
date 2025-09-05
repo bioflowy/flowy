@@ -1284,7 +1284,13 @@ pub fn create_write_lines() -> Box<dyn Function> {
                 lines.push(line);
             }
 
-            Ok(lines.join("\n") + "\n")
+            // For empty arrays, return empty string (no newline)
+            // For non-empty arrays, join with newlines and add trailing newline
+            if lines.is_empty() {
+                Ok(String::new())
+            } else {
+                Ok(lines.join("\n") + "\n")
+            }
         },
     ))
 }
@@ -1635,7 +1641,7 @@ impl Function for WriteTsvFunction {
             _ => unreachable!("Already checked arg length"),
         };
 
-        // Create a temporary file
+        // Create a temporary file - this is the non-stdlib version
         let mut temp_file = std::env::temp_dir();
         temp_file.push(format!(
             "write_tsv_{}.txt",
@@ -1753,18 +1759,31 @@ impl Function for WriteTsvFunction {
             _ => unreachable!("Already checked arg length"),
         };
 
-        // Create a temporary file
-        let mut temp_file = std::env::temp_dir();
-        temp_file.push(format!(
-            "write_tsv_{}.txt",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
+        // Create file in task directory if available, otherwise fall back to temp dir
+        let output_file = if let Some(task_dir) = stdlib.task_dir() {
+            let mut path = task_dir.clone();
+            path.push(format!(
+                "write_tsv_{}.txt",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ));
+            path
+        } else {
+            let mut temp_file = std::env::temp_dir();
+            temp_file.push(format!(
+                "write_tsv_{}.txt",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ));
+            temp_file
+        };
 
-        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to create temporary file: {}", e),
+        let mut file = std::fs::File::create(&output_file).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create output file: {}", e),
         })?;
 
         file.write_all(content.as_bytes())
@@ -1773,7 +1792,7 @@ impl Function for WriteTsvFunction {
             })?;
 
         // Use path mapper to virtualize the filename
-        let virtual_path = stdlib.path_mapper().virtualize_filename(&temp_file)?;
+        let virtual_path = stdlib.path_mapper().virtualize_filename(&output_file)?;
         Value::file(virtual_path)
     }
 }
@@ -2158,19 +2177,33 @@ where
         // Serialize the data using the provided serializer
         let content = (self.serializer)(&args[0])?;
 
-        // Create a temporary file
-        let mut temp_file = std::env::temp_dir();
-        temp_file.push(format!(
-            "{}_{}.txt",
-            self.name,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
+        // Create file in task directory if available, otherwise fall back to temp dir
+        let output_file = if let Some(task_dir) = stdlib.task_dir() {
+            let mut path = task_dir.clone();
+            path.push(format!(
+                "{}_{}.txt",
+                self.name,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ));
+            path
+        } else {
+            let mut temp_file = std::env::temp_dir();
+            temp_file.push(format!(
+                "{}_{}.txt",
+                self.name,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ));
+            temp_file
+        };
 
-        let mut file = std::fs::File::create(&temp_file).map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to create temporary file: {}", e),
+        let mut file = std::fs::File::create(&output_file).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create output file: {}", e),
         })?;
 
         file.write_all(content.as_bytes())
@@ -2179,7 +2212,7 @@ where
             })?;
 
         // Use path mapper to virtualize the filename
-        let virtual_path = stdlib.path_mapper().virtualize_filename(&temp_file)?;
+        let virtual_path = stdlib.path_mapper().virtualize_filename(&output_file)?;
         Value::file(virtual_path)
     }
 }
@@ -2440,17 +2473,25 @@ fn calculate_directory_size(dir_path: &Path) -> Result<f64, WdlError> {
 }
 
 /// Convert bytes to the specified unit
+/// According to WDL spec: decimal units (K, KB, MB, etc.) use 1000, binary units (KiB, MiB, etc.) use 1024
 fn convert_bytes_to_unit(bytes: f64, unit: &str) -> Result<f64, WdlError> {
     match unit.to_uppercase().as_str() {
         "B" => Ok(bytes),
-        "K" | "KB" => Ok(bytes / 1024.0),
-        "M" | "MB" => Ok(bytes / (1024.0 * 1024.0)),
-        "G" | "GB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0)),
-        "T" | "TB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0)),
-        "P" | "PB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0)),
+        // Decimal units (base 1000)
+        "K" | "KB" => Ok(bytes / 1000.0),
+        "M" | "MB" => Ok(bytes / (1000.0 * 1000.0)),
+        "G" | "GB" => Ok(bytes / (1000.0 * 1000.0 * 1000.0)),
+        "T" | "TB" => Ok(bytes / (1000.0 * 1000.0 * 1000.0 * 1000.0)),
+        "P" | "PB" => Ok(bytes / (1000.0 * 1000.0 * 1000.0 * 1000.0 * 1000.0)),
+        // Binary units (base 1024)
+        "KIB" => Ok(bytes / 1024.0),
+        "MIB" => Ok(bytes / (1024.0 * 1024.0)),
+        "GIB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0)),
+        "TIB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0)),
+        "PIB" => Ok(bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0)),
         _ => Err(WdlError::RuntimeError {
             message: format!(
-                "Invalid size unit: {}. Valid units are B, K, M, G, T, P",
+                "Invalid size unit: {}. Valid units are B, K/KB, M/MB, G/GB, T/TB, P/PB (decimal) or KiB, MiB, GiB, TiB, PiB (binary)",
                 unit
             ),
         }),
@@ -3268,6 +3309,79 @@ mod tests {
             assert_eq!(actual, 2);
         } else {
             panic!("Expected ArgumentCountMismatch");
+        }
+    }
+
+    #[test]
+    fn test_write_lines_empty_array() {
+        // Test that write_lines with empty array produces an empty file (no newline)
+        let func = create_write_lines();
+
+        // Create empty array
+        let empty_array = Value::Array {
+            values: vec![],
+            wdl_type: Type::Array {
+                item_type: Box::new(Type::String { optional: false }),
+                optional: false,
+                nonempty: false,
+            },
+        };
+
+        let result = func.eval(&[empty_array]);
+        assert!(result.is_ok());
+
+        // Get the file path and read its contents
+        if let Ok(Value::File { value: path, .. }) = result {
+            let contents = std::fs::read_to_string(&path).unwrap();
+            // Empty array should produce empty file (no content, no newline)
+            assert_eq!(
+                contents, "",
+                "Empty array should produce empty file, but got: {:?}",
+                contents
+            );
+        } else {
+            panic!("Expected File value");
+        }
+    }
+
+    #[test]
+    fn test_write_lines_with_content() {
+        // Test that write_lines with non-empty array works correctly
+        let func = create_write_lines();
+
+        // Create array with strings
+        let array = Value::Array {
+            values: vec![
+                Value::String {
+                    value: "line1".to_string(),
+                    wdl_type: Type::String { optional: false },
+                },
+                Value::String {
+                    value: "line2".to_string(),
+                    wdl_type: Type::String { optional: false },
+                },
+            ],
+            wdl_type: Type::Array {
+                item_type: Box::new(Type::String { optional: false }),
+                optional: false,
+                nonempty: false,
+            },
+        };
+
+        let result = func.eval(&[array]);
+        assert!(result.is_ok());
+
+        // Get the file path and read its contents
+        if let Ok(Value::File { value: path, .. }) = result {
+            let contents = std::fs::read_to_string(&path).unwrap();
+            // Non-empty array should have lines joined with newlines and a trailing newline
+            assert_eq!(
+                contents, "line1\nline2\n",
+                "Expected 'line1\\nline2\\n', but got: {:?}",
+                contents
+            );
+        } else {
+            panic!("Expected File value");
         }
     }
 }
