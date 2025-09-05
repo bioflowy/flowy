@@ -1017,23 +1017,44 @@ impl WorkflowEngine {
         if !workflow.outputs.is_empty() {
             for output_decl in &workflow.outputs {
                 if let Some(output_expr) = &output_decl.expr {
+                    eprintln!(
+                        "DEBUG: Evaluating output '{}' with expected type: {:?}",
+                        output_decl.name, output_decl.decl_type
+                    );
+
                     // Evaluate using extended bindings that include previously evaluated outputs
                     let output_value = output_expr.eval(&extended_bindings, stdlib)?;
+                    eprintln!("DEBUG: Output value before coercion: {:?}", output_value);
 
                     // Try to coerce the output value to the expected type
                     let expected_type = &output_decl.decl_type;
                     let resolved_type = self.resolve_struct_type(expected_type);
-                    let output_value = output_value.coerce(&resolved_type).map_err(|e| {
-                        WdlError::output_error(
-                            format!(
-                                "Cannot coerce workflow output '{}' to expected type: {}",
-                                output_decl.name, e
-                            ),
-                            format!("{:?}", expected_type),
-                            format!("{:?}", output_value.wdl_type()),
-                            Some(output_decl.pos.clone()),
-                        )
-                    })?;
+                    eprintln!("DEBUG: Expected type: {:?}", expected_type);
+                    eprintln!("DEBUG: Resolved type: {:?}", resolved_type);
+
+                    // Get struct definitions for coercion
+                    let struct_typedefs = if let Some(document) = &self.document {
+                        document.struct_typedefs.as_slice()
+                    } else {
+                        &[]
+                    };
+
+                    let output_value = output_value
+                        .coerce_with_structs(&resolved_type, struct_typedefs)
+                        .map_err(|e| {
+                            eprintln!("DEBUG: Coercion failed: {}", e);
+                            WdlError::output_error(
+                                format!(
+                                    "Cannot coerce workflow output '{}' to expected type: {}",
+                                    output_decl.name, e
+                                ),
+                                format!("{:?}", expected_type),
+                                format!("{:?}", output_value.wdl_type()),
+                                Some(output_decl.pos.clone()),
+                            )
+                        })?;
+
+                    eprintln!("DEBUG: Output value after coercion: {:?}", output_value);
 
                     // Add to output bindings
                     outputs = outputs.bind(output_decl.name.clone(), output_value.clone(), None);

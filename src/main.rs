@@ -384,14 +384,6 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
 
     let document = load(&filename, search_paths_slice, true, 10)?;
 
-    // Load inputs if provided (with type information from document)
-    let inputs = if let Some(input_file) = input_file {
-        eprintln!("Loading inputs from {}...", input_file.display());
-        load_inputs(&input_file, &document)?
-    } else {
-        Bindings::new()
-    };
-
     // Set up working directory
     let work_dir = work_dir.unwrap_or_else(|| std::env::temp_dir().join("miniwdl-rust"));
     fs::create_dir_all(&work_dir).map_err(|e| WdlError::RuntimeError {
@@ -434,6 +426,14 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
                 declared_wdl_version: Some("1.0".to_string()),
             })?;
 
+        // Load inputs specific to this task
+        let inputs = if let Some(input_file) = input_file {
+            eprintln!("Loading inputs from {}...", input_file.display());
+            load_inputs_for_task(&input_file, task)?
+        } else {
+            Bindings::new()
+        };
+
         let task_result = runtime::run_task(task.clone(), inputs, config, &run_id, &work_dir)
             .map_err(|e| WdlError::RuntimeError {
                 message: format!("Task execution failed: {}", e),
@@ -453,6 +453,14 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
             } else {
                 None
             }
+        };
+
+        // Load inputs for workflow or first task
+        let inputs = if let Some(input_file) = input_file {
+            eprintln!("Loading inputs from {}...", input_file.display());
+            load_inputs(&input_file, &document)?
+        } else {
+            Bindings::new()
         };
 
         let workflow_result = runtime::run_document(document, inputs, config, &run_id, &work_dir)?;
@@ -552,6 +560,30 @@ fn load_inputs(path: &Path, document: &Document) -> Result<Bindings<Value>, WdlE
             json_to_bindings(json)
         }
     }
+}
+
+/// Load inputs specifically for a task
+fn load_inputs_for_task(path: &Path, task: &Task) -> Result<Bindings<Value>, WdlError> {
+    let content = fs::read_to_string(path).map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read input file: {}", e),
+    })?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| WdlError::Validation {
+            message: format!("Invalid JSON in input file: {}", e),
+            pos: miniwdl_rust::SourcePosition::new(
+                path.display().to_string(),
+                path.display().to_string(),
+                1,
+                1,
+                1,
+                1,
+            ),
+            source_text: Some(content.clone()),
+            declared_wdl_version: Some("1.0".to_string()),
+        })?;
+
+    json_to_bindings_with_task_types(json, task)
 }
 
 /// Resolve a file path from a string, handling relative paths

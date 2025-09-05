@@ -120,22 +120,45 @@ impl ExpressionBase for Expression {
                 Ok(Value::map(key_type, value_type, map_pairs))
             }
 
-            Expression::Struct { members, .. } => {
+            Expression::Struct {
+                members,
+                inferred_type,
+                ..
+            } => {
+                eprintln!("DEBUG: Evaluating struct with {} members", members.len());
+                eprintln!("DEBUG: Inferred type: {:?}", inferred_type);
+
                 let mut member_values = HashMap::new();
+
+                // First, add all explicitly provided members
                 for (name, expr) in members {
+                    eprintln!("DEBUG: Evaluating member {}", name);
                     member_values.insert(name.clone(), expr.eval(env, stdlib)?);
                 }
 
+                // Create the struct type based on the members we have
                 let member_types: HashMap<String, Type> = member_values
                     .iter()
                     .map(|(k, v)| (k.clone(), v.wdl_type().clone()))
                     .collect();
 
-                Ok(Value::struct_value_unchecked(
-                    Type::object(member_types),
-                    member_values,
-                    None,
-                ))
+                let struct_type = if let Some(inferred) = inferred_type {
+                    // Use the inferred type if available, which may have more complete information
+                    eprintln!("DEBUG: Using inferred type: {:?}", inferred);
+                    inferred.clone()
+                } else {
+                    // Fallback to creating type from available members
+                    eprintln!("DEBUG: Creating type from available members");
+                    Type::object(member_types)
+                };
+
+                eprintln!("DEBUG: Final struct type: {:?}", struct_type);
+
+                // Use the new function that completes missing optional members
+                let result = Value::struct_value_with_completion(struct_type, member_values, None);
+
+                eprintln!("DEBUG: Struct result: {:?}", result);
+                Ok(result)
             }
 
             Expression::Ident { name, .. } => {

@@ -220,6 +220,177 @@ impl Value {
         }
     }
 
+    /// Create a new Struct value with optional member completion
+    /// If the struct_type is a complete struct type definition with optional members,
+    /// this will add null values for any missing optional members (like miniwdl)
+    pub fn struct_value_with_completion(
+        struct_type: Type,
+        mut members: HashMap<String, Value>,
+        extra_keys: Option<HashSet<String>>,
+    ) -> Self {
+        // If this is an Object type with member definitions, check for missing optional fields
+        if let Type::Object {
+            members: type_members,
+            ..
+        } = &struct_type
+        {
+            for (field_name, field_type) in type_members {
+                if !members.contains_key(field_name) && field_type.is_optional() {
+                    // Add null value for missing optional field
+                    members.insert(field_name.clone(), Value::null());
+                }
+            }
+        }
+
+        Value::Struct {
+            members,
+            extra_keys: extra_keys.unwrap_or_default(),
+            wdl_type: struct_type,
+        }
+    }
+
+    /// Coerce this value to match the target type
+    /// This is similar to miniwdl's Value.coerce() method
+    pub fn coerce(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        // Early return if types already match
+        if *self.wdl_type() == *desired_type {
+            return Ok(self.clone());
+        }
+
+        // Dispatch to type-specific methods
+        match self {
+            Value::Array { .. } => self.coerce_array(desired_type),
+            Value::Map { .. } => self.coerce_map(desired_type),
+            Value::Pair { .. } => self.coerce_pair(desired_type),
+            Value::Struct { .. } => self.coerce_struct(desired_type),
+            _ => self.coerce_base(desired_type),
+        }
+    }
+
+    /// Coerce this value to match the target type with struct definitions
+    pub fn coerce_with_structs(
+        &self,
+        target_type: &Type,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Value, crate::error::WdlError> {
+        match (self, target_type) {
+            // StructInstance to StructInstance coercion (resolve target first if needed)
+            (
+                Value::Struct {
+                    members,
+                    wdl_type,
+                    extra_keys,
+                },
+                Type::StructInstance {
+                    type_name,
+                    members: target_members,
+                    ..
+                },
+            ) => {
+                // If target has no members defined, resolve it first
+                let resolved_target_type = if target_members.is_none() {
+                    target_type
+                        .resolve_struct_type(struct_typedefs)
+                        .unwrap_or_else(|_| target_type.clone())
+                } else {
+                    target_type.clone()
+                };
+
+                // Now handle the resolved type
+                match resolved_target_type {
+                    Type::StructInstance {
+                        members: Some(resolved_members),
+                        ..
+                    } => {
+                        // Convert to Object type for processing
+                        let object_type = Type::Object {
+                            members: resolved_members,
+                        };
+                        self.coerce_with_structs(&object_type, struct_typedefs)
+                    }
+                    _ => {
+                        // Still unresolved, return error
+                        Err(crate::error::WdlError::static_type_mismatch(
+                            crate::error::SourcePosition::new(
+                                "coercion".to_string(),
+                                "coercion".to_string(),
+                                1,
+                                1,
+                                1,
+                                1,
+                            ),
+                            target_type.to_string(),
+                            self.wdl_type().to_string(),
+                            format!("Cannot resolve struct type: {}", type_name),
+                        ))
+                    }
+                }
+            }
+
+            // Struct coercion: complete missing optional members
+            (
+                Value::Struct {
+                    members,
+                    wdl_type,
+                    extra_keys,
+                },
+                Type::Object {
+                    members: target_members,
+                    ..
+                },
+            ) => {
+                let mut new_members = members.clone();
+
+                // Add null values for missing optional fields in target type
+                for (field_name, field_type) in target_members {
+                    if !new_members.contains_key(field_name) && field_type.is_optional() {
+                        new_members.insert(field_name.clone(), Value::null());
+                    }
+                }
+
+                // Recursively coerce existing members if needed
+                for (field_name, field_type) in target_members {
+                    if let Some(field_value) = new_members.get(field_name) {
+                        // Resolve the field type if it's a struct type
+                        let resolved_field_type = field_type
+                            .resolve_struct_type(struct_typedefs)
+                            .unwrap_or_else(|_| field_type.clone());
+                        let coerced_value = field_value
+                            .coerce_with_structs(&resolved_field_type, struct_typedefs)?;
+                        new_members.insert(field_name.clone(), coerced_value);
+                    }
+                }
+
+                Ok(Value::Struct {
+                    members: new_members,
+                    extra_keys: extra_keys.clone(),
+                    wdl_type: target_type.clone(),
+                })
+            }
+
+            // For other types, return self if compatible, or error if not
+            _ => {
+                if self.wdl_type().coerces(target_type, true) {
+                    Ok(self.clone())
+                } else {
+                    Err(crate::error::WdlError::static_type_mismatch(
+                        crate::error::SourcePosition::new(
+                            "coercion".to_string(),
+                            "coercion".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        target_type.to_string(),
+                        self.wdl_type().to_string(),
+                        "Type coercion failed".to_string(),
+                    ))
+                }
+            }
+        }
+    }
+
     /// Create a Value from JSON, inferring the type
     pub fn from_json(json_value: JsonValue) -> Self {
         match json_value {

@@ -477,3 +477,59 @@ mod tests {
         println!("✅ File operations in temp directory work");
     }
 }
+    #[test]
+    fn test_task_with_keyword_prefix_name() {
+        let wdl_source = r#"
+version 1.2
+
+task true_false_ternary {
+    input {
+        String message
+        Boolean newline
+    }
+    
+    command <<<
+        echo "~{message}~{if newline then "\n" else ""}" > result.txt
+    >>>
+    
+    output {
+        String result = read_string("result.txt")
+    }
+}
+"#;
+        
+        // Parse the document
+        let document = parser::parse_document(wdl_source, "1.2").unwrap();
+        assert_eq!(document.tasks.len(), 1);
+        let task = &document.tasks[0];
+        assert_eq!(task.name, "true_false_ternary");
+        
+        // Create input bindings
+        let mut inputs = Bindings::new();
+        inputs = inputs.bind("message".to_string(), Value::String {
+            value: "hello world".to_string(),
+            wdl_type: Type::String { optional: false }
+        }, None);
+        inputs = inputs.bind("newline".to_string(), Value::Boolean {
+            value: false,
+            wdl_type: Type::Boolean { optional: false }
+        }, None);
+        
+        // Create a task context and verify inputs are available
+        let config = runtime::Config::default();
+        let work_dir = std::env::temp_dir().join("test_task_keyword_prefix");
+        let workflow_dir = WorkflowDirectory::create(&work_dir, "test_run").unwrap();
+        
+        let context = TaskContext::new(
+            task.clone(),
+            inputs,
+            config,
+            workflow_dir,
+            "test_run"
+        ).unwrap();
+        
+        // Check that inputs are properly bound
+        let env = &context.env;
+        assert!(env.lookup("message").is_some(), "message should be available in environment");
+        assert!(env.lookup("newline").is_some(), "newline should be available in environment");
+    }

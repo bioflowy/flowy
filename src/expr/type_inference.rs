@@ -113,13 +113,19 @@ impl Expression {
             }
 
             Expression::Struct { members, .. } => {
-                let member_types: HashMap<String, Type> = members
-                    .iter()
-                    .map(|(name, expr)| {
-                        let ty = expr.get_type().cloned().unwrap_or_else(Type::any);
-                        (name.clone(), ty)
-                    })
-                    .collect();
+                let mut member_types: HashMap<String, Type> = HashMap::new();
+
+                // Add types for explicitly provided members
+                for (name, expr) in members {
+                    let ty = expr.get_type().cloned().unwrap_or_else(Type::any);
+                    member_types.insert(name.clone(), ty);
+                }
+
+                // For struct literals, we need to check if there's a known struct type
+                // that matches the provided fields and add missing optional fields
+                // For now, we'll create the type based on provided members only
+                // The evaluation step will handle adding missing optional fields
+
                 Type::object(member_types)
             }
 

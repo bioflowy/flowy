@@ -521,8 +521,8 @@ pub fn normal_token(version: &str) -> impl Fn(Span) -> IResult<Span, LocatedToke
             value(Token::DoubleQuote, char('"')),
             float_literal, // Must come before int_literal
             int_literal,
-            bool_literal,
-            identifier_or_keyword(version),
+            identifier_or_keyword(version), // Must come before bool_literal to handle identifiers starting with keywords
+            bool_literal,                   // Moved after identifier_or_keyword
             operator,
             delimiter,
             punctuation,
@@ -550,8 +550,8 @@ pub fn normal_token_with_filename<'a>(
             value(Token::DoubleQuote, char('"')),
             float_literal, // Must come before int_literal
             int_literal,
-            bool_literal,
-            identifier_or_keyword(version),
+            identifier_or_keyword(version), // Must come before bool_literal to handle identifiers starting with keywords
+            bool_literal,                   // Moved after identifier_or_keyword
             operator,
             delimiter,
             punctuation,
@@ -671,6 +671,65 @@ mod tests {
         assert!(result.is_ok());
         let (_, token) = result.unwrap();
         assert_eq!(token, Token::Identifier("my_variable".to_string()));
+    }
+
+    #[test]
+    fn test_identifier_starting_with_keyword() {
+        let parser = identifier_or_keyword("1.2");
+
+        // Test identifier starting with keyword "true"
+        let input = Span::new("true_false_ternary");
+        let result = parser(input);
+        assert!(result.is_ok());
+        let (remaining, token) = result.unwrap();
+        // This should parse "true_false_ternary" as a single identifier, not just "true"
+        assert_eq!(token, Token::Identifier("true_false_ternary".to_string()));
+        assert_eq!(remaining.fragment().to_owned(), "");
+
+        // Test another identifier starting with keyword "if"
+        let input = Span::new("if_condition");
+        let result = parser(input);
+        assert!(result.is_ok());
+        let (remaining, token) = result.unwrap();
+        assert_eq!(token, Token::Identifier("if_condition".to_string()));
+        assert_eq!(remaining.fragment().to_owned(), "");
+    }
+
+    #[test]
+    fn test_normal_token_with_keyword_prefix() {
+        let parser = normal_token("1.2");
+
+        // Test that "true_false_ternary" should be tokenized as a single identifier
+        let input = Span::new("true_false_ternary");
+        let result = parser(input);
+        assert!(result.is_ok());
+        let (remaining, located_token) = result.unwrap();
+        // The problem: this currently returns Token::BoolLiteral(true) instead of Token::Identifier
+        assert_eq!(
+            located_token.token,
+            Token::Identifier("true_false_ternary".to_string())
+        );
+        assert_eq!(remaining.fragment().to_owned(), "");
+    }
+
+    #[test]
+    fn test_tokenization_of_task_with_true_prefix() {
+        use super::super::token_stream::tokenize;
+
+        // Test tokenizing "task true_false_ternary {"
+        let input = "task true_false_ternary {";
+        let result = tokenize(input, "1.2");
+        assert!(result.is_ok());
+        let tokens = result.unwrap();
+
+        // Should have 3 tokens: task (keyword), true_false_ternary (identifier), { (left brace)
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].token, Token::Keyword("task".to_string()));
+        assert_eq!(
+            tokens[1].token,
+            Token::Identifier("true_false_ternary".to_string())
+        );
+        assert_eq!(tokens[2].token, Token::LeftBrace);
     }
 
     #[test]
