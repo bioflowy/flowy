@@ -368,26 +368,8 @@ impl Value {
                 })
             }
 
-            // For other types, return self if compatible, or error if not
-            _ => {
-                if self.wdl_type().coerces(target_type, true) {
-                    Ok(self.clone())
-                } else {
-                    Err(crate::error::WdlError::static_type_mismatch(
-                        crate::error::SourcePosition::new(
-                            "coercion".to_string(),
-                            "coercion".to_string(),
-                            1,
-                            1,
-                            1,
-                            1,
-                        ),
-                        target_type.to_string(),
-                        self.wdl_type().to_string(),
-                        "Type coercion failed".to_string(),
-                    ))
-                }
-            }
+            // For non-struct types, use regular coercion
+            _ => self.coerce(target_type),
         }
     }
 

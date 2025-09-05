@@ -111,8 +111,18 @@ impl Function for SubFunction {
             message: "sub() third argument must be String".to_string(),
         })?;
 
-        // Simple string replacement for now (not full regex)
-        let result = input.replace(&pattern, replacement);
+        // Compile the regex pattern as POSIX Extended Regular Expression (ERE)
+        let regex = match Regex::new(pattern) {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(WdlError::RuntimeError {
+                    message: format!("Invalid regex pattern '{}': {}", pattern, e),
+                });
+            }
+        };
+
+        // Replace all matches with the replacement string
+        let result = regex.replace_all(input, replacement).to_string();
         Ok(Value::string(result))
     }
 }
