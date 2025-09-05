@@ -534,12 +534,21 @@ pub fn parse_multistring(stream: &mut TokenStream) -> ParseResult<Expression> {
                 // Parse placeholder
                 stream.next(); // consume ~{
 
+                // Temporarily exit command mode to parse placeholder options and expression properly
+                // In command mode, identifiers become CommandText tokens which can't be parsed
+                stream.exit_command_mode();
+
                 // Parse placeholder options first
                 let options = parse_placeholder_options(stream)?;
 
                 // Then parse the expression
                 let expr = parse_expr(stream)?;
-                stream.expect(Token::PlaceholderEnd)?;
+
+                // Expect closing brace (in normal mode it's RightBrace, not PlaceholderEnd)
+                stream.expect(Token::RightBrace)?;
+
+                // Re-enter command mode after parsing the complete placeholder
+                stream.enter_command_mode();
                 parts.push(StringPart::Placeholder {
                     expr: Box::new(expr),
                     options,
@@ -844,6 +853,51 @@ mod tests {
             assert_eq!(members[1].0, "b");
         } else {
             panic!("Expected struct expression, got: {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_parse_multiline_string_with_placeholders() {
+        // This test reproduces the issue where placeholders in multiline strings fail to parse
+        // because the lexer is in command mode and identifiers become CommandText tokens
+        let input = r#"<<<
+        ~{spaces}Hello ~{name},
+        ~{spaces}Welcome to ~{company}!
+        >>>"#;
+
+        let mut stream = TokenStream::new(input, "1.0").unwrap();
+        let result = parse_expression(&mut stream);
+
+        // This currently fails with "Unexpected token in expression: CommandText("spaces")"
+        // but should succeed after the fix
+        assert!(
+            result.is_ok(),
+            "Should parse multiline string with placeholders: {:?}",
+            result
+        );
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            // Should have text and placeholder parts
+            assert!(
+                parts.len() > 1,
+                "Should have multiple parts with placeholders"
+            );
+
+            // First part should be text
+            if let StringPart::Text(_) = &parts[0] {
+                // OK
+            } else {
+                panic!("First part should be text");
+            }
+
+            // Should contain placeholders
+            let has_placeholder = parts
+                .iter()
+                .any(|p| matches!(p, StringPart::Placeholder { .. }));
+            assert!(has_placeholder, "Should contain at least one placeholder");
+        } else {
+            panic!("Expected string expression with placeholders");
         }
     }
 

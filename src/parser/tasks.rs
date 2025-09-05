@@ -429,13 +429,18 @@ fn parse_command_block_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<S
                 stream.next(); // consume ~{ or ${
                 let placeholder_content = parse_placeholder_content(stream)?;
 
-                // Create a TokenStream for the placeholder content and parse the expression
+                // Create a TokenStream for the placeholder content and parse options + expression
                 let mut placeholder_stream = TokenStream::new(&placeholder_content, "1.0")?;
+
+                // Parse placeholder options first
+                let options = parse_placeholder_options(&mut placeholder_stream)?;
+
+                // Then parse the expression
                 let expr = parse_expression(&mut placeholder_stream)?;
 
                 parts.push(StringPart::Placeholder {
                     expr: Box::new(expr),
-                    options: HashMap::new(),
+                    options,
                 });
             }
             Some(token) => {
@@ -496,13 +501,18 @@ fn parse_heredoc_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<StringP
                 stream.next(); // consume ~{ or ${
                 let placeholder_content = parse_placeholder_content(stream)?;
 
-                // Create a TokenStream for the placeholder content and parse the expression
+                // Create a TokenStream for the placeholder content and parse options + expression
                 let mut placeholder_stream = TokenStream::new(&placeholder_content, "1.0")?;
+
+                // Parse placeholder options first
+                let options = parse_placeholder_options(&mut placeholder_stream)?;
+
+                // Then parse the expression
                 let expr = parse_expression(&mut placeholder_stream)?;
 
                 parts.push(StringPart::Placeholder {
                     expr: Box::new(expr),
-                    options: HashMap::new(),
+                    options,
                 });
             }
             Some(token) => {

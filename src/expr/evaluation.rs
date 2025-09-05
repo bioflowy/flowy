@@ -270,14 +270,33 @@ impl ExpressionBase for Expression {
                 condition,
                 true_expr,
                 false_expr,
+                inferred_type,
                 ..
             } => {
                 let cond_val = condition.eval(env, stdlib)?;
                 if let Some(cond_bool) = cond_val.as_bool() {
-                    if cond_bool {
-                        true_expr.eval(env, stdlib)
+                    let result_value = if cond_bool {
+                        true_expr.eval(env, stdlib)?
                     } else {
-                        false_expr.eval(env, stdlib)
+                        false_expr.eval(env, stdlib)?
+                    };
+
+                    // Apply type coercion to the inferred type if available
+                    if let Some(target_type) = inferred_type {
+                        eprintln!("DEBUG IfThenElse: target_type = {:?}", target_type);
+                        eprintln!(
+                            "DEBUG IfThenElse: result_value before coerce = {:?}",
+                            result_value
+                        );
+                        let coerced = result_value.coerce(target_type)?;
+                        eprintln!(
+                            "DEBUG IfThenElse: result_value after coerce = {:?}",
+                            coerced
+                        );
+                        Ok(coerced)
+                    } else {
+                        eprintln!("DEBUG IfThenElse: no inferred_type available");
+                        Ok(result_value)
                     }
                 } else {
                     Err(WdlError::validation_error(
@@ -536,6 +555,22 @@ fn eval_regular_string(
                     }
                     // Otherwise add nothing for null values
                 } else {
+                    // Handle true/false options for Boolean values
+                    if let Value::Boolean {
+                        value: bool_val, ..
+                    } = &val
+                    {
+                        if *bool_val {
+                            if let Some(true_option) = options.get("true") {
+                                result.push_str(true_option);
+                                continue;
+                            }
+                        } else if let Some(false_option) = options.get("false") {
+                            result.push_str(false_option);
+                            continue;
+                        }
+                    }
+
                     // Handle sep option for arrays
                     if let Some(sep) = options.get("sep") {
                         match &val {
@@ -624,18 +659,43 @@ fn eval_multiline_string(
                     } else {
                         String::new()
                     }
-                } else if let Some(sep) = options.get("sep") {
-                    if let Value::Array { values, .. } = &val {
-                        let string_values: Vec<String> = values
-                            .iter()
-                            .map(|v| match v {
+                } else {
+                    // Handle true/false options for Boolean values first
+                    if let Value::Boolean {
+                        value: bool_val, ..
+                    } = &val
+                    {
+                        if *bool_val {
+                            if let Some(true_option) = options.get("true") {
+                                true_option.clone()
+                            } else {
+                                format!("{}", val)
+                            }
+                        } else if let Some(false_option) = options.get("false") {
+                            false_option.clone()
+                        } else {
+                            format!("{}", val)
+                        }
+                    } else if let Some(sep) = options.get("sep") {
+                        if let Value::Array { values, .. } = &val {
+                            let string_values: Vec<String> = values
+                                .iter()
+                                .map(|v| match v {
+                                    Value::String { value, .. }
+                                    | Value::File { value, .. }
+                                    | Value::Directory { value, .. } => value.clone(),
+                                    _ => format!("{}", v),
+                                })
+                                .collect();
+                            string_values.join(sep)
+                        } else {
+                            match &val {
                                 Value::String { value, .. }
                                 | Value::File { value, .. }
                                 | Value::Directory { value, .. } => value.clone(),
-                                _ => format!("{}", v),
-                            })
-                            .collect();
-                        string_values.join(sep)
+                                _ => format!("{}", val),
+                            }
+                        }
                     } else {
                         match &val {
                             Value::String { value, .. }
@@ -643,13 +703,6 @@ fn eval_multiline_string(
                             | Value::Directory { value, .. } => value.clone(),
                             _ => format!("{}", val),
                         }
-                    }
-                } else {
-                    match &val {
-                        Value::String { value, .. }
-                        | Value::File { value, .. }
-                        | Value::Directory { value, .. } => value.clone(),
-                        _ => format!("{}", val),
                     }
                 };
                 text_parts.push(text);
@@ -685,18 +738,43 @@ fn eval_task_command(
                     } else {
                         String::new()
                     }
-                } else if let Some(sep) = options.get("sep") {
-                    if let Value::Array { values, .. } = &val {
-                        let string_values: Vec<String> = values
-                            .iter()
-                            .map(|v| match v {
+                } else {
+                    // Handle true/false options for Boolean values first
+                    if let Value::Boolean {
+                        value: bool_val, ..
+                    } = &val
+                    {
+                        if *bool_val {
+                            if let Some(true_option) = options.get("true") {
+                                true_option.clone()
+                            } else {
+                                format!("{}", val)
+                            }
+                        } else if let Some(false_option) = options.get("false") {
+                            false_option.clone()
+                        } else {
+                            format!("{}", val)
+                        }
+                    } else if let Some(sep) = options.get("sep") {
+                        if let Value::Array { values, .. } = &val {
+                            let string_values: Vec<String> = values
+                                .iter()
+                                .map(|v| match v {
+                                    Value::String { value, .. }
+                                    | Value::File { value, .. }
+                                    | Value::Directory { value, .. } => value.clone(),
+                                    _ => format!("{}", v),
+                                })
+                                .collect();
+                            string_values.join(sep)
+                        } else {
+                            match &val {
                                 Value::String { value, .. }
                                 | Value::File { value, .. }
                                 | Value::Directory { value, .. } => value.clone(),
-                                _ => format!("{}", v),
-                            })
-                            .collect();
-                        string_values.join(sep)
+                                _ => format!("{}", val),
+                            }
+                        }
                     } else {
                         match &val {
                             Value::String { value, .. }
@@ -704,13 +782,6 @@ fn eval_task_command(
                             | Value::Directory { value, .. } => value.clone(),
                             _ => format!("{}", val),
                         }
-                    }
-                } else {
-                    match &val {
-                        Value::String { value, .. }
-                        | Value::File { value, .. }
-                        | Value::Directory { value, .. } => value.clone(),
-                        _ => format!("{}", val),
                     }
                 };
                 text_parts.push(text);
