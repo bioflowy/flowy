@@ -134,10 +134,22 @@ pub fn prepare_container_execution(
     run_dir: &Path,
     input_file_mappings: &[(String, String)],
 ) -> ContainerResult<ContainerExecution> {
-    // Extract runtime values
+    // Extract runtime values - handle both String and Array[String] for docker images
     let docker_image = runtime_env
         .resolve("docker")
-        .and_then(|v| v.as_string())
+        .and_then(|v| match v {
+            // Handle single string container
+            Value::String { value, .. } => Some(value.clone()),
+            // Handle array of containers - select the first one
+            Value::Array { values, .. } => values.first().and_then(|first_val| {
+                if let Value::String { value, .. } = first_val {
+                    Some(value.clone())
+                } else {
+                    None
+                }
+            }),
+            _ => None,
+        })
         .ok_or_else(|| RuntimeError::ConfigurationError {
             message: "No docker image specified in task runtime".to_string(),
             key: Some("runtime.docker".to_string()),
@@ -264,5 +276,115 @@ mod tests {
         assert_eq!(mapping.host_path, PathBuf::from("/host/path"));
         assert_eq!(mapping.container_path, PathBuf::from("/container/path"));
         assert!(mapping.read_only);
+    }
+
+    #[test]
+    fn test_container_string_selection() {
+        use crate::env::Bindings;
+        use crate::types::Type;
+        use crate::value::Value;
+        use std::path::PathBuf;
+        use tempfile::TempDir;
+
+        // Test single container string
+        let mut runtime_env = Bindings::new();
+        runtime_env = runtime_env.bind(
+            "docker".to_string(),
+            Value::String {
+                value: "ubuntu:latest".to_string(),
+                wdl_type: Type::string(false),
+            },
+            None,
+        );
+
+        // Create a minimal task for testing
+        let temp_dir = TempDir::new().unwrap();
+        let pos = crate::error::SourcePosition::new(
+            "test.wdl".to_string(),
+            "test.wdl".to_string(),
+            1,
+            1,
+            1,
+            10,
+        );
+        let task = crate::tree::Task {
+            name: "test_task".to_string(),
+            pos: pos.clone(),
+            inputs: vec![],
+            postinputs: vec![],
+            command: crate::expr::Expression::string_literal(pos.clone(), "echo test".to_string()),
+            outputs: vec![],
+            runtime: std::collections::HashMap::new(),
+            requirements: std::collections::HashMap::new(),
+            hints: std::collections::HashMap::new(),
+            meta: std::collections::HashMap::new(),
+            parameter_meta: std::collections::HashMap::new(),
+            effective_wdl_version: "1.2".to_string(),
+        };
+
+        let result = prepare_container_execution(&task, &runtime_env, temp_dir.path(), &[]);
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert_eq!(execution.image, "ubuntu:latest");
+    }
+
+    #[test]
+    fn test_container_array_selection() {
+        use crate::env::Bindings;
+        use crate::types::Type;
+        use crate::value::Value;
+        use std::path::PathBuf;
+        use tempfile::TempDir;
+
+        // Test container array - should select first available container
+        let mut runtime_env = Bindings::new();
+        runtime_env = runtime_env.bind(
+            "docker".to_string(),
+            Value::Array {
+                values: vec![
+                    Value::String {
+                        value: "ubuntu:latest".to_string(),
+                        wdl_type: Type::string(false),
+                    },
+                    Value::String {
+                        value: "https://gcr.io/standard-images/ubuntu:latest".to_string(),
+                        wdl_type: Type::string(false),
+                    },
+                ],
+                wdl_type: Type::array(Type::string(false), false, false),
+            },
+            None,
+        );
+
+        // Create a minimal task for testing
+        let temp_dir = TempDir::new().unwrap();
+        let pos = crate::error::SourcePosition::new(
+            "test.wdl".to_string(),
+            "test.wdl".to_string(),
+            1,
+            1,
+            1,
+            10,
+        );
+        let task = crate::tree::Task {
+            name: "test_task".to_string(),
+            pos: pos.clone(),
+            inputs: vec![],
+            postinputs: vec![],
+            command: crate::expr::Expression::string_literal(pos.clone(), "echo test".to_string()),
+            outputs: vec![],
+            runtime: std::collections::HashMap::new(),
+            requirements: std::collections::HashMap::new(),
+            hints: std::collections::HashMap::new(),
+            meta: std::collections::HashMap::new(),
+            parameter_meta: std::collections::HashMap::new(),
+            effective_wdl_version: "1.2".to_string(),
+        };
+
+        let result = prepare_container_execution(&task, &runtime_env, temp_dir.path(), &[]);
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        // Should select the first container in the array
+        assert_eq!(execution.image, "ubuntu:latest");
     }
 }
