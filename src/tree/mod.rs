@@ -6,7 +6,7 @@
 
 use crate::env::Bindings;
 use crate::error::{HasSourcePosition, SourceNode, SourcePosition, WdlError};
-use crate::expr::Expression;
+use crate::expr::{Expression, ExpressionBase};
 use crate::types::Type;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -181,9 +181,13 @@ impl Declaration {
     }
 
     /// Type check this declaration
-    pub fn typecheck(&mut self, type_env: &Bindings<Type>) -> Result<(), WdlError> {
+    pub fn typecheck(
+        &mut self,
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<(), WdlError> {
         if let Some(ref mut expr) = self.expr {
-            let inferred_type = expr.infer_type(type_env)?;
+            let inferred_type = expr.infer_type(type_env, stdlib)?;
             inferred_type.check_coercion(&self.decl_type, true)?;
         }
         Ok(())
@@ -1043,6 +1047,164 @@ impl Workflow {
             complete_calls: None,
         }
     }
+
+    /// Type check this workflow
+    pub fn typecheck(&mut self) -> Result<(), WdlError> {
+        // Create stdlib instance for type checking
+        let stdlib = crate::stdlib::StdLib::new(&self.effective_wdl_version);
+
+        // Phase 1: Build complete type environment with forward references and type transformations
+        // This is similar to miniwdl's _build_workflow_type_env
+        let mut type_env = Bindings::new();
+
+        // 1. Add input declarations to type environment
+        for input in &mut self.inputs {
+            type_env = input.add_to_type_env(&Bindings::new(), type_env, false)?;
+        }
+
+        // 2. Add postinput declarations to type environment
+        for postinput in &mut self.postinputs {
+            type_env = postinput.add_to_type_env(&Bindings::new(), type_env, false)?;
+        }
+
+        // 3. Add ALL body elements to type environment (with proper type transformations)
+        // This builds the complete forward-reference type environment
+        type_env = Self::build_workflow_type_env(&self.body, type_env)?;
+
+        // Phase 2: Typecheck expressions with the complete type environment
+        // This is similar to miniwdl's _typecheck_workflow_body
+
+        // Typecheck input expressions
+        for input in &mut self.inputs {
+            input.typecheck(&type_env, &stdlib)?;
+        }
+
+        // Typecheck postinput expressions
+        for postinput in &mut self.postinputs {
+            postinput.typecheck(&type_env, &stdlib)?;
+        }
+
+        // Typecheck workflow body expressions
+        Self::typecheck_workflow_elements(&mut self.body, &mut type_env.clone(), &stdlib)?;
+
+        // Typecheck output expressions
+        for output in &mut self.outputs {
+            output.typecheck(&type_env, &stdlib)?;
+        }
+
+        Ok(())
+    }
+
+    /// Build complete workflow type environment with forward references and type transformations
+    /// Similar to miniwdl's _build_workflow_type_env function
+    fn build_workflow_type_env(
+        elements: &[WorkflowElement],
+        mut type_env: Bindings<Type>,
+    ) -> Result<Bindings<Type>, WdlError> {
+        for element in elements {
+            match element {
+                WorkflowElement::Declaration(decl) => {
+                    // Add direct declarations
+                    type_env = decl.add_to_type_env(&Bindings::new(), type_env, false)?;
+                }
+                WorkflowElement::Call(call) => {
+                    // TODO: Add call outputs to type environment
+                    // For now, we'll skip this as it's not implemented yet
+                }
+                WorkflowElement::Scatter(scatter) => {
+                    // Process scatter body declarations and make them arrays in parent scope
+                    let scatter_type_env =
+                        Self::build_workflow_type_env(&scatter.body, Bindings::new())?;
+
+                    // Add each declaration from scatter body as Array[T] in parent scope
+                    for binding in scatter_type_env.iter() {
+                        let array_type = Type::array(binding.value().clone(), false, false);
+                        type_env = type_env.bind(binding.name().to_string(), array_type, None);
+                    }
+                }
+                WorkflowElement::Conditional(conditional) => {
+                    // Process conditional body declarations and make them optional in parent scope
+                    let cond_type_env =
+                        Self::build_workflow_type_env(&conditional.body, Bindings::new())?;
+
+                    // Add each declaration from conditional body as T? in parent scope
+                    for binding in cond_type_env.iter() {
+                        let optional_type = binding.value().clone().with_optional(true);
+                        type_env = type_env.bind(binding.name().to_string(), optional_type, None);
+                    }
+                }
+            }
+        }
+        Ok(type_env)
+    }
+
+    /// Type check a list of workflow elements
+    fn typecheck_workflow_elements(
+        elements: &mut [WorkflowElement],
+        type_env: &mut Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<(), WdlError> {
+        for element in elements {
+            Self::typecheck_workflow_element(element, type_env, stdlib)?;
+        }
+        Ok(())
+    }
+
+    /// Type check a single workflow element
+    fn typecheck_workflow_element(
+        element: &mut WorkflowElement,
+        type_env: &mut Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<(), WdlError> {
+        match element {
+            WorkflowElement::Declaration(decl) => {
+                decl.typecheck(type_env, stdlib)?;
+                // Don't add to type environment here - it's already been added in build_workflow_type_env
+            }
+            WorkflowElement::Call(call) => {
+                // Type check call inputs - each input expression
+                for expr in call.inputs.values_mut() {
+                    expr.infer_type(type_env, stdlib)?;
+                }
+                // TODO: Add call outputs to type environment
+            }
+            WorkflowElement::Scatter(scatter) => {
+                // Type check scatter expression
+                scatter.expr.infer_type(type_env, stdlib)?;
+
+                // Create nested type environment with scatter variable
+                let mut scatter_env = type_env.clone();
+                if let Some(item_type) = scatter.expr.get_type() {
+                    if let Type::Array {
+                        item_type: inner, ..
+                    } = item_type
+                    {
+                        scatter_env = scatter_env.bind(
+                            scatter.variable.clone(),
+                            inner.as_ref().clone(),
+                            None,
+                        );
+                    }
+                }
+
+                // DON'T call build_workflow_type_env again - just typecheck the body
+                // The declarations inside are already in the parent environment as arrays
+                Self::typecheck_workflow_elements(&mut scatter.body, &mut scatter_env, stdlib)?;
+            }
+            WorkflowElement::Conditional(conditional) => {
+                // Type check conditional expression
+                conditional.expr.infer_type(type_env, stdlib)?;
+
+                // Create nested type environment
+                let mut cond_env = type_env.clone();
+
+                // DON'T call build_workflow_type_env again - just typecheck the body
+                // The declarations inside are already in the parent environment as optionals
+                Self::typecheck_workflow_elements(&mut conditional.body, &mut cond_env, stdlib)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl HasSourcePosition for Workflow {
@@ -1230,10 +1392,10 @@ impl Document {
 
         // 5. Type check workflow if present
         if let Some(ref mut workflow) = self.workflow {
-            // Set complete_calls based on a simple heuristic
-            // In a full implementation, this would check if all calls have their required inputs
+            // Actually call workflow typecheck instead of just setting complete_calls
+            workflow.typecheck()?;
+            // Set complete_calls based on successful typechecking
             workflow.complete_calls = Some(true);
-            // TODO: Implement full workflow type checking
         }
 
         Ok(())

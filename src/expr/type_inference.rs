@@ -1,4 +1,4 @@
-//! Type inference logic for expressions
+//! Type inference for WDL expressions
 
 use super::{BinaryOperator, Expression, ExpressionBase, StringPart, UnaryOperator};
 use crate::env::Bindings;
@@ -8,7 +8,11 @@ use std::collections::HashMap;
 
 impl Expression {
     /// Infer the type of this expression and store it
-    pub fn infer_type(&mut self, type_env: &Bindings<Type>) -> Result<Type, WdlError> {
+    pub fn infer_type(
+        &mut self,
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Type, WdlError> {
         // First, recursively infer types for all children
         let mut errors = MultiErrorContext::new();
 
@@ -16,33 +20,33 @@ impl Expression {
             Expression::String { parts, .. } => {
                 for part in parts {
                     if let StringPart::Placeholder { expr, .. } = part {
-                        errors.try_with(|| expr.infer_type(type_env));
+                        errors.try_with(|| expr.infer_type(type_env, stdlib));
                     }
                 }
             }
             Expression::Array { items, .. } => {
                 for item in items {
-                    errors.try_with(|| item.infer_type(type_env));
+                    errors.try_with(|| item.infer_type(type_env, stdlib));
                 }
             }
             Expression::Pair { left, right, .. } => {
-                errors.try_with(|| left.infer_type(type_env));
-                errors.try_with(|| right.infer_type(type_env));
+                errors.try_with(|| left.infer_type(type_env, stdlib));
+                errors.try_with(|| right.infer_type(type_env, stdlib));
             }
             Expression::Map { pairs, .. } => {
                 for (k, v) in pairs {
-                    errors.try_with(|| k.infer_type(type_env));
-                    errors.try_with(|| v.infer_type(type_env));
+                    errors.try_with(|| k.infer_type(type_env, stdlib));
+                    errors.try_with(|| v.infer_type(type_env, stdlib));
                 }
             }
             Expression::Struct { members, .. } => {
                 for (_, expr) in members {
-                    errors.try_with(|| expr.infer_type(type_env));
+                    errors.try_with(|| expr.infer_type(type_env, stdlib));
                 }
             }
             Expression::Get { expr, index, .. } => {
-                errors.try_with(|| expr.infer_type(type_env));
-                errors.try_with(|| index.infer_type(type_env));
+                errors.try_with(|| expr.infer_type(type_env, stdlib));
+                errors.try_with(|| index.infer_type(type_env, stdlib));
             }
             Expression::IfThenElse {
                 condition,
@@ -50,21 +54,21 @@ impl Expression {
                 false_expr,
                 ..
             } => {
-                errors.try_with(|| condition.infer_type(type_env));
-                errors.try_with(|| true_expr.infer_type(type_env));
-                errors.try_with(|| false_expr.infer_type(type_env));
+                errors.try_with(|| condition.infer_type(type_env, stdlib));
+                errors.try_with(|| true_expr.infer_type(type_env, stdlib));
+                errors.try_with(|| false_expr.infer_type(type_env, stdlib));
             }
             Expression::Apply { arguments, .. } => {
                 for arg in arguments {
-                    errors.try_with(|| arg.infer_type(type_env));
+                    errors.try_with(|| arg.infer_type(type_env, stdlib));
                 }
             }
             Expression::BinaryOp { left, right, .. } => {
-                errors.try_with(|| left.infer_type(type_env));
-                errors.try_with(|| right.infer_type(type_env));
+                errors.try_with(|| left.infer_type(type_env, stdlib));
+                errors.try_with(|| right.infer_type(type_env, stdlib));
             }
             Expression::UnaryOp { operand, .. } => {
-                errors.try_with(|| operand.infer_type(type_env));
+                errors.try_with(|| operand.infer_type(type_env, stdlib));
             }
             _ => {} // Literals don't need child processing
         }
@@ -166,19 +170,69 @@ impl Expression {
                     }
                 }
 
-                // Unify true and false branch types
+                // Get branch types
                 let true_type = true_expr.get_type().cloned().unwrap_or_else(Type::any);
                 let false_type = false_expr.get_type().cloned().unwrap_or_else(Type::any);
-                crate::types::unify_types(vec![&true_type, &false_type], true, false)
+                // Handle cases similar to miniwdl logic
+                let branch_types = vec![&true_type, &false_type];
+
+                // Check if any branch is Any (non-optional) - like read_json()
+                if branch_types.iter().any(|ty| {
+                    matches!(
+                        ty,
+                        Type::Any {
+                            optional: false,
+                            ..
+                        }
+                    )
+                }) {
+                    return Ok(Type::any());
+                }
+
+                // Check if both branches are Any (optional) - both are None
+                if branch_types
+                    .iter()
+                    .all(|ty| matches!(ty, Type::Any { optional: true, .. }))
+                {
+                    return Ok(Type::any().with_optional(true));
+                }
+
+                // Try to unify the types
+                let unified_type = crate::types::unify_types(branch_types, true, false);
+
+                // Check if unification failed (returns Any when it can't unify)
+                if matches!(unified_type, Type::Any { .. })
+                    && !matches!(true_type, Type::Any { .. })
+                    && !matches!(false_type, Type::Any { .. })
+                {
+                    return Err(WdlError::static_type_mismatch(
+                        HasSourcePosition::source_position(self).clone(),
+                        true_type.to_string(),
+                        false_type.to_string(),
+                        "Unable to unify consequent & alternative types".to_string(),
+                    ));
+                }
+
+                unified_type
             }
 
-            Expression::Apply { function_name, .. } => {
-                // For now, just return Any for function applications
-                // A full implementation would have a function registry
-                match function_name.as_str() {
-                    "length" => Type::int(false),
-                    "defined" => Type::boolean(false),
-                    _ => Type::any(),
+            Expression::Apply {
+                function_name,
+                arguments,
+                ..
+            } => {
+                // Use stdlib function infer_type
+                if let Some(func) = stdlib.get_function(function_name) {
+                    let arg_types: Vec<Type> = arguments
+                        .iter()
+                        .filter_map(|arg| arg.get_type().cloned())
+                        .collect();
+                    match func.infer_type(&arg_types) {
+                        Ok(typ) => typ,
+                        Err(_) => Type::any(), // Fall back to Any if inference fails
+                    }
+                } else {
+                    Type::any() // Unknown function
                 }
             }
 
@@ -232,68 +286,69 @@ impl Expression {
             },
         };
 
-        // Store the inferred type
+        // Store the inferred type in the expression
+        let computed_type = inferred_type.clone();
         match self {
             Expression::Boolean {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Int {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Float {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::String {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Null {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Array {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Pair {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Map {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Struct {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Ident {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Get {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::IfThenElse {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::Apply {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::BinaryOp {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type.clone()),
             Expression::UnaryOp {
-                inferred_type: ref mut t,
+                inferred_type: stored_type,
                 ..
-            } => *t = Some(inferred_type.clone()),
+            } => *stored_type = Some(computed_type),
         }
 
         Ok(inferred_type)

@@ -12,9 +12,13 @@ impl ExpressionBase for Expression {
         HasSourcePosition::source_position(self)
     }
 
-    fn infer_type(&mut self, type_env: &Bindings<Type>) -> Result<Type, WdlError> {
+    fn infer_type(
+        &mut self,
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Type, WdlError> {
         // Delegate to the implementation in type_inference module
-        Expression::infer_type(self, type_env)
+        Expression::infer_type(self, type_env, stdlib)
     }
 
     fn get_type(&self) -> Option<&Type> {
@@ -298,19 +302,8 @@ impl ExpressionBase for Expression {
 
                     // Apply type coercion to the inferred type if available
                     if let Some(target_type) = inferred_type {
-                        eprintln!("DEBUG IfThenElse: target_type = {:?}", target_type);
-                        eprintln!(
-                            "DEBUG IfThenElse: result_value before coerce = {:?}",
-                            result_value
-                        );
-                        let coerced = result_value.coerce(target_type)?;
-                        eprintln!(
-                            "DEBUG IfThenElse: result_value after coerce = {:?}",
-                            coerced
-                        );
-                        Ok(coerced)
+                        result_value.coerce(target_type)
                     } else {
-                        eprintln!("DEBUG IfThenElse: no inferred_type available");
                         Ok(result_value)
                     }
                 } else {
@@ -324,6 +317,7 @@ impl ExpressionBase for Expression {
             Expression::Apply {
                 function_name,
                 arguments,
+                inferred_type,
                 ..
             } => {
                 // Evaluate arguments first
@@ -334,27 +328,35 @@ impl ExpressionBase for Expression {
 
                 // Look up function in stdlib
                 if let Some(function) = stdlib.get_function(function_name) {
-                    function.eval_with_stdlib(&eval_args, stdlib).map_err(|e| {
-                        // Convert WdlError to include position information
-                        match e {
-                            WdlError::RuntimeError { message } => WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                message,
-                            ),
-                            WdlError::ArgumentCountMismatch {
-                                function,
-                                expected,
-                                actual,
-                            } => WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!(
-                                    "{}() expects {} arguments, got {}",
-                                    function, expected, actual
+                    let result_value =
+                        function.eval_with_stdlib(&eval_args, stdlib).map_err(|e| {
+                            // Convert WdlError to include position information
+                            match e {
+                                WdlError::RuntimeError { message } => WdlError::validation_error(
+                                    HasSourcePosition::source_position(self).clone(),
+                                    message,
                                 ),
-                            ),
-                            other => other,
-                        }
-                    })
+                                WdlError::ArgumentCountMismatch {
+                                    function,
+                                    expected,
+                                    actual,
+                                } => WdlError::validation_error(
+                                    HasSourcePosition::source_position(self).clone(),
+                                    format!(
+                                        "{}() expects {} arguments, got {}",
+                                        function, expected, actual
+                                    ),
+                                ),
+                                other => other,
+                            }
+                        })?;
+
+                    // Apply type coercion to the inferred type if available
+                    if let Some(target_type) = inferred_type {
+                        result_value.coerce(target_type)
+                    } else {
+                        Ok(result_value)
+                    }
                 } else {
                     Err(WdlError::validation_error(
                         HasSourcePosition::source_position(self).clone(),

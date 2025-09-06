@@ -630,6 +630,76 @@ impl WdlError {
             declared_wdl_version: None,
         }
     }
+
+    /// Set the position for errors that support it, returning a new error with the position set
+    pub fn with_pos(self, new_pos: SourcePosition) -> Self {
+        match self {
+            WdlError::StaticTypeMismatch {
+                expected,
+                actual,
+                message,
+                ..
+            } => WdlError::StaticTypeMismatch {
+                pos: new_pos,
+                expected,
+                actual,
+                message,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::Eval { message, .. } => WdlError::Eval {
+                pos: new_pos,
+                message,
+            },
+            WdlError::NullValue { .. } => WdlError::NullValue { pos: new_pos },
+            WdlError::Validation { message, .. } => WdlError::Validation {
+                pos: new_pos,
+                message,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::InvalidType { message, .. } => WdlError::InvalidType {
+                pos: new_pos,
+                message,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::IndeterminateType { message, .. } => WdlError::IndeterminateType {
+                pos: new_pos,
+                message,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::UnknownIdentifier { message, .. } => WdlError::UnknownIdentifier {
+                pos: new_pos,
+                message,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::IncompatibleOperand { message, .. } => WdlError::IncompatibleOperand {
+                pos: new_pos,
+                message,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::NotAnArray { .. } => WdlError::NotAnArray {
+                pos: new_pos,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::NoSuchMember { member, .. } => WdlError::NoSuchMember {
+                pos: new_pos,
+                member,
+                source_text: None,
+                declared_wdl_version: None,
+            },
+            WdlError::OutOfBounds { .. } => WdlError::OutOfBounds { pos: new_pos },
+            WdlError::EmptyArray { .. } => WdlError::EmptyArray { pos: new_pos },
+            // For errors that already have a position or don't support position setting,
+            // return them unchanged
+            other => other,
+        }
+    }
 }
 
 /// Context for collecting multiple validation errors.

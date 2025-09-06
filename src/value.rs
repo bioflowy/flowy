@@ -601,8 +601,35 @@ impl Value {
                 }),
             },
 
-            // Same type - return self (this handles cases not caught by early return)
-            _ if self.wdl_type().coerces(desired_type, true) => Ok(self.clone()),
+            // Handle optional to non-optional coercion for primitive types
+            // This is the key fix: actually create a new Value with the target type instead of just returning self.clone()
+            (Value::Int { value, .. }, Type::Int { .. }) => Ok(Value::Int {
+                value: *value,
+                wdl_type: desired_type.clone(),
+            }),
+            (Value::Float { value, .. }, Type::Float { .. }) => Ok(Value::Float {
+                value: *value,
+                wdl_type: desired_type.clone(),
+            }),
+            (Value::String { value, .. }, Type::String { .. }) => Ok(Value::String {
+                value: value.clone(),
+                wdl_type: desired_type.clone(),
+            }),
+            (Value::Boolean { value, .. }, Type::Boolean { .. }) => Ok(Value::Boolean {
+                value: *value,
+                wdl_type: desired_type.clone(),
+            }),
+            (Value::File { value, .. }, Type::File { .. }) => Ok(Value::File {
+                value: value.clone(),
+                wdl_type: desired_type.clone(),
+            }),
+            (Value::Directory { value, .. }, Type::Directory { .. }) => Ok(Value::Directory {
+                value: value.clone(),
+                wdl_type: desired_type.clone(),
+            }),
+
+            // Same type - return self (for cases where types already match exactly)
+            _ if *self.wdl_type() == *desired_type => Ok(self.clone()),
 
             // Coercion not possible
             _ => Err(WdlError::static_type_mismatch(

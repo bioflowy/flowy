@@ -95,11 +95,19 @@ impl WorkflowEngine {
     /// Execute a workflow
     pub fn execute_workflow(
         &self,
-        workflow: Workflow,
+        mut workflow: Workflow,
         inputs: Bindings<Value>,
         run_id: &str,
     ) -> RuntimeResult<WorkflowResult> {
         let start_time = Instant::now();
+
+        // Type check the workflow before execution
+        workflow.typecheck().map_err(|e| RuntimeError::Validation {
+            pos: SourcePosition::new("workflow".to_string(), "".to_string(), 0, 0, 0, 0),
+            message: format!("Workflow typecheck failed: {}", e),
+            source_text: None,
+            declared_wdl_version: None,
+        })?;
 
         // Validate workflow inputs
         self.validate_workflow_inputs(&workflow, &inputs)?;
@@ -318,7 +326,9 @@ impl WorkflowEngine {
                 if let Some(expr) = &decl.expr {
                     let value = expr.eval(&context.bindings, stdlib)?;
                     // Coerce the value to the declared type
-                    let coerced_value = value.coerce(&decl.decl_type)?;
+                    let coerced_value = value
+                        .coerce(&decl.decl_type)
+                        .map_err(|err| err.with_pos(decl.pos.clone()))?;
                     context.bindings =
                         context
                             .bindings

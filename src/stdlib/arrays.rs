@@ -80,7 +80,13 @@ impl Function for SelectFirstFunction {
         if let Value::Array { values, .. } = &args[0] {
             for value in values {
                 if !matches!(value, Value::Null) {
-                    return Ok(value.clone());
+                    // Return the value but with the correct non-optional type
+                    // This ensures the return type matches what infer_type promises
+                    let result_value = value.clone();
+
+                    // If this is from Array[T?], make sure we return T (non-optional)
+                    let non_optional_type = result_value.wdl_type().clone().with_optional(false);
+                    return result_value.coerce(&non_optional_type);
                 }
             }
 
