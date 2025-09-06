@@ -1068,6 +1068,128 @@ mod compound_equality_tests {
         );
         assert_eq!(eq_expr.eval(&env, &stdlib).unwrap(), Value::boolean(true));
     }
+
+    #[test]
+    fn test_map_file_key_coercion() {
+        let pos = test_pos();
+        let env: Bindings<Value> = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+
+        // Create a Map with File-typed keys by creating Values directly
+        // This simulates what happens when WDL declares Map[File, Array[Int]]
+        use crate::types::Type;
+
+        // Create File-typed keys (string values coerced to File type)
+        let file_key1 = Value::File {
+            value: "/path/to/file1".to_string(),
+            wdl_type: Type::file(false),
+        };
+        let file_key2 = Value::File {
+            value: "/path/to/file2".to_string(),
+            wdl_type: Type::file(false),
+        };
+
+        // Create Array[Int] values
+        let array1 = Value::Array {
+            values: vec![
+                Value::Int {
+                    value: 0,
+                    wdl_type: Type::int(false),
+                },
+                Value::Int {
+                    value: 1,
+                    wdl_type: Type::int(false),
+                },
+                Value::Int {
+                    value: 2,
+                    wdl_type: Type::int(false),
+                },
+            ],
+            wdl_type: Type::array(Type::int(false), false, true),
+        };
+        let array2 = Value::Array {
+            values: vec![
+                Value::Int {
+                    value: 9,
+                    wdl_type: Type::int(false),
+                },
+                Value::Int {
+                    value: 8,
+                    wdl_type: Type::int(false),
+                },
+                Value::Int {
+                    value: 7,
+                    wdl_type: Type::int(false),
+                },
+            ],
+            wdl_type: Type::array(Type::int(false), false, true),
+        };
+
+        // Create the Map[File, Array[Int]] value
+        let pairs = vec![(file_key1, array1.clone()), (file_key2, array2)];
+
+        let map_value = Value::Map {
+            pairs,
+            wdl_type: Type::map(
+                Type::file(false),
+                Type::array(Type::int(false), false, true),
+                false,
+            ),
+        };
+
+        // Bind the map to environment (simulates workflow variable)
+        let env_with_map = env.bind("file_to_ints".to_string(), map_value, None);
+
+        // Create a map access expression using a String literal key
+        // This simulates: file_to_ints["/path/to/file1"]
+        let map_var = Expression::Ident {
+            pos: pos.clone(),
+            name: "file_to_ints".to_string(),
+            inferred_type: None,
+        };
+
+        let key_expr = Expression::string(
+            pos.clone(),
+            vec![StringPart::Text("/path/to/file1".to_string())],
+        );
+        let access_expr = Expression::Get {
+            pos: pos.clone(),
+            expr: Box::new(map_var),
+            index: Box::new(key_expr),
+            inferred_type: None,
+        };
+
+        // After the fix, this should now succeed with proper type coercion
+        let result = access_expr.eval(&env_with_map, &stdlib);
+
+        println!("Map access result: {:?}", result);
+
+        // The fix should make this succeed now
+        assert!(
+            result.is_ok(),
+            "Map access should succeed with type coercion fix"
+        );
+
+        let success_val = result.unwrap();
+
+        // Verify we get the expected array
+        if let Value::Array { values, .. } = success_val {
+            assert_eq!(values.len(), 3);
+            if let (
+                Value::Int { value: 0, .. },
+                Value::Int { value: 1, .. },
+                Value::Int { value: 2, .. },
+            ) = (&values[0], &values[1], &values[2])
+            {
+                println!("✓ Map access successfully returned the expected array [0, 1, 2]");
+                println!("✓ String->File type coercion is now working correctly in map access");
+            } else {
+                panic!("Got unexpected array contents: {:?}", values);
+            }
+        } else {
+            panic!("Expected Array result, got: {:?}", success_val);
+        }
+    }
 }
 
 #[cfg(test)]

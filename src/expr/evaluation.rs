@@ -223,14 +223,29 @@ impl ExpressionBase for Expression {
                             })
                         }
                     }
-                    (Value::Map { pairs, .. }, _) => {
+                    (Value::Map { pairs, wdl_type }, _) => {
                         // Maps can have any type as key, not just String
+                        // For proper map access, we need to try type coercion for the key
+
+                        // First, try direct comparison (fast path)
                         for (map_key, map_value) in pairs {
-                            // Compare values directly - this handles all value types
                             if map_key == &idx {
                                 return Ok(map_value.clone());
                             }
                         }
+
+                        // If direct comparison failed, try coercing the access key to match map key types
+                        if let Type::Map { key_type, .. } = wdl_type {
+                            // Try to coerce the access key to the map's key type
+                            if let Ok(coerced_key) = idx.coerce(key_type) {
+                                for (map_key, map_value) in pairs {
+                                    if map_key == &coerced_key {
+                                        return Ok(map_value.clone());
+                                    }
+                                }
+                            }
+                        }
+
                         Err(WdlError::validation_error(
                             HasSourcePosition::source_position(self).clone(),
                             "Key not found in map".to_string(),
