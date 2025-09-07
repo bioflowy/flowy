@@ -230,6 +230,7 @@ impl Value {
     ) -> Self {
         // If this is an Object type with member definitions, check for missing optional fields
         if let Type::Object {
+            is_call_output: false,
             members: type_members,
             ..
         } = &struct_type
@@ -304,6 +305,7 @@ impl Value {
                     } => {
                         // Convert to Object type for processing
                         let object_type = Type::Object {
+                            is_call_output: false,
                             members: resolved_members,
                         };
                         self.coerce_with_structs(&object_type, struct_typedefs)
@@ -335,6 +337,7 @@ impl Value {
                     extra_keys,
                 },
                 Type::Object {
+                    is_call_output: false,
                     members: target_members,
                     ..
                 },
@@ -791,7 +794,10 @@ impl Value {
                             .to_string(),
                     ))
                 }
-                Type::Object { members } => {
+                Type::Object {
+                    is_call_output: false,
+                    members,
+                } => {
                     // Convert Map to Object (Struct value with Object type)
                     let mut object_members = HashMap::new();
 
@@ -918,6 +924,7 @@ impl Value {
                     )
                 }
                 Type::Object {
+                    is_call_output: false,
                     members: target_members,
                 } => {
                     // Coerce to Object type

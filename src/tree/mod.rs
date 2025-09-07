@@ -1175,7 +1175,7 @@ impl Workflow {
                                 output_members
                                     .insert(output.name.clone(), output.decl_type.clone());
                             }
-                            let call_output_type = Type::object(output_members);
+                            let call_output_type = Type::object_call_output(output_members);
                             *type_env =
                                 type_env.bind(call.name().to_string(), call_output_type, None);
                         }
@@ -1186,7 +1186,7 @@ impl Workflow {
                                 output_members
                                     .insert(output.name.clone(), output.decl_type.clone());
                             }
-                            let call_output_type = Type::object(output_members);
+                            let call_output_type = Type::object_call_output(output_members);
                             *type_env =
                                 type_env.bind(call.name().to_string(), call_output_type, None);
                         }

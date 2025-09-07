@@ -567,6 +567,7 @@ impl Function for ReadTsvFunction {
                 }
                 Ok(Type::Array {
                     item_type: Box::new(Type::Object {
+                        is_call_output: false,
                         members: std::collections::HashMap::new(),
                     }),
                     optional: false,
@@ -592,6 +593,7 @@ impl Function for ReadTsvFunction {
                 }
                 Ok(Type::Array {
                     item_type: Box::new(Type::Object {
+                        is_call_output: false,
                         members: std::collections::HashMap::new(),
                     }),
                     optional: false,
@@ -831,6 +833,7 @@ impl ReadTsvFunction {
                 values: Vec::new(),
                 wdl_type: Type::Array {
                     item_type: Box::new(Type::Object {
+                        is_call_output: false,
                         members: std::collections::HashMap::new(),
                     }),
                     optional: false,
@@ -876,6 +879,7 @@ impl ReadTsvFunction {
 
             // Create Object as struct value with Object type
             let object_type = Type::Object {
+                is_call_output: false,
                 members: std::collections::HashMap::new(),
             };
             let object_value = Value::struct_value_unchecked(object_type, object_members, None);
@@ -887,6 +891,7 @@ impl ReadTsvFunction {
             wdl_type: Type::Array {
                 item_type: Box::new(Type::Object {
                     members: std::collections::HashMap::new(),
+                    is_call_output: false,
                 }),
                 optional: false,
                 nonempty: false,
@@ -2957,6 +2962,7 @@ mod tests {
             let object_array_type = Type::Array {
                 item_type: Box::new(Type::Object {
                     members: std::collections::HashMap::new(),
+                    is_call_output: false,
                 }),
                 optional: false,
                 nonempty: false,

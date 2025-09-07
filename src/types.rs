@@ -71,7 +71,10 @@ pub enum Type {
     },
 
     /// Object type (transient, for struct initialization)
-    Object { members: HashMap<String, Type> },
+    Object {
+        members: HashMap<String, Type>,
+        is_call_output: bool,
+    },
 }
 
 impl Type {
@@ -169,7 +172,18 @@ impl Type {
 
     /// Create a new Object type.
     pub fn object(members: HashMap<String, Type>) -> Self {
-        Type::Object { members }
+        Type::Object {
+            members,
+            is_call_output: false,
+        }
+    }
+
+    /// Create a new Object type for call outputs.
+    pub fn object_call_output(members: HashMap<String, Type>) -> Self {
+        Type::Object {
+            members,
+            is_call_output: true,
+        }
     }
 
     /// Check if this type is optional.
@@ -248,7 +262,10 @@ impl Type {
             Type::StructInstance {
                 members: Some(m), ..
             } => m.values().collect(),
-            Type::Object { members } => members.values().collect(),
+            Type::Object {
+                members,
+                is_call_output: false,
+            } => members.values().collect(),
             _ => vec![],
         }
     }
@@ -400,7 +417,10 @@ impl Type {
 
             // Object to struct coercion
             (
-                Type::Object { members },
+                Type::Object {
+                    members,
+                    is_call_output: false,
+                },
                 Type::StructInstance {
                     members: Some(struct_members),
                     ..
@@ -414,7 +434,10 @@ impl Type {
 
             // Object to Map
             (
-                Type::Object { members },
+                Type::Object {
+                    members,
+                    is_call_output: false,
+                },
                 Type::Map {
                     key_type,
                     value_type,
@@ -437,7 +460,10 @@ impl Type {
                     value_type,
                     ..
                 },
-                Type::Object { members },
+                Type::Object {
+                    members,
+                    is_call_output: false,
+                },
             ) => {
                 // Map keys must be strings
                 key_type.check_coercion(&Type::string(false), check_quant)?;
@@ -673,7 +699,7 @@ impl fmt::Display for Type {
                 format!("Pair[{},{}]", left_type, right_type)
             }
             Type::StructInstance { type_name, .. } => type_name.clone(),
-            Type::Object { members } => {
+            Type::Object { members, .. } => {
                 let mut member_strs: Vec<String> = members
                     .iter()
                     .map(|(k, v)| format!("{} : {}", k, v))

@@ -174,6 +174,40 @@ impl Expression {
                 // Object member access
                 if let Some(expr_type) = expr.get_type() {
                     match expr_type {
+                        // Special case: Array of call outputs (scatter context)
+                        Type::Array {
+                            item_type,
+                            optional,
+                            nonempty,
+                        } => {
+                            if let Type::Object {
+                                members,
+                                is_call_output: true,
+                            } = item_type.as_ref()
+                            {
+                                // This is an array of call outputs from a scatter
+                                // call.output syntax should return Array[OutputType]
+                                if let Some(field_type) = members.get(field) {
+                                    Type::Array {
+                                        item_type: Box::new(field_type.clone()),
+                                        optional: *optional,
+                                        nonempty: *nonempty,
+                                    }
+                                } else {
+                                    return Err(WdlError::no_such_member_error(
+                                        pos.clone(),
+                                        field.clone(),
+                                    ));
+                                }
+                            } else {
+                                return Err(WdlError::static_type_mismatch(
+                                    pos.clone(),
+                                    "Object, Pair, or Struct".to_string(),
+                                    expr_type.to_string(),
+                                    "Member access on array only allowed for scattered call outputs".to_string(),
+                                ));
+                            }
+                        }
                         Type::Pair {
                             left_type,
                             right_type,
