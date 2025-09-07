@@ -163,6 +163,33 @@ impl Expression {
                     match expr_type {
                         Type::Array { item_type, .. } => item_type.as_ref().clone(),
                         Type::Map { value_type, .. } => value_type.as_ref().clone(),
+                        Type::Pair {
+                            left_type,
+                            right_type,
+                            ..
+                        } => {
+                            // Pair field access: pair.left or pair.right
+                            if let Some(field_name) = Self::extract_field_name(index) {
+                                match field_name.as_str() {
+                                    "left" => left_type.as_ref().clone(),
+                                    "right" => right_type.as_ref().clone(),
+                                    _ => {
+                                        return Err(WdlError::no_such_member_error(
+                                            pos.clone(),
+                                            field_name,
+                                        ));
+                                    }
+                                }
+                            } else {
+                                return Err(WdlError::static_type_mismatch(
+                                    pos.clone(),
+                                    "String literal".to_string(),
+                                    "Dynamic expression".to_string(),
+                                    "Pair field access requires 'left' or 'right' literal"
+                                        .to_string(),
+                                ));
+                            }
+                        }
                         Type::Object { members, .. } => {
                             // Object field access: obj.field or obj["field"]
                             // Extract field name from index expression
@@ -187,7 +214,7 @@ impl Expression {
                         _ => {
                             return Err(WdlError::static_type_mismatch(
                                 pos.clone(),
-                                "Array, Map, or Object".to_string(),
+                                "Array, Map, Object, or Pair".to_string(),
                                 expr_type.to_string(),
                                 "Get operation requires indexable type".to_string(),
                             ));
