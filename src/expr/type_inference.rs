@@ -317,12 +317,11 @@ impl Expression {
                         .iter()
                         .filter_map(|arg| arg.get_type().cloned())
                         .collect();
-                    match func.infer_type(&arg_types) {
-                        Ok(typ) => typ,
-                        Err(_) => Type::any(), // Fall back to Any if inference fails
-                    }
+                    func.infer_type(&arg_types)?
                 } else {
-                    Type::any() // Unknown function
+                    return Err(WdlError::RuntimeError {
+                        message: format!("Unknown function: {}", function_name),
+                    });
                 }
             }
 

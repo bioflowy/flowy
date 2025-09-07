@@ -1144,12 +1144,20 @@ impl Workflow {
                         .unwrap_or(&Type::String { optional: false })
                         .clone();
 
-                    // TODO: Add type compatibility check with decl.decl_type
-
-                    *type_env = type_env.bind(decl.name.clone(), inferred_type, None);
-                } else {
-                    *type_env = type_env.bind(decl.name.clone(), decl.decl_type.clone(), None);
+                    // Check if inferred type can be coerced to declared type
+                    if !inferred_type.coerces(&decl.decl_type, false) {
+                        return Err(WdlError::static_type_mismatch(
+                            decl.pos.clone(),
+                            decl.decl_type.to_string(),
+                            inferred_type.to_string(),
+                            format!(
+                                "Cannot coerce expression type '{}' to declared type '{}'",
+                                inferred_type, decl.decl_type
+                            ),
+                        ));
+                    }
                 }
+                *type_env = type_env.bind(decl.name.clone(), decl.decl_type.clone(), None);
             }
             WorkflowElement::Call(call) => {
                 // Type check call inputs
