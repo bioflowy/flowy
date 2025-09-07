@@ -30,12 +30,22 @@ impl Expression {
         }
     }
 
-    /// Create a new array/map access expression
-    pub fn get(pos: SourcePosition, expr: Expression, index: Expression) -> Self {
-        Expression::Get {
+    /// Create a new array/map subscript access expression
+    pub fn at(pos: SourcePosition, expr: Expression, index: Expression) -> Self {
+        Expression::At {
             pos,
             expr: Box::new(expr),
             index: Box::new(index),
+            inferred_type: None,
+        }
+    }
+
+    /// Create a new object member access expression
+    pub fn get(pos: SourcePosition, expr: Expression, field: String) -> Self {
+        Expression::Get {
+            pos,
+            expr: Box::new(expr),
+            field,
             inferred_type: None,
         }
     }

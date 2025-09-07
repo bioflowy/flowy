@@ -137,11 +137,19 @@ pub enum Expression {
         inferred_type: Option<Type>,
     },
 
-    /// Array/map access: expr[index]
-    Get {
+    /// Array/map subscript access: expr[index]
+    At {
         pos: SourcePosition,
         expr: Box<Expression>,
         index: Box<Expression>,
+        inferred_type: Option<Type>,
+    },
+
+    /// Object member access: expr.field or struct field access
+    Get {
+        pos: SourcePosition,
+        expr: Box<Expression>,
+        field: String,
         inferred_type: Option<Type>,
     },
 
@@ -237,6 +245,7 @@ impl HasSourcePosition for Expression {
             Expression::Map { pos, .. } => pos,
             Expression::Struct { pos, .. } => pos,
             Expression::Ident { pos, .. } => pos,
+            Expression::At { pos, .. } => pos,
             Expression::Get { pos, .. } => pos,
             Expression::IfThenElse { pos, .. } => pos,
             Expression::Apply { pos, .. } => pos,
@@ -257,6 +266,7 @@ impl HasSourcePosition for Expression {
             Expression::Map { pos, .. } => *pos = new_pos,
             Expression::Struct { pos, .. } => *pos = new_pos,
             Expression::Ident { pos, .. } => *pos = new_pos,
+            Expression::At { pos, .. } => *pos = new_pos,
             Expression::Get { pos, .. } => *pos = new_pos,
             Expression::IfThenElse { pos, .. } => *pos = new_pos,
             Expression::Apply { pos, .. } => *pos = new_pos,
@@ -307,9 +317,12 @@ impl SourceNode for Expression {
                     children.push(expr);
                 }
             }
-            Expression::Get { expr, index, .. } => {
+            Expression::At { expr, index, .. } => {
                 children.push(expr.as_ref());
                 children.push(index.as_ref());
+            }
+            Expression::Get { expr, .. } => {
+                children.push(expr.as_ref());
             }
             Expression::IfThenElse {
                 condition,
@@ -393,7 +406,8 @@ impl fmt::Display for Expression {
                 write!(f, "}}")
             }
             Expression::Ident { name, .. } => write!(f, "{}", name),
-            Expression::Get { expr, index, .. } => write!(f, "{}[{}]", expr, index),
+            Expression::At { expr, index, .. } => write!(f, "{}[{}]", expr, index),
+            Expression::Get { expr, field, .. } => write!(f, "{}.{}", expr, field),
             Expression::IfThenElse {
                 condition,
                 true_expr,

@@ -33,6 +33,7 @@ impl ExpressionBase for Expression {
             Expression::Map { inferred_type, .. } => inferred_type.as_ref(),
             Expression::Struct { inferred_type, .. } => inferred_type.as_ref(),
             Expression::Ident { inferred_type, .. } => inferred_type.as_ref(),
+            Expression::At { inferred_type, .. } => inferred_type.as_ref(),
             Expression::Get { inferred_type, .. } => inferred_type.as_ref(),
             Expression::IfThenElse { inferred_type, .. } => inferred_type.as_ref(),
             Expression::Apply { inferred_type, .. } => inferred_type.as_ref(),
@@ -179,40 +180,8 @@ impl ExpressionBase for Expression {
                 ))
             }
 
-            Expression::Get { expr, index, .. } => {
-                // Special case: If this is a member access like hello.message,
-                // try to resolve it as a qualified name first
-                if let Expression::Ident {
-                    name: container_name,
-                    ..
-                } = expr.as_ref()
-                {
-                    // Try to extract member name from index
-                    let member_name = match index.as_ref() {
-                        Expression::Ident { name, .. } => Some(name.clone()),
-                        Expression::String { parts, .. } => {
-                            // Extract text from string parts
-                            if parts.len() == 1 {
-                                if let StringPart::Text(text) = &parts[0] {
-                                    Some(text.clone())
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
-
-                    if let Some(member) = member_name {
-                        let qualified_name = format!("{}.{}", container_name, member);
-                        if let Some(value) = env.resolve(&qualified_name) {
-                            return Ok(value.clone());
-                        }
-                    }
-                }
-                // Normal Get evaluation for arrays and maps
+            Expression::At { expr, index, .. } => {
+                // Array/Map subscript access
                 let container = expr.eval(env, stdlib)?;
                 let idx = index.eval(env, stdlib)?;
 
@@ -255,32 +224,60 @@ impl ExpressionBase for Expression {
                             "Key not found in map".to_string(),
                         ))
                     }
-                    (Value::Struct { members, .. }, Value::String { value: member, .. }) => {
-                        if let Some(value) = members.get(member) {
+                    _ => Err(WdlError::validation_error(
+                        HasSourcePosition::source_position(self).clone(),
+                        format!(
+                            "Invalid subscript operation on {:?} with index {:?}",
+                            container, idx
+                        ),
+                    )),
+                }
+            }
+
+            Expression::Get { expr, field, .. } => {
+                // Special case: If this is a member access like hello.message,
+                // try to resolve it as a qualified name first
+                if let Expression::Ident {
+                    name: container_name,
+                    ..
+                } = expr.as_ref()
+                {
+                    let qualified_name = format!("{}.{}", container_name, field);
+                    if let Some(value) = env.resolve(&qualified_name) {
+                        return Ok(value.clone());
+                    }
+                }
+                // Normal Get evaluation for member access
+                let container = expr.eval(env, stdlib)?;
+
+                match &container {
+                    Value::Struct { members, .. } => {
+                        if let Some(value) = members.get(field) {
                             Ok(value.clone())
                         } else {
                             Err(WdlError::validation_error(
                                 HasSourcePosition::source_position(self).clone(),
-                                format!("Member '{}' not found in struct", member),
+                                format!("Member '{}' not found in struct", field),
                             ))
                         }
                     }
-                    (Value::Pair { left, right, .. }, Value::String { value: member, .. }) => {
-                        match member.as_str() {
-                            "left" => Ok(left.as_ref().clone()),
-                            "right" => Ok(right.as_ref().clone()),
-                            _ => Err(WdlError::validation_error(
-                                HasSourcePosition::source_position(self).clone(),
-                                format!(
-                                    "Pair has no member '{}'. Valid members are 'left' and 'right'",
-                                    member
-                                ),
-                            )),
-                        }
-                    }
+                    Value::Pair { left, right, .. } => match field.as_str() {
+                        "left" => Ok(left.as_ref().clone()),
+                        "right" => Ok(right.as_ref().clone()),
+                        _ => Err(WdlError::validation_error(
+                            HasSourcePosition::source_position(self).clone(),
+                            format!(
+                                "Pair has no member '{}'. Valid members are 'left' and 'right'",
+                                field
+                            ),
+                        )),
+                    },
                     _ => Err(WdlError::validation_error(
                         HasSourcePosition::source_position(self).clone(),
-                        "Invalid array/map/struct/pair access".to_string(),
+                        format!(
+                            "Invalid member access on {:?} with field {}",
+                            container, field
+                        ),
                     )),
                 }
             }
@@ -473,9 +470,12 @@ impl ExpressionBase for Expression {
                     children.push(expr);
                 }
             }
-            Expression::Get { expr, index, .. } => {
+            Expression::At { expr, index, .. } => {
                 children.push(expr.as_ref());
                 children.push(index.as_ref());
+            }
+            Expression::Get { expr, .. } => {
+                children.push(expr.as_ref());
             }
             Expression::IfThenElse {
                 condition,

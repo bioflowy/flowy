@@ -254,7 +254,7 @@ mod expression_render_tests {
         let pos = test_pos();
 
         // Array access
-        let array_access = Expression::get(
+        let array_access = Expression::at(
             pos.clone(),
             Expression::array(
                 pos.clone(),
@@ -268,7 +268,7 @@ mod expression_render_tests {
         assert_eq!(format!("{}", array_access), "[1, 2][1]");
 
         // Map access
-        let map_access = Expression::get(
+        let map_access = Expression::at(
             pos.clone(),
             Expression::map(
                 pos.clone(),
@@ -1153,7 +1153,7 @@ mod compound_equality_tests {
             pos.clone(),
             vec![StringPart::Text("/path/to/file1".to_string())],
         );
-        let access_expr = Expression::Get {
+        let access_expr = Expression::At {
             pos: pos.clone(),
             expr: Box::new(map_var),
             index: Box::new(key_expr),
@@ -1491,7 +1491,7 @@ mod stdlib_function_tests {
         let expr = Expression::get(
             test_pos(),
             Expression::ident(test_pos(), "data".to_string()),
-            Expression::string(test_pos(), vec![StringPart::Text("left".to_string())]),
+            "left".to_string(),
         );
 
         let result = expr.eval(&env, &stdlib);
@@ -1503,7 +1503,7 @@ mod stdlib_function_tests {
         let expr = Expression::get(
             test_pos(),
             Expression::ident(test_pos(), "data".to_string()),
-            Expression::string(test_pos(), vec![StringPart::Text("right".to_string())]),
+            "right".to_string(),
         );
 
         let result = expr.eval(&env, &stdlib);

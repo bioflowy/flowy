@@ -81,12 +81,8 @@ pub fn parse_member_access(stream: &mut TokenStream, base: Expression) -> ParseR
         }
     };
 
-    // Use Get with string literal as index for member access
-    Ok(Expression::get(
-        pos,
-        base,
-        Expression::string(stream.current_position(), vec![StringPart::Text(field)]),
-    ))
+    // Use Get for member access
+    Ok(Expression::get(pos, base, field))
 }
 
 /// Parse array index (arr[index])
@@ -96,7 +92,7 @@ pub fn parse_array_index(stream: &mut TokenStream, base: Expression) -> ParseRes
     stream.expect(Token::LeftBracket)?;
     let index = parse_expression(stream)?;
     stream.expect(Token::RightBracket)?;
-    Ok(Expression::get(pos, base, index))
+    Ok(Expression::at(pos, base, index))
 }
 
 /// Parse function call (func(args))
