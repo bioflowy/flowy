@@ -1076,9 +1076,21 @@ impl Workflow {
 
         // 3. Process workflow body elements (type environment built on-demand)
         Self::typecheck_workflow_elements(&mut self.body, &mut type_env, &stdlib)?;
-        // 4. Typecheck output expressions
+        // 4. Process output declarations (type check and add to environment)
         for output in &mut self.outputs {
-            output.typecheck(&type_env, &stdlib)?;
+            if let Some(ref mut expr) = output.expr {
+                expr.infer_type(&type_env, &stdlib)?;
+                let inferred_type = expr
+                    .get_type()
+                    .unwrap_or(&Type::String { optional: false })
+                    .clone();
+
+                // Add output to type environment so later outputs can reference it
+                type_env = type_env.bind(output.name.clone(), inferred_type, None);
+            } else {
+                // Add declared type to environment
+                type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
+            }
         }
 
         // 5. Save type environment for runtime use
@@ -1144,7 +1156,39 @@ impl Workflow {
                 for expr in call.inputs.values_mut() {
                     expr.infer_type(type_env, stdlib)?;
                 }
-                // TODO: Add call outputs to type environment
+
+                // Add call outputs to type environment
+                if let Some(ref callee) = call.callee {
+                    match callee {
+                        CalleeRef::Task(task) => {
+                            // Create an object type with task outputs
+                            let mut output_members = HashMap::new();
+                            for output in &task.outputs {
+                                output_members
+                                    .insert(output.name.clone(), output.decl_type.clone());
+                            }
+                            let call_output_type = Type::object(output_members);
+                            *type_env =
+                                type_env.bind(call.name().to_string(), call_output_type, None);
+                        }
+                        CalleeRef::Workflow(workflow) => {
+                            // Create an object type with workflow outputs
+                            let mut output_members = HashMap::new();
+                            for output in &workflow.outputs {
+                                output_members
+                                    .insert(output.name.clone(), output.decl_type.clone());
+                            }
+                            let call_output_type = Type::object(output_members);
+                            *type_env =
+                                type_env.bind(call.name().to_string(), call_output_type, None);
+                        }
+                    }
+                } else {
+                    return Err(WdlError::validation_error(
+                        call.pos.clone(),
+                        format!("Call {} has not been resolved", call.name()),
+                    ));
+                }
             }
             WorkflowElement::Scatter(scatter) => {
                 // Type check scatter expression with stdlib access
@@ -1610,6 +1654,96 @@ impl ASTNode for Document {
     }
 }
 
+#[cfg(test)]
+mod scatter_call_tests {
+    use super::*;
+    use crate::parser::document::parse_document;
+    use crate::stdlib::StdLib;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_scatter_call_type_inference() {
+        let wdl_code = r#"
+version 1.2
+
+task gt_three {
+  command <<< >>>
+  output {
+    Boolean valid = true
+  }
+}
+
+workflow test_conditional {
+  input {
+    Array[Int] scatter_range = [1, 2, 3, 4, 5]
+  }
+
+  scatter (i in scatter_range) {
+    call gt_three 
+    
+    Boolean result2 = gt_three.valid
+  }
+
+  output {
+    Array[Boolean]? maybe_result2 = result2
+  }
+}
+"#;
+
+        // Parse the document
+        let mut document = parse_document(wdl_code, "1.2").expect("Failed to parse WDL");
+
+        // Type check the document
+        let result = document.typecheck();
+
+        // Print debug information if it fails
+        if let Err(ref e) = result {
+            eprintln!("Type check error: {:?}", e);
+        }
+
+        // The type check should succeed
+        assert!(
+            result.is_ok(),
+            "Type checking should succeed for scatter call"
+        );
+    }
+
+    #[test]
+    fn test_scatter_call_minimal_reproduction() {
+        // Test the core issue: call outputs not being properly bound in scatter
+        let mut type_env = Bindings::new();
+
+        // Add scatter variable
+        type_env = type_env.bind("i".to_string(), Type::int(false), None);
+
+        // Add task call result (what should happen during call processing)
+        let task_result_type = Type::object(
+            [("valid".to_string(), Type::boolean(false))]
+                .into_iter()
+                .collect(),
+        );
+        type_env = type_env.bind("gt_three".to_string(), task_result_type, None);
+
+        // Verify the binding exists
+        let resolved = type_env.resolve("gt_three");
+        assert!(
+            resolved.is_some(),
+            "Task call result should be bound in type environment"
+        );
+
+        // Test dotted access resolution
+        if let Some(Type::Object { members, .. }) = resolved {
+            let valid_type = members.get("valid");
+            assert!(
+                valid_type.is_some(),
+                "Task output field should be accessible"
+            );
+            assert_eq!(valid_type.unwrap(), &Type::boolean(false));
+        } else {
+            panic!("Task result should be Object type");
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

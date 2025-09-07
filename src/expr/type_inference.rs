@@ -7,6 +7,24 @@ use crate::types::Type;
 use std::collections::HashMap;
 
 impl Expression {
+    /// Extract field name from index expression for object field access
+    fn extract_field_name(index: &Expression) -> Option<String> {
+        match index {
+            Expression::String { parts, .. } => {
+                // Handle string literals like obj["field"] or obj.field (parsed as string)
+                if parts.len() == 1 {
+                    if let crate::expr::StringPart::Text(text) = &parts[0] {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
     /// Infer the type of this expression and store it
     pub fn infer_type(
         &mut self,
@@ -133,22 +151,55 @@ impl Expression {
                 Type::object(member_types)
             }
 
-            Expression::Ident { name, .. } => {
-                type_env.resolve(name).cloned().unwrap_or_else(|| {
-                    // This will be caught as an error in evaluation
-                    Type::any()
-                })
-            }
+            Expression::Ident { name, pos, .. } => type_env
+                .resolve(name)
+                .cloned()
+                .ok_or_else(|| WdlError::unknown_identifier_error(pos.clone(), name.to_string()))?,
 
-            Expression::Get { expr, .. } => {
+            Expression::Get {
+                expr, index, pos, ..
+            } => {
                 if let Some(expr_type) = expr.get_type() {
                     match expr_type {
                         Type::Array { item_type, .. } => item_type.as_ref().clone(),
                         Type::Map { value_type, .. } => value_type.as_ref().clone(),
-                        _ => Type::any(),
+                        Type::Object { members, .. } => {
+                            // Object field access: obj.field or obj["field"]
+                            // Extract field name from index expression
+                            if let Some(field_name) = Self::extract_field_name(index) {
+                                if let Some(field_type) = members.get(&field_name) {
+                                    field_type.clone()
+                                } else {
+                                    return Err(WdlError::no_such_member_error(
+                                        pos.clone(),
+                                        field_name,
+                                    ));
+                                }
+                            } else {
+                                return Err(WdlError::static_type_mismatch(
+                                    pos.clone(),
+                                    "String literal".to_string(),
+                                    "Dynamic expression".to_string(),
+                                    "Object field access requires a string literal".to_string(),
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(WdlError::static_type_mismatch(
+                                pos.clone(),
+                                "Array, Map, or Object".to_string(),
+                                expr_type.to_string(),
+                                "Get operation requires indexable type".to_string(),
+                            ));
+                        }
                     }
                 } else {
-                    Type::any()
+                    return Err(WdlError::static_type_mismatch(
+                        pos.clone(),
+                        "Array, Map, or Object".to_string(),
+                        "Unknown".to_string(),
+                        "Cannot infer type for get operation".to_string(),
+                    ));
                 }
             }
 
