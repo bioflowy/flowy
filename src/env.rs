@@ -276,6 +276,48 @@ where
             seen: HashSet::new(),
         }
     }
+
+    /// Get the differences between this Bindings and another Bindings.
+    /// Returns a vector of (key, value) pairs that exist in this Bindings but not in the other.
+    pub fn get_additions_since(&self, reference: &Bindings<T>) -> Vec<(String, T)>
+    where
+        T: Clone,
+    {
+        // Collect reference binding names
+        let reference_names: HashSet<String> =
+            reference.iter().map(|b| b.name().to_string()).collect();
+
+        // Find bindings that were added
+        let mut additions = Vec::new();
+        for binding in self.iter() {
+            if !reference_names.contains(binding.name()) {
+                additions.push((binding.name().to_string(), binding.value().clone()));
+            }
+        }
+
+        additions
+    }
+
+    /// Iterate through bindings until reaching a specific reference binding.
+    /// Returns key-value pairs of all bindings encountered before the reference.
+    pub fn iterate_until_binding(&self, reference_binding: &Binding<T>) -> Vec<(String, T)>
+    where
+        T: Clone + PartialEq,
+    {
+        let mut result = Vec::new();
+
+        for binding in self.iter() {
+            // Check if this is the reference binding (by name and value)
+            if binding.name() == reference_binding.name()
+                && binding.value() == reference_binding.value()
+            {
+                break; // Stop when we reach the reference binding
+            }
+            result.push((binding.name().to_string(), binding.value().clone()));
+        }
+
+        result
+    }
 }
 
 /// Iterator over bindings in an environment.
@@ -524,5 +566,189 @@ mod tests {
         assert_eq!(env.get("x", Some(&default_val)), Some(&42));
         assert_eq!(env.get("missing", Some(&default_val)), Some(&default_val));
         assert_eq!(env.get("missing", None), None);
+    }
+
+    #[test]
+    fn test_bindings_mutable_reference_tracking() {
+        // This test demonstrates tracking changes to Bindings through mutable references
+        // using the new get_additions_since method
+
+        use crate::types::Type;
+
+        // Helper function that modifies bindings through mutable reference
+        fn add_values_to_bindings(bindings: &mut Bindings<Type>) {
+            // Add some values to the bindings
+            *bindings = bindings.bind("new_var1".to_string(), Type::int(false), None);
+            *bindings = bindings.bind("new_var2".to_string(), Type::string(false), None);
+            *bindings = bindings.bind("new_var3".to_string(), Type::boolean(true), None);
+        }
+
+        // Step 1: Create initial Bindings with some values
+        let mut original_bindings = Bindings::new();
+        original_bindings =
+            original_bindings.bind("existing_var".to_string(), Type::float(false), None);
+        original_bindings = original_bindings.bind(
+            "another_var".to_string(),
+            Type::array(Type::int(false), false, false),
+            None,
+        );
+
+        println!("=== Initial bindings ===");
+        for binding in original_bindings.iter() {
+            println!("  {} -> {:?}", binding.name(), binding.value());
+        }
+
+        // Step 2: Create mutable reference
+        let mut mutable_bindings = original_bindings.clone();
+
+        println!("\n=== Before function call ===");
+        println!(
+            "Original bindings size: {}",
+            original_bindings.iter().count()
+        );
+        println!("Mutable bindings size: {}", mutable_bindings.iter().count());
+
+        // Step 3: Pass mutable reference to function that updates it
+        add_values_to_bindings(&mut mutable_bindings);
+
+        println!("\n=== After function call ===");
+        println!(
+            "Original bindings size: {}",
+            original_bindings.iter().count()
+        );
+        println!("Mutable bindings size: {}", mutable_bindings.iter().count());
+
+        // Step 4: Use the new get_additions_since method to find changes
+        println!("\n=== Finding added bindings using get_additions_since ===");
+
+        let added_bindings = mutable_bindings.get_additions_since(&original_bindings);
+
+        for (name, typ) in &added_bindings {
+            println!("  ADDED: {} -> {:?}", name, typ);
+        }
+
+        // Step 5: Verify the expected additions
+        assert_eq!(
+            added_bindings.len(),
+            3,
+            "Should have added exactly 3 new bindings"
+        );
+
+        // Check that specific bindings were added
+        let added_names: std::collections::HashSet<_> = added_bindings
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        assert!(
+            added_names.contains("new_var1"),
+            "Should have added new_var1"
+        );
+        assert!(
+            added_names.contains("new_var2"),
+            "Should have added new_var2"
+        );
+        assert!(
+            added_names.contains("new_var3"),
+            "Should have added new_var3"
+        );
+
+        // Check the types of added bindings
+        for (name, typ) in &added_bindings {
+            match name.as_ref() {
+                "new_var1" => assert!(matches!(
+                    typ,
+                    Type::Int {
+                        optional: false,
+                        ..
+                    }
+                )),
+                "new_var2" => assert!(matches!(
+                    typ,
+                    Type::String {
+                        optional: false,
+                        ..
+                    }
+                )),
+                "new_var3" => assert!(matches!(typ, Type::Boolean { optional: true, .. })),
+                _ => panic!("Unexpected binding name: {}", name),
+            }
+        }
+
+        println!("\n=== Verification successful ===");
+        println!("✅ Successfully tracked mutable reference changes using get_additions_since");
+        println!("✅ Found all expected new bindings");
+        println!("✅ Verified types of new bindings");
+
+        // Step 6: Demonstrate that original bindings were not affected
+        println!("\n=== Original bindings unchanged ===");
+        for binding in original_bindings.iter() {
+            println!("  {} -> {:?}", binding.name(), binding.value());
+        }
+        assert_eq!(
+            original_bindings.iter().count(),
+            2,
+            "Original bindings should remain unchanged"
+        );
+
+        // Step 7: Show final state of mutable bindings
+        println!("\n=== Final mutable bindings ===");
+        for binding in mutable_bindings.iter() {
+            println!("  {} -> {:?}", binding.name(), binding.value());
+        }
+        assert_eq!(
+            mutable_bindings.iter().count(),
+            5,
+            "Mutable bindings should have 2 original + 3 new = 5 total"
+        );
+    }
+
+    #[test]
+    fn test_iterate_until_binding() {
+        // Test the iterate_until_binding method
+        use crate::types::Type;
+
+        // Create bindings
+        let env = Bindings::new()
+            .bind("first".to_string(), Type::int(false), None)
+            .bind("second".to_string(), Type::string(false), None)
+            .bind("third".to_string(), Type::boolean(false), None)
+            .bind("fourth".to_string(), Type::float(false), None);
+
+        println!("=== All bindings ===");
+        for binding in env.iter() {
+            println!("  {} -> {:?}", binding.name(), binding.value());
+        }
+
+        // Get reference to the "second" binding
+        let second_binding = env.resolve_binding("second").unwrap();
+        println!("\n=== Reference binding: {} ===", second_binding.name());
+
+        // Get all bindings before the reference
+        let bindings_before = env.iterate_until_binding(second_binding);
+
+        println!("\n=== Bindings before reference ===");
+        for (name, typ) in &bindings_before {
+            println!("  {} -> {:?}", name, typ);
+        }
+
+        // Should contain "fourth" and "third" (in iteration order), but not "second" or "first"
+        let names: std::collections::HashSet<_> = bindings_before
+            .iter()
+            .map(|(name, _)| name.as_ref())
+            .collect();
+
+        assert!(names.contains("fourth"), "Should contain 'fourth'");
+        assert!(names.contains("third"), "Should contain 'third'");
+        assert!(
+            !names.contains("second"),
+            "Should NOT contain 'second' (reference binding)"
+        );
+        assert!(
+            !names.contains("first"),
+            "Should NOT contain 'first' (after reference)"
+        );
+
+        println!("✅ iterate_until_binding works correctly");
     }
 }

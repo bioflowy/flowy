@@ -122,7 +122,7 @@ impl WorkflowEngine {
             start_time,
         };
 
-        // Execute workflow body
+        // Execute workflow body with type environment
         self.execute_workflow_body(&workflow, &mut context, run_id)?;
 
         // Create stdlib for output evaluation
@@ -297,7 +297,7 @@ impl WorkflowEngine {
 
         // Execute workflow body nodes in sequence
         for node in &workflow.body {
-            self.execute_workflow_node(node, context, run_id, &stdlib)?;
+            self.execute_workflow_node(node, context, run_id, &stdlib, workflow.type_env.as_ref())?;
         }
 
         Ok(())
@@ -310,13 +310,14 @@ impl WorkflowEngine {
         context: &mut WorkflowContext,
         run_id: &str,
         stdlib: &crate::stdlib::StdLib,
+        type_env: Option<&crate::env::Bindings<crate::types::Type>>,
     ) -> RuntimeResult<()> {
         match node {
             WorkflowElement::Call(call) => {
                 self.execute_call(call, context, run_id, stdlib)?;
             }
             WorkflowElement::Scatter(scatter) => {
-                self.execute_scatter(scatter, context, run_id, stdlib)?;
+                self.execute_scatter(scatter, context, run_id, stdlib, type_env)?;
             }
             WorkflowElement::Conditional(conditional) => {
                 self.execute_conditional(conditional, context, run_id, stdlib)?;
@@ -501,6 +502,7 @@ impl WorkflowEngine {
         context: &mut WorkflowContext,
         run_id: &str,
         stdlib: &crate::stdlib::StdLib,
+        type_env: Option<&crate::env::Bindings<crate::types::Type>>,
     ) -> RuntimeResult<()> {
         // Evaluate scatter collection
         let collection_value = scatter.expr.eval(&context.bindings, stdlib)?;
@@ -538,7 +540,13 @@ impl WorkflowEngine {
             // Execute scatter body
             let scatter_run_id = format!("{}_scatter_{}", run_id, index);
             for node in &scatter.body {
-                self.execute_workflow_node(node, &mut scatter_context, &scatter_run_id, stdlib)?;
+                self.execute_workflow_node(
+                    node,
+                    &mut scatter_context,
+                    &scatter_run_id,
+                    stdlib,
+                    type_env,
+                )?;
             }
 
             // Collect scatter results
@@ -551,8 +559,8 @@ impl WorkflowEngine {
             }
         }
 
-        // Aggregate scatter outputs properly (following miniwdl's arrayize pattern)
-        self.aggregate_scatter_outputs(scatter, scatter_results, context)?;
+        // Pass type environment from workflow typecheck stage
+        self.aggregate_scatter_outputs(scatter, scatter_results, context, type_env)?;
 
         Ok(())
     }
@@ -563,6 +571,7 @@ impl WorkflowEngine {
         scatter: &Scatter,
         scatter_results: Vec<Bindings<Value>>,
         context: &mut WorkflowContext,
+        type_env: Option<&crate::env::Bindings<crate::types::Type>>,
     ) -> RuntimeResult<()> {
         use std::collections::HashMap;
 
@@ -603,14 +612,37 @@ impl WorkflowEngine {
 
         // Create array bindings for each collected output
         for (name, values) in aggregated_bindings {
-            // Determine the array element type from the first value
-            let element_type = if let Some(first_value) = values.first() {
-                first_value.wdl_type().clone()
+            // Determine the array element type from type checking stage if available
+            let element_type = if let Some(env) = type_env {
+                // Get the expected array type from type checking
+                if let Some(array_type) = env.get(&name, None) {
+                    match array_type {
+                        Type::Array { item_type, .. } => item_type.as_ref().clone(),
+                        _ => {
+                            // Fallback: find first non-null value
+                            values
+                                .iter()
+                                .find(|v| !v.is_null())
+                                .map(|v| v.wdl_type().clone())
+                                .unwrap_or_else(|| Type::any().with_optional(true))
+                        }
+                    }
+                } else {
+                    // Type not found in environment, fallback
+                    values
+                        .iter()
+                        .find(|v| !v.is_null())
+                        .map(|v| v.wdl_type().clone())
+                        .unwrap_or_else(|| Type::any().with_optional(true))
+                }
             } else {
-                // Empty array - use a generic type
-                Type::string(false)
+                // No type environment provided, use runtime inference
+                values
+                    .iter()
+                    .find(|v| !v.is_null())
+                    .map(|v| v.wdl_type().clone())
+                    .unwrap_or_else(|| Type::any().with_optional(true))
             };
-
             // Create array type
             let array_type = Type::array(element_type, false, !values.is_empty());
 
@@ -801,7 +833,7 @@ impl WorkflowEngine {
 
             // Execute conditional body
             for node in &conditional.body {
-                self.execute_workflow_node(node, &mut conditional_context, run_id, stdlib)?;
+                self.execute_workflow_node(node, &mut conditional_context, run_id, stdlib, None)?;
             }
 
             // Aggregate conditional results as optional values
@@ -1121,7 +1153,6 @@ impl WorkflowEngine {
                     if self.config.debug {
                         eprintln!("DEBUG: Output value before coercion: {:?}", output_value);
                     }
-
                     // Try to coerce the output value to the expected type
                     let expected_type = &output_decl.decl_type;
                     let resolved_type = self.resolve_struct_type(expected_type);
@@ -1136,7 +1167,6 @@ impl WorkflowEngine {
                     } else {
                         &[]
                     };
-
                     let output_value = output_value
                         .coerce_with_structs(&resolved_type, struct_typedefs)
                         .map_err(|e| {

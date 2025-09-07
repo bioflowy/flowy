@@ -665,7 +665,6 @@ impl Value {
                         } => current_item,
                         _ => unreachable!("Array value must have Array type"),
                     };
-
                     // If item types are the same, return self (already handled by early return, but for safety)
                     if **current_item_type == **item_type {
                         return Ok(self.clone());
@@ -1474,5 +1473,215 @@ mod tests {
             .expect("Should be able to coerce select_all result to Array[Int]");
 
         println!("Coercion successful: {:?}", coerced.wdl_type());
+    }
+
+    #[test]
+    fn test_scatter_conditional_array_type_issue() {
+        // This test reproduces the actual issue where scatter with if statements
+        // in the WDL AST produces Array[Any?] instead of Array[Int?] during typecheck
+
+        use crate::parser::parse_document;
+        use crate::tree::Document;
+
+        // Use the updated test_conditional2.wdl content
+        let wdl_content = r#"
+version 1.2
+
+workflow test_conditional {
+  input {
+    Array[Int] scatter_range = [1, 2, 3, 4, 5]
+  }
+
+    scatter (i in scatter_range) {
+      if (i > 2) {
+        Int result = 2
+      }
+    }
+
+  output {
+    Array[Int?] maybe_results = result
+  }
+}
+"#;
+
+        println!("Parsing WDL document...");
+
+        // Parse the document
+        let mut document = parse_document(wdl_content, "test_conditional2.wdl")
+            .expect("Failed to parse WDL document");
+
+        println!("Document parsed successfully");
+
+        // Perform type checking
+        let typecheck_result = document.typecheck();
+
+        match typecheck_result {
+            Ok(()) => {
+                println!("✅ Typecheck succeeded");
+
+                // If typecheck succeeds, it means the scatter+conditional is working correctly
+                // and 'result' is being inferred as Array[Int?] as expected
+
+                // Now let's inspect what the workflow's type environment looks like
+                // We can do this by trying to extract the workflow and examining it
+
+                if let Some(ref workflow) = document.workflow {
+                    println!("Workflow name: {}", workflow.name);
+                    println!("Workflow body elements: {}", workflow.body.len());
+                    println!("Workflow outputs: {}", workflow.outputs.len());
+
+                    // Check if the output declaration has the expected type
+                    if let Some(output) = workflow.outputs.first() {
+                        println!("Output name: {}", output.name);
+                        println!("Output declared type: {:?}", output.decl_type);
+
+                        // The output should be Array[Int?]
+                        match &output.decl_type {
+                            crate::types::Type::Array { item_type, .. } => {
+                                println!("Output array item type: {:?}", item_type);
+
+                                match item_type.as_ref() {
+                                    crate::types::Type::Int { optional: true, .. } => {
+                                        println!("✅ EXPECTED: Output has Array[Int?] type");
+                                    }
+                                    crate::types::Type::Any { optional: true, .. } => {
+                                        println!("❌ BUG DETECTED: Output has Array[Any?] type instead of Array[Int?]");
+                                        panic!("BUG CONFIRMED: scatter+if produces Array[Any?] instead of Array[Int?]");
+                                    }
+                                    other => {
+                                        println!(
+                                            "🤔 UNEXPECTED: Output has Array[{:?}] type",
+                                            other
+                                        );
+                                        panic!("Unexpected array item type: {:?}", other);
+                                    }
+                                }
+                            }
+                            other => {
+                                println!("🤔 UNEXPECTED: Output is not an array type: {:?}", other);
+                                panic!("Expected Array type for output, got: {:?}", other);
+                            }
+                        }
+                    } else {
+                        panic!("No outputs found in workflow");
+                    }
+                } else {
+                    panic!("No workflow found in document");
+                }
+            }
+            Err(e) => {
+                println!("❌ Typecheck failed: {:?}", e);
+
+                // If typecheck fails, it could be because of the Array[Any?] vs Array[Int?] mismatch
+                // This would indicate that the bug exists - the scatter+conditional is producing
+                // Array[Any?] but the output is expecting Array[Int?]
+
+                let error_message = format!("{:?}", e);
+                if error_message.contains("Any") && error_message.contains("Int") {
+                    println!(
+                        "🔍 Error contains Any/Int type mismatch - this likely indicates the bug!"
+                    );
+                    println!("The scatter+conditional is probably producing Array[Any?] instead of Array[Int?]");
+                    panic!("BUG CONFIRMED: Type mismatch suggests scatter+if produces wrong type");
+                } else {
+                    panic!("Unexpected typecheck error: {:?}", e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_scatter_with_and_without_conditional_comparison() {
+        // This test compares scatter+if vs scatter-only to ensure both produce the same Array[Int] type
+
+        use crate::parser::parse_document;
+        use crate::tree::Document;
+
+        // Case 1: scatter with if (test_conditional2.wdl style)
+        let scatter_with_if = r#"
+version 1.2
+
+workflow test_conditional {
+  input {
+    Array[Int] scatter_range = [1, 2, 3, 4, 5]
+  }
+
+    scatter (i in scatter_range) {
+      if (i > 2) {
+        Int result = 2
+      }
+    }
+
+  output {
+    Array[Int?] maybe_results = result
+  }
+}
+"#;
+
+        // Case 2: scatter without if (test_conditional3.wdl style)
+        let scatter_without_if = r#"
+version 1.2
+
+workflow test_conditional {
+  input {
+    Array[Int] scatter_range = [1, 2, 3, 4, 5]
+  }
+
+    scatter (i in scatter_range) {
+        Int result = 2
+    }
+
+  output {
+    Array[Int] maybe_results = result
+  }
+}
+"#;
+
+        println!("=== Testing scatter WITH if ===");
+        let mut doc1 = parse_document(scatter_with_if, "scatter_with_if.wdl")
+            .expect("Failed to parse scatter with if");
+
+        let result1 = doc1.typecheck();
+        let result1_success = result1.is_ok();
+        match result1 {
+            Ok(()) => {
+                println!("✅ Scatter with if: typecheck succeeded");
+                if let Some(ref workflow) = doc1.workflow {
+                    if let Some(output) = workflow.outputs.first() {
+                        println!("Scatter with if result type: {:?}", output.decl_type);
+                    }
+                }
+            }
+            Err(ref e) => {
+                println!("❌ Scatter with if failed: {:?}", e);
+            }
+        }
+
+        println!("\n=== Testing scatter WITHOUT if ===");
+        let mut doc2 = parse_document(scatter_without_if, "scatter_without_if.wdl")
+            .expect("Failed to parse scatter without if");
+
+        let result2 = doc2.typecheck();
+        let result2_success = result2.is_ok();
+        match result2 {
+            Ok(()) => {
+                println!("✅ Scatter without if: typecheck succeeded");
+                if let Some(ref workflow) = doc2.workflow {
+                    if let Some(output) = workflow.outputs.first() {
+                        println!("Scatter without if result type: {:?}", output.decl_type);
+                    }
+                }
+            }
+            Err(ref e) => {
+                println!("❌ Scatter without if failed: {:?}", e);
+            }
+        }
+
+        // Both should succeed after our 1-phase type checking fix
+        assert!(
+            result1_success,
+            "Scatter with if should succeed after type checking refactor"
+        );
+        assert!(result2_success, "Scatter without if should succeed");
     }
 }
