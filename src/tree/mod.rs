@@ -1237,16 +1237,26 @@ impl Workflow {
                 // Create nested type environment
                 let mut cond_env = type_env.clone();
 
+                // Store the original type environment state to identify new bindings
+                let original_env = cond_env.clone();
+
                 // Process conditional body and collect declarations for parent scope
                 Self::typecheck_workflow_elements(&mut conditional.body, &mut cond_env, stdlib)?;
 
-                // Add conditional body declarations as optionals to parent scope
-                for element in &conditional.body {
-                    if let WorkflowElement::Declaration(decl) = element {
-                        if let Some(declared_type) = cond_env.get(&decl.name, None) {
-                            let optional_type = declared_type.clone().with_optional(true);
-                            *type_env = type_env.bind(decl.name.clone(), optional_type, None);
-                        }
+                // Use iterate_until_binding to find all variables added during conditional processing
+                // This correctly handles nested scatters, calls, etc.
+                if let Some(first_binding) = original_env.iter().next() {
+                    let added_bindings = cond_env.iterate_until_binding(first_binding);
+
+                    for (name, declared_type) in added_bindings {
+                        let optional_type = declared_type.with_optional(true);
+                        *type_env = type_env.bind(name, optional_type, None);
+                    }
+                } else {
+                    // If original_env is empty, all bindings in cond_env are new
+                    for binding in cond_env.iter() {
+                        let optional_type = binding.value().clone().with_optional(true);
+                        *type_env = type_env.bind(binding.name().to_string(), optional_type, None);
                     }
                 }
             }
