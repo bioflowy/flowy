@@ -15,6 +15,7 @@ pub fn keywords_for_version(version: &str) -> HashSet<String> {
         "Int",
         "Map",
         "None",
+        "Object",
         "Pair",
         "String",
         "as",

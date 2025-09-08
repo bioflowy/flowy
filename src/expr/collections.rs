@@ -32,10 +32,21 @@ impl Expression {
         }
     }
 
-    /// Create a new Struct expression
+    /// Create a new anonymous Struct expression (for object { ... })
     pub fn struct_expr(pos: SourcePosition, members: Vec<(String, Expression)>) -> Self {
         Expression::Struct {
             pos,
+            type_name: None, // For anonymous object literals
+            members,
+            inferred_type: None,
+        }
+    }
+
+    /// Create a new named Struct expression (for MyStruct { ... })
+    pub fn named_struct_expr(pos: SourcePosition, type_name: String, members: Vec<(String, Expression)>) -> Self {
+        Expression::Struct {
+            pos,
+            type_name: Some(type_name), // For named struct literals
             members,
             inferred_type: None,
         }

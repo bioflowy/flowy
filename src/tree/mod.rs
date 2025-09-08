@@ -1085,7 +1085,6 @@ impl Workflow {
                     .get_type()
                     .unwrap_or(&Type::String { optional: false })
                     .clone();
-
                 // Add output to type environment so later outputs can reference it
                 type_env = type_env.bind(output.name.clone(), inferred_type, None);
             } else {
@@ -1160,7 +1159,27 @@ impl Workflow {
                         ));
                     }
                 }
-                *type_env = type_env.bind(decl.name.clone(), decl.decl_type.clone(), None);
+                
+                // If this is a struct type, resolve the members from struct_typedefs
+                let resolved_type = match &decl.decl_type {
+                    Type::StructInstance { type_name, members: None, optional } => {
+                        // Look up the struct definition to get member types
+                        if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
+                            Type::StructInstance {
+                                type_name: type_name.clone(),
+                                members: Some(struct_def.members.clone()),
+                                optional: *optional,
+                            }
+                        } else {
+                            decl.decl_type.clone()
+                        }
+                    }
+                    _ => decl.decl_type.clone(),
+                };
+                
+                // Update the declaration type itself with resolved members
+                decl.decl_type = resolved_type.clone();
+                *type_env = type_env.bind(decl.name.clone(), resolved_type, None);
             }
             WorkflowElement::Call(call) => {
                 // Type check call inputs
@@ -1350,6 +1369,121 @@ pub struct Document {
     pub effective_wdl_version: String,
 }
 
+impl Document {
+    /// Initialize and resolve nested struct types (similar to miniwdl's _initialize_struct_typedefs)
+    pub fn resolve_struct_types(&mut self) -> Result<(), WdlError> {
+        use std::collections::HashSet;
+        
+        // Keep track of structs being resolved to prevent infinite recursion
+        let mut resolving: HashSet<String> = HashSet::new();
+        
+        // Resolve each struct typedef
+        for i in 0..self.struct_typedefs.len() {
+            Self::resolve_struct_members(&mut self.struct_typedefs, i, &mut resolving)?;
+        }
+        
+        Ok(())
+    }
+
+    /// Recursively resolve struct member types (similar to miniwdl's _resolve_struct_types)
+    fn resolve_struct_members(
+        struct_typedefs: &mut [StructTypeDef], 
+        struct_index: usize,
+        resolving: &mut std::collections::HashSet<String>
+    ) -> Result<(), WdlError> {
+        
+        let struct_name = struct_typedefs[struct_index].name.clone();
+        
+        // Prevent circular dependencies
+        if resolving.contains(&struct_name) {
+            return Err(WdlError::Validation {
+                pos: struct_typedefs[struct_index].pos.clone(),
+                message: format!("Circular dependency detected in struct definition: {}", struct_name),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+        
+        resolving.insert(struct_name.clone());
+        
+        // Resolve nested struct types in members
+        let mut updated_members = std::collections::HashMap::new();
+        for (member_name, member_type) in &struct_typedefs[struct_index].members {
+            let resolved_type = Self::resolve_type_recursively(member_type, struct_typedefs, resolving)?;
+            updated_members.insert(member_name.clone(), resolved_type);
+        }
+        
+        // Update the struct definition with resolved member types
+        struct_typedefs[struct_index].members = updated_members;
+        
+        resolving.remove(&struct_name);
+        Ok(())
+    }
+
+    /// Recursively resolve a single type, handling nested struct instances
+    fn resolve_type_recursively(
+        ty: &Type,
+        struct_typedefs: &[StructTypeDef],
+        resolving: &std::collections::HashSet<String>
+    ) -> Result<Type, WdlError> {
+        match ty {
+            Type::StructInstance { type_name, members: None, optional } => {
+                // Find the struct definition
+                if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
+                    // Prevent circular reference
+                    if resolving.contains(type_name) {
+                        return Ok(ty.clone()); // Return as-is for circular references
+                    }
+                    
+                    // Recursively resolve member types
+                    let mut resolved_members = std::collections::HashMap::new();
+                    for (member_name, member_type) in &struct_def.members {
+                        let resolved_member_type = Self::resolve_type_recursively(member_type, struct_typedefs, resolving)?;
+                        resolved_members.insert(member_name.clone(), resolved_member_type);
+                    }
+                    
+                    Ok(Type::StructInstance {
+                        type_name: type_name.clone(),
+                        members: Some(resolved_members),
+                        optional: *optional,
+                    })
+                } else {
+                    // Struct definition not found - return as-is
+                    Ok(ty.clone())
+                }
+            }
+            Type::Array { item_type, optional, nonempty } => {
+                let resolved_item_type = Self::resolve_type_recursively(item_type, struct_typedefs, resolving)?;
+                Ok(Type::Array {
+                    item_type: Box::new(resolved_item_type),
+                    optional: *optional,
+                    nonempty: *nonempty,
+                })
+            }
+            Type::Map { key_type, value_type, optional, literal_keys } => {
+                let resolved_key_type = Self::resolve_type_recursively(key_type, struct_typedefs, resolving)?;
+                let resolved_value_type = Self::resolve_type_recursively(value_type, struct_typedefs, resolving)?;
+                Ok(Type::Map {
+                    key_type: Box::new(resolved_key_type),
+                    value_type: Box::new(resolved_value_type),
+                    optional: *optional,
+                    literal_keys: literal_keys.clone(),
+                })
+            }
+            Type::Pair { left_type, right_type, optional } => {
+                let resolved_left_type = Self::resolve_type_recursively(left_type, struct_typedefs, resolving)?;
+                let resolved_right_type = Self::resolve_type_recursively(right_type, struct_typedefs, resolving)?;
+                Ok(Type::Pair {
+                    left_type: Box::new(resolved_left_type),
+                    right_type: Box::new(resolved_right_type),
+                    optional: *optional,
+                })
+            }
+            _ => Ok(ty.clone()),
+        }
+    }
+}
+
 /// Import statement in a WDL document  
 /// Matches Python's DocImport NamedTuple structure
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1463,15 +1597,18 @@ impl Document {
         // 2. Import structs from imported documents
         self.import_structs()?;
 
-        // 3. Type check all tasks (simplified for now)
+        // 3. Resolve nested struct types (similar to miniwdl's _initialize_struct_typedefs)
+        self.resolve_struct_types()?;
+
+        // 4. Type check all tasks (simplified for now)
         for task in &self.tasks {
             // TODO: Implement full task type checking
         }
 
-        // 4. Resolve all calls in workflows
+        // 5. Resolve all calls in workflows
         self.resolve_calls()?;
 
-        // 5. Type check workflow if present
+        // 6. Type check workflow if present
         if let Some(ref mut workflow) = self.workflow {
             // Actually call workflow typecheck instead of just setting complete_calls
             workflow.typecheck(&self.struct_typedefs)?;

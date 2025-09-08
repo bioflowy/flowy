@@ -641,9 +641,14 @@ pub fn parse_object_literal(
 
     stream.expect(Token::RightBrace)?;
 
-    // Create a Struct expression with the type name embedded
-    // The type_name can be used during type checking to validate against the struct definition
-    Ok(Expression::struct_expr(pos, members))
+    // Create appropriate Struct expression based on type_name
+    if type_name == "object" {
+        // Anonymous object literal: object { ... }
+        Ok(Expression::struct_expr(pos, members))
+    } else {
+        // Named struct literal: MyStruct { ... }
+        Ok(Expression::named_struct_expr(pos, type_name, members))
+    }
 }
 
 #[cfg(test)]

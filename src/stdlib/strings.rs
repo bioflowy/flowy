@@ -150,7 +150,7 @@ impl Function for BasenameFunction {
             });
         }
 
-        if args.len() == 2 && !matches!(args[1], Type::String { optional: true, .. }) {
+        if args.len() == 2 && !matches!(args[1], Type::String { .. }) {
             return Err(WdlError::RuntimeError {
                 message: "basename() second argument must be String?".to_string(),
             });

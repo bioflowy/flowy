@@ -453,6 +453,37 @@ impl Type {
                 Ok(())
             }
 
+            // Object to Object coercion
+            (
+                Type::Object {
+                    members: lhs_members,
+                    is_call_output: false,
+                },
+                Type::Object {
+                    members: rhs_members,
+                    is_call_output: false,
+                },
+            ) => {
+                // If RHS (target) has no specific member types (from type declaration), 
+                // any Object can coerce to it
+                if rhs_members.is_empty() {
+                    return Ok(());
+                }
+                
+                // If RHS has specific member types, check that LHS provides compatible types
+                for (rhs_key, rhs_type) in rhs_members {
+                    if let Some(lhs_type) = lhs_members.get(rhs_key) {
+                        lhs_type.check_coercion(rhs_type, check_quant)?;
+                    } else {
+                        return Err(WdlError::validation_error(
+                            SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                            format!("Object missing required member: {}", rhs_key),
+                        ));
+                    }
+                }
+                Ok(())
+            }
+
             // Map to Object (reverse coercion for WDL compatibility)
             (
                 Type::Map {

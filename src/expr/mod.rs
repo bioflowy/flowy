@@ -127,6 +127,7 @@ pub enum Expression {
     /// Struct literal {member1: value1, member2: value2, ...}
     Struct {
         pos: SourcePosition,
+        type_name: Option<String>, // Some("Person") for Person{...}, None for object{...}
         members: Vec<(String, Expression)>,
         inferred_type: Option<Type>,
     },
