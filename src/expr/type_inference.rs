@@ -12,6 +12,7 @@ impl Expression {
         &mut self,
         type_env: &Bindings<Type>,
         stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
     ) -> Result<Type, WdlError> {
         // First, recursively infer types for all children
         let mut errors = MultiErrorContext::new();
@@ -20,36 +21,36 @@ impl Expression {
             Expression::String { parts, .. } => {
                 for part in parts {
                     if let StringPart::Placeholder { expr, .. } = part {
-                        errors.try_with(|| expr.infer_type(type_env, stdlib));
+                        errors.try_with(|| expr.infer_type(type_env, stdlib, struct_typedefs));
                     }
                 }
             }
             Expression::Array { items, .. } => {
                 for item in items {
-                    errors.try_with(|| item.infer_type(type_env, stdlib));
+                    errors.try_with(|| item.infer_type(type_env, stdlib, struct_typedefs));
                 }
             }
             Expression::Pair { left, right, .. } => {
-                errors.try_with(|| left.infer_type(type_env, stdlib));
-                errors.try_with(|| right.infer_type(type_env, stdlib));
+                errors.try_with(|| left.infer_type(type_env, stdlib, struct_typedefs));
+                errors.try_with(|| right.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::Map { pairs, .. } => {
-                for (k, v) in pairs {
-                    errors.try_with(|| k.infer_type(type_env, stdlib));
-                    errors.try_with(|| v.infer_type(type_env, stdlib));
+                for (k, v) in pairs.iter_mut() {
+                    errors.try_with(|| k.infer_type(type_env, stdlib, struct_typedefs));
+                    errors.try_with(|| v.infer_type(type_env, stdlib, struct_typedefs));
                 }
             }
             Expression::Struct { members, .. } => {
                 for (_, expr) in members {
-                    errors.try_with(|| expr.infer_type(type_env, stdlib));
+                    errors.try_with(|| expr.infer_type(type_env, stdlib, struct_typedefs));
                 }
             }
             Expression::At { expr, index, .. } => {
-                errors.try_with(|| expr.infer_type(type_env, stdlib));
-                errors.try_with(|| index.infer_type(type_env, stdlib));
+                errors.try_with(|| expr.infer_type(type_env, stdlib, struct_typedefs));
+                errors.try_with(|| index.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::Get { expr, .. } => {
-                errors.try_with(|| expr.infer_type(type_env, stdlib));
+                errors.try_with(|| expr.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::IfThenElse {
                 condition,
@@ -57,21 +58,21 @@ impl Expression {
                 false_expr,
                 ..
             } => {
-                errors.try_with(|| condition.infer_type(type_env, stdlib));
-                errors.try_with(|| true_expr.infer_type(type_env, stdlib));
-                errors.try_with(|| false_expr.infer_type(type_env, stdlib));
+                errors.try_with(|| condition.infer_type(type_env, stdlib, struct_typedefs));
+                errors.try_with(|| true_expr.infer_type(type_env, stdlib, struct_typedefs));
+                errors.try_with(|| false_expr.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::Apply { arguments, .. } => {
                 for arg in arguments {
-                    errors.try_with(|| arg.infer_type(type_env, stdlib));
+                    errors.try_with(|| arg.infer_type(type_env, stdlib, struct_typedefs));
                 }
             }
             Expression::BinaryOp { left, right, .. } => {
-                errors.try_with(|| left.infer_type(type_env, stdlib));
-                errors.try_with(|| right.infer_type(type_env, stdlib));
+                errors.try_with(|| left.infer_type(type_env, stdlib, struct_typedefs));
+                errors.try_with(|| right.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::UnaryOp { operand, .. } => {
-                errors.try_with(|| operand.infer_type(type_env, stdlib));
+                errors.try_with(|| operand.infer_type(type_env, stdlib, struct_typedefs));
             }
             _ => {} // Literals don't need child processing
         }
@@ -108,14 +109,81 @@ impl Expression {
                 if pairs.is_empty() {
                     Type::map(Type::any(), Type::any(), false)
                 } else {
-                    let key_types: Vec<&Type> =
-                        pairs.iter().filter_map(|(k, _)| k.get_type()).collect();
-                    let value_types: Vec<&Type> =
-                        pairs.iter().filter_map(|(_, v)| v.get_type()).collect();
+                    // First, check if this could be a struct literal
+                    // All keys must be string literals for struct consideration
+                    let mut member_types: HashMap<String, Type> = HashMap::new();
+                    let mut could_be_struct = true;
 
-                    let unified_key_type = crate::types::unify_types(key_types, true, false);
-                    let unified_value_type = crate::types::unify_types(value_types, true, false);
-                    Type::map(unified_key_type, unified_value_type, false)
+                    for (key_expr, value_expr) in pairs.iter() {
+                        // Check if key is a string literal
+                        if let Expression::String { parts, .. } = key_expr {
+                            if parts.len() == 1 {
+                                if let crate::expr::StringPart::Text(key_name) = &parts[0] {
+                                    if let Some(value_type) = value_expr.get_type() {
+                                        member_types.insert(key_name.clone(), value_type.clone());
+                                    } else {
+                                        could_be_struct = false;
+                                        break;
+                                    }
+                                } else {
+                                    could_be_struct = false;
+                                    break;
+                                }
+                            } else {
+                                could_be_struct = false;
+                                break;
+                            }
+                        } else {
+                            could_be_struct = false;
+                            break;
+                        }
+                    }
+
+                    // If this could be a struct, try to match with struct_typedefs
+                    let mut found_struct_type: Option<Type> = None;
+                    if could_be_struct {
+                        for struct_def in struct_typedefs {
+                            // Check if all provided members match a known struct type
+                            let mut matches = true;
+                            for (provided_name, provided_type) in &member_types {
+                                if let Some(expected_type) = struct_def.members.get(provided_name) {
+                                    if !provided_type.coerces(expected_type, true) {
+                                        matches = false;
+                                        break;
+                                    }
+                                } else {
+                                    matches = false;
+                                    break;
+                                }
+                            }
+
+                            // If this struct definition matches, use it
+                            if matches && member_types.len() <= struct_def.members.len() {
+                                found_struct_type = Some(Type::StructInstance {
+                                    type_name: struct_def.name.clone(),
+                                    members: Some(struct_def.members.clone()),
+                                    optional: false,
+                                });
+                                break;
+                            }
+                        }
+                    }
+
+                    // Use struct type if found, otherwise fall back to Map
+                    if let Some(struct_type) = found_struct_type {
+                        struct_type
+                    } else {
+                        // No struct match found, treat as regular map
+                        let key_types: Vec<&Type> =
+                            pairs.iter().filter_map(|(k, _)| k.get_type()).collect();
+                        let value_types: Vec<&Type> =
+                            pairs.iter().filter_map(|(_, v)| v.get_type()).collect();
+
+                        let unified_key_type = crate::types::unify_types(key_types, true, false);
+                        let unified_value_type =
+                            crate::types::unify_types(value_types, true, false);
+                        Type::map(unified_key_type, unified_value_type, false)
+                    }
                 }
             }
 
@@ -128,11 +196,34 @@ impl Expression {
                     member_types.insert(name.clone(), ty);
                 }
 
-                // For struct literals, we need to check if there's a known struct type
-                // that matches the provided fields and add missing optional fields
-                // For now, we'll create the type based on provided members only
-                // The evaluation step will handle adding missing optional fields
+                // Try to find matching struct definition from struct_typedefs
+                // This is where we use the struct_typedefs parameter for proper type inference
+                for struct_def in struct_typedefs {
+                    // Check if all provided members match a known struct type
+                    let mut matches = true;
+                    for (provided_name, provided_type) in &member_types {
+                        if let Some(expected_type) = struct_def.members.get(provided_name) {
+                            if !provided_type.coerces(expected_type, true) {
+                                matches = false;
+                                break;
+                            }
+                        } else {
+                            matches = false;
+                            break;
+                        }
+                    }
 
+                    // If this struct definition matches, use it
+                    if matches && member_types.len() <= struct_def.members.len() {
+                        return Ok(Type::StructInstance {
+                            type_name: struct_def.name.clone(),
+                            members: Some(struct_def.members.clone()),
+                            optional: false,
+                        });
+                    }
+                }
+
+                // No matching struct found, create generic object type
                 Type::object(member_types)
             }
 
@@ -237,7 +328,7 @@ impl Expression {
                             }
                         }
                         Type::StructInstance { members, .. } => {
-                            // Struct field access
+                            // Struct field access - now with proper struct resolution
                             if let Some(ref member_types) = members {
                                 if let Some(field_type) = member_types.get(field) {
                                     field_type.clone()
@@ -248,6 +339,16 @@ impl Expression {
                                     ));
                                 }
                             } else {
+                                // Try to resolve struct type using struct_typedefs
+                                if let Type::StructInstance { type_name, .. } = expr_type {
+                                    if let Some(struct_def) =
+                                        struct_typedefs.iter().find(|s| s.name == *type_name)
+                                    {
+                                        if let Some(field_type) = struct_def.members.get(field) {
+                                            return Ok(field_type.clone());
+                                        }
+                                    }
+                                }
                                 return Err(WdlError::static_type_mismatch(
                                     pos.clone(),
                                     "Struct with known members".to_string(),

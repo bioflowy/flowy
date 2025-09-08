@@ -16,9 +16,10 @@ impl ExpressionBase for Expression {
         &mut self,
         type_env: &Bindings<Type>,
         stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
     ) -> Result<Type, WdlError> {
         // Delegate to the implementation in type_inference module
-        Expression::infer_type(self, type_env, stdlib)
+        Expression::infer_type(self, type_env, stdlib, struct_typedefs)
     }
 
     fn get_type(&self) -> Option<&Type> {
@@ -104,7 +105,11 @@ impl ExpressionBase for Expression {
                 ))
             }
 
-            Expression::Map { pairs, .. } => {
+            Expression::Map {
+                pairs,
+                inferred_type,
+                ..
+            } => {
                 let mut map_pairs = Vec::new();
                 for (k_expr, v_expr) in pairs {
                     let key = k_expr.eval(env, stdlib)?;
@@ -112,6 +117,41 @@ impl ExpressionBase for Expression {
                     map_pairs.push((key, value));
                 }
 
+                // Check if this Map should be evaluated as a struct based on inferred type
+                if let Some(Type::StructInstance {
+                    type_name, members, ..
+                }) = inferred_type
+                {
+                    if let Some(struct_members) = members {
+                        // This Map should be converted to a struct
+                        let mut member_values = HashMap::new();
+
+                        // Convert map pairs to member values
+                        for (key_val, value_val) in map_pairs {
+                            if let Value::String {
+                                value: key_string, ..
+                            } = key_val
+                            {
+                                member_values.insert(key_string, value_val);
+                            }
+                        }
+
+                        // Create struct value with the inferred type
+                        let struct_type = Type::StructInstance {
+                            type_name: type_name.clone(),
+                            members: Some(struct_members.clone()),
+                            optional: false,
+                        };
+
+                        return Ok(Value::struct_value_with_completion(
+                            struct_type,
+                            member_values,
+                            None,
+                        ));
+                    }
+                }
+
+                // Regular Map evaluation
                 let (key_type, value_type) = if let Some((k, v)) = map_pairs.first() {
                     (k.wdl_type().clone(), v.wdl_type().clone())
                 } else {

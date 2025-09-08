@@ -124,7 +124,8 @@ pub fn run_workflow(
     let engine = WorkflowEngine::new(config, workflow_dir);
 
     // Execute workflow
-    engine.execute_workflow(workflow, inputs, run_id)
+    // TODO: Pass proper struct_typedefs when available from Document context
+    engine.execute_workflow(workflow, inputs, run_id, &[])
 }
 
 /// Validate a WDL document before execution

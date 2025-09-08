@@ -185,9 +185,10 @@ impl Declaration {
         &mut self,
         type_env: &Bindings<Type>,
         stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[StructTypeDef],
     ) -> Result<(), WdlError> {
         if let Some(ref mut expr) = self.expr {
-            let inferred_type = expr.infer_type(type_env, stdlib)?;
+            let inferred_type = expr.infer_type(type_env, stdlib, struct_typedefs)?;
             inferred_type.check_coercion(&self.decl_type, true)?;
         }
         Ok(())
@@ -1055,7 +1056,7 @@ impl Workflow {
     }
 
     /// Type check this workflow
-    pub fn typecheck(&mut self) -> Result<(), WdlError> {
+    pub fn typecheck(&mut self, struct_typedefs: &[StructTypeDef]) -> Result<(), WdlError> {
         // Create stdlib instance for type checking
         let stdlib = crate::stdlib::StdLib::new(&self.effective_wdl_version);
 
@@ -1065,21 +1066,21 @@ impl Workflow {
         // 1. Add input declarations to type environment and typecheck
         for input in &mut self.inputs {
             type_env = input.add_to_type_env(&Bindings::new(), type_env, false)?;
-            input.typecheck(&type_env, &stdlib)?;
+            input.typecheck(&type_env, &stdlib, struct_typedefs)?;
         }
 
         // 2. Add postinput declarations to type environment and typecheck
         for postinput in &mut self.postinputs {
             type_env = postinput.add_to_type_env(&Bindings::new(), type_env, false)?;
-            postinput.typecheck(&type_env, &stdlib)?;
+            postinput.typecheck(&type_env, &stdlib, struct_typedefs)?;
         }
 
         // 3. Process workflow body elements (type environment built on-demand)
-        Self::typecheck_workflow_elements(&mut self.body, &mut type_env, &stdlib)?;
+        Self::typecheck_workflow_elements(&mut self.body, &mut type_env, &stdlib, struct_typedefs)?;
         // 4. Process output declarations (type check and add to environment)
         for output in &mut self.outputs {
             if let Some(ref mut expr) = output.expr {
-                expr.infer_type(&type_env, &stdlib)?;
+                expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
                 let inferred_type = expr
                     .get_type()
                     .unwrap_or(&Type::String { optional: false })
@@ -1122,9 +1123,10 @@ impl Workflow {
         elements: &mut [WorkflowElement],
         type_env: &mut Bindings<Type>,
         stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[StructTypeDef],
     ) -> Result<(), WdlError> {
         for element in elements {
-            Self::typecheck_workflow_element(element, type_env, stdlib)?;
+            Self::typecheck_workflow_element(element, type_env, stdlib, struct_typedefs)?;
         }
         Ok(())
     }
@@ -1133,12 +1135,13 @@ impl Workflow {
         element: &mut WorkflowElement,
         type_env: &mut Bindings<Type>,
         stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[StructTypeDef],
     ) -> Result<(), WdlError> {
         match element {
             WorkflowElement::Declaration(decl) => {
                 // Type check the declaration and add to environment
                 if let Some(ref mut expr) = decl.expr {
-                    expr.infer_type(type_env, stdlib)?;
+                    expr.infer_type(type_env, stdlib, struct_typedefs)?;
                     let inferred_type = expr
                         .get_type()
                         .unwrap_or(&Type::String { optional: false })
@@ -1162,7 +1165,7 @@ impl Workflow {
             WorkflowElement::Call(call) => {
                 // Type check call inputs
                 for expr in call.inputs.values_mut() {
-                    expr.infer_type(type_env, stdlib)?;
+                    expr.infer_type(type_env, stdlib, struct_typedefs)?;
                 }
 
                 // Add call outputs to type environment
@@ -1200,7 +1203,7 @@ impl Workflow {
             }
             WorkflowElement::Scatter(scatter) => {
                 // Type check scatter expression with stdlib access
-                scatter.expr.infer_type(type_env, stdlib)?;
+                scatter.expr.infer_type(type_env, stdlib, struct_typedefs)?;
 
                 // Create nested type environment with scatter variable
                 let mut scatter_env = type_env.clone();
@@ -1221,7 +1224,12 @@ impl Workflow {
                 let original_env = scatter_env.clone();
 
                 // Process scatter body and collect declarations for parent scope
-                Self::typecheck_workflow_elements(&mut scatter.body, &mut scatter_env, stdlib)?;
+                Self::typecheck_workflow_elements(
+                    &mut scatter.body,
+                    &mut scatter_env,
+                    stdlib,
+                    struct_typedefs,
+                )?;
 
                 // Use iterate_until_binding to find all variables added during scatter processing
                 // This correctly handles nested conditionals, calls, etc.
@@ -1240,7 +1248,9 @@ impl Workflow {
             }
             WorkflowElement::Conditional(conditional) => {
                 // Type check conditional expression with stdlib access
-                conditional.expr.infer_type(type_env, stdlib)?;
+                conditional
+                    .expr
+                    .infer_type(type_env, stdlib, struct_typedefs)?;
 
                 // Create nested type environment
                 let mut cond_env = type_env.clone();
@@ -1249,7 +1259,12 @@ impl Workflow {
                 let original_env = cond_env.clone();
 
                 // Process conditional body and collect declarations for parent scope
-                Self::typecheck_workflow_elements(&mut conditional.body, &mut cond_env, stdlib)?;
+                Self::typecheck_workflow_elements(
+                    &mut conditional.body,
+                    &mut cond_env,
+                    stdlib,
+                    struct_typedefs,
+                )?;
 
                 // Use iterate_until_binding to find all variables added during conditional processing
                 // This correctly handles nested scatters, calls, etc.
@@ -1459,7 +1474,7 @@ impl Document {
         // 5. Type check workflow if present
         if let Some(ref mut workflow) = self.workflow {
             // Actually call workflow typecheck instead of just setting complete_calls
-            workflow.typecheck()?;
+            workflow.typecheck(&self.struct_typedefs)?;
             // Set complete_calls based on successful typechecking
             workflow.complete_calls = Some(true);
         }

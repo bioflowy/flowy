@@ -336,7 +336,7 @@ mod boolean_tests {
 
         let mut bool_expr = Expression::boolean(pos.clone(), true);
         let stdlib = crate::stdlib::StdLib::new("1.0");
-        let inferred_type = bool_expr.infer_type(&type_env, &stdlib).unwrap();
+        let inferred_type = bool_expr.infer_type(&type_env, &stdlib, &[]).unwrap();
         assert_eq!(inferred_type, Type::boolean(false));
         assert_eq!(format!("{}", inferred_type), "Boolean");
     }
@@ -1271,7 +1271,7 @@ mod if_then_else_tests {
         );
 
         let stdlib = crate::stdlib::StdLib::new("1.0");
-        let inferred_type = if_coerce.infer_type(&type_env, &stdlib).unwrap();
+        let inferred_type = if_coerce.infer_type(&type_env, &stdlib, &[]).unwrap();
         assert_eq!(inferred_type, Type::float(false));
 
         // When evaluated, should return Float value

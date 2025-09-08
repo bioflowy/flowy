@@ -98,16 +98,19 @@ impl WorkflowEngine {
         mut workflow: Workflow,
         inputs: Bindings<Value>,
         run_id: &str,
+        struct_typedefs: &[crate::tree::StructTypeDef],
     ) -> RuntimeResult<WorkflowResult> {
         let start_time = Instant::now();
 
         // Type check the workflow before execution
-        workflow.typecheck().map_err(|e| RuntimeError::Validation {
-            pos: SourcePosition::new("workflow".to_string(), "".to_string(), 0, 0, 0, 0),
-            message: format!("Workflow typecheck failed: {}", e),
-            source_text: None,
-            declared_wdl_version: None,
-        })?;
+        workflow
+            .typecheck(struct_typedefs)
+            .map_err(|e| RuntimeError::Validation {
+                pos: SourcePosition::new("workflow".to_string(), "".to_string(), 0, 0, 0, 0),
+                message: format!("Workflow typecheck failed: {}", e),
+                source_text: None,
+                declared_wdl_version: None,
+            })?;
 
         // Validate workflow inputs
         self.validate_workflow_inputs(&workflow, &inputs)?;
@@ -157,7 +160,7 @@ impl WorkflowEngine {
 
         // Find the main workflow
         if let Some(workflow) = document.workflow {
-            engine_with_doc.execute_workflow(workflow, inputs, run_id)
+            engine_with_doc.execute_workflow(workflow, inputs, run_id, &document.struct_typedefs)
         } else {
             // If no workflow, try to find a single task to execute
             if document.tasks.len() == 1 {
@@ -469,7 +472,9 @@ impl WorkflowEngine {
         }
 
         // Execute the sub-workflow
-        let sub_workflow_result = self.execute_workflow(workflow, call_inputs, &unique_run_id)?;
+        // TODO: Pass proper struct_typedefs from the calling document
+        let sub_workflow_result =
+            self.execute_workflow(workflow, call_inputs, &unique_run_id, &[])?;
 
         // Add workflow outputs to main workflow context
         for binding in sub_workflow_result.outputs.iter() {

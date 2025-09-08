@@ -31,6 +31,7 @@ pub trait ExpressionBase {
         &mut self,
         type_env: &Bindings<Type>,
         stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
     ) -> Result<Type, WdlError>;
 
     /// Get the inferred type (must call infer_type first)
@@ -611,7 +612,7 @@ mod basic_tests {
 
         let mut int_expr = Expression::int(pos.clone(), 42);
         let stdlib = crate::stdlib::StdLib::new("1.0");
-        let inferred_type = int_expr.infer_type(&type_env, &stdlib).unwrap();
+        let inferred_type = int_expr.infer_type(&type_env, &stdlib, &[]).unwrap();
         assert_eq!(inferred_type, Type::int(false));
 
         let mut array_expr = Expression::array(
@@ -622,7 +623,7 @@ mod basic_tests {
             ],
         );
         let stdlib = crate::stdlib::StdLib::new("1.0");
-        let inferred_type = array_expr.infer_type(&type_env, &stdlib).unwrap();
+        let inferred_type = array_expr.infer_type(&type_env, &stdlib, &[]).unwrap();
         assert_eq!(inferred_type, Type::array(Type::int(false), false, true));
     }
 
