@@ -464,12 +464,12 @@ impl Type {
                     is_call_output: false,
                 },
             ) => {
-                // If RHS (target) has no specific member types (from type declaration), 
+                // If RHS (target) has no specific member types (from type declaration),
                 // any Object can coerce to it
                 if rhs_members.is_empty() {
                     return Ok(());
                 }
-                
+
                 // If RHS has specific member types, check that LHS provides compatible types
                 for (rhs_key, rhs_type) in rhs_members {
                     if let Some(lhs_type) = lhs_members.get(rhs_key) {

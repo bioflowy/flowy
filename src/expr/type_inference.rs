@@ -50,9 +50,7 @@ impl Expression {
                 errors.try_with(|| index.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::Get { expr, .. } => {
-                errors.try_with(|| 
-                    expr.infer_type(type_env, stdlib, struct_typedefs)
-                );
+                errors.try_with(|| expr.infer_type(type_env, stdlib, struct_typedefs));
             }
             Expression::IfThenElse {
                 condition,
@@ -189,9 +187,9 @@ impl Expression {
                 }
             }
 
-            Expression::Struct { type_name, members, .. } => {
-                Self::infer_struct_type(type_name, members, type_env, stdlib, struct_typedefs)?
-            }
+            Expression::Struct {
+                type_name, members, ..
+            } => Self::infer_struct_type(type_name, members, type_env, stdlib, struct_typedefs)?,
 
             Expression::Ident { name, pos, .. } => type_env
                 .resolve(name)
@@ -294,7 +292,7 @@ impl Expression {
                             }
                         }
                         Type::StructInstance { members, .. } => {
-                            // Struct field access - now with proper struct resolution 
+                            // Struct field access - now with proper struct resolution
                             if let Some(ref member_types) = members {
                                 if let Some(field_type) = member_types.get(field) {
                                     field_type.clone()
@@ -549,83 +547,92 @@ impl Expression {
     }
 
     fn infer_struct_type(
-    type_name: &Option<String>,
-    members: &mut [(String, Expression)],
-    type_env: &Bindings<Type>,
-    stdlib: &crate::stdlib::StdLib,
-    struct_typedefs: &[crate::tree::StructTypeDef],
-) -> Result<Type, WdlError> {
-    // First, infer types for all member expressions
-    let mut member_types = std::collections::HashMap::new();
-    for (name, expr) in members {
-        let member_type = expr.infer_type(type_env, stdlib, struct_typedefs)?;
-        member_types.insert(name.clone(), member_type);
-    }
+        type_name: &Option<String>,
+        members: &mut [(String, Expression)],
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        // First, infer types for all member expressions
+        let mut member_types = std::collections::HashMap::new();
+        for (name, expr) in members {
+            let member_type = expr.infer_type(type_env, stdlib, struct_typedefs)?;
+            member_types.insert(name.clone(), member_type);
+        }
 
-    match type_name {
-        // 1. Named struct literal: MyStruct { ... } - validate against specific struct definition
-        Some(struct_name) => {
-            if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *struct_name) {
-                // Validate that all provided members match the struct definition
-                for (provided_name, provided_type) in &member_types {
-                    if let Some(expected_type) = struct_def.members.get(provided_name) {
-                        if !provided_type.coerces(expected_type, true) {
+        match type_name {
+            // 1. Named struct literal: MyStruct { ... } - validate against specific struct definition
+            Some(struct_name) => {
+                if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *struct_name) {
+                    // Validate that all provided members match the struct definition
+                    for (provided_name, provided_type) in &member_types {
+                        if let Some(expected_type) = struct_def.members.get(provided_name) {
+                            if !provided_type.coerces(expected_type, true) {
+                                return Err(WdlError::Validation {
+                                    pos: crate::error::SourcePosition::new(
+                                        "<unknown>".to_string(),
+                                        "<unknown>".to_string(),
+                                        0,
+                                        0,
+                                        0,
+                                        0,
+                                    ),
+                                    message: format!(
+                                    "Member '{}' of struct '{}' has type '{}' but expected '{}'",
+                                    provided_name, struct_name, provided_type, expected_type
+                                ),
+                                    source_text: None,
+                                    declared_wdl_version: None,
+                                });
+                            }
+                        } else {
                             return Err(WdlError::Validation {
                                 pos: crate::error::SourcePosition::new(
                                     "<unknown>".to_string(),
                                     "<unknown>".to_string(),
-                                    0, 0, 0, 0
+                                    0,
+                                    0,
+                                    0,
+                                    0,
                                 ),
                                 message: format!(
-                                    "Member '{}' of struct '{}' has type '{}' but expected '{}'",
-                                    provided_name, struct_name, provided_type, expected_type
+                                    "Member '{}' is not defined in struct '{}'",
+                                    provided_name, struct_name
                                 ),
                                 source_text: None,
                                 declared_wdl_version: None,
                             });
                         }
-                    } else {
-                        return Err(WdlError::Validation {
-                            pos: crate::error::SourcePosition::new(
-                                "<unknown>".to_string(),
-                                "<unknown>".to_string(),
-                                0, 0, 0, 0
-                            ),
-                            message: format!(
-                                "Member '{}' is not defined in struct '{}'", 
-                                provided_name, struct_name
-                            ),
-                            source_text: None,
-                            declared_wdl_version: None,
-                        });
                     }
-                }
 
-                return Ok(Type::StructInstance {
-                    type_name: struct_def.name.clone(),
-                    members: Some(struct_def.members.clone()),
-                    optional: false,
-                });
-            } else {
-                return Err(WdlError::Validation {
-                    pos: crate::error::SourcePosition::new(
-                        "<unknown>".to_string(),
-                        "<unknown>".to_string(),
-                        0, 0, 0, 0
-                    ),
-                    message: format!("Undefined struct type: {}", struct_name),
-                    source_text: None,
-                    declared_wdl_version: None,
-                });
+                    Ok(Type::StructInstance {
+                        type_name: struct_def.name.clone(),
+                        members: Some(struct_def.members.clone()),
+                        optional: false,
+                    })
+                } else {
+                    Err(WdlError::Validation {
+                        pos: crate::error::SourcePosition::new(
+                            "<unknown>".to_string(),
+                            "<unknown>".to_string(),
+                            0,
+                            0,
+                            0,
+                            0,
+                        ),
+                        message: format!("Undefined struct type: {}", struct_name),
+                        source_text: None,
+                        declared_wdl_version: None,
+                    })
+                }
+            }
+
+            // 2. Anonymous object literal: object { ... } - create Object type directly
+            None => {
+                // Per WDL 1.2 spec: object { ... } syntax creates Object type
+                // We don't try to match against struct definitions for anonymous object literals
+                Ok(Type::object(member_types))
             }
         }
-        
-        // 2. Anonymous object literal: object { ... } - create Object type directly
-        None => {
-            // Per WDL 1.2 spec: object { ... } syntax creates Object type
-            // We don't try to match against struct definitions for anonymous object literals
-            Ok(Type::object(member_types))
-        }
     }
-}
 }

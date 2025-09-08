@@ -1,5 +1,9 @@
 {
-  "company_name": "Tech Corp",
-  "founder_name": "John Doe",
-  "founder_age": 35
+  "person": {
+    "name": "Alice",
+    "assay_data": {
+      "test1": "/tmp/test1.txt",
+      "test2": "/tmp/test2.txt"
+    }
+  }
 }

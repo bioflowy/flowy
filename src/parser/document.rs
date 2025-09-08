@@ -2,7 +2,7 @@
 
 use super::literals::parse_simple_string_value;
 use super::parser_utils::ParseResult;
-use super::tasks::{parse_task, parse_workflow};
+use super::tasks::{parse_meta_section, parse_task, parse_workflow};
 use super::token_stream::TokenStream;
 use super::tokens::Token;
 // Note: parse_expression available if needed
@@ -196,7 +196,7 @@ fn parse_import(stream: &mut TokenStream) -> ParseResult<ImportDoc> {
     Ok(ImportDoc::new(pos, uri, namespace, aliases))
 }
 
-/// Parse a struct definition: struct StructName { field: Type, ... }
+/// Parse a struct definition: struct StructName { field: Type, ... meta { ... } parameter_meta { ... } }
 fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
     let pos = stream.current_position();
 
@@ -235,8 +235,10 @@ fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
     stream.expect(Token::LeftBrace)?;
 
     let mut members = HashMap::new();
+    let mut meta = HashMap::new();
+    let mut parameter_meta = HashMap::new();
 
-    // Parse struct members
+    // Parse struct body (members, meta, parameter_meta)
     while stream.peek_token() != Some(Token::RightBrace) && !stream.is_eof() {
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
@@ -247,27 +249,40 @@ fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
             break;
         }
 
-        // Parse member type
-        let member_type = super::types::parse_type(stream)?;
-
-        // Parse member name
-        let member_name = match stream.peek_token() {
-            Some(Token::Identifier(n)) => {
-                let name = n.clone();
-                stream.next();
-                name
+        // Check if this is a metadata section
+        match stream.peek_token() {
+            Some(Token::Keyword(kw)) if kw == "meta" => {
+                // Parse meta section
+                meta = super::tasks::parse_meta_section(stream)?;
+            }
+            Some(Token::Keyword(kw)) if kw == "parameter_meta" => {
+                // Parse parameter_meta section
+                parameter_meta = super::tasks::parse_meta_section(stream)?;
             }
             _ => {
-                return Err(WdlError::syntax_error(
-                    stream.current_position(),
-                    "Expected member name".to_string(),
-                    "1.0".to_string(),
-                    None,
-                ));
-            }
-        };
+                // Parse member type
+                let member_type = super::types::parse_type(stream)?;
 
-        members.insert(member_name, member_type);
+                // Parse member name
+                let member_name = match stream.peek_token() {
+                    Some(Token::Identifier(n)) => {
+                        let name = n.clone();
+                        stream.next();
+                        name
+                    }
+                    _ => {
+                        return Err(WdlError::syntax_error(
+                            stream.current_position(),
+                            "Expected struct type name".to_string(),
+                            "1.0".to_string(),
+                            None,
+                        ));
+                    }
+                };
+
+                members.insert(member_name, member_type);
+            }
+        }
 
         // Skip newlines
         while stream.peek_token() == Some(Token::Newline) {
@@ -277,7 +292,14 @@ fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
 
     stream.expect(Token::RightBrace)?;
 
-    Ok(StructTypeDef::new(pos, name, members, None))
+    Ok(StructTypeDef::new(
+        pos,
+        name,
+        members,
+        meta,
+        parameter_meta,
+        None,
+    ))
 }
 
 /// Parse a WDL document

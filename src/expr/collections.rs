@@ -43,7 +43,11 @@ impl Expression {
     }
 
     /// Create a new named Struct expression (for MyStruct { ... })
-    pub fn named_struct_expr(pos: SourcePosition, type_name: String, members: Vec<(String, Expression)>) -> Self {
+    pub fn named_struct_expr(
+        pos: SourcePosition,
+        type_name: String,
+        members: Vec<(String, Expression)>,
+    ) -> Self {
         Expression::Struct {
             pos,
             type_name: Some(type_name), // For named struct literals

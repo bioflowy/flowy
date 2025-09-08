@@ -1079,7 +1079,6 @@ impl Function for AsPairsFunction {
                 actual: args.len(),
             });
         }
-
         match &args[0] {
             Type::Map {
                 key_type,
@@ -1105,7 +1104,6 @@ impl Function for AsPairsFunction {
                 message: "as_pairs() expects exactly 1 argument".to_string(),
             });
         }
-
         match &args[0] {
             Value::Map { pairs, wdl_type } => {
                 // Extract key and value types from the map type

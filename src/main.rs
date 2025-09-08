@@ -772,6 +772,73 @@ fn json_to_value_typed(json: serde_json::Value, wdl_type: &Type) -> Result<Value
                 },
             })
         }
+        // Map type: convert JSON object to WDL Map
+        (
+            serde_json::Value::Object(obj),
+            Type::Map {
+                key_type,
+                value_type,
+                optional,
+                ..
+            },
+        ) => {
+            let pairs: Result<Vec<_>, _> = obj
+                .into_iter()
+                .map(|(k, v)| {
+                    let wdl_key = json_to_value_typed(serde_json::Value::String(k), key_type)?;
+                    let wdl_value = json_to_value_typed(v, value_type)?;
+                    Ok((wdl_key, wdl_value))
+                })
+                .collect();
+            Ok(Value::Map {
+                pairs: pairs?,
+                wdl_type: Type::Map {
+                    key_type: key_type.clone(),
+                    value_type: value_type.clone(),
+                    optional: *optional,
+                    literal_keys: None,
+                },
+            })
+        }
+        // StructInstance type: convert JSON object to WDL Struct
+        (
+            serde_json::Value::Object(obj),
+            Type::StructInstance {
+                type_name,
+                members,
+                optional,
+                ..
+            },
+        ) => {
+            if let Some(ref struct_members) = members {
+                let mut wdl_members = std::collections::HashMap::new();
+
+                for (member_name, member_type) in struct_members {
+                    if let Some(json_value) = obj.get(member_name) {
+                        let wdl_value = json_to_value_typed(json_value.clone(), member_type)?;
+                        wdl_members.insert(member_name.clone(), wdl_value);
+                    } else if !member_type.is_optional() {
+                        return Err(WdlError::RuntimeError {
+                            message: format!("Missing required struct member: {}", member_name),
+                        });
+                    }
+                }
+
+                Ok(Value::Struct {
+                    members: wdl_members,
+                    extra_keys: std::collections::HashSet::new(),
+                    wdl_type: Type::StructInstance {
+                        type_name: type_name.clone(),
+                        members: members.clone(),
+                        optional: *optional,
+                    },
+                })
+            } else {
+                Err(WdlError::RuntimeError {
+                    message: format!("Struct type {} has no member information", type_name),
+                })
+            }
+        }
         // Fallback to untyped conversion for other cases
         (json_val, _) => json_to_value(json_val),
     }

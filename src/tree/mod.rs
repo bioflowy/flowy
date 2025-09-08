@@ -68,6 +68,8 @@ pub struct StructTypeDef {
     pub pos: SourcePosition,
     pub name: String,
     pub members: HashMap<String, Type>,
+    pub meta: HashMap<String, serde_json::Value>,
+    pub parameter_meta: HashMap<String, serde_json::Value>,
     pub imported: Option<(Box<Document>, Box<StructTypeDef>)>,
 }
 
@@ -76,12 +78,16 @@ impl StructTypeDef {
         pos: SourcePosition,
         name: String,
         members: HashMap<String, Type>,
+        meta: HashMap<String, serde_json::Value>,
+        parameter_meta: HashMap<String, serde_json::Value>,
         imported: Option<(Box<Document>, Box<StructTypeDef>)>,
     ) -> Self {
         Self {
             pos,
             name,
             members,
+            meta,
+            parameter_meta,
             imported,
         }
     }
@@ -187,6 +193,23 @@ impl Declaration {
         stdlib: &crate::stdlib::StdLib,
         struct_typedefs: &[StructTypeDef],
     ) -> Result<(), WdlError> {
+        // First, resolve struct types if this is a struct instance
+        if let Type::StructInstance {
+            type_name,
+            members: None,
+            optional,
+        } = &self.decl_type
+        {
+            // Look up the struct definition to get member types
+            if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
+                self.decl_type = Type::StructInstance {
+                    type_name: type_name.clone(),
+                    members: Some(struct_def.members.clone()),
+                    optional: *optional,
+                };
+            }
+        }
+
         if let Some(ref mut expr) = self.expr {
             let inferred_type = expr.infer_type(type_env, stdlib, struct_typedefs)?;
             inferred_type.check_coercion(&self.decl_type, true)?;
@@ -358,6 +381,119 @@ impl Task {
         }
 
         bindings
+    }
+
+    /// Type check the task - performs type inference on all declarations and expressions
+    pub fn typecheck(&mut self, struct_typedefs: &[StructTypeDef]) -> Result<(), WdlError> {
+        // Create standard library for type checking
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+
+        // Build type environment from inputs
+        let mut type_env = Bindings::new();
+
+        // Process input declarations: type check and add to environment
+        // Inputs can reference previous inputs in their default expressions
+        for input in &mut self.inputs {
+            // Type check the default expression if it exists
+            input.typecheck(&type_env, &stdlib, struct_typedefs)?;
+            if let Some(ref mut expr) = input.expr {
+                let inferred_type = expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
+                // Check that the inferred type is compatible with the declared type
+                if !inferred_type.coerces(&input.decl_type, true) {
+                    return Err(WdlError::StaticTypeMismatch {
+                        pos: expr.pos().clone(),
+                        expected: format!("{:?}", input.decl_type),
+                        actual: format!("{:?}", inferred_type),
+                        message: format!("Type mismatch in input declaration '{}'", input.name),
+                        source_text: None,
+                        declared_wdl_version: Some("1.2".to_string()),
+                    });
+                }
+            }
+            // Add this input to the type environment for subsequent declarations
+            type_env = type_env.bind(input.name.clone(), input.decl_type.clone(), None);
+        }
+
+        // Process postinput declarations: type check and add to environment
+        for postinput in &mut self.postinputs {
+            // Type check the initialization expression if it exists
+            postinput.typecheck(&type_env, &stdlib, struct_typedefs)?;
+            if let Some(ref mut expr) = postinput.expr {
+                let inferred_type = expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
+                // Check that the inferred type is compatible with the declared type
+                if !inferred_type.coerces(&postinput.decl_type, true) {
+                    return Err(WdlError::StaticTypeMismatch {
+                        pos: expr.pos().clone(),
+                        expected: format!("{:?}", postinput.decl_type),
+                        actual: format!("{:?}", inferred_type),
+                        message: format!(
+                            "Type mismatch in postinput declaration '{}'",
+                            postinput.name
+                        ),
+                        source_text: None,
+                        declared_wdl_version: Some("1.2".to_string()),
+                    });
+                }
+            }
+            // Add to type environment for subsequent declarations
+            type_env = type_env.bind(postinput.name.clone(), postinput.decl_type.clone(), None);
+        }
+
+        // Type check the command expression (must be String)
+        let command_type = self
+            .command
+            .infer_type(&type_env, &stdlib, struct_typedefs)?;
+        if !command_type.coerces(&Type::string(false), true) {
+            return Err(WdlError::StaticTypeMismatch {
+                pos: self.command.pos().clone(),
+                expected: format!("{:?}", Type::string(false)),
+                actual: format!("{:?}", command_type),
+                message: "Task command must be a String".to_string(),
+                source_text: None,
+                declared_wdl_version: Some("1.2".to_string()),
+            });
+        }
+
+        // Type check runtime expressions
+        for expr in self.runtime.values_mut() {
+            expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
+        }
+
+        // Type check requirements expressions
+        for expr in self.requirements.values_mut() {
+            expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
+        }
+
+        // Type check hints expressions
+        for expr in self.hints.values_mut() {
+            expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
+        }
+
+        // Create output-specific standard library for output declarations
+        let output_stdlib = crate::stdlib::task_output::create_task_output_stdlib(
+            "1.2",
+            std::path::PathBuf::from("/tmp"), // Placeholder path for type checking
+        );
+
+        // Type check output declarations
+        for output in &mut self.outputs {
+            if let Some(ref mut expr) = output.expr {
+                let inferred_type = expr.infer_type(&type_env, &output_stdlib, struct_typedefs)?;
+                // Check that the inferred type is compatible with the declared type
+                if !inferred_type.coerces(&output.decl_type, true) {
+                    return Err(WdlError::StaticTypeMismatch {
+                        pos: expr.pos().clone(),
+                        expected: format!("{:?}", output.decl_type),
+                        actual: format!("{:?}", inferred_type),
+                        message: format!("Type mismatch in output declaration '{}'", output.name),
+                        source_text: None,
+                        declared_wdl_version: Some("1.2".to_string()),
+                    });
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -1159,12 +1295,18 @@ impl Workflow {
                         ));
                     }
                 }
-                
+
                 // If this is a struct type, resolve the members from struct_typedefs
                 let resolved_type = match &decl.decl_type {
-                    Type::StructInstance { type_name, members: None, optional } => {
+                    Type::StructInstance {
+                        type_name,
+                        members: None,
+                        optional,
+                    } => {
                         // Look up the struct definition to get member types
-                        if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
+                        if let Some(struct_def) =
+                            struct_typedefs.iter().find(|s| s.name == *type_name)
+                        {
                             Type::StructInstance {
                                 type_name: type_name.clone(),
                                 members: Some(struct_def.members.clone()),
@@ -1176,7 +1318,7 @@ impl Workflow {
                     }
                     _ => decl.decl_type.clone(),
                 };
-                
+
                 // Update the declaration type itself with resolved members
                 decl.decl_type = resolved_type.clone();
                 *type_env = type_env.bind(decl.name.clone(), resolved_type, None);
@@ -1373,49 +1515,52 @@ impl Document {
     /// Initialize and resolve nested struct types (similar to miniwdl's _initialize_struct_typedefs)
     pub fn resolve_struct_types(&mut self) -> Result<(), WdlError> {
         use std::collections::HashSet;
-        
+
         // Keep track of structs being resolved to prevent infinite recursion
         let mut resolving: HashSet<String> = HashSet::new();
-        
+
         // Resolve each struct typedef
         for i in 0..self.struct_typedefs.len() {
             Self::resolve_struct_members(&mut self.struct_typedefs, i, &mut resolving)?;
         }
-        
+
         Ok(())
     }
 
     /// Recursively resolve struct member types (similar to miniwdl's _resolve_struct_types)
     fn resolve_struct_members(
-        struct_typedefs: &mut [StructTypeDef], 
+        struct_typedefs: &mut [StructTypeDef],
         struct_index: usize,
-        resolving: &mut std::collections::HashSet<String>
+        resolving: &mut std::collections::HashSet<String>,
     ) -> Result<(), WdlError> {
-        
         let struct_name = struct_typedefs[struct_index].name.clone();
-        
+
         // Prevent circular dependencies
         if resolving.contains(&struct_name) {
             return Err(WdlError::Validation {
                 pos: struct_typedefs[struct_index].pos.clone(),
-                message: format!("Circular dependency detected in struct definition: {}", struct_name),
+                message: format!(
+                    "Circular dependency detected in struct definition: {}",
+                    struct_name
+                ),
                 source_text: None,
                 declared_wdl_version: None,
             });
         }
-        
+
         resolving.insert(struct_name.clone());
-        
+
         // Resolve nested struct types in members
         let mut updated_members = std::collections::HashMap::new();
         for (member_name, member_type) in &struct_typedefs[struct_index].members {
-            let resolved_type = Self::resolve_type_recursively(member_type, struct_typedefs, resolving)?;
+            let resolved_type =
+                Self::resolve_type_recursively(member_type, struct_typedefs, resolving)?;
             updated_members.insert(member_name.clone(), resolved_type);
         }
-        
+
         // Update the struct definition with resolved member types
         struct_typedefs[struct_index].members = updated_members;
-        
+
         resolving.remove(&struct_name);
         Ok(())
     }
@@ -1424,24 +1569,32 @@ impl Document {
     fn resolve_type_recursively(
         ty: &Type,
         struct_typedefs: &[StructTypeDef],
-        resolving: &std::collections::HashSet<String>
+        resolving: &std::collections::HashSet<String>,
     ) -> Result<Type, WdlError> {
         match ty {
-            Type::StructInstance { type_name, members: None, optional } => {
+            Type::StructInstance {
+                type_name,
+                members: None,
+                optional,
+            } => {
                 // Find the struct definition
                 if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
                     // Prevent circular reference
                     if resolving.contains(type_name) {
                         return Ok(ty.clone()); // Return as-is for circular references
                     }
-                    
+
                     // Recursively resolve member types
                     let mut resolved_members = std::collections::HashMap::new();
                     for (member_name, member_type) in &struct_def.members {
-                        let resolved_member_type = Self::resolve_type_recursively(member_type, struct_typedefs, resolving)?;
+                        let resolved_member_type = Self::resolve_type_recursively(
+                            member_type,
+                            struct_typedefs,
+                            resolving,
+                        )?;
                         resolved_members.insert(member_name.clone(), resolved_member_type);
                     }
-                    
+
                     Ok(Type::StructInstance {
                         type_name: type_name.clone(),
                         members: Some(resolved_members),
@@ -1452,17 +1605,29 @@ impl Document {
                     Ok(ty.clone())
                 }
             }
-            Type::Array { item_type, optional, nonempty } => {
-                let resolved_item_type = Self::resolve_type_recursively(item_type, struct_typedefs, resolving)?;
+            Type::Array {
+                item_type,
+                optional,
+                nonempty,
+            } => {
+                let resolved_item_type =
+                    Self::resolve_type_recursively(item_type, struct_typedefs, resolving)?;
                 Ok(Type::Array {
                     item_type: Box::new(resolved_item_type),
                     optional: *optional,
                     nonempty: *nonempty,
                 })
             }
-            Type::Map { key_type, value_type, optional, literal_keys } => {
-                let resolved_key_type = Self::resolve_type_recursively(key_type, struct_typedefs, resolving)?;
-                let resolved_value_type = Self::resolve_type_recursively(value_type, struct_typedefs, resolving)?;
+            Type::Map {
+                key_type,
+                value_type,
+                optional,
+                literal_keys,
+            } => {
+                let resolved_key_type =
+                    Self::resolve_type_recursively(key_type, struct_typedefs, resolving)?;
+                let resolved_value_type =
+                    Self::resolve_type_recursively(value_type, struct_typedefs, resolving)?;
                 Ok(Type::Map {
                     key_type: Box::new(resolved_key_type),
                     value_type: Box::new(resolved_value_type),
@@ -1470,9 +1635,15 @@ impl Document {
                     literal_keys: literal_keys.clone(),
                 })
             }
-            Type::Pair { left_type, right_type, optional } => {
-                let resolved_left_type = Self::resolve_type_recursively(left_type, struct_typedefs, resolving)?;
-                let resolved_right_type = Self::resolve_type_recursively(right_type, struct_typedefs, resolving)?;
+            Type::Pair {
+                left_type,
+                right_type,
+                optional,
+            } => {
+                let resolved_left_type =
+                    Self::resolve_type_recursively(left_type, struct_typedefs, resolving)?;
+                let resolved_right_type =
+                    Self::resolve_type_recursively(right_type, struct_typedefs, resolving)?;
                 Ok(Type::Pair {
                     left_type: Box::new(resolved_left_type),
                     right_type: Box::new(resolved_right_type),
@@ -1600,9 +1771,9 @@ impl Document {
         // 3. Resolve nested struct types (similar to miniwdl's _initialize_struct_typedefs)
         self.resolve_struct_types()?;
 
-        // 4. Type check all tasks (simplified for now)
-        for task in &self.tasks {
-            // TODO: Implement full task type checking
+        // 4. Type check all tasks
+        for task in &mut self.tasks {
+            task.typecheck(&self.struct_typedefs)?;
         }
 
         // 5. Resolve all calls in workflows

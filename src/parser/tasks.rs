@@ -13,7 +13,9 @@ use crate::tree::{Declaration, Task, Workflow, WorkflowElement};
 use std::collections::HashMap;
 
 /// Parse metadata section: meta { key: value, ... }
-fn parse_meta_section(stream: &mut TokenStream) -> ParseResult<HashMap<String, serde_json::Value>> {
+pub fn parse_meta_section(
+    stream: &mut TokenStream,
+) -> ParseResult<HashMap<String, serde_json::Value>> {
     // Expect "meta" or "parameter_meta" keyword
     let _keyword = match stream.peek_token() {
         Some(Token::Keyword(kw)) if kw == "meta" || kw == "parameter_meta" => {
