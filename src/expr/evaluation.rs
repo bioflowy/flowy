@@ -6,6 +6,7 @@ use crate::error::{HasSourcePosition, SourcePosition, WdlError};
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
 use std::collections::HashMap;
+use std::result;
 
 impl ExpressionBase for Expression {
     fn source_position(&self) -> &SourcePosition {

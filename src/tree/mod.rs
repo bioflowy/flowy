@@ -477,20 +477,8 @@ impl Task {
 
         // Type check output declarations
         for output in &mut self.outputs {
-            if let Some(ref mut expr) = output.expr {
-                let inferred_type = expr.infer_type(&type_env, &output_stdlib, struct_typedefs)?;
-                // Check that the inferred type is compatible with the declared type
-                if !inferred_type.coerces(&output.decl_type, true) {
-                    return Err(WdlError::StaticTypeMismatch {
-                        pos: expr.pos().clone(),
-                        expected: format!("{:?}", output.decl_type),
-                        actual: format!("{:?}", inferred_type),
-                        message: format!("Type mismatch in output declaration '{}'", output.name),
-                        source_text: None,
-                        declared_wdl_version: Some("1.2".to_string()),
-                    });
-                }
-            }
+            output.typecheck(&type_env, &output_stdlib, struct_typedefs)?;
+            type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
         }
 
         Ok(())

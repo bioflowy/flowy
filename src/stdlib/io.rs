@@ -512,7 +512,7 @@ fn json_to_wdl_value(json: serde_json::Value) -> Result<Value, WdlError> {
 pub fn create_read_json() -> Box<dyn Function> {
     Box::new(ReadFileFunction::new(
         "read_json",
-        Type::String { optional: false }, // Will be determined at runtime
+        Type::Any { optional: false }, // Returns Union type that can be coerced to any type
         |content| {
             let json_value: serde_json::Value =
                 serde_json::from_str(content).map_err(|e| WdlError::RuntimeError {

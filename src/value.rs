@@ -511,6 +511,11 @@ impl ValueBase for Value {
 impl Value {
     /// Base coercion method for simple types and common cases
     fn coerce_base(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        // Handle coercion to Any - Any type accepts any value as-is
+        if matches!(desired_type, Type::Any { .. }) {
+            return Ok(self.clone());
+        }
+
         // Handle coercion to String - almost everything can be coerced to string
         if let Type::String { .. } = desired_type {
             let str_repr = match self {
