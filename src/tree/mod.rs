@@ -1215,18 +1215,8 @@ impl Workflow {
         Self::typecheck_workflow_elements(&mut self.body, &mut type_env, &stdlib, struct_typedefs)?;
         // 4. Process output declarations (type check and add to environment)
         for output in &mut self.outputs {
-            if let Some(ref mut expr) = output.expr {
-                expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
-                let inferred_type = expr
-                    .get_type()
-                    .unwrap_or(&Type::String { optional: false })
-                    .clone();
-                // Add output to type environment so later outputs can reference it
-                type_env = type_env.bind(output.name.clone(), inferred_type, None);
-            } else {
-                // Add declared type to environment
-                type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
-            }
+            output.typecheck(&type_env, &stdlib, struct_typedefs)?;
+            type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
         }
 
         // 5. Save type environment for runtime use
