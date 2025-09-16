@@ -562,27 +562,53 @@ impl ExpressionBase for Expression {
                     return None;
                 }
 
-                // Collect all text parts
-                let text_parts: Vec<String> = parts
-                    .iter()
-                    .filter_map(|p| match p {
-                        StringPart::Text(text) => Some(text.clone()),
-                        _ => None,
-                    })
-                    .collect();
-
                 // Apply appropriate processing based on string type
                 let result = match string_type {
                     StringType::MultiLine => {
-                        // Apply multiline processing to the text
-                        process_multiline_text(text_parts)
+                        // For literals (no placeholders), we can simplify to text processing
+                        // First remove escaped newlines
+                        let mut processed_parts = Vec::new();
+                        for part in parts {
+                            if let StringPart::Text(text) = part {
+                                let processed = remove_escaped_newlines(text);
+                                processed_parts.push(StringPart::Text(processed));
+                            }
+                        }
+
+                        // Apply trimming and dedenting
+                        let trimmed_dedented = process_multiline_parts(&processed_parts);
+
+                        // Join text parts and decode escape sequences
+                        let mut result = String::new();
+                        for part in trimmed_dedented {
+                            if let StringPart::Text(text) = part {
+                                let decoded = decode_escape_sequences(&text);
+                                result.push_str(&decoded);
+                            }
+                        }
+                        result
                     }
                     StringType::TaskCommand => {
-                        // Apply dedent to task command text
-                        dedent_parts(&text_parts)
+                        // Apply dedent to task command parts (they're all text at this point)
+                        let dedented_parts = dedent_parts(parts);
+                        // Join all text parts back together
+                        let mut result = String::new();
+                        for part in dedented_parts {
+                            if let StringPart::Text(text) = part {
+                                result.push_str(&text);
+                            }
+                        }
+                        result
                     }
                     StringType::Regular => {
-                        // Just join the parts
+                        // Just join the text parts
+                        let text_parts: Vec<String> = parts
+                            .iter()
+                            .filter_map(|p| match p {
+                                StringPart::Text(text) => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect();
                         text_parts.join("")
                     }
                 };
@@ -689,15 +715,13 @@ fn eval_regular_string(
     Ok(Value::string(result))
 }
 
-/// Helper function to evaluate multiline strings
 fn eval_multiline_string(
     parts: &[StringPart],
     env: &Bindings<Value>,
     stdlib: &crate::stdlib::StdLib,
 ) -> Result<Value, WdlError> {
-    // First, process parts to handle escaped newlines
+    // Step 1: Process parts to handle escaped newlines (keep placeholders intact)
     let mut processed_parts = Vec::new();
-
     for part in parts {
         match part {
             StringPart::Text(text) => {
@@ -706,29 +730,32 @@ fn eval_multiline_string(
                 processed_parts.push(StringPart::Text(processed));
             }
             StringPart::Placeholder { .. } => {
+                // Keep placeholders as-is during this phase
                 processed_parts.push(part.clone());
             }
         }
     }
 
-    // Evaluate all placeholders
-    let mut text_parts = Vec::new();
-    for part in &processed_parts {
+    // Step 2: Apply trimming and dedenting with placeholders still as placeholders
+    let trimmed_dedented = process_multiline_parts(&processed_parts);
+
+    // Step 3: Now evaluate placeholders and decode escape sequences
+    let mut result = String::new();
+    for part in trimmed_dedented {
         match part {
             StringPart::Text(text) => {
-                // Decode escape sequences for multiline strings
-                let decoded = decode_escape_sequences(text);
-                text_parts.push(decoded);
+                // Decode escape sequences for text parts
+                let decoded = decode_escape_sequences(&text);
+                result.push_str(&decoded);
             }
             StringPart::Placeholder { expr, options } => {
-                let placeholder_text = evaluate_placeholder(expr, options, env, stdlib)?;
-                text_parts.push(placeholder_text);
+                // Evaluate placeholder
+                let placeholder_text = evaluate_placeholder(&expr, &options, env, stdlib)?;
+                result.push_str(&placeholder_text);
             }
         }
     }
 
-    // Apply multiline processing
-    let result = process_multiline_text(text_parts);
     Ok(Value::string(result))
 }
 
@@ -738,65 +765,84 @@ fn eval_task_command(
     env: &Bindings<Value>,
     stdlib: &crate::stdlib::StdLib,
 ) -> Result<Value, WdlError> {
-    // Process parts - don't remove escaped newlines for task commands
-    let mut text_parts = Vec::new();
+    // First evaluate placeholders but keep structure as StringPart
+    let mut evaluated_parts = Vec::new();
     for part in parts {
         match part {
             StringPart::Text(text) => {
                 // Task commands don't decode escape sequences
                 // They are passed as-is to the shell
-                text_parts.push(text.clone());
+                evaluated_parts.push(StringPart::Text(text.clone()));
             }
             StringPart::Placeholder { expr, options } => {
                 let placeholder_text = evaluate_placeholder(expr, options, env, stdlib)?;
-                text_parts.push(placeholder_text);
+                evaluated_parts.push(StringPart::Text(placeholder_text));
             }
         }
     }
 
     // Apply dedenting (without trimming)
-    let result = dedent_parts(&text_parts);
+    let dedented_parts = dedent_parts(&evaluated_parts);
+
+    // Join all text parts back together
+    let mut result = String::new();
+    for part in dedented_parts {
+        if let StringPart::Text(text) = part {
+            result.push_str(&text);
+        }
+    }
+
     Ok(Value::string(result))
 }
 
-/// Process multiline text: trim whitespace and apply dedent
-fn process_multiline_text(text_parts: Vec<String>) -> String {
-    let mut content = text_parts.join("");
+/// Process multiline parts: trim whitespace and apply dedent while keeping placeholders
+fn process_multiline_parts(parts: &[StringPart]) -> Vec<StringPart> {
+    // If there are no parts, return empty
+    if parts.is_empty() {
+        return Vec::new();
+    }
+
+    let mut processed_parts = parts.to_vec();
 
     // Trim whitespace from the left of the first line
-    if let Some(newline_pos) = content.find('\n') {
-        let first_line = &content[..newline_pos];
-        if first_line.trim().is_empty() {
-            // Remove the entire first line if it's only whitespace
-            content = content[newline_pos + 1..].to_string();
+    if let Some(StringPart::Text(first_text)) = processed_parts.first_mut() {
+        // Find first newline
+        if let Some(newline_pos) = first_text.find('\n') {
+            let first_line = &first_text[..newline_pos];
+            if first_line.trim().is_empty() {
+                // Remove the entire first line if it's only whitespace
+                *first_text = first_text[newline_pos + 1..].to_string();
+            } else {
+                // Just trim leading whitespace from first line
+                let trimmed = first_line.trim_start();
+                *first_text = format!("{}{}", trimmed, &first_text[newline_pos..]);
+            }
         } else {
-            // Just trim leading whitespace from first line
-            let trimmed = first_line.trim_start();
-            content = format!("{}{}", trimmed, &content[newline_pos..]);
+            // Single line - just trim leading whitespace
+            *first_text = first_text.trim_start().to_string();
         }
-    } else {
-        // Single line - just trim leading whitespace
-        content = content.trim_start().to_string();
     }
 
     // Trim whitespace from the right of the last line
-    if let Some(last_newline_pos) = content.rfind('\n') {
-        let last_line = &content[last_newline_pos + 1..];
-        if last_line.trim().is_empty() {
-            // Remove the entire last line if it's only whitespace
-            content = content[..last_newline_pos].to_string();
+    if let Some(StringPart::Text(last_text)) = processed_parts.last_mut() {
+        if let Some(last_newline_pos) = last_text.rfind('\n') {
+            let last_line = &last_text[last_newline_pos + 1..];
+            if last_line.trim().is_empty() {
+                // Remove the entire last line if it's only whitespace
+                *last_text = last_text[..last_newline_pos].to_string();
+            } else {
+                // Just trim trailing whitespace from last line
+                let trimmed = last_line.trim_end();
+                *last_text = format!("{}{}", &last_text[..last_newline_pos + 1], trimmed);
+            }
         } else {
-            // Just trim trailing whitespace from last line
-            let trimmed = last_line.trim_end();
-            content = format!("{}{}", &content[..last_newline_pos + 1], trimmed);
+            // Single line - just trim trailing whitespace
+            *last_text = last_text.trim_end().to_string();
         }
-    } else {
-        // Single line - just trim trailing whitespace
-        content = content.trim_end().to_string();
     }
 
-    // Now apply dedent
-    dedent(&content)
+    // Now apply dedent with placeholders still as placeholders
+    dedent_parts(&processed_parts)
 }
 
 /// Remove escaped newlines and following whitespace
@@ -869,67 +915,389 @@ fn decode_escape_sequences(text: &str) -> String {
     result
 }
 
-/// Dedent text by removing common leading whitespace
+#[cfg(test)]
 fn dedent(text: &str) -> String {
-    dedent_parts(&[text.to_string()])
+    // Convert string to StringPart array and back
+    let parts = vec![StringPart::Text(text.to_string())];
+    let dedented_parts = dedent_parts(&parts);
+
+    // Join all text parts back together
+    let mut result = String::new();
+    for part in dedented_parts {
+        if let StringPart::Text(text) = part {
+            result.push_str(&text);
+        }
+    }
+    result
 }
 
-/// Dedent multiple text parts
-fn dedent_parts(parts: &[String]) -> String {
-    let combined = parts.join("");
+fn dedent_parts(parts: &[StringPart]) -> Vec<StringPart> {
+    // Detect common leading whitespace on the non-blank lines
+    // Build a pseudo string where placeholders are replaced with "~{}"
+    let pseudo = parts
+        .iter()
+        .map(|part| match part {
+            StringPart::Text(text) => text.clone(),
+            StringPart::Placeholder { .. } => "~{}".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("");
 
-    if combined.is_empty() {
-        return String::new();
-    }
-
-    // Check if the original string ends with a newline
-    let ends_with_newline = combined.ends_with('\n');
-
-    let lines: Vec<&str> = combined.lines().collect();
-
-    if lines.is_empty() {
-        return if ends_with_newline {
-            "\n".to_string()
-        } else {
-            String::new()
-        };
-    }
-
-    // Find minimum indentation among non-blank lines
-    let mut min_indent: Option<usize> = None;
-    for line in &lines {
-        if !line.trim().is_empty() {
-            let indent = line.len() - line.trim_start().len();
-            min_indent = Some(match min_indent {
-                None => indent,
-                Some(current_min) => current_min.min(indent),
+    let mut common_ws: Option<usize> = None;
+    for line in pseudo.split('\n') {
+        let line_ws = line.len() - line.trim_start().len();
+        if line_ws < line.len() {
+            // This line has non-whitespace content
+            common_ws = Some(match common_ws {
+                None => line_ws,
+                Some(current) => current.min(line_ws),
             });
         }
     }
 
-    let indent_to_remove = min_indent.unwrap_or(0);
-
-    // Remove the common indentation
-    let dedented_lines: Vec<String> = lines
-        .iter()
-        .map(|line| {
-            if line.len() > indent_to_remove {
-                line[indent_to_remove..].to_string()
-            } else if line.trim().is_empty() {
-                // Keep blank lines as empty strings
-                String::new()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect();
-
-    let mut result = dedented_lines.join("\n");
-
-    // Preserve the original trailing newline behavior
-    if ends_with_newline && !result.ends_with('\n') {
-        result.push('\n');
+    // Remove the common leading whitespace, passing through placeholders
+    let common_ws = common_ws.unwrap_or(0);
+    if common_ws == 0 {
+        return parts.to_vec();
     }
 
-    result
+    let mut parts2 = Vec::new();
+    let mut at_new_line = true;
+
+    for part in parts {
+        match part {
+            StringPart::Placeholder { .. } => {
+                // Placeholder - pass through unchanged
+                at_new_line = false;
+                parts2.push(part.clone());
+            }
+            StringPart::Text(text) => {
+                let lines: Vec<&str> = text.split('\n').collect();
+                let mut lines2 = Vec::new();
+
+                for (i, line) in lines.iter().enumerate() {
+                    if at_new_line {
+                        // Remove common whitespace from the beginning of the line
+                        // For lines shorter than common_ws (blank lines with some whitespace),
+                        // we remove what whitespace is there
+                        let chars_to_remove = common_ws.min(line.len());
+                        lines2.push(&line[chars_to_remove..]);
+                    } else {
+                        // Not at new line (after placeholder) - keep line as is
+                        lines2.push(line);
+                    }
+
+                    // We're at a new line for the next iteration unless this is the last line
+                    // and the text doesn't end with a newline
+                    at_new_line = i < lines.len() - 1 || text.ends_with('\n');
+                }
+
+                let dedented_text = lines2.join("\n");
+                parts2.push(StringPart::Text(dedented_text));
+
+                // Update at_new_line based on whether this text part ends with newline
+                at_new_line = text.ends_with('\n');
+            }
+        }
+    }
+
+    parts2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::SourcePosition;
+
+    fn make_placeholder(expr_text: &str) -> StringPart {
+        StringPart::Placeholder {
+            expr: Box::new(Expression::String {
+                parts: vec![StringPart::Text(expr_text.to_string())],
+                string_type: StringType::Regular,
+                inferred_type: None,
+                pos: SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            }),
+            options: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_no_indentation() {
+        let parts = vec![StringPart::Text("line1\nline2\nline3".to_string())];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "line1\nline2\nline3");
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_with_common_indentation() {
+        let parts = vec![StringPart::Text(
+            "    line1\n    line2\n    line3".to_string(),
+        )];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "line1\nline2\nline3");
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_with_varying_indentation() {
+        let parts = vec![StringPart::Text(
+            "    line1\n  line2\n      line3".to_string(),
+        )];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "  line1\nline2\n    line3");
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_with_placeholder() {
+        let parts = vec![
+            StringPart::Text("    echo ".to_string()),
+            make_placeholder("value"),
+            StringPart::Text("\n    line2".to_string()),
+        ];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 3);
+
+        // First part should have indentation removed
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "echo ");
+        } else {
+            panic!("Expected Text variant at index 0");
+        }
+
+        // Placeholder should be unchanged
+        assert!(matches!(&result[1], StringPart::Placeholder { .. }));
+
+        // Third part should have indentation removed from the new line
+        if let StringPart::Text(text) = &result[2] {
+            assert_eq!(text, "\nline2");
+        } else {
+            panic!("Expected Text variant at index 2");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_placeholder_prevents_dedent_on_same_line() {
+        // When a placeholder is on a line, text after it on the same line
+        // should not be dedented
+        let parts = vec![
+            StringPart::Text("    line1\n    ".to_string()),
+            make_placeholder("value"),
+            StringPart::Text("  text_after_placeholder\n    line3".to_string()),
+        ];
+
+        let result = dedent_parts(&parts);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "line1\n");
+        } else {
+            panic!("Expected Text variant at index 0");
+        }
+
+        // Placeholder unchanged
+        assert!(matches!(&result[1], StringPart::Placeholder { .. }));
+
+        // Text after placeholder on same line keeps its spacing
+        if let StringPart::Text(text) = &result[2] {
+            assert_eq!(text, "  text_after_placeholder\nline3");
+        } else {
+            panic!("Expected Text variant at index 2");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_blank_lines() {
+        let parts = vec![StringPart::Text("    line1\n\n    line3".to_string())];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "line1\n\nline3");
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_blank_lines_with_whitespace() {
+        // Blank lines that contain only whitespace should have
+        // common whitespace removed, leaving just newline
+        let parts = vec![StringPart::Text(
+            "    line1\n        \n    line2".to_string(),
+        )];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            // The middle line had 8 spaces, common indent is 4
+            // So it should become 4 spaces after dedenting, not empty
+            assert_eq!(
+                text, "line1\n    \nline2",
+                "Blank line with 8 spaces should have 4 spaces after removing common indent of 4"
+            );
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_blank_lines_with_less_whitespace_than_common() {
+        // Blank lines with less whitespace than common should become empty
+        let parts = vec![StringPart::Text("    line1\n  \n    line2".to_string())];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            // The middle line has 2 spaces, common indent is 4
+            // According to spec, it should be trimmed to just newline
+            assert_eq!(
+                text, "line1\n\nline2",
+                "Blank line with 2 spaces should become empty when common indent is 4"
+            );
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_dedent_parts_multiple_placeholders() {
+        let parts = vec![
+            StringPart::Text("    echo ".to_string()),
+            make_placeholder("val1"),
+            StringPart::Text(" ".to_string()),
+            make_placeholder("val2"),
+            StringPart::Text("\n    line2".to_string()),
+        ];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 5);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "echo ");
+        } else {
+            panic!("Expected Text variant at index 0");
+        }
+
+        // Both placeholders should be unchanged
+        assert!(matches!(&result[1], StringPart::Placeholder { .. }));
+        assert!(matches!(&result[3], StringPart::Placeholder { .. }));
+
+        // Last part with new line should be dedented
+        if let StringPart::Text(text) = &result[4] {
+            assert_eq!(text, "\nline2");
+        } else {
+            panic!("Expected Text variant at index 4");
+        }
+    }
+
+    #[test]
+    fn test_dedent_helper_function() {
+        // Test the simple dedent helper that converts string to StringPart and back
+        let text = "    line1\n    line2\n    line3";
+        let result = dedent(text);
+        assert_eq!(result, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn test_dedent_parts_preserves_trailing_newline() {
+        let parts = vec![StringPart::Text("    line1\n    line2\n".to_string())];
+
+        let result = dedent_parts(&parts);
+        assert_eq!(result.len(), 1);
+
+        if let StringPart::Text(text) = &result[0] {
+            assert_eq!(text, "line1\nline2\n");
+        } else {
+            panic!("Expected Text variant");
+        }
+    }
+
+    #[test]
+    fn test_multiline_string_processing_order() {
+        // Test that multiline strings process in correct order:
+        // 1. Remove escaped newlines
+        // 2. Trim first/last lines
+        // 3. Dedent (with placeholders as placeholders)
+        // 4. Evaluate placeholders
+
+        // This test simulates what eval_multiline_string should do
+        use crate::env::Bindings;
+        use crate::stdlib::StdLib;
+        use crate::value::Value;
+
+        // Create test environment with a variable
+        let env =
+            Bindings::new().bind("name".to_string(), Value::string("World".to_string()), None);
+        let _stdlib = StdLib::new("1.2");
+
+        // Test case: multiline string with placeholder that affects dedenting
+        let parts = vec![
+            StringPart::Text("    Hello ".to_string()),
+            StringPart::Placeholder {
+                expr: Box::new(Expression::Ident {
+                    name: "name".to_string(),
+                    inferred_type: None,
+                    pos: SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+                }),
+                options: HashMap::new(),
+            },
+            StringPart::Text("\n    Line 2".to_string()),
+        ];
+
+        // Step 1: Process escaped newlines (skipped in this test - no escaped newlines)
+
+        // Step 2: Trim first/last lines would happen here in full implementation
+
+        // Step 3: Dedent with placeholders still as placeholders
+        let dedented = dedent_parts(&parts);
+
+        // Verify dedenting happened with placeholder in place
+        assert_eq!(dedented.len(), 3);
+        if let StringPart::Text(text) = &dedented[0] {
+            assert_eq!(text, "Hello ");
+        }
+        // Placeholder should be unchanged
+        assert!(matches!(&dedented[1], StringPart::Placeholder { .. }));
+        if let StringPart::Text(text) = &dedented[2] {
+            assert_eq!(text, "\nLine 2");
+        }
+
+        // Step 4: Now evaluate placeholders
+        let mut final_result = String::new();
+        for part in dedented {
+            match part {
+                StringPart::Text(text) => final_result.push_str(&text),
+                StringPart::Placeholder { expr, options } => {
+                    // In real implementation, would call evaluate_placeholder
+                    // For this test, we know it should evaluate to "World"
+                    final_result.push_str("World");
+                }
+            }
+        }
+
+        assert_eq!(final_result, "Hello World\nLine 2");
+    }
 }
