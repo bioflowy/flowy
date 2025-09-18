@@ -60,6 +60,28 @@ pub fn create_round_function() -> Box<dyn Function> {
     )
 }
 
+/// Create min function that works with both Int and Float
+/// Similar to miniwdl's _ArithmeticOperator for min
+pub fn create_min_function() -> Box<dyn Function> {
+    use crate::stdlib::operators::create_arithmetic_operator;
+    create_arithmetic_operator(
+        "min".to_string(),
+        |left, right| left.min(right),    // i64 min
+        |left, right| left.min(right),    // f64 min
+    )
+}
+
+/// Create max function that works with both Int and Float
+/// Similar to miniwdl's _ArithmeticOperator for max
+pub fn create_max_function() -> Box<dyn Function> {
+    use crate::stdlib::operators::create_arithmetic_operator;
+    create_arithmetic_operator(
+        "max".to_string(),
+        |left, right| left.max(right),    // i64 max
+        |left, right| left.max(right),    // f64 max
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +150,69 @@ mod tests {
         let args = vec![Expression::float(pos.clone(), -0.5)];
         let result = round_fn.eval(&args, &env, &stdlib).unwrap();
         assert_eq!(result.as_int().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_min_function() {
+        let min_fn = create_min_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        // Test integer min
+        let args = vec![
+            Expression::int(pos.clone(), 5),
+            Expression::int(pos.clone(), 3),
+        ];
+        let result = min_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 3);
+
+        // Test float min
+        let args = vec![
+            Expression::float(pos.clone(), 5.5),
+            Expression::float(pos.clone(), 3.2),
+        ];
+        let result = min_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!((result.as_float().unwrap() - 3.2).abs() < f64::EPSILON);
+
+        // Test mixed types (should return float)
+        let args = vec![
+            Expression::int(pos.clone(), 5),
+            Expression::float(pos.clone(), 3.2),
+        ];
+        let result = min_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!((result.as_float().unwrap() - 3.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_max_function() {
+        let max_fn = create_max_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        // Test integer max
+        let args = vec![
+            Expression::int(pos.clone(), 5),
+            Expression::int(pos.clone(), 8),
+        ];
+        let result = max_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 8);
+
+        // Test float max
+        let args = vec![
+            Expression::float(pos.clone(), 5.5),
+            Expression::float(pos.clone(), 3.2),
+        ];
+        let result = max_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!((result.as_float().unwrap() - 5.5).abs() < f64::EPSILON);
+
+        // Test mixed types (should return float)
+        let args = vec![
+            Expression::int(pos.clone(), 5),
+            Expression::float(pos.clone(), 7.8),
+        ];
+        let result = max_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!((result.as_float().unwrap() - 7.8).abs() < f64::EPSILON);
     }
 }

@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 // Import submodules
 pub mod task_output;
 pub mod math;
+pub mod operators;
 
 // Re-export all function structs for convenience
 
@@ -361,8 +362,8 @@ impl StdLib {
         self.register_function(math::create_floor_function());
         self.register_function(math::create_ceil_function());
         self.register_function(math::create_round_function());
-        // self.register_function(Box::new(MinFunction));
-        // self.register_function(Box::new(MaxFunction));
+        self.register_function(math::create_min_function());
+        self.register_function(math::create_max_function());
 
         // Array functions
         // self.register_function(Box::new(LengthFunction));
@@ -434,10 +435,10 @@ impl StdLib {
     /// Register all operators
     fn register_operators(&mut self) {
         // Arithmetic operators
-        // self.register_function(Box::new(AddOperator));
-        // self.register_function(Box::new(SubtractOperator));
-        // self.register_function(Box::new(MultiplyOperator));
-        // self.register_function(Box::new(DivideOperator));
+        self.register_function(operators::create_add_function());    // Special add operator with string concatenation
+        self.register_function(operators::create_sub_function());   // Standard subtraction
+        self.register_function(operators::create_mul_function());   // Standard multiplication
+        self.register_function(operators::create_div_function());   // Standard division
         // self.register_function(Box::new(RemainderOperator));
 
         // Comparison operators
@@ -486,10 +487,17 @@ mod tests {
         assert!(stdlib.get_function("floor").is_some());
         assert!(stdlib.get_function("ceil").is_some());
         assert!(stdlib.get_function("round").is_some());
+        assert!(stdlib.get_function("min").is_some());
+        assert!(stdlib.get_function("max").is_some());
+
+        // Test that arithmetic operators are registered
+        assert!(stdlib.get_function("_add").is_some());
+        assert!(stdlib.get_function("_sub").is_some());
+        assert!(stdlib.get_function("_mul").is_some());
+        assert!(stdlib.get_function("_div").is_some());
 
         // Test that other functions are not registered yet
         assert!(stdlib.get_function("length").is_none());
-        assert!(stdlib.get_function("_add").is_none());
         assert!(stdlib.get_function("nonexistent").is_none());
     }
 
