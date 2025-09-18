@@ -1,0 +1,14 @@
+{
+  "commandPermissions": {
+    "allow": [
+      {
+        "program": "cargo",
+        "args": ["*"]
+      },
+      {
+        "program": "./target/debug/miniwdl-rust",
+        "args": ["*"]
+      }
+    ]
+  }
+}
