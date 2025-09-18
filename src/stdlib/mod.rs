@@ -3,22 +3,22 @@
 //! This module provides the standard library functions and operators for WDL,
 //! similar to miniwdl's StdLib.py
 
-use crate::error::{WdlError, SourcePosition};
-use crate::expr::{Expression, ExpressionBase};
 use crate::env::Bindings;
+use crate::error::{SourcePosition, WdlError};
+use crate::expr::{Expression, ExpressionBase};
 use crate::types::Type;
 use crate::value::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 // Import submodules
-pub mod task_output;
+pub mod arrays;
+pub mod io;
+pub mod map;
 pub mod math;
 pub mod operators;
-pub mod io;
 pub mod strings;
-pub mod arrays;
-pub mod map;
+pub mod task_output;
 
 // Re-export all function structs for convenience
 
@@ -69,7 +69,6 @@ impl PathMapper for DefaultPathMapper {
 pub struct TaskPathMapper {
     task_dir: PathBuf,
 }
-
 
 impl TaskPathMapper {
     pub fn new(task_dir: PathBuf) -> Self {
@@ -125,11 +124,22 @@ impl PathMapper for TaskPathMapper {
 pub trait Function: Send + Sync {
     /// Check argument types and return the result type
     /// Performs type inference on the given expression arguments
-    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError>;
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError>;
 
     /// Evaluate the function with given expression arguments
     /// Performs argument evaluation and then function execution
-    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &StdLib) -> Result<Value, WdlError>;
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &StdLib,
+    ) -> Result<Value, WdlError>;
 
     /// Get the function name
     fn name(&self) -> &str;
@@ -164,7 +174,13 @@ impl StaticFunction {
 }
 
 impl Function for StaticFunction {
-    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         // Check argument count
         if args.len() != self.argument_types.len() {
             let pos = if args.is_empty() {
@@ -186,7 +202,8 @@ impl Function for StaticFunction {
         }
 
         // Check each argument type
-        for (i, (arg_expr, expected_type)) in args.iter_mut().zip(&self.argument_types).enumerate() {
+        for (i, (arg_expr, expected_type)) in args.iter_mut().zip(&self.argument_types).enumerate()
+        {
             let actual_type = arg_expr.infer_type(type_env, stdlib, struct_typedefs)?;
             if !actual_type.coerces(expected_type, true) {
                 return Err(WdlError::Validation {
@@ -207,22 +224,28 @@ impl Function for StaticFunction {
         Ok(self.return_type.clone())
     }
 
-    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &StdLib,
+    ) -> Result<Value, WdlError> {
         // Evaluate and coerce arguments using the utility function
-        let evaluated_args = evaluate_and_coerce_args(args, &self.argument_types, env, stdlib, &self.name)?;
+        let evaluated_args =
+            evaluate_and_coerce_args(args, &self.argument_types, env, stdlib, &self.name)?;
 
         // Call the implementation function
         let result = (self.implementation)(&evaluated_args)?;
 
         // Coerce result to expected return type
-        result.coerce(&self.return_type).map_err(|_| {
-            WdlError::RuntimeError {
+        result
+            .coerce(&self.return_type)
+            .map_err(|_| WdlError::RuntimeError {
                 message: format!(
                     "Function '{}' result cannot be coerced to return type {}",
                     self.name, self.return_type
                 ),
-            }
-        })
+            })
     }
 
     fn name(&self) -> &str {
@@ -243,11 +266,13 @@ impl Function for StaticFunction {
 ///
 /// # Example
 /// ```rust
-/// let floor_fn = create_static_function(
+/// use miniwdl_rust::stdlib::create_static_function;
+/// use miniwdl_rust::{Type, Value, WdlError};
+/// let _floor_fn = create_static_function(
 ///     "floor".to_string(),
 ///     vec![Type::float(false)],
 ///     Type::int(false),
-///     |args| {
+///     |args| -> Result<Value, WdlError> {
 ///         let value = args[0].as_float().unwrap();
 ///         Ok(Value::int(value.floor() as i64))
 ///     }
@@ -262,7 +287,12 @@ pub fn create_static_function<F>(
 where
     F: Fn(&[Value]) -> Result<Value, WdlError> + Send + Sync + 'static,
 {
-    Box::new(StaticFunction::new(name, argument_types, return_type, implementation))
+    Box::new(StaticFunction::new(
+        name,
+        argument_types,
+        return_type,
+        implementation,
+    ))
 }
 
 /// Evaluate and coerce expressions to values with the expected types
@@ -302,16 +332,17 @@ pub fn evaluate_and_coerce_args(
     let mut evaluated_args = Vec::new();
     for (i, (arg_expr, expected_type)) in args.iter().zip(expected_types).enumerate() {
         let arg_value = arg_expr.eval(env, stdlib)?;
-        let coerced_value = arg_value.coerce(expected_type).map_err(|_| {
-            WdlError::RuntimeError {
-                message: format!(
-                    "Function '{}' argument {} cannot be coerced to type {}",
-                    function_name,
-                    i + 1,
-                    expected_type
-                ),
-            }
-        })?;
+        let coerced_value =
+            arg_value
+                .coerce(expected_type)
+                .map_err(|_| WdlError::RuntimeError {
+                    message: format!(
+                        "Function '{}' argument {} cannot be coerced to type {}",
+                        function_name,
+                        i + 1,
+                        expected_type
+                    ),
+                })?;
         evaluated_args.push(coerced_value);
     }
 
@@ -330,7 +361,12 @@ pub struct StdLib {
 impl StdLib {
     /// Create a new standard library instance for the given WDL version
     pub fn new(wdl_version: &str) -> Self {
-        Self::with_path_mapper(wdl_version, Box::new(DefaultPathMapper), false, std::env::temp_dir().to_string_lossy().to_string())
+        Self::with_path_mapper(
+            wdl_version,
+            Box::new(DefaultPathMapper),
+            false,
+            std::env::temp_dir().to_string_lossy().to_string(),
+        )
     }
 
     /// Create a standard library instance with custom path mapper and context
@@ -416,22 +452,23 @@ impl StdLib {
         self.register_function(strings::create_sub_function());
         self.register_function(strings::create_basename_function());
         self.register_function(strings::create_join_paths_function());
-        // self.register_function(Box::new(SepFunction));
+        self.register_function(strings::create_sep_function());
 
         // Type functions
-        // self.register_function(Box::new(DefinedFunction));
+        self.register_function(strings::create_defined_function());
 
         // I/O functions
         // stdout() and stderr() are only available in task output context
         if self.is_task_context {
-            // self.register_function(Box::new(StdoutFunction));
-            // self.register_function(Box::new(StderrFunction));
+            self.register_function(io::create_stdout_function());
+            self.register_function(io::create_stderr_function());
 
             // glob() function is only available in task context
-            // if let Some(task_mapper) = self.path_mapper.as_any().downcast_ref::<TaskPathMapper>() {
-            //     self.register_function(io::create_glob(task_mapper.task_dir().clone()));
-            // }
+            self.register_function(io::create_glob_function(self.path_mapper.clone_boxed()));
         }
+
+        // size() function is available in all contexts
+        self.register_function(io::create_size_function(self.path_mapper.clone_boxed()));
 
         // Write functions (require PathMapper and write_dir)
         self.register_write_functions();
@@ -446,29 +483,29 @@ impl StdLib {
     /// Register all operators
     fn register_operators(&mut self) {
         // Arithmetic operators
-        self.register_function(operators::create_add_function());    // Special add operator with string concatenation
-        self.register_function(operators::create_sub_function());   // Standard subtraction
-        self.register_function(operators::create_mul_function());   // Standard multiplication
-        self.register_function(operators::create_div_function());   // Standard division
-        // self.register_function(Box::new(RemainderOperator));
+        self.register_function(operators::create_add_function()); // Special add operator with string concatenation
+        self.register_function(operators::create_sub_function()); // Standard subtraction
+        self.register_function(operators::create_mul_function()); // Standard multiplication
+        self.register_function(operators::create_div_function()); // Standard division
+        self.register_function(operators::create_rem_function()); // Remainder (modulo)
 
         // Comparison operators
-        self.register_function(operators::create_lt_function());    // Less than (<)
-        self.register_function(operators::create_lte_function());   // Less than or equal (<=)
-        self.register_function(operators::create_gt_function());    // Greater than (>)
-        self.register_function(operators::create_gte_function());   // Greater than or equal (>=)
+        self.register_function(operators::create_lt_function()); // Less than (<)
+        self.register_function(operators::create_lte_function()); // Less than or equal (<=)
+        self.register_function(operators::create_gt_function()); // Greater than (>)
+        self.register_function(operators::create_gte_function()); // Greater than or equal (>=)
 
         // Equality operators
-        self.register_function(operators::create_eqeq_function());  // Equal (==)
-        self.register_function(operators::create_neq_function());   // Not equal (!=)
+        self.register_function(operators::create_eqeq_function()); // Equal (==)
+        self.register_function(operators::create_neq_function()); // Not equal (!=)
 
         // Logical operators
-        // self.register_function(Box::new(LogicalAndOperator));
-        // self.register_function(Box::new(LogicalOrOperator));
-        // self.register_function(Box::new(LogicalNotOperator));
+        self.register_function(operators::create_logical_and_function()); // Logical AND (&&)
+        self.register_function(operators::create_logical_or_function()); // Logical OR (||)
+        self.register_function(operators::create_logical_not_function()); // Logical NOT (!)
 
         // Unary operators
-        // self.register_function(Box::new(NegateOperator));
+        self.register_function(operators::create_negate_function()); // Numeric negation (unary -)
     }
 
     /// Register a function with the library
@@ -480,10 +517,16 @@ impl StdLib {
     /// Register read functions
     fn register_read_functions(&mut self) {
         // Register read functions with PathMapper
-        self.register_function(io::create_read_string_function(self.path_mapper.clone_boxed()));
+        self.register_function(io::create_read_string_function(
+            self.path_mapper.clone_boxed(),
+        ));
         self.register_function(io::create_read_int_function(self.path_mapper.clone_boxed()));
-        self.register_function(io::create_read_float_function(self.path_mapper.clone_boxed()));
-        self.register_function(io::create_read_boolean_function(self.path_mapper.clone_boxed()));
+        self.register_function(io::create_read_float_function(
+            self.path_mapper.clone_boxed(),
+        ));
+        self.register_function(io::create_read_boolean_function(
+            self.path_mapper.clone_boxed(),
+        ));
     }
 
     /// Register write functions
@@ -491,19 +534,19 @@ impl StdLib {
         // Register write functions with PathMapper and write_dir
         self.register_function(io::create_write_lines_function(
             self.path_mapper.clone_boxed(),
-            self.write_dir.clone()
+            self.write_dir.clone(),
         ));
         self.register_function(io::create_write_tsv_function(
             self.path_mapper.clone_boxed(),
-            self.write_dir.clone()
+            self.write_dir.clone(),
         ));
         self.register_function(io::create_write_map_function(
             self.path_mapper.clone_boxed(),
-            self.write_dir.clone()
+            self.write_dir.clone(),
         ));
         self.register_function(io::create_write_json_function(
             self.path_mapper.clone_boxed(),
-            self.write_dir.clone()
+            self.write_dir.clone(),
         ));
     }
 
@@ -516,8 +559,8 @@ impl StdLib {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::Expression;
     use crate::error::SourcePosition;
+    use crate::expr::Expression;
 
     #[test]
     fn test_stdlib_creation() {
@@ -538,6 +581,7 @@ mod tests {
         assert!(stdlib.get_function("_sub").is_some());
         assert!(stdlib.get_function("_mul").is_some());
         assert!(stdlib.get_function("_div").is_some());
+        assert!(stdlib.get_function("_rem").is_some());
 
         // Test that read functions are registered
         assert!(stdlib.get_function("read_string").is_some());
@@ -551,8 +595,12 @@ mod tests {
         assert!(stdlib.get_function("write_map").is_some());
         assert!(stdlib.get_function("write_json").is_some());
 
-        // Test that other functions are not registered yet
-        assert!(stdlib.get_function("length").is_none());
+        // Test that array functions are registered
+        assert!(stdlib.get_function("length").is_some());
+        assert!(stdlib.get_function("select_first").is_some());
+        assert!(stdlib.get_function("select_all").is_some());
+
+        // Test that non-existent functions are not registered
         assert!(stdlib.get_function("nonexistent").is_none());
     }
 
@@ -566,7 +614,7 @@ mod tests {
             |args| {
                 let value = args[0].as_float().unwrap();
                 Ok(Value::int(value.floor() as i64))
-            }
+            },
         );
 
         assert_eq!(floor_fn.name(), "floor");
@@ -577,7 +625,9 @@ mod tests {
         let type_env = Bindings::new();
         let stdlib = StdLib::new("1.0");
 
-        let result_type = floor_fn.infer_type(&mut arg_exprs, &type_env, &stdlib, &[]).unwrap();
+        let result_type = floor_fn
+            .infer_type(&mut arg_exprs, &type_env, &stdlib, &[])
+            .unwrap();
         assert_eq!(result_type, Type::int(false));
 
         // Test evaluation
@@ -596,7 +646,7 @@ mod tests {
             |args| {
                 let value = args[0].as_float().unwrap();
                 Ok(Value::int(value.floor() as i64))
-            }
+            },
         );
 
         let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);

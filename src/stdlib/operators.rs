@@ -1,9 +1,9 @@
 //! Arithmetic and comparison operators for WDL standard library
 
-use crate::stdlib::{Function, evaluate_and_coerce_args};
-use crate::error::{WdlError, SourcePosition};
-use crate::expr::{Expression, ExpressionBase};
 use crate::env::Bindings;
+use crate::error::{SourcePosition, WdlError};
+use crate::expr::{Expression, ExpressionBase};
+use crate::stdlib::{evaluate_and_coerce_args, Function};
 use crate::types::Type;
 use crate::value::Value;
 
@@ -22,8 +22,299 @@ pub struct ComparisonOperator {
 /// Equality operator implementation that handles equality/inequality testing
 pub struct EqualityOperator {
     name: String,
+    #[allow(dead_code)]
     negate: bool,
     operation: Box<dyn Fn(&Value, &Value) -> Result<Value, WdlError> + Send + Sync>,
+}
+
+/// Logical operator implementation for && and || with short-circuit evaluation
+pub struct LogicalOperator {
+    name: String,
+    is_and: bool, // true for &&, false for ||
+}
+
+/// Logical NOT operator implementation for !
+pub struct LogicalNotOperator;
+
+/// Numeric negation operator implementation for unary minus
+pub struct NegateOperator;
+
+impl LogicalOperator {
+    pub fn new_and() -> Self {
+        Self {
+            name: "_and".to_string(),
+            is_and: true,
+        }
+    }
+
+    pub fn new_or() -> Self {
+        Self {
+            name: "_or".to_string(),
+            is_and: false,
+        }
+    }
+}
+
+impl Function for LogicalOperator {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 2 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Logical operator '{}' requires exactly 2 arguments, got {}",
+                    self.name,
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Both arguments must be Boolean
+        let left_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let right_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Check if types can be coerced to Boolean
+        let bool_type = Type::boolean(false);
+        if !bool_type.coerces(&left_type, true) {
+            return Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!(
+                    "Left operand of '{}' must be Boolean, got {}",
+                    self.name, left_type
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+        if !bool_type.coerces(&right_type, true) {
+            return Err(WdlError::Validation {
+                pos: args[1].source_position().clone(),
+                message: format!(
+                    "Right operand of '{}' must be Boolean, got {}",
+                    self.name, right_type
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        Ok(bool_type)
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Logical operator '{}' requires exactly 2 arguments, got {}",
+                    self.name,
+                    args.len()
+                ),
+            });
+        }
+
+        // Evaluate left operand
+        let left = args[0].eval(env, stdlib)?;
+        let left_bool = left.as_bool().ok_or_else(|| WdlError::RuntimeError {
+            message: format!("Left operand of '{}' must be Boolean", self.name),
+        })?;
+
+        // Short-circuit evaluation
+        if self.is_and {
+            // For &&: if left is false, return false without evaluating right
+            if !left_bool {
+                return Ok(Value::boolean(false));
+            }
+            // If left is true, evaluate and return right operand
+            let right = args[1].eval(env, stdlib)?;
+            let right_bool = right.as_bool().ok_or_else(|| WdlError::RuntimeError {
+                message: format!("Right operand of '{}' must be Boolean", self.name),
+            })?;
+            Ok(Value::boolean(right_bool))
+        } else {
+            // For ||: if left is true, return true without evaluating right
+            if left_bool {
+                return Ok(Value::boolean(true));
+            }
+            // If left is false, evaluate and return right operand
+            let right = args[1].eval(env, stdlib)?;
+            let right_bool = right.as_bool().ok_or_else(|| WdlError::RuntimeError {
+                message: format!("Right operand of '{}' must be Boolean", self.name),
+            })?;
+            Ok(Value::boolean(right_bool))
+        }
+    }
+}
+
+impl Function for LogicalNotOperator {
+    fn name(&self) -> &str {
+        "_not"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Logical NOT operator '!' requires exactly 1 argument, got {}",
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Argument must be Boolean
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let bool_type = Type::boolean(false);
+
+        if !bool_type.coerces(&arg_type, true) {
+            return Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!("Operand of '!' must be Boolean, got {}", arg_type),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        Ok(bool_type)
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Logical NOT operator '!' requires exactly 1 argument, got {}",
+                    args.len()
+                ),
+            });
+        }
+
+        let operand = args[0].eval(env, stdlib)?;
+        let bool_val = operand.as_bool().ok_or_else(|| WdlError::RuntimeError {
+            message: "Operand of '!' must be Boolean".to_string(),
+        })?;
+
+        Ok(Value::boolean(!bool_val))
+    }
+}
+
+impl Function for NegateOperator {
+    fn name(&self) -> &str {
+        "_neg"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Negation operator '-' requires exactly 1 argument, got {}",
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Argument must be Int or Float
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        match &arg_type {
+            Type::Int { .. } => Ok(Type::int(false)),
+            Type::Float { .. } => Ok(Type::float(false)),
+            _ => {
+                // Check if it can be coerced to numeric
+                let int_type = Type::int(false);
+                let float_type = Type::float(false);
+                if int_type.coerces(&arg_type, true) {
+                    Ok(Type::int(false))
+                } else if float_type.coerces(&arg_type, true) {
+                    Ok(Type::float(false))
+                } else {
+                    Err(WdlError::Validation {
+                        pos: args[0].source_position().clone(),
+                        message: format!("Operand of '-' must be Int or Float, got {}", arg_type),
+                        source_text: None,
+                        declared_wdl_version: None,
+                    })
+                }
+            }
+        }
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Negation operator '-' requires exactly 1 argument, got {}",
+                    args.len()
+                ),
+            });
+        }
+
+        let operand = args[0].eval(env, stdlib)?;
+
+        match operand {
+            Value::Int { value, .. } => Ok(Value::int(-value)),
+            Value::Float { value, .. } => Ok(Value::float(-value)),
+            _ => Err(WdlError::RuntimeError {
+                message: format!("Cannot negate non-numeric value: {:?}", operand),
+            }),
+        }
+    }
 }
 
 impl EqualityOperator {
@@ -52,46 +343,83 @@ impl EqualityOperator {
             (Type::Boolean { .. }, Type::Boolean { .. }) => true,
             (Type::File { .. }, Type::File { .. }) => true,
             (Type::Directory { .. }, Type::Directory { .. }) => true,
-            
+
             // Int and Float are equatable (numeric coercion)
             (Type::Int { .. }, Type::Float { .. }) => true,
             (Type::Float { .. }, Type::Int { .. }) => true,
-            
+
             // Arrays are equatable if their item types are equatable
-            (Type::Array { item_type: left_item, .. }, Type::Array { item_type: right_item, .. }) => {
-                self.are_equatable_types(left_item, right_item)
-            },
-            
+            (
+                Type::Array {
+                    item_type: left_item,
+                    ..
+                },
+                Type::Array {
+                    item_type: right_item,
+                    ..
+                },
+            ) => self.are_equatable_types(left_item, right_item),
+
             // Maps are equatable if their key and value types are equatable
-            (Type::Map { key_type: left_key, value_type: left_val, .. }, 
-             Type::Map { key_type: right_key, value_type: right_val, .. }) => {
-                self.are_equatable_types(left_key, right_key) && 
-                self.are_equatable_types(left_val, right_val)
-            },
-            
+            (
+                Type::Map {
+                    key_type: left_key,
+                    value_type: left_val,
+                    ..
+                },
+                Type::Map {
+                    key_type: right_key,
+                    value_type: right_val,
+                    ..
+                },
+            ) => {
+                self.are_equatable_types(left_key, right_key)
+                    && self.are_equatable_types(left_val, right_val)
+            }
+
             // Pairs are equatable if both components are equatable
-            (Type::Pair { left_type: ll, right_type: lr, .. }, 
-             Type::Pair { left_type: rl, right_type: rr, .. }) => {
-                self.are_equatable_types(ll, rl) && self.are_equatable_types(lr, rr)
-            },
-            
+            (
+                Type::Pair {
+                    left_type: ll,
+                    right_type: lr,
+                    ..
+                },
+                Type::Pair {
+                    left_type: rl,
+                    right_type: rr,
+                    ..
+                },
+            ) => self.are_equatable_types(ll, rl) && self.are_equatable_types(lr, rr),
+
             // StructInstances with same type name are equatable
-            (Type::StructInstance { type_name: left_name, .. }, 
-             Type::StructInstance { type_name: right_name, .. }) => {
-                left_name == right_name
-            },
-            
+            (
+                Type::StructInstance {
+                    type_name: left_name,
+                    ..
+                },
+                Type::StructInstance {
+                    type_name: right_name,
+                    ..
+                },
+            ) => left_name == right_name,
+
             // Any type is equatable with any other type
             (Type::Any { .. }, _) => true,
             (_, Type::Any { .. }) => true,
-            
+
             // Different base types are not equatable
             _ => false,
         }
     }
 }
 impl Function for EqualityOperator {
-    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         // Check argument count
         if args.len() != 2 {
             let pos = if args.is_empty() {
@@ -119,10 +447,7 @@ impl Function for EqualityOperator {
         if !self.are_equatable_types(&left_type, &right_type) {
             return Err(WdlError::Validation {
                 pos: args[0].source_position().clone(),
-                message: format!(
-                    "Cannot test equality of {} and {}",
-                    left_type, right_type
-                ),
+                message: format!("Cannot test equality of {} and {}", left_type, right_type),
                 source_text: None,
                 declared_wdl_version: None,
             });
@@ -132,7 +457,12 @@ impl Function for EqualityOperator {
         Ok(Type::boolean(false))
     }
 
-    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         // Check argument count
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
@@ -180,7 +510,13 @@ impl ComparisonOperator {
     }
 }
 impl Function for ComparisonOperator {
-    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         // Check argument count
         if args.len() != 2 {
             let pos = if args.is_empty() {
@@ -221,7 +557,12 @@ impl Function for ComparisonOperator {
         Ok(Type::boolean(false))
     }
 
-    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         // Check argument count
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
@@ -275,7 +616,13 @@ impl ArithmeticOperator {
 }
 
 impl Function for ArithmeticOperator {
-    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         // Check argument count
         if args.len() != 2 {
             let pos = if args.is_empty() {
@@ -328,7 +675,12 @@ impl Function for ArithmeticOperator {
         Ok(self.infer_result_type(&left_type, &right_type))
     }
 
-    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         // Check argument count
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
@@ -370,6 +722,7 @@ impl Function for ArithmeticOperator {
 ///
 /// # Example
 /// ```rust
+/// use miniwdl_rust::stdlib::operators::create_arithmetic_operator;
 /// let add_fn = create_arithmetic_operator(
 ///     "_add".to_string(),
 ///     |l, r| l + r,    // i64 addition
@@ -388,17 +741,31 @@ where
     let name_clone = name.clone();
     let operation = move |left: &Value, right: &Value| -> Result<Value, WdlError> {
         // Check if both values are Int variants for precision
-        if let (Value::Int { value: left_int, .. }, Value::Int { value: right_int, .. }) = (left, right) {
+        if let (
+            Value::Int {
+                value: left_int, ..
+            },
+            Value::Int {
+                value: right_int, ..
+            },
+        ) = (left, right)
+        {
             // Both are Int, use integer operation
             let result = int_op(*left_int, *right_int);
             Ok(Value::int(result))
         } else {
             // At least one is Float or can be converted to Float, use float operation
             let left_float = left.as_float().ok_or_else(|| WdlError::RuntimeError {
-                message: format!("Cannot convert left operand to number for {} operation", name_clone),
+                message: format!(
+                    "Cannot convert left operand to number for {} operation",
+                    name_clone
+                ),
             })?;
             let right_float = right.as_float().ok_or_else(|| WdlError::RuntimeError {
-                message: format!("Cannot convert right operand to number for {} operation", name_clone),
+                message: format!(
+                    "Cannot convert right operand to number for {} operation",
+                    name_clone
+                ),
             })?;
             let result = float_op(left_float, right_float);
             Ok(Value::float(result))
@@ -427,6 +794,7 @@ where
 ///
 /// # Example
 /// ```rust
+/// use miniwdl_rust::stdlib::operators::create_comparison_operator;
 /// let lt_fn = create_comparison_operator(
 ///     "_lt".to_string(),
 ///     |l, r| l < r,        // i64 comparison
@@ -449,12 +817,20 @@ where
     let operation = move |left: &Value, right: &Value| -> Result<Value, WdlError> {
         // Check if both values are strings
         if let (Some(left_str), Some(right_str)) = (left.as_string(), right.as_string()) {
-            let result = string_op(&left_str, &right_str);
+            let result = string_op(left_str, right_str);
             return Ok(Value::boolean(result));
         }
 
         // Check if both values are Int for precision
-        if let (Value::Int { value: left_int, .. }, Value::Int { value: right_int, .. }) = (left, right) {
+        if let (
+            Value::Int {
+                value: left_int, ..
+            },
+            Value::Int {
+                value: right_int, ..
+            },
+        ) = (left, right)
+        {
             let result = int_op(*left_int, *right_int);
             return Ok(Value::boolean(result));
         }
@@ -481,9 +857,9 @@ where
 pub fn create_lt_function() -> Box<dyn Function> {
     create_comparison_operator(
         "_lt".to_string(),
-        |l, r| l < r,        // i64 comparison
-        |l, r| l < r,        // f64 comparison
-        |l, r| l < r,        // String comparison
+        |l, r| l < r, // i64 comparison
+        |l, r| l < r, // f64 comparison
+        |l, r| l < r, // String comparison
     )
 }
 
@@ -491,9 +867,9 @@ pub fn create_lt_function() -> Box<dyn Function> {
 pub fn create_lte_function() -> Box<dyn Function> {
     create_comparison_operator(
         "_lte".to_string(),
-        |l, r| l <= r,       // i64 comparison
-        |l, r| l <= r,       // f64 comparison
-        |l, r| l <= r,       // String comparison
+        |l, r| l <= r, // i64 comparison
+        |l, r| l <= r, // f64 comparison
+        |l, r| l <= r, // String comparison
     )
 }
 
@@ -501,9 +877,9 @@ pub fn create_lte_function() -> Box<dyn Function> {
 pub fn create_gt_function() -> Box<dyn Function> {
     create_comparison_operator(
         "_gt".to_string(),
-        |l, r| l > r,        // i64 comparison
-        |l, r| l > r,        // f64 comparison
-        |l, r| l > r,        // String comparison
+        |l, r| l > r, // i64 comparison
+        |l, r| l > r, // f64 comparison
+        |l, r| l > r, // String comparison
     )
 }
 
@@ -511,9 +887,9 @@ pub fn create_gt_function() -> Box<dyn Function> {
 pub fn create_gte_function() -> Box<dyn Function> {
     create_comparison_operator(
         "_gte".to_string(),
-        |l, r| l >= r,       // i64 comparison
-        |l, r| l >= r,       // f64 comparison
-        |l, r| l >= r,       // String comparison
+        |l, r| l >= r, // i64 comparison
+        |l, r| l >= r, // f64 comparison
+        |l, r| l >= r, // String comparison
     )
 }
 
@@ -535,6 +911,7 @@ pub fn create_gte_function() -> Box<dyn Function> {
 ///
 /// # Example
 /// ```rust
+/// use miniwdl_rust::stdlib::operators::create_equal_operator;
 /// let eq_fn = create_equal_operator("_eqeq".to_string(), false);  // == operator
 /// let neq_fn = create_equal_operator("_neq".to_string(), true);   // != operator
 /// ```
@@ -545,12 +922,8 @@ pub fn create_equal_operator(name: String, negate: bool) -> Box<dyn Function> {
         // This handles all the type coercion logic automatically
         let are_equal = match (left, right) {
             // Handle numeric comparisons with coercion
-            (Value::Int { value: l, .. }, Value::Float { value: r, .. }) => {
-                (*l as f64) == *r
-            },
-            (Value::Float { value: l, .. }, Value::Int { value: r, .. }) => {
-                *l == (*r as f64)
-            },
+            (Value::Int { value: l, .. }, Value::Float { value: r, .. }) => (*l as f64) == *r,
+            (Value::Float { value: l, .. }, Value::Int { value: r, .. }) => *l == (*r as f64),
             // For all other cases, use direct equality
             _ => left == right,
         };
@@ -577,8 +950,8 @@ pub fn create_neq_function() -> Box<dyn Function> {
 pub fn create_sub_function() -> Box<dyn Function> {
     create_arithmetic_operator(
         "_sub".to_string(),
-        |l, r| l - r,    // i64 subtraction
-        |l, r| l - r,    // f64 subtraction
+        |l, r| l - r, // i64 subtraction
+        |l, r| l - r, // f64 subtraction
     )
 }
 
@@ -586,8 +959,8 @@ pub fn create_sub_function() -> Box<dyn Function> {
 pub fn create_mul_function() -> Box<dyn Function> {
     create_arithmetic_operator(
         "_mul".to_string(),
-        |l, r| l * r,    // i64 multiplication
-        |l, r| l * r,    // f64 multiplication
+        |l, r| l * r, // i64 multiplication
+        |l, r| l * r, // f64 multiplication
     )
 }
 
@@ -595,8 +968,17 @@ pub fn create_mul_function() -> Box<dyn Function> {
 pub fn create_div_function() -> Box<dyn Function> {
     create_arithmetic_operator(
         "_div".to_string(),
-        |l, r| l / r,    // i64 division (truncating)
-        |l, r| l / r,    // f64 division
+        |l, r| l / r, // i64 division (truncating)
+        |l, r| l / r, // f64 division
+    )
+}
+
+/// Create a remainder (modulo) operator function
+pub fn create_rem_function() -> Box<dyn Function> {
+    create_arithmetic_operator(
+        "_rem".to_string(),
+        |l, r| l % r, // i64 modulo
+        |l, r| l % r, // f64 modulo
     )
 }
 
@@ -604,6 +986,12 @@ pub fn create_div_function() -> Box<dyn Function> {
 /// Similar to miniwdl's _AddOperator
 pub struct AddOperator {
     name: String,
+}
+
+impl Default for AddOperator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AddOperator {
@@ -615,7 +1003,13 @@ impl AddOperator {
 }
 
 impl Function for AddOperator {
-    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         // Check argument count
         if args.len() != 2 {
             let pos = if args.is_empty() {
@@ -638,15 +1032,14 @@ impl Function for AddOperator {
         // Check for string concatenation first
         if matches!(left_type, Type::String { .. }) || matches!(right_type, Type::String { .. }) {
             // At least one operand is a string, check if both can be coerced to string
-            if left_type.coerces(&Type::string(false), true) && right_type.coerces(&Type::string(false), true) {
+            if left_type.coerces(&Type::string(false), true)
+                && right_type.coerces(&Type::string(false), true)
+            {
                 return Ok(Type::string(false));
             } else {
                 return Err(WdlError::Validation {
                     pos: args[0].source_position().clone(),
-                    message: format!(
-                        "Cannot add/concatenate {} and {}",
-                        left_type, right_type
-                    ),
+                    message: format!("Cannot add/concatenate {} and {}", left_type, right_type),
                     source_text: None,
                     declared_wdl_version: None,
                 });
@@ -654,8 +1047,9 @@ impl Function for AddOperator {
         }
 
         // Neither operand is a string, check for numeric addition
-        if matches!(left_type, Type::Int { .. } | Type::Float { .. }) &&
-           matches!(right_type, Type::Int { .. } | Type::Float { .. }) {
+        if matches!(left_type, Type::Int { .. } | Type::Float { .. })
+            && matches!(right_type, Type::Int { .. } | Type::Float { .. })
+        {
             // Return Float if either operand is Float, otherwise Int
             if matches!(left_type, Type::Float { .. }) || matches!(right_type, Type::Float { .. }) {
                 Ok(Type::float(false))
@@ -665,17 +1059,19 @@ impl Function for AddOperator {
         } else {
             Err(WdlError::Validation {
                 pos: args[0].source_position().clone(),
-                message: format!(
-                    "Cannot add/concatenate {} and {}",
-                    left_type, right_type
-                ),
+                message: format!("Cannot add/concatenate {} and {}", left_type, right_type),
                 source_text: None,
                 declared_wdl_version: None,
             })
         }
     }
 
-    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         // Check argument count
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
@@ -688,36 +1084,40 @@ impl Function for AddOperator {
         let right_value = args[1].eval(env, stdlib)?;
 
         // Check for string concatenation first
-        if matches!(left_value, Value::String { .. }) || matches!(right_value, Value::String { .. }) {
+        if matches!(left_value, Value::String { .. }) || matches!(right_value, Value::String { .. })
+        {
             // String concatenation
-            let left_str = left_value.coerce(&Type::string(false)).map_err(|_| {
-                WdlError::RuntimeError {
-                    message: "Cannot coerce left operand to string for concatenation".to_string(),
-                }
-            })?;
-            let right_str = right_value.coerce(&Type::string(false)).map_err(|_| {
-                WdlError::RuntimeError {
-                    message: "Cannot coerce right operand to string for concatenation".to_string(),
-                }
-            })?;
+            let left_str =
+                left_value
+                    .coerce(&Type::string(false))
+                    .map_err(|_| WdlError::RuntimeError {
+                        message: "Cannot coerce left operand to string for concatenation"
+                            .to_string(),
+                    })?;
+            let right_str =
+                right_value
+                    .coerce(&Type::string(false))
+                    .map_err(|_| WdlError::RuntimeError {
+                        message: "Cannot coerce right operand to string for concatenation"
+                            .to_string(),
+                    })?;
 
-            let left_string = left_str.as_string().ok_or_else(|| {
-                WdlError::RuntimeError {
-                    message: "Invalid left operand for string concatenation".to_string(),
-                }
+            let left_string = left_str.as_string().ok_or_else(|| WdlError::RuntimeError {
+                message: "Invalid left operand for string concatenation".to_string(),
             })?;
-            let right_string = right_str.as_string().ok_or_else(|| {
-                WdlError::RuntimeError {
+            let right_string = right_str
+                .as_string()
+                .ok_or_else(|| WdlError::RuntimeError {
                     message: "Invalid right operand for string concatenation".to_string(),
-                }
-            })?;
+                })?;
 
             return Ok(Value::string(format!("{}{}", left_string, right_string)));
         }
 
         // Check if both values are numeric for arithmetic addition
-        if (matches!(left_value, Value::Int { .. } | Value::Float { .. })) &&
-           (matches!(right_value, Value::Int { .. } | Value::Float { .. })) {
+        if (matches!(left_value, Value::Int { .. } | Value::Float { .. }))
+            && (matches!(right_value, Value::Int { .. } | Value::Float { .. }))
+        {
             // Numeric addition - check if both are Int variants for precision
             if matches!(left_value, Value::Int { .. }) && matches!(right_value, Value::Int { .. }) {
                 let left_int = left_value.as_int().unwrap();
@@ -725,16 +1125,16 @@ impl Function for AddOperator {
                 Ok(Value::int(left_int + right_int))
             } else {
                 // At least one is Float, use float arithmetic
-                let left_float = left_value.as_float().ok_or_else(|| {
-                    WdlError::RuntimeError {
+                let left_float = left_value
+                    .as_float()
+                    .ok_or_else(|| WdlError::RuntimeError {
                         message: "Cannot convert left operand to number for addition".to_string(),
-                    }
-                })?;
-                let right_float = right_value.as_float().ok_or_else(|| {
-                    WdlError::RuntimeError {
+                    })?;
+                let right_float = right_value
+                    .as_float()
+                    .ok_or_else(|| WdlError::RuntimeError {
                         message: "Cannot convert right operand to number for addition".to_string(),
-                    }
-                })?;
+                    })?;
                 Ok(Value::float(left_float + right_float))
             }
         } else {
@@ -754,12 +1154,32 @@ pub fn create_add_function() -> Box<dyn Function> {
     Box::new(AddOperator::new())
 }
 
+/// Create a logical AND operator function (&&)
+pub fn create_logical_and_function() -> Box<dyn Function> {
+    Box::new(LogicalOperator::new_and())
+}
+
+/// Create a logical OR operator function (||)
+pub fn create_logical_or_function() -> Box<dyn Function> {
+    Box::new(LogicalOperator::new_or())
+}
+
+/// Create a logical NOT operator function (!)
+pub fn create_logical_not_function() -> Box<dyn Function> {
+    Box::new(LogicalNotOperator)
+}
+
+/// Create a numeric negation operator function (unary -)
+pub fn create_negate_function() -> Box<dyn Function> {
+    Box::new(NegateOperator)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::Expression;
-    use crate::error::SourcePosition;
     use crate::env::Bindings;
+    use crate::error::SourcePosition;
+    use crate::expr::Expression;
     use crate::stdlib::StdLib;
 
     #[test]

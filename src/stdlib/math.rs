@@ -1,9 +1,9 @@
 //! Mathematical functions for WDL standard library
 
+use crate::error::WdlError;
 use crate::stdlib::{create_static_function, Function};
 use crate::types::Type;
 use crate::value::Value;
-use crate::error::WdlError;
 
 /// Create floor function: floor(Float) -> Int
 /// Converts a floating point number to integer by rounding down
@@ -17,7 +17,7 @@ pub fn create_floor_function() -> Box<dyn Function> {
                 message: "floor() expected float argument".to_string(),
             })?;
             Ok(Value::int(value.floor() as i64))
-        }
+        },
     )
 }
 
@@ -33,7 +33,7 @@ pub fn create_ceil_function() -> Box<dyn Function> {
                 message: "ceil() expected float argument".to_string(),
             })?;
             Ok(Value::int(value.ceil() as i64))
-        }
+        },
     )
 }
 
@@ -49,14 +49,13 @@ pub fn create_round_function() -> Box<dyn Function> {
             let value = args[0].as_float().ok_or_else(|| WdlError::RuntimeError {
                 message: "round() expected float argument".to_string(),
             })?;
-            // Implement "round half up" behavior like miniwdl
-            let rounded = if value >= 0.0 {
-                (value + 0.5).floor()
-            } else {
-                (value - 0.5).ceil()
-            };
+            // Implement "round half up" behavior like miniwdl:
+            // - Positive numbers: 0.5 -> 1, 1.5 -> 2, etc.
+            // - Negative numbers: -0.5 -> 0, -1.5 -> -1, etc.
+            // This means we round toward positive infinity for ties
+            let rounded = (value + 0.5).floor();
             Ok(Value::int(rounded as i64))
-        }
+        },
     )
 }
 
@@ -66,8 +65,8 @@ pub fn create_min_function() -> Box<dyn Function> {
     use crate::stdlib::operators::create_arithmetic_operator;
     create_arithmetic_operator(
         "min".to_string(),
-        |left, right| left.min(right),    // i64 min
-        |left, right| left.min(right),    // f64 min
+        |left, right| left.min(right), // i64 min
+        |left, right| left.min(right), // f64 min
     )
 }
 
@@ -77,17 +76,17 @@ pub fn create_max_function() -> Box<dyn Function> {
     use crate::stdlib::operators::create_arithmetic_operator;
     create_arithmetic_operator(
         "max".to_string(),
-        |left, right| left.max(right),    // i64 max
-        |left, right| left.max(right),    // f64 max
+        |left, right| left.max(right), // i64 max
+        |left, right| left.max(right), // f64 max
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::Expression;
-    use crate::error::SourcePosition;
     use crate::env::Bindings;
+    use crate::error::SourcePosition;
+    use crate::expr::Expression;
     use crate::stdlib::StdLib;
 
     #[test]

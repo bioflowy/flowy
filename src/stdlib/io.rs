@@ -2,11 +2,14 @@
 //!
 //! This module provides file reading and writing functions similar to miniwdl's I/O functions.
 
-use std::fs;
-use crate::error::WdlError;
+use crate::error::{SourcePosition, WdlError};
+use crate::expr::ExpressionBase;
 use crate::stdlib::Function;
 use crate::types::Type;
-use crate::value::Value;
+use crate::value::{Value, ValueBase};
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 
 /// Create a read function implementation based on a parse function
 ///
@@ -32,47 +35,111 @@ where
 {
     use crate::stdlib::create_static_function;
 
-    create_static_function(
-        name,
-        vec![Type::file(false)],
-        return_type,
-        move |args| {
-            // args[0] is guaranteed to be a File value due to create_static_function's type checking
-            let file_value = &args[0];
+    create_static_function(name, vec![Type::file(false)], return_type, move |args| {
+        // args[0] is guaranteed to be a File value due to create_static_function's type checking
+        let file_value = &args[0];
 
-            // Get the filename from the File value
-            let virtual_filename = file_value.as_string().ok_or_else(|| {
-                WdlError::RuntimeError {
-                    message: "Invalid file value".to_string(),
-                }
+        // Get the filename from the File value
+        let virtual_filename = file_value
+            .as_string()
+            .ok_or_else(|| WdlError::RuntimeError {
+                message: "Invalid file value".to_string(),
             })?;
 
-            // Use PathMapper to devirtualize the filename
-            let real_filename = path_mapper.devirtualize_filename(virtual_filename)?;
+        // Use PathMapper to devirtualize the filename
+        let real_filename = path_mapper.devirtualize_filename(virtual_filename)?;
 
-            // Read the file content
-            let content = fs::read_to_string(&real_filename).map_err(|e| {
-                WdlError::RuntimeError {
-                    message: format!("Failed to read file '{}': {}", real_filename.display(), e),
-                }
+        // Read the file content
+        let content = fs::read_to_string(&real_filename).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to read file '{}': {}", real_filename.display(), e),
+        })?;
+
+        // Parse the content using the provided parse function
+        parse(&content)
+    })
+}
+
+/// Create a write function implementation based on a serialize function
+///
+/// This is similar to miniwdl's _write() method that generates write_* function
+/// implementations based on a serialize function.
+///
+/// # Arguments
+/// * `name` - Function name (e.g., "write_lines", "write_tsv")
+/// * `argument_type` - The expected argument type
+/// * `serialize` - Function that serializes the value to bytes
+/// * `path_mapper` - PathMapper instance for file virtualization
+/// * `write_dir` - Directory where files should be written
+///
+/// # Returns
+/// A Function implementation that writes values to files
+fn create_write_function<F>(
+    name: String,
+    argument_type: Type,
+    serialize: F,
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function>
+where
+    F: Fn(&Value, &mut dyn Write) -> Result<(), WdlError> + Send + Sync + 'static,
+{
+    use crate::stdlib::create_static_function;
+
+    create_static_function(name, vec![argument_type], Type::file(false), move |args| {
+        let value = &args[0];
+
+        // Create write directory if it doesn't exist
+        std::fs::create_dir_all(&write_dir).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to create write directory '{}': {}", write_dir, e),
+        })?;
+
+        // Create a temporary file in the write directory
+        let temp_file =
+            tempfile::NamedTempFile::new_in(&write_dir).map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to create temporary file: {}", e),
             })?;
 
-            // Parse the content using the provided parse function
-            parse(&content)
+        let temp_path = temp_file.path().to_path_buf();
+
+        // Serialize the value to the file
+        {
+            let mut file = temp_file;
+            serialize(value, &mut file)?;
+            file.flush().map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to flush file: {}", e),
+            })?;
         }
-    )
+
+        // Set file permissions (equivalent to chmod 0o660)
+        let mut perms = std::fs::metadata(&temp_path)
+            .map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to get file metadata: {}", e),
+            })?
+            .permissions();
+        perms.set_mode(0o660);
+        std::fs::set_permissions(&temp_path, perms).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to set file permissions: {}", e),
+        })?;
+
+        // Virtualize the filename using PathMapper
+        let virtual_filename = path_mapper.virtualize_filename(&temp_path)?;
+
+        Value::file(virtual_filename)
+    })
 }
 
 /// Create read_string function: read_string(File) -> String
 /// Reads a file and returns its content as a string, with trailing newline removed
-pub fn create_read_string_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> Box<dyn Function> {
+pub fn create_read_string_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
     create_read_function(
         "read_string".to_string(),
         Type::string(false),
         |content: &str| {
             // Remove trailing newline like miniwdl does
-            let trimmed = if content.ends_with('\n') {
-                &content[..content.len() - 1]
+            let trimmed = if let Some(stripped) = content.strip_suffix('\n') {
+                stripped
             } else {
                 content
             };
@@ -84,16 +151,16 @@ pub fn create_read_string_function(path_mapper: Box<dyn crate::stdlib::PathMappe
 
 /// Create read_int function: read_int(File) -> Int
 /// Reads a file and parses its content as an integer
-pub fn create_read_int_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> Box<dyn Function> {
+pub fn create_read_int_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
     create_read_function(
         "read_int".to_string(),
         Type::int(false),
         |content: &str| {
             let trimmed = content.trim();
-            let value = trimmed.parse::<i64>().map_err(|e| {
-                WdlError::RuntimeError {
-                    message: format!("Cannot parse '{}' as integer: {}", trimmed, e),
-                }
+            let value = trimmed.parse::<i64>().map_err(|e| WdlError::RuntimeError {
+                message: format!("Cannot parse '{}' as integer: {}", trimmed, e),
             })?;
             Ok(Value::int(value))
         },
@@ -103,16 +170,16 @@ pub fn create_read_int_function(path_mapper: Box<dyn crate::stdlib::PathMapper>)
 
 /// Create read_float function: read_float(File) -> Float
 /// Reads a file and parses its content as a float
-pub fn create_read_float_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> Box<dyn Function> {
+pub fn create_read_float_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
     create_read_function(
         "read_float".to_string(),
         Type::float(false),
         |content: &str| {
             let trimmed = content.trim();
-            let value = trimmed.parse::<f64>().map_err(|e| {
-                WdlError::RuntimeError {
-                    message: format!("Cannot parse '{}' as float: {}", trimmed, e),
-                }
+            let value = trimmed.parse::<f64>().map_err(|e| WdlError::RuntimeError {
+                message: format!("Cannot parse '{}' as float: {}", trimmed, e),
             })?;
             Ok(Value::float(value))
         },
@@ -122,7 +189,9 @@ pub fn create_read_float_function(path_mapper: Box<dyn crate::stdlib::PathMapper
 
 /// Create read_boolean function: read_boolean(File) -> Boolean
 /// Reads a file and parses its content as a boolean
-pub fn create_read_boolean_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> Box<dyn Function> {
+pub fn create_read_boolean_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
     create_read_function(
         "read_boolean".to_string(),
         Type::boolean(false),
@@ -143,13 +212,517 @@ pub fn create_read_boolean_function(path_mapper: Box<dyn crate::stdlib::PathMapp
     )
 }
 
+/// Create write_lines function: write_lines(Array[String]) -> File
+/// Writes an array of strings to a file, one line per string
+pub fn create_write_lines_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function> {
+    create_write_function(
+        "write_lines".to_string(),
+        Type::array(Type::string(false), false, false),
+        |value: &Value, file: &mut dyn Write| {
+            let array = value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                message: "Expected array value for write_lines".to_string(),
+            })?;
+
+            for item in array {
+                let line = item.as_string().ok_or_else(|| WdlError::RuntimeError {
+                    message: "All array items must be strings for write_lines".to_string(),
+                })?;
+                file.write_all(line.as_bytes())
+                    .map_err(|e| WdlError::RuntimeError {
+                        message: format!("Failed to write line: {}", e),
+                    })?;
+                file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write newline: {}", e),
+                })?;
+            }
+            Ok(())
+        },
+        path_mapper,
+        write_dir,
+    )
+}
+
+/// Create write_tsv function: write_tsv(Array[Array[String]]) -> File
+/// Writes a 2D array as tab-separated values
+pub fn create_write_tsv_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function> {
+    create_write_function(
+        "write_tsv".to_string(),
+        Type::array(Type::array(Type::string(false), false, false), false, false),
+        |value: &Value, file: &mut dyn Write| {
+            let array = value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                message: "Expected array value for write_tsv".to_string(),
+            })?;
+
+            for row in array {
+                let row_array = row.as_array().ok_or_else(|| WdlError::RuntimeError {
+                    message: "Expected array of arrays for write_tsv".to_string(),
+                })?;
+
+                let line_parts: Result<Vec<String>, WdlError> = row_array
+                    .iter()
+                    .map(|cell| {
+                        cell.as_string().map(|s| s.to_string()).ok_or_else(|| {
+                            WdlError::RuntimeError {
+                                message: "All TSV cells must be strings".to_string(),
+                            }
+                        })
+                    })
+                    .collect();
+
+                let line = line_parts?.join("\t");
+                file.write_all(line.as_bytes())
+                    .map_err(|e| WdlError::RuntimeError {
+                        message: format!("Failed to write TSV line: {}", e),
+                    })?;
+                file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write newline: {}", e),
+                })?;
+            }
+            Ok(())
+        },
+        path_mapper,
+        write_dir,
+    )
+}
+
+/// Create write_map function: write_map(Map[String, String]) -> File
+/// Writes a map as tab-separated key-value pairs
+pub fn create_write_map_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function> {
+    create_write_function(
+        "write_map".to_string(),
+        Type::map(Type::string(false), Type::string(false), false),
+        |value: &Value, file: &mut dyn Write| {
+            let pairs = match value {
+                Value::Map { pairs, .. } => pairs,
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "Expected map value for write_map".to_string(),
+                    });
+                }
+            };
+
+            for (key, val) in pairs {
+                let key_str = key.as_string().ok_or_else(|| WdlError::RuntimeError {
+                    message: "Map keys must be strings for write_map".to_string(),
+                })?;
+                let val_str = val.as_string().ok_or_else(|| WdlError::RuntimeError {
+                    message: "Map values must be strings for write_map".to_string(),
+                })?;
+
+                // Check for forbidden characters like miniwdl does
+                if key_str.contains('\t')
+                    || key_str.contains('\n')
+                    || val_str.contains('\t')
+                    || val_str.contains('\n')
+                {
+                    return Err(WdlError::RuntimeError {
+                        message:
+                            "write_map(): keys & values must not contain tab or newline characters"
+                                .to_string(),
+                    });
+                }
+
+                let line = format!("{}\t{}\n", key_str, val_str);
+                file.write_all(line.as_bytes())
+                    .map_err(|e| WdlError::RuntimeError {
+                        message: format!("Failed to write map line: {}", e),
+                    })?;
+            }
+            Ok(())
+        },
+        path_mapper,
+        write_dir,
+    )
+}
+
+/// Create write_json function: write_json(Any) -> File
+/// Writes any value as JSON
+pub fn create_write_json_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function> {
+    create_write_function(
+        "write_json".to_string(),
+        Type::any(),
+        |value: &Value, file: &mut dyn Write| {
+            let json_value = value.to_json();
+            let json_string =
+                serde_json::to_string(&json_value).map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to serialize value as JSON: {}", e),
+                })?;
+
+            file.write_all(json_string.as_bytes())
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write JSON: {}", e),
+                })?;
+            Ok(())
+        },
+        path_mapper,
+        write_dir,
+    )
+}
+
+/// Create stdout function: stdout() -> File
+/// Returns a file representing standard output (only available in task context)
+pub fn create_stdout_function() -> Box<dyn Function> {
+    Box::new(StdoutFunction)
+}
+
+/// Stdout function implementation that returns the task's stdout.txt file
+struct StdoutFunction;
+
+impl Function for StdoutFunction {
+    fn name(&self) -> &str {
+        "stdout"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        _type_env: &crate::env::Bindings<crate::types::Type>,
+        _stdlib: &crate::stdlib::StdLib,
+        _struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<crate::types::Type, crate::error::WdlError> {
+        if !args.is_empty() {
+            return Err(crate::error::WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: "stdout() takes no arguments".to_string(),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+        Ok(crate::types::Type::file(false))
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        _env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<crate::value::Value, crate::error::WdlError> {
+        if !args.is_empty() {
+            return Err(crate::error::WdlError::RuntimeError {
+                message: "stdout() takes no arguments".to_string(),
+            });
+        }
+
+        // Use path mapper to resolve stdout path
+        let real_path = stdlib.path_mapper().devirtualize_filename("stdout.txt")?;
+        let virtual_path = stdlib.path_mapper().virtualize_filename(&real_path)?;
+        crate::value::Value::file(virtual_path)
+    }
+}
+
+/// Create stderr function: stderr() -> File
+/// Returns a file representing standard error (only available in task context)
+pub fn create_stderr_function() -> Box<dyn Function> {
+    Box::new(StderrFunction)
+}
+
+/// Stderr function implementation that returns the task's stderr.txt file
+struct StderrFunction;
+
+impl Function for StderrFunction {
+    fn name(&self) -> &str {
+        "stderr"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        _type_env: &crate::env::Bindings<crate::types::Type>,
+        _stdlib: &crate::stdlib::StdLib,
+        _struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<crate::types::Type, crate::error::WdlError> {
+        if !args.is_empty() {
+            return Err(crate::error::WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: "stderr() takes no arguments".to_string(),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+        Ok(crate::types::Type::file(false))
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        _env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<crate::value::Value, crate::error::WdlError> {
+        if !args.is_empty() {
+            return Err(crate::error::WdlError::RuntimeError {
+                message: "stderr() takes no arguments".to_string(),
+            });
+        }
+
+        // Use path mapper to resolve stderr path
+        let real_path = stdlib.path_mapper().devirtualize_filename("stderr.txt")?;
+        let virtual_path = stdlib.path_mapper().virtualize_filename(&real_path)?;
+        crate::value::Value::file(virtual_path)
+    }
+}
+
+/// Create glob function: glob(pattern: String) -> Array[File]
+/// Returns an array of files matching the given glob pattern
+pub fn create_glob_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> Box<dyn Function> {
+    use crate::stdlib::create_static_function;
+
+    create_static_function(
+        "glob".to_string(),
+        vec![Type::string(false)],
+        Type::array(Type::file(false), false, false),
+        move |args| {
+            let pattern = args[0].as_string().ok_or_else(|| WdlError::RuntimeError {
+                message: "glob() requires a string pattern".to_string(),
+            })?;
+
+            // Use glob crate to find matching files
+            let glob_result = glob::glob(pattern).map_err(|e| WdlError::RuntimeError {
+                message: format!("Invalid glob pattern '{}': {}", pattern, e),
+            })?;
+
+            let mut files = Vec::new();
+            for entry in glob_result {
+                match entry {
+                    Ok(path) => {
+                        // Convert path to string and virtualize through PathMapper
+                        let path_str = path.to_string_lossy().to_string();
+                        match path_mapper.virtualize_filename(&path) {
+                            Ok(virtual_path) => {
+                                files.push(Value::file(virtual_path)?);
+                            }
+                            Err(_) => {
+                                // If virtualization fails, use the original path
+                                files.push(Value::file(path_str)?);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Err(WdlError::RuntimeError {
+                            message: format!("Glob error: {}", e),
+                        });
+                    }
+                }
+            }
+
+            Ok(Value::array(Type::file(false), files))
+        },
+    )
+}
+
+/// Create size function with multiple signatures:
+/// - size(file: File?) -> Float
+/// - size(file: File?, unit: String) -> Float
+/// - size(files: Array[File?]) -> Float
+/// - size(files: Array[File?], unit: String) -> Float
+///
+/// Returns the size of file(s) in bytes or specified unit
+pub fn create_size_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> Box<dyn Function> {
+    use crate::env::Bindings;
+    use crate::expr::Expression;
+    use crate::stdlib::Function;
+
+    struct SizeFunction {
+        path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    }
+
+    impl Function for SizeFunction {
+        fn name(&self) -> &str {
+            "size"
+        }
+
+        fn infer_type(
+            &self,
+            args: &mut [Expression],
+            type_env: &Bindings<Type>,
+            stdlib: &crate::stdlib::StdLib,
+            struct_typedefs: &[crate::tree::StructTypeDef],
+        ) -> Result<Type, WdlError> {
+            if args.is_empty() || args.len() > 2 {
+                return Err(WdlError::Validation {
+                    pos: if args.is_empty() {
+                        SourcePosition::new(
+                            "unknown".to_string(),
+                            "unknown".to_string(),
+                            0,
+                            0,
+                            0,
+                            0,
+                        )
+                    } else {
+                        args[0].source_position().clone()
+                    },
+                    message: format!("size() expects 1 or 2 arguments, got {}", args.len()),
+                    source_text: None,
+                    declared_wdl_version: None,
+                });
+            }
+
+            // Infer the first argument type
+            let first_arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+
+            // Check if it's File? or Array[File?]
+            match &first_arg_type {
+                Type::File { .. } => {
+                    // Valid: size(File?) or size(File?, String)
+                }
+                Type::Array { item_type, .. } => {
+                    // Check if it's Array[File?]
+                    if !matches!(item_type.as_ref(), Type::File { .. }) {
+                        return Err(WdlError::Validation {
+                            pos: args[0].source_position().clone(),
+                            message: format!(
+                                "size() first argument must be File? or Array[File?], got {}",
+                                first_arg_type
+                            ),
+                            source_text: None,
+                            declared_wdl_version: None,
+                        });
+                    }
+                }
+                _ => {
+                    return Err(WdlError::Validation {
+                        pos: args[0].source_position().clone(),
+                        message: format!(
+                            "size() first argument must be File? or Array[File?], got {}",
+                            first_arg_type
+                        ),
+                        source_text: None,
+                        declared_wdl_version: None,
+                    });
+                }
+            }
+
+            // Check the optional second argument (unit)
+            if args.len() > 1 {
+                let unit_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+                if !matches!(unit_type, Type::String { .. }) {
+                    return Err(WdlError::Validation {
+                        pos: args[1].source_position().clone(),
+                        message: format!("size() unit argument must be String, got {}", unit_type),
+                        source_text: None,
+                        declared_wdl_version: None,
+                    });
+                }
+            }
+
+            Ok(Type::float(false))
+        }
+
+        fn eval(
+            &self,
+            args: &[Expression],
+            env: &Bindings<Value>,
+            stdlib: &crate::stdlib::StdLib,
+        ) -> Result<Value, WdlError> {
+            if args.is_empty() || args.len() > 2 {
+                return Err(WdlError::RuntimeError {
+                    message: format!("size() expects 1 or 2 arguments, got {}", args.len()),
+                });
+            }
+
+            // Define byte unit conversion factors
+            let get_unit_factor = |unit: &str| -> Result<f64, WdlError> {
+                match unit.to_uppercase().as_str() {
+                    "B" | "BYTE" | "BYTES" => Ok(1.0),
+                    "KB" | "KILOBYTE" | "KILOBYTES" => Ok(1000.0),
+                    "MB" | "MEGABYTE" | "MEGABYTES" => Ok(1_000_000.0),
+                    "GB" | "GIGABYTE" | "GIGABYTES" => Ok(1_000_000_000.0),
+                    "TB" | "TERABYTE" | "TERABYTES" => Ok(1_000_000_000_000.0),
+                    "KIB" | "KIBIBYTE" | "KIBIBYTES" => Ok(1024.0),
+                    "MIB" | "MEBIBYTE" | "MEBIBYTES" => Ok(1024.0 * 1024.0),
+                    "GIB" | "GIBIBYTE" | "GIBIBYTES" => Ok(1024.0 * 1024.0 * 1024.0),
+                    "TIB" | "TEBIBYTE" | "TEBIBYTES" => Ok(1024.0 * 1024.0 * 1024.0 * 1024.0),
+                    _ => Err(WdlError::RuntimeError {
+                        message: format!("Unknown size unit: {}", unit),
+                    }),
+                }
+            };
+
+            let get_file_size = |file_value: &Value| -> Result<f64, WdlError> {
+                // Check if file is null/None (optional values)
+                if matches!(file_value, Value::Null) {
+                    return Ok(0.0);
+                }
+
+                let file_path = file_value
+                    .as_string()
+                    .ok_or_else(|| WdlError::RuntimeError {
+                        message: "size() requires a File argument".to_string(),
+                    })?;
+
+                // Devirtualize the file path through PathMapper
+                let real_path = self.path_mapper.devirtualize_filename(file_path)?;
+
+                // Get file size
+                let metadata =
+                    std::fs::metadata(&real_path).map_err(|e| WdlError::RuntimeError {
+                        message: format!("Cannot get size of file '{}': {}", file_path, e),
+                    })?;
+
+                Ok(metadata.len() as f64)
+            };
+
+            // Evaluate arguments
+            let first_arg = args[0].eval(env, stdlib)?;
+
+            // Get unit factor if provided
+            let unit_factor = if args.len() > 1 {
+                let unit_arg = args[1].eval(env, stdlib)?;
+                let unit = unit_arg.as_string().ok_or_else(|| WdlError::RuntimeError {
+                    message: "size() unit argument must be a string".to_string(),
+                })?;
+                get_unit_factor(unit)?
+            } else {
+                1.0 // Default to bytes
+            };
+
+            // Handle different first argument types
+            let total_size = match &first_arg {
+                // Single file case
+                file_val if matches!(file_val, Value::File { .. } | Value::Null) => {
+                    get_file_size(file_val)?
+                }
+                // Array of files case
+                Value::Array { values, .. } => {
+                    let mut total = 0.0;
+                    for file_val in values {
+                        total += get_file_size(file_val)?;
+                    }
+                    total
+                }
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "size() first argument must be File? or Array[File?]".to_string(),
+                    });
+                }
+            };
+
+            Ok(Value::float(total_size / unit_factor))
+        }
+    }
+
+    Box::new(SizeFunction { path_mapper })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stdlib::{StdLib, DefaultPathMapper};
-    use crate::expr::{Expression, StringPart};
     use crate::env::Bindings;
     use crate::error::SourcePosition;
+    use crate::expr::{Expression, StringPart};
+    use crate::stdlib::{DefaultPathMapper, StdLib};
     use std::fs;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -193,6 +766,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_read_float_valid() {
         let mut temp_file = NamedTempFile::new().unwrap();
         writeln!(temp_file, "3.14").unwrap();
@@ -227,6 +801,6 @@ mod tests {
         let stdlib = StdLib::new("1.0");
 
         let result = read_boolean_fn.eval(&args, &env, &stdlib).unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+        assert!(result.as_bool().unwrap());
     }
 }
