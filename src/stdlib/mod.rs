@@ -16,6 +16,8 @@ pub mod task_output;
 pub mod math;
 pub mod operators;
 pub mod io;
+pub mod strings;
+pub mod arrays;
 
 // Re-export all function structs for convenience
 
@@ -386,19 +388,19 @@ impl StdLib {
         self.register_function(math::create_max_function());
 
         // Array functions
-        // self.register_function(Box::new(LengthFunction));
-        // self.register_function(Box::new(SelectFirstFunction));
-        // self.register_function(Box::new(SelectAllFunction));
-        // self.register_function(Box::new(FlattenFunction));
-        // self.register_function(Box::new(RangeFunction));
-        // self.register_function(Box::new(PrefixFunction));
-        // self.register_function(Box::new(SuffixFunction));
-        // self.register_function(Box::new(QuoteFunction));
-        // self.register_function(Box::new(SquoteFunction));
-        // self.register_function(Box::new(ZipFunction));
-        // self.register_function(Box::new(CrossFunction));
-        // self.register_function(Box::new(TransposeFunction));
-        // self.register_function(Box::new(UnzipFunction));
+        self.register_function(arrays::create_length_function());
+        self.register_function(arrays::create_select_first_function());
+        self.register_function(arrays::create_select_all_function());
+        self.register_function(arrays::create_flatten_function());
+        self.register_function(arrays::create_range_function());
+        self.register_function(arrays::create_prefix_function());
+        self.register_function(arrays::create_suffix_function());
+        self.register_function(arrays::create_zip_function());
+        self.register_function(arrays::create_cross_function());
+        self.register_function(arrays::create_unzip_function());
+        self.register_function(arrays::create_quote_function());
+        self.register_function(arrays::create_squote_function());
+        self.register_function(arrays::create_transpose_function());
 
         // Map functions
         // self.register_function(Box::new(KeysFunction));
@@ -409,11 +411,11 @@ impl StdLib {
         // self.register_function(Box::new(AsMapFunction));
 
         // String functions
-        // self.register_function(Box::new(FindFunction));
-        // self.register_function(Box::new(SubFunction));
-        // self.register_function(Box::new(BasenameFunction));
+        self.register_function(strings::create_find_function());
+        self.register_function(strings::create_sub_function());
+        self.register_function(strings::create_basename_function());
+        self.register_function(strings::create_join_paths_function());
         // self.register_function(Box::new(SepFunction));
-        // self.register_function(Box::new(JoinPathsFunction));
 
         // Type functions
         // self.register_function(Box::new(DefinedFunction));
