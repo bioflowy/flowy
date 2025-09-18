@@ -1,235 +1,132 @@
 //! Mathematical functions for WDL standard library
 
-use super::Function;
-use crate::error::WdlError;
+use crate::stdlib::{create_static_function, Function};
 use crate::types::Type;
 use crate::value::Value;
+use crate::error::WdlError;
 
-/// Floor function - returns the largest integer less than or equal to the given float
-pub struct FloorFunction;
-
-impl Function for FloorFunction {
-    fn name(&self) -> &str {
-        "floor"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
+/// Create floor function: floor(Float) -> Int
+/// Converts a floating point number to integer by rounding down
+pub fn create_floor_function() -> Box<dyn Function> {
+    create_static_function(
+        "floor".to_string(),
+        vec![Type::float(false)],
+        Type::int(false),
+        |args| {
+            let value = args[0].as_float().ok_or_else(|| WdlError::RuntimeError {
+                message: "floor() expected float argument".to_string(),
+            })?;
+            Ok(Value::int(value.floor() as i64))
         }
-        if !matches!(args[0], Type::Float { .. }) {
-            return Err(WdlError::TypeMismatch {
-                expected: Type::float(false),
-                actual: args[0].clone(),
-            });
-        }
-        Ok(Type::int(false))
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Some(f) = args[0].as_float() {
-            Ok(Value::int(f.floor() as i64))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "floor() expects Float argument".to_string(),
-            })
-        }
-    }
+    )
 }
 
-/// Ceiling function - returns the smallest integer greater than or equal to the given float
-pub struct CeilFunction;
-
-impl Function for CeilFunction {
-    fn name(&self) -> &str {
-        "ceil"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
+/// Create ceil function: ceil(Float) -> Int
+/// Converts a floating point number to integer by rounding up
+pub fn create_ceil_function() -> Box<dyn Function> {
+    create_static_function(
+        "ceil".to_string(),
+        vec![Type::float(false)],
+        Type::int(false),
+        |args| {
+            let value = args[0].as_float().ok_or_else(|| WdlError::RuntimeError {
+                message: "ceil() expected float argument".to_string(),
+            })?;
+            Ok(Value::int(value.ceil() as i64))
         }
-        if !matches!(args[0], Type::Float { .. }) {
-            return Err(WdlError::TypeMismatch {
-                expected: Type::float(false),
-                actual: args[0].clone(),
-            });
-        }
-        Ok(Type::int(false))
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Some(f) = args[0].as_float() {
-            Ok(Value::int(f.ceil() as i64))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "ceil() expects Float argument".to_string(),
-            })
-        }
-    }
+    )
 }
 
-/// Round function - rounds a float to the nearest integer (half-up)
-pub struct RoundFunction;
-
-impl Function for RoundFunction {
-    fn name(&self) -> &str {
-        "round"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
+/// Create round function: round(Float) -> Int
+/// Converts a floating point number to integer by rounding to nearest integer
+/// Uses "round half up" behavior (0.5 rounds to 1, -0.5 rounds to 0)
+pub fn create_round_function() -> Box<dyn Function> {
+    create_static_function(
+        "round".to_string(),
+        vec![Type::float(false)],
+        Type::int(false),
+        |args| {
+            let value = args[0].as_float().ok_or_else(|| WdlError::RuntimeError {
+                message: "round() expected float argument".to_string(),
+            })?;
+            // Implement "round half up" behavior like miniwdl
+            let rounded = if value >= 0.0 {
+                (value + 0.5).floor()
+            } else {
+                (value - 0.5).ceil()
+            };
+            Ok(Value::int(rounded as i64))
         }
-        if !matches!(args[0], Type::Float { .. }) {
-            return Err(WdlError::TypeMismatch {
-                expected: Type::float(false),
-                actual: args[0].clone(),
-            });
-        }
-        Ok(Type::int(false))
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Some(f) = args[0].as_float() {
-            // Round half up like Python's round
-            Ok(Value::int((f + 0.5).floor() as i64))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "round() expects Float argument".to_string(),
-            })
-        }
-    }
+    )
 }
 
-/// Min function - returns the minimum of two numeric values
-pub struct MinFunction;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expr::Expression;
+    use crate::error::SourcePosition;
+    use crate::env::Bindings;
+    use crate::stdlib::StdLib;
 
-impl Function for MinFunction {
-    fn name(&self) -> &str {
-        "min"
+    #[test]
+    fn test_floor_function() {
+        let floor_fn = create_floor_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+
+        // Test positive number
+        let args = vec![Expression::float(pos.clone(), 3.7)];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+        let result = floor_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 3);
+
+        // Test negative number
+        let args = vec![Expression::float(pos.clone(), -2.3)];
+        let result = floor_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), -3);
     }
 
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
+    #[test]
+    fn test_ceil_function() {
+        let ceil_fn = create_ceil_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
 
-        // Both arguments must be numeric
-        let is_numeric = |t: &Type| matches!(t, Type::Int { .. } | Type::Float { .. });
-        if !is_numeric(&args[0]) || !is_numeric(&args[1]) {
-            return Err(WdlError::RuntimeError {
-                message: "min() expects numeric arguments".to_string(),
-            });
-        }
+        // Test positive number
+        let args = vec![Expression::float(pos.clone(), 3.2)];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+        let result = ceil_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 4);
 
-        // Return Float if either argument is Float
-        if matches!(args[0], Type::Float { .. }) || matches!(args[1], Type::Float { .. }) {
-            Ok(Type::float(false))
-        } else {
-            Ok(Type::int(false))
-        }
+        // Test negative number
+        let args = vec![Expression::float(pos.clone(), -2.7)];
+        let result = ceil_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), -2);
     }
 
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        let (a, b) = (&args[0], &args[1]);
+    #[test]
+    fn test_round_function() {
+        let round_fn = create_round_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
 
-        match (a, b) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::int((*a).min(*b)))
-            }
-            _ => {
-                // Convert to float for comparison
-                let a_float = a
-                    .as_float()
-                    .or_else(|| a.as_int().map(|i| i as f64))
-                    .ok_or_else(|| WdlError::RuntimeError {
-                        message: "min() expects numeric arguments".to_string(),
-                    })?;
-                let b_float = b
-                    .as_float()
-                    .or_else(|| b.as_int().map(|i| i as f64))
-                    .ok_or_else(|| WdlError::RuntimeError {
-                        message: "min() expects numeric arguments".to_string(),
-                    })?;
-                Ok(Value::float(a_float.min(b_float)))
-            }
-        }
-    }
-}
+        // Test normal rounding
+        let args = vec![Expression::float(pos.clone(), 3.4)];
+        let result = round_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 3);
 
-/// Max function - returns the maximum of two numeric values
-pub struct MaxFunction;
+        let args = vec![Expression::float(pos.clone(), 3.6)];
+        let result = round_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 4);
 
-impl Function for MaxFunction {
-    fn name(&self) -> &str {
-        "max"
-    }
+        // Test "round half up" behavior
+        let args = vec![Expression::float(pos.clone(), 0.5)];
+        let result = round_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 1);
 
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
-
-        // Both arguments must be numeric
-        let is_numeric = |t: &Type| matches!(t, Type::Int { .. } | Type::Float { .. });
-        if !is_numeric(&args[0]) || !is_numeric(&args[1]) {
-            return Err(WdlError::RuntimeError {
-                message: "max() expects numeric arguments".to_string(),
-            });
-        }
-
-        // Return Float if either argument is Float
-        if matches!(args[0], Type::Float { .. }) || matches!(args[1], Type::Float { .. }) {
-            Ok(Type::float(false))
-        } else {
-            Ok(Type::int(false))
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        let (a, b) = (&args[0], &args[1]);
-
-        match (a, b) {
-            (Value::Int { value: a, .. }, Value::Int { value: b, .. }) => {
-                Ok(Value::int((*a).max(*b)))
-            }
-            _ => {
-                // Convert to float for comparison
-                let a_float = a
-                    .as_float()
-                    .or_else(|| a.as_int().map(|i| i as f64))
-                    .ok_or_else(|| WdlError::RuntimeError {
-                        message: "max() expects numeric arguments".to_string(),
-                    })?;
-                let b_float = b
-                    .as_float()
-                    .or_else(|| b.as_int().map(|i| i as f64))
-                    .ok_or_else(|| WdlError::RuntimeError {
-                        message: "max() expects numeric arguments".to_string(),
-                    })?;
-                Ok(Value::float(a_float.max(b_float)))
-            }
-        }
+        let args = vec![Expression::float(pos.clone(), -0.5)];
+        let result = round_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 0);
     }
 }

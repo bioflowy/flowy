@@ -3,9 +3,9 @@
 //! This module provides the standard library functions and operators for WDL,
 //! similar to miniwdl's StdLib.py
 
-use crate::error::WdlError;
-use crate::expr::Expression;
-use crate::env::Environment;
+use crate::error::{WdlError, SourcePosition};
+use crate::expr::{Expression, ExpressionBase};
+use crate::env::Bindings;
 use crate::types::Type;
 use crate::value::Value;
 use std::collections::HashMap;
@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 // Import submodules
 pub mod task_output;
+pub mod math;
 
 // Re-export all function structs for convenience
 
@@ -103,14 +104,170 @@ impl PathMapper for TaskPathMapper {
 pub trait Function: Send + Sync {
     /// Check argument types and return the result type
     /// Performs type inference on the given expression arguments
-    fn infer_type(&self, args: &[Expression], env: &Environment) -> Result<Type, WdlError>;
+    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError>;
 
     /// Evaluate the function with given expression arguments
     /// Performs argument evaluation and then function execution
-    fn eval(&self, args: &[Expression], env: &Environment, stdlib: &StdLib) -> Result<Value, WdlError>;
+    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &StdLib) -> Result<Value, WdlError>;
 
     /// Get the function name
     fn name(&self) -> &str;
+}
+
+/// Static function implementation that takes a function operating on Values
+pub struct StaticFunction {
+    name: String,
+    argument_types: Vec<Type>,
+    return_type: Type,
+    implementation: Box<dyn Fn(&[Value]) -> Result<Value, WdlError> + Send + Sync>,
+}
+
+impl StaticFunction {
+    /// Create a new static function
+    pub fn new<F>(
+        name: String,
+        argument_types: Vec<Type>,
+        return_type: Type,
+        implementation: F,
+    ) -> Self
+    where
+        F: Fn(&[Value]) -> Result<Value, WdlError> + Send + Sync + 'static,
+    {
+        Self {
+            name,
+            argument_types,
+            return_type,
+            implementation: Box::new(implementation),
+        }
+    }
+}
+
+impl Function for StaticFunction {
+    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+        // Check argument count
+        if args.len() != self.argument_types.len() {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Function '{}' expects {} arguments, got {}",
+                    self.name,
+                    self.argument_types.len(),
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Check each argument type
+        for (i, (arg_expr, expected_type)) in args.iter_mut().zip(&self.argument_types).enumerate() {
+            let actual_type = arg_expr.infer_type(type_env, stdlib, struct_typedefs)?;
+            if !actual_type.coerces(expected_type, true) {
+                return Err(WdlError::Validation {
+                    pos: arg_expr.source_position().clone(),
+                    message: format!(
+                        "Function '{}' argument {} expects type {}, got {}",
+                        self.name,
+                        i + 1,
+                        expected_type,
+                        actual_type
+                    ),
+                    source_text: None,
+                    declared_wdl_version: None,
+                });
+            }
+        }
+
+        Ok(self.return_type.clone())
+    }
+
+    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &StdLib) -> Result<Value, WdlError> {
+        // Check argument count
+        if args.len() != self.argument_types.len() {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Function '{}' expects {} arguments, got {}",
+                    self.name,
+                    self.argument_types.len(),
+                    args.len()
+                ),
+            });
+        }
+
+        // Evaluate and coerce arguments
+        let mut evaluated_args = Vec::new();
+        for (i, (arg_expr, expected_type)) in args.iter().zip(&self.argument_types).enumerate() {
+            let arg_value = arg_expr.eval(env, stdlib)?;
+            let coerced_value = arg_value.coerce(expected_type).map_err(|_| {
+                WdlError::RuntimeError {
+                    message: format!(
+                        "Function '{}' argument {} cannot be coerced to type {}",
+                        self.name,
+                        i + 1,
+                        expected_type
+                    ),
+                }
+            })?;
+            evaluated_args.push(coerced_value);
+        }
+
+        // Call the implementation function
+        let result = (self.implementation)(&evaluated_args)?;
+
+        // Coerce result to expected return type
+        result.coerce(&self.return_type).map_err(|_| {
+            WdlError::RuntimeError {
+                message: format!(
+                    "Function '{}' result cannot be coerced to return type {}",
+                    self.name, self.return_type
+                ),
+            }
+        })
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Create a static function with the given name, argument types, return type, and implementation
+///
+/// This is a convenience function similar to miniwdl's StaticFunction that allows easy creation
+/// of simple functions that operate on Values and return Values.
+///
+/// # Arguments
+/// * `name` - The function name
+/// * `argument_types` - Vector of expected argument types
+/// * `return_type` - Expected return type
+/// * `implementation` - Function that takes a slice of Values and returns a Result<Value, WdlError>
+///
+/// # Example
+/// ```rust
+/// let floor_fn = create_static_function(
+///     "floor".to_string(),
+///     vec![Type::float(false)],
+///     Type::int(false),
+///     |args| {
+///         let value = args[0].as_float().unwrap();
+///         Ok(Value::int(value.floor() as i64))
+///     }
+/// );
+/// ```
+pub fn create_static_function<F>(
+    name: String,
+    argument_types: Vec<Type>,
+    return_type: Type,
+    implementation: F,
+) -> Box<dyn Function>
+where
+    F: Fn(&[Value]) -> Result<Value, WdlError> + Send + Sync + 'static,
+{
+    Box::new(StaticFunction::new(name, argument_types, return_type, implementation))
 }
 
 /// Standard library containing all built-in functions and operators
@@ -174,9 +331,9 @@ impl StdLib {
     /// Register all built-in functions
     fn register_builtin_functions(&mut self) {
         // Math functions
-        // self.register_function(Box::new(FloorFunction));
-        // self.register_function(Box::new(CeilFunction));
-        // self.register_function(Box::new(RoundFunction));
+        self.register_function(math::create_floor_function());
+        self.register_function(math::create_ceil_function());
+        self.register_function(math::create_round_function());
         // self.register_function(Box::new(MinFunction));
         // self.register_function(Box::new(MaxFunction));
 
@@ -288,6 +445,8 @@ impl StdLib {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expr::Expression;
+    use crate::error::SourcePosition;
 
     #[test]
     fn test_stdlib_creation() {
@@ -296,10 +455,69 @@ mod tests {
         // Test that stdlib can be created
         assert_eq!(stdlib.wdl_version(), "1.0");
 
-        // Test that no functions are registered yet (all are commented out)
-        assert!(stdlib.get_function("floor").is_none());
+        // Test that math functions are registered
+        assert!(stdlib.get_function("floor").is_some());
+        assert!(stdlib.get_function("ceil").is_some());
+        assert!(stdlib.get_function("round").is_some());
+
+        // Test that other functions are not registered yet
         assert!(stdlib.get_function("length").is_none());
         assert!(stdlib.get_function("_add").is_none());
         assert!(stdlib.get_function("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_create_static_function() {
+        // Create a simple floor function
+        let floor_fn = create_static_function(
+            "floor".to_string(),
+            vec![Type::float(false)],
+            Type::int(false),
+            |args| {
+                let value = args[0].as_float().unwrap();
+                Ok(Value::int(value.floor() as i64))
+            }
+        );
+
+        assert_eq!(floor_fn.name(), "floor");
+
+        // Test type inference
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let mut arg_exprs = vec![Expression::float(pos.clone(), 3.7)];
+        let type_env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result_type = floor_fn.infer_type(&mut arg_exprs, &type_env, &stdlib, &[]).unwrap();
+        assert_eq!(result_type, Type::int(false));
+
+        // Test evaluation
+        let arg_exprs = vec![Expression::float(pos, 3.7)];
+        let value_env = Bindings::new();
+        let result = floor_fn.eval(&arg_exprs, &value_env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_static_function_wrong_arity() {
+        let floor_fn = create_static_function(
+            "floor".to_string(),
+            vec![Type::float(false)],
+            Type::int(false),
+            |args| {
+                let value = args[0].as_float().unwrap();
+                Ok(Value::int(value.floor() as i64))
+            }
+        );
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let mut arg_exprs = vec![
+            Expression::float(pos.clone(), 3.7),
+            Expression::float(pos, 4.2), // Too many args
+        ];
+        let type_env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result = floor_fn.infer_type(&mut arg_exprs, &type_env, &stdlib, &[]);
+        assert!(result.is_err());
     }
 }
