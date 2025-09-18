@@ -358,16 +358,10 @@ impl ExpressionBase for Expression {
                 inferred_type,
                 ..
             } => {
-                // Evaluate arguments first
-                let mut eval_args = Vec::new();
-                for arg in arguments {
-                    eval_args.push(arg.eval(env, stdlib)?);
-                }
-
                 // Look up function in stdlib
                 if let Some(function) = stdlib.get_function(function_name) {
                     let result_value =
-                        function.eval_with_stdlib(&eval_args, stdlib).map_err(|e| {
+                        function.eval(arguments, env, stdlib).map_err(|e| {
                             // Convert WdlError to include position information
                             match e {
                                 WdlError::RuntimeError { message } => WdlError::validation_error(
@@ -406,9 +400,6 @@ impl ExpressionBase for Expression {
             Expression::BinaryOp {
                 op, left, right, ..
             } => {
-                let left_val = left.eval(env, stdlib)?;
-                let right_val = right.eval(env, stdlib)?;
-
                 // Convert operator to stdlib function name
                 let function_name = match op {
                     BinaryOperator::Add => "_add",
@@ -429,7 +420,7 @@ impl ExpressionBase for Expression {
                 // Call the stdlib operator function
                 if let Some(function) = stdlib.get_function(function_name) {
                     function
-                        .eval_with_stdlib(&[left_val, right_val], stdlib)
+                        .eval(&[left.as_ref().clone(), right.as_ref().clone()], env, stdlib)
                         .map_err(|e| match e {
                             WdlError::RuntimeError { message } => WdlError::validation_error(
                                 HasSourcePosition::source_position(self).clone(),
@@ -450,8 +441,6 @@ impl ExpressionBase for Expression {
             }
 
             Expression::UnaryOp { op, operand, .. } => {
-                let operand_val = operand.eval(env, stdlib)?;
-
                 let function_name = match op {
                     UnaryOperator::Not => "_not",
                     UnaryOperator::Negate => "_neg",
@@ -459,7 +448,7 @@ impl ExpressionBase for Expression {
 
                 if let Some(function) = stdlib.get_function(function_name) {
                     function
-                        .eval_with_stdlib(&[operand_val], stdlib)
+                        .eval(&[operand.as_ref().clone()], env, stdlib)
                         .map_err(|e| match e {
                             WdlError::RuntimeError { message } => WdlError::validation_error(
                                 HasSourcePosition::source_position(self).clone(),

@@ -412,11 +412,8 @@ impl Expression {
             } => {
                 // Use stdlib function infer_type
                 if let Some(func) = stdlib.get_function(function_name) {
-                    let arg_types: Vec<Type> = arguments
-                        .iter()
-                        .filter_map(|arg| arg.get_type().cloned())
-                        .collect();
-                    func.infer_type(&arg_types)?
+                    let mut arg_expressions: Vec<Expression> = arguments.clone();
+                    func.infer_type(&mut arg_expressions, type_env, stdlib, struct_typedefs)?
                 } else {
                     return Err(WdlError::RuntimeError {
                         message: format!("Unknown function: {}", function_name),
