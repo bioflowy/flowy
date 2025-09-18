@@ -192,7 +192,7 @@ pub enum WdlError {
     },
 
     /// Unknown identifier
-    #[error("Unknown identifier: {message}")]
+    #[error("Unknown identifier: {message} at {pos}")]
     UnknownIdentifier {
         pos: SourcePosition,
         message: String,
