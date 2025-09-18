@@ -187,34 +187,8 @@ impl Function for StaticFunction {
     }
 
     fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &StdLib) -> Result<Value, WdlError> {
-        // Check argument count
-        if args.len() != self.argument_types.len() {
-            return Err(WdlError::RuntimeError {
-                message: format!(
-                    "Function '{}' expects {} arguments, got {}",
-                    self.name,
-                    self.argument_types.len(),
-                    args.len()
-                ),
-            });
-        }
-
-        // Evaluate and coerce arguments
-        let mut evaluated_args = Vec::new();
-        for (i, (arg_expr, expected_type)) in args.iter().zip(&self.argument_types).enumerate() {
-            let arg_value = arg_expr.eval(env, stdlib)?;
-            let coerced_value = arg_value.coerce(expected_type).map_err(|_| {
-                WdlError::RuntimeError {
-                    message: format!(
-                        "Function '{}' argument {} cannot be coerced to type {}",
-                        self.name,
-                        i + 1,
-                        expected_type
-                    ),
-                }
-            })?;
-            evaluated_args.push(coerced_value);
-        }
+        // Evaluate and coerce arguments using the utility function
+        let evaluated_args = evaluate_and_coerce_args(args, &self.argument_types, env, stdlib, &self.name)?;
 
         // Call the implementation function
         let result = (self.implementation)(&evaluated_args)?;
@@ -268,6 +242,59 @@ where
     F: Fn(&[Value]) -> Result<Value, WdlError> + Send + Sync + 'static,
 {
     Box::new(StaticFunction::new(name, argument_types, return_type, implementation))
+}
+
+/// Evaluate and coerce expressions to values with the expected types
+///
+/// This utility function is used by Function implementations to convert Expression
+/// arguments to Values with proper type coercion and error handling.
+///
+/// # Arguments
+/// * `args` - Array of Expression arguments
+/// * `expected_types` - Expected types for each argument
+/// * `env` - Environment for expression evaluation
+/// * `stdlib` - Standard library for function calls
+/// * `function_name` - Name of the calling function (for error messages)
+///
+/// # Returns
+/// Vector of Values coerced to the expected types, or WdlError on failure
+pub fn evaluate_and_coerce_args(
+    args: &[Expression],
+    expected_types: &[Type],
+    env: &Bindings<Value>,
+    stdlib: &StdLib,
+    function_name: &str,
+) -> Result<Vec<Value>, WdlError> {
+    // Check argument count
+    if args.len() != expected_types.len() {
+        return Err(WdlError::RuntimeError {
+            message: format!(
+                "Function '{}' expects {} arguments, got {}",
+                function_name,
+                expected_types.len(),
+                args.len()
+            ),
+        });
+    }
+
+    // Evaluate and coerce arguments
+    let mut evaluated_args = Vec::new();
+    for (i, (arg_expr, expected_type)) in args.iter().zip(expected_types).enumerate() {
+        let arg_value = arg_expr.eval(env, stdlib)?;
+        let coerced_value = arg_value.coerce(expected_type).map_err(|_| {
+            WdlError::RuntimeError {
+                message: format!(
+                    "Function '{}' argument {} cannot be coerced to type {}",
+                    function_name,
+                    i + 1,
+                    expected_type
+                ),
+            }
+        })?;
+        evaluated_args.push(coerced_value);
+    }
+
+    Ok(evaluated_args)
 }
 
 /// Standard library containing all built-in functions and operators
