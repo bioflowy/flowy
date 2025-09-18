@@ -321,12 +321,13 @@ pub struct StdLib {
     wdl_version: String,
     path_mapper: Box<dyn PathMapper>,
     is_task_context: bool,
+    write_dir: String,
 }
 
 impl StdLib {
     /// Create a new standard library instance for the given WDL version
     pub fn new(wdl_version: &str) -> Self {
-        Self::with_path_mapper(wdl_version, Box::new(DefaultPathMapper), false)
+        Self::with_path_mapper(wdl_version, Box::new(DefaultPathMapper), false, std::env::temp_dir().to_string_lossy().to_string())
     }
 
     /// Create a standard library instance with custom path mapper and context
@@ -334,12 +335,14 @@ impl StdLib {
         wdl_version: &str,
         path_mapper: Box<dyn PathMapper>,
         is_task_context: bool,
+        write_dir: String,
     ) -> Self {
         let mut stdlib = StdLib {
             functions: HashMap::new(),
             wdl_version: wdl_version.to_string(),
             path_mapper,
             is_task_context,
+            write_dir,
         };
 
         // Register built-in functions
@@ -427,11 +430,8 @@ impl StdLib {
             // }
         }
 
-        // Write functions
-        // self.register_function(io::create_write_lines());
-        // self.register_function(io::create_write_tsv());
-        // self.register_function(io::create_write_map());
-        // self.register_function(io::create_write_json());
+        // Write functions (require PathMapper and write_dir)
+        self.register_write_functions();
 
         // Read functions (require PathMapper)
         self.register_read_functions();
@@ -450,12 +450,14 @@ impl StdLib {
         // self.register_function(Box::new(RemainderOperator));
 
         // Comparison operators
-        // self.register_function(Box::new(EqualOperator));
-        // self.register_function(Box::new(NotEqualOperator));
-        // self.register_function(Box::new(LessThanOperator));
-        // self.register_function(Box::new(LessThanEqualOperator));
-        // self.register_function(Box::new(GreaterThanOperator));
-        // self.register_function(Box::new(GreaterThanEqualOperator));
+        self.register_function(operators::create_lt_function());    // Less than (<)
+        self.register_function(operators::create_lte_function());   // Less than or equal (<=)
+        self.register_function(operators::create_gt_function());    // Greater than (>)
+        self.register_function(operators::create_gte_function());   // Greater than or equal (>=)
+
+        // Equality operators
+        self.register_function(operators::create_eqeq_function());  // Equal (==)
+        self.register_function(operators::create_neq_function());   // Not equal (!=)
 
         // Logical operators
         // self.register_function(Box::new(LogicalAndOperator));
@@ -479,6 +481,27 @@ impl StdLib {
         self.register_function(io::create_read_int_function(self.path_mapper.clone_boxed()));
         self.register_function(io::create_read_float_function(self.path_mapper.clone_boxed()));
         self.register_function(io::create_read_boolean_function(self.path_mapper.clone_boxed()));
+    }
+
+    /// Register write functions
+    fn register_write_functions(&mut self) {
+        // Register write functions with PathMapper and write_dir
+        self.register_function(io::create_write_lines_function(
+            self.path_mapper.clone_boxed(),
+            self.write_dir.clone()
+        ));
+        self.register_function(io::create_write_tsv_function(
+            self.path_mapper.clone_boxed(),
+            self.write_dir.clone()
+        ));
+        self.register_function(io::create_write_map_function(
+            self.path_mapper.clone_boxed(),
+            self.write_dir.clone()
+        ));
+        self.register_function(io::create_write_json_function(
+            self.path_mapper.clone_boxed(),
+            self.write_dir.clone()
+        ));
     }
 
     /// Add or replace a function in the library (public method)
@@ -518,6 +541,12 @@ mod tests {
         assert!(stdlib.get_function("read_int").is_some());
         assert!(stdlib.get_function("read_float").is_some());
         assert!(stdlib.get_function("read_boolean").is_some());
+
+        // Test that write functions are registered
+        assert!(stdlib.get_function("write_lines").is_some());
+        assert!(stdlib.get_function("write_tsv").is_some());
+        assert!(stdlib.get_function("write_map").is_some());
+        assert!(stdlib.get_function("write_json").is_some());
 
         // Test that other functions are not registered yet
         assert!(stdlib.get_function("length").is_none());

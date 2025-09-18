@@ -13,6 +13,239 @@ pub struct ArithmeticOperator {
     operation: Box<dyn Fn(&Value, &Value) -> Result<Value, WdlError> + Send + Sync>,
 }
 
+/// Comparison operator implementation that handles type comparisons and returns boolean
+pub struct ComparisonOperator {
+    name: String,
+    operation: Box<dyn Fn(&Value, &Value) -> Result<Value, WdlError> + Send + Sync>,
+}
+
+/// Equality operator implementation that handles equality/inequality testing
+pub struct EqualityOperator {
+    name: String,
+    negate: bool,
+    operation: Box<dyn Fn(&Value, &Value) -> Result<Value, WdlError> + Send + Sync>,
+}
+
+impl EqualityOperator {
+    /// Create a new equality operator
+    pub fn new<F>(name: String, negate: bool, operation: F) -> Self
+    where
+        F: Fn(&Value, &Value) -> Result<Value, WdlError> + Send + Sync + 'static,
+    {
+        Self {
+            name,
+            negate,
+            operation: Box::new(operation),
+        }
+    }
+
+    /// Check if types are equatable (can be compared for equality)
+    fn are_equatable_types(&self, left_type: &Type, right_type: &Type) -> bool {
+        // Two types are equatable if they can be coerced to a common type
+        // This follows WDL's equatable logic from miniwdl
+
+        match (left_type, right_type) {
+            // Same base types are equatable
+            (Type::Int { .. }, Type::Int { .. }) => true,
+            (Type::Float { .. }, Type::Float { .. }) => true,
+            (Type::String { .. }, Type::String { .. }) => true,
+            (Type::Boolean { .. }, Type::Boolean { .. }) => true,
+            (Type::File { .. }, Type::File { .. }) => true,
+            (Type::Directory { .. }, Type::Directory { .. }) => true,
+            
+            // Int and Float are equatable (numeric coercion)
+            (Type::Int { .. }, Type::Float { .. }) => true,
+            (Type::Float { .. }, Type::Int { .. }) => true,
+            
+            // Arrays are equatable if their item types are equatable
+            (Type::Array { item_type: left_item, .. }, Type::Array { item_type: right_item, .. }) => {
+                self.are_equatable_types(left_item, right_item)
+            },
+            
+            // Maps are equatable if their key and value types are equatable
+            (Type::Map { key_type: left_key, value_type: left_val, .. }, 
+             Type::Map { key_type: right_key, value_type: right_val, .. }) => {
+                self.are_equatable_types(left_key, right_key) && 
+                self.are_equatable_types(left_val, right_val)
+            },
+            
+            // Pairs are equatable if both components are equatable
+            (Type::Pair { left_type: ll, right_type: lr, .. }, 
+             Type::Pair { left_type: rl, right_type: rr, .. }) => {
+                self.are_equatable_types(ll, rl) && self.are_equatable_types(lr, rr)
+            },
+            
+            // StructInstances with same type name are equatable
+            (Type::StructInstance { type_name: left_name, .. }, 
+             Type::StructInstance { type_name: right_name, .. }) => {
+                left_name == right_name
+            },
+            
+            // Any type is equatable with any other type
+            (Type::Any { .. }, _) => true,
+            (_, Type::Any { .. }) => true,
+            
+            // Different base types are not equatable
+            _ => false,
+        }
+    }
+}
+impl Function for EqualityOperator {
+    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+        // Check argument count
+        if args.len() != 2 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Equality operator '{}' expects 2 arguments, got {}",
+                    self.name,
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Infer types of both operands
+        let left_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let right_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Check that operands are equatable
+        if !self.are_equatable_types(&left_type, &right_type) {
+            return Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!(
+                    "Cannot test equality of {} and {}",
+                    left_type, right_type
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // All equality operators return Boolean
+        Ok(Type::boolean(false))
+    }
+
+    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+        // Check argument count
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Equality operator '{}' expects 2 arguments, got {}",
+                    self.name,
+                    args.len()
+                ),
+            });
+        }
+
+        // Evaluate operands
+        let left_value = args[0].eval(env, stdlib)?;
+        let right_value = args[1].eval(env, stdlib)?;
+
+        // Delegate to the operation function which handles equality logic
+        (self.operation)(&left_value, &right_value)
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl ComparisonOperator {
+    /// Create a new comparison operator
+    pub fn new<F>(name: String, operation: F) -> Self
+    where
+        F: Fn(&Value, &Value) -> Result<Value, WdlError> + Send + Sync + 'static,
+    {
+        Self {
+            name,
+            operation: Box::new(operation),
+        }
+    }
+
+    /// Check if types are comparable (both numeric or both strings)
+    fn are_comparable_types(&self, left_type: &Type, right_type: &Type) -> bool {
+        let is_left_numeric = matches!(left_type, Type::Int { .. } | Type::Float { .. });
+        let is_right_numeric = matches!(right_type, Type::Int { .. } | Type::Float { .. });
+        let is_left_string = matches!(left_type, Type::String { .. });
+        let is_right_string = matches!(right_type, Type::String { .. });
+
+        (is_left_numeric && is_right_numeric) || (is_left_string && is_right_string)
+    }
+}
+impl Function for ComparisonOperator {
+    fn infer_type(&self, args: &mut [Expression], type_env: &Bindings<Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+        // Check argument count
+        if args.len() != 2 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Comparison operator '{}' expects 2 arguments, got {}",
+                    self.name,
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Infer types of both operands
+        let left_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let right_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Check that operands are comparable
+        if !self.are_comparable_types(&left_type, &right_type) {
+            return Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!(
+                    "Incomparable operands to {} operator: {} and {}",
+                    self.name, left_type, right_type
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // All comparison operators return Boolean
+        Ok(Type::boolean(false))
+    }
+
+    fn eval(&self, args: &[Expression], env: &Bindings<Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+        // Check argument count
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Comparison operator '{}' expects 2 arguments, got {}",
+                    self.name,
+                    args.len()
+                ),
+            });
+        }
+
+        // Evaluate operands
+        let left_value = args[0].eval(env, stdlib)?;
+        let right_value = args[1].eval(env, stdlib)?;
+
+        // Delegate to the operation function which handles comparison logic
+        (self.operation)(&left_value, &right_value)
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl ArithmeticOperator {
     /// Create a new arithmetic operator
     pub fn new<F>(name: String, operation: F) -> Self
@@ -173,6 +406,171 @@ where
     };
 
     Box::new(ArithmeticOperator::new(name, operation))
+}
+
+/// Create a comparison operator function
+///
+/// Takes a function name and comparison operation closures for different types.
+/// The operator automatically handles type coercion and returns Boolean results.
+///
+/// # Arguments
+/// * `name` - The operator name (e.g., "_lt", "_le", "_gt", "_ge")
+/// * `int_op` - Closure for i64 comparisons (left, right) -> bool
+/// * `float_op` - Closure for f64 comparisons (left, right) -> bool
+/// * `string_op` - Closure for String comparisons (left, right) -> bool
+///
+/// # Type Inference Rules
+/// - If both operands are Int, use int_op
+/// - If either operand is Float, convert both to Float and use float_op
+/// - If both operands are String, use string_op
+/// - Result is always Boolean
+///
+/// # Example
+/// ```rust
+/// let lt_fn = create_comparison_operator(
+///     "_lt".to_string(),
+///     |l, r| l < r,        // i64 comparison
+///     |l, r| l < r,        // f64 comparison
+///     |l, r| l < r,        // String comparison
+/// );
+/// ```
+pub fn create_comparison_operator<IntOp, FloatOp, StringOp>(
+    name: String,
+    int_op: IntOp,
+    float_op: FloatOp,
+    string_op: StringOp,
+) -> Box<dyn Function>
+where
+    IntOp: Fn(i64, i64) -> bool + Send + Sync + 'static,
+    FloatOp: Fn(f64, f64) -> bool + Send + Sync + 'static,
+    StringOp: Fn(&str, &str) -> bool + Send + Sync + 'static,
+{
+    let name_clone = name.clone();
+    let operation = move |left: &Value, right: &Value| -> Result<Value, WdlError> {
+        // Check if both values are strings
+        if let (Some(left_str), Some(right_str)) = (left.as_string(), right.as_string()) {
+            let result = string_op(&left_str, &right_str);
+            return Ok(Value::boolean(result));
+        }
+
+        // Check if both values are Int for precision
+        if let (Value::Int { value: left_int, .. }, Value::Int { value: right_int, .. }) = (left, right) {
+            let result = int_op(*left_int, *right_int);
+            return Ok(Value::boolean(result));
+        }
+
+        // Try to convert to Float for numeric comparison
+        if let (Some(left_float), Some(right_float)) = (left.as_float(), right.as_float()) {
+            let result = float_op(left_float, right_float);
+            return Ok(Value::boolean(result));
+        }
+
+        // If we get here, the types are incomparable
+        Err(WdlError::RuntimeError {
+            message: format!(
+                "Cannot compare incompatible types in {} operation",
+                name_clone
+            ),
+        })
+    };
+
+    Box::new(ComparisonOperator::new(name, operation))
+}
+
+/// Create the less-than (_lt) operator function
+pub fn create_lt_function() -> Box<dyn Function> {
+    create_comparison_operator(
+        "_lt".to_string(),
+        |l, r| l < r,        // i64 comparison
+        |l, r| l < r,        // f64 comparison
+        |l, r| l < r,        // String comparison
+    )
+}
+
+/// Create the less-than-or-equal (_lte) operator function
+pub fn create_lte_function() -> Box<dyn Function> {
+    create_comparison_operator(
+        "_lte".to_string(),
+        |l, r| l <= r,       // i64 comparison
+        |l, r| l <= r,       // f64 comparison
+        |l, r| l <= r,       // String comparison
+    )
+}
+
+/// Create the greater-than (_gt) operator function
+pub fn create_gt_function() -> Box<dyn Function> {
+    create_comparison_operator(
+        "_gt".to_string(),
+        |l, r| l > r,        // i64 comparison
+        |l, r| l > r,        // f64 comparison
+        |l, r| l > r,        // String comparison
+    )
+}
+
+/// Create the greater-than-or-equal (_gte) operator function
+pub fn create_gte_function() -> Box<dyn Function> {
+    create_comparison_operator(
+        "_gte".to_string(),
+        |l, r| l >= r,       // i64 comparison
+        |l, r| l >= r,       // f64 comparison
+        |l, r| l >= r,       // String comparison
+    )
+}
+
+/// Create an equality operator function
+///
+/// Handles both equality (==) and inequality (!=) operations.
+/// Automatically handles type coercion and equality testing for compatible types.
+///
+/// # Arguments
+/// * `name` - The operator name (e.g., "_eqeq", "_neq")
+/// * `negate` - If true, negates the equality result (for != operator)
+///
+/// # Type Rules
+/// - Two values are equatable if their types can be coerced to a common type
+/// - Int and Float are equatable through coercion
+/// - Optional types are handled appropriately
+/// - Arrays, Maps, and Pairs are equatable if their components are equatable
+/// - Result is always Boolean
+///
+/// # Example
+/// ```rust
+/// let eq_fn = create_equal_operator("_eqeq".to_string(), false);  // == operator
+/// let neq_fn = create_equal_operator("_neq".to_string(), true);   // != operator
+/// ```
+pub fn create_equal_operator(name: String, negate: bool) -> Box<dyn Function> {
+    let name_clone = name.clone();
+    let operation = move |left: &Value, right: &Value| -> Result<Value, WdlError> {
+        // Use Value's built-in equality comparison
+        // This handles all the type coercion logic automatically
+        let are_equal = match (left, right) {
+            // Handle numeric comparisons with coercion
+            (Value::Int { value: l, .. }, Value::Float { value: r, .. }) => {
+                (*l as f64) == *r
+            },
+            (Value::Float { value: l, .. }, Value::Int { value: r, .. }) => {
+                *l == (*r as f64)
+            },
+            // For all other cases, use direct equality
+            _ => left == right,
+        };
+
+        // Apply negation if this is the != operator
+        let result = if negate { !are_equal } else { are_equal };
+        Ok(Value::boolean(result))
+    };
+
+    Box::new(EqualityOperator::new(name, negate, operation))
+}
+
+/// Create the equality (_eqeq) operator function
+pub fn create_eqeq_function() -> Box<dyn Function> {
+    create_equal_operator("_eqeq".to_string(), false)
+}
+
+/// Create the inequality (_neq) operator function  
+pub fn create_neq_function() -> Box<dyn Function> {
+    create_equal_operator("_neq".to_string(), true)
 }
 
 /// Create a subtraction operator function
