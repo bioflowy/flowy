@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 pub mod task_output;
 pub mod math;
 pub mod operators;
+pub mod io;
 
 // Re-export all function structs for convenience
 
@@ -27,11 +28,15 @@ pub trait PathMapper: Send + Sync {
     /// Convert a real filesystem path to a virtual filename for WDL values
     fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError>;
 
+    /// Clone this PathMapper
+    fn clone_boxed(&self) -> Box<dyn PathMapper>;
+
     /// For downcasting to concrete types
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Default path mapper that performs no transformation
+#[derive(Debug, Clone)]
 pub struct DefaultPathMapper;
 
 impl PathMapper for DefaultPathMapper {
@@ -47,15 +52,21 @@ impl PathMapper for DefaultPathMapper {
             })
     }
 
+    fn clone_boxed(&self) -> Box<dyn PathMapper> {
+        Box::new(DefaultPathMapper)
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }
 
 /// Task-specific path mapper that resolves relative paths against a task directory
+#[derive(Debug, Clone)]
 pub struct TaskPathMapper {
     task_dir: PathBuf,
 }
+
 
 impl TaskPathMapper {
     pub fn new(task_dir: PathBuf) -> Self {
@@ -94,6 +105,12 @@ impl PathMapper for TaskPathMapper {
                     message: format!("Invalid path: {}", path.display()),
                 })
         }
+    }
+
+    fn clone_boxed(&self) -> Box<dyn PathMapper> {
+        Box::new(TaskPathMapper {
+            task_dir: self.task_dir.clone(),
+        })
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -416,17 +433,8 @@ impl StdLib {
         // self.register_function(io::create_write_map());
         // self.register_function(io::create_write_json());
 
-        // Read functions
-        // self.register_function(Box::new(ReadLinesFunction));
-        // self.register_function(Box::new(ReadStringFunction));
-        // self.register_function(io::create_read_int());
-        // self.register_function(io::create_read_float());
-        // self.register_function(io::create_read_boolean());
-        // self.register_function(io::create_read_json());
-        // self.register_function(io::create_read_tsv());
-        // self.register_function(io::create_read_map());
-        // self.register_function(io::create_read_objects());
-        // self.register_function(io::create_read_object());
+        // Read functions (require PathMapper)
+        self.register_read_functions();
 
         // File system functions
         // self.register_function(io::create_size());
@@ -464,6 +472,15 @@ impl StdLib {
         self.functions.insert(name, function);
     }
 
+    /// Register read functions
+    fn register_read_functions(&mut self) {
+        // Register read functions with PathMapper
+        self.register_function(io::create_read_string_function(self.path_mapper.clone_boxed()));
+        self.register_function(io::create_read_int_function(self.path_mapper.clone_boxed()));
+        self.register_function(io::create_read_float_function(self.path_mapper.clone_boxed()));
+        self.register_function(io::create_read_boolean_function(self.path_mapper.clone_boxed()));
+    }
+
     /// Add or replace a function in the library (public method)
     pub fn add_function(&mut self, function: Box<dyn Function>) {
         self.register_function(function);
@@ -495,6 +512,12 @@ mod tests {
         assert!(stdlib.get_function("_sub").is_some());
         assert!(stdlib.get_function("_mul").is_some());
         assert!(stdlib.get_function("_div").is_some());
+
+        // Test that read functions are registered
+        assert!(stdlib.get_function("read_string").is_some());
+        assert!(stdlib.get_function("read_int").is_some());
+        assert!(stdlib.get_function("read_float").is_some());
+        assert!(stdlib.get_function("read_boolean").is_some());
 
         // Test that other functions are not registered yet
         assert!(stdlib.get_function("length").is_none());
