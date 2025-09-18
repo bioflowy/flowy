@@ -360,28 +360,27 @@ impl ExpressionBase for Expression {
             } => {
                 // Look up function in stdlib
                 if let Some(function) = stdlib.get_function(function_name) {
-                    let result_value =
-                        function.eval(arguments, env, stdlib).map_err(|e| {
-                            // Convert WdlError to include position information
-                            match e {
-                                WdlError::RuntimeError { message } => WdlError::validation_error(
-                                    HasSourcePosition::source_position(self).clone(),
-                                    message,
+                    let result_value = function.eval(arguments, env, stdlib).map_err(|e| {
+                        // Convert WdlError to include position information
+                        match e {
+                            WdlError::RuntimeError { message } => WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                message,
+                            ),
+                            WdlError::ArgumentCountMismatch {
+                                function,
+                                expected,
+                                actual,
+                            } => WdlError::validation_error(
+                                HasSourcePosition::source_position(self).clone(),
+                                format!(
+                                    "{}() expects {} arguments, got {}",
+                                    function, expected, actual
                                 ),
-                                WdlError::ArgumentCountMismatch {
-                                    function,
-                                    expected,
-                                    actual,
-                                } => WdlError::validation_error(
-                                    HasSourcePosition::source_position(self).clone(),
-                                    format!(
-                                        "{}() expects {} arguments, got {}",
-                                        function, expected, actual
-                                    ),
-                                ),
-                                other => other,
-                            }
-                        })?;
+                            ),
+                            other => other,
+                        }
+                    })?;
 
                     // Apply type coercion to the inferred type if available
                     if let Some(target_type) = inferred_type {
@@ -420,7 +419,11 @@ impl ExpressionBase for Expression {
                 // Call the stdlib operator function
                 if let Some(function) = stdlib.get_function(function_name) {
                     function
-                        .eval(&[left.as_ref().clone(), right.as_ref().clone()], env, stdlib)
+                        .eval(
+                            &[left.as_ref().clone(), right.as_ref().clone()],
+                            env,
+                            stdlib,
+                        )
                         .map_err(|e| match e {
                             WdlError::RuntimeError { message } => WdlError::validation_error(
                                 HasSourcePosition::source_position(self).clone(),
@@ -621,7 +624,14 @@ fn evaluate_placeholder(
     // or causes an error, then the placeholder is replaced by the empty string.
     let val = match expr.eval(env, stdlib) {
         Ok(value) => value,
-        Err(_) => {
+        Err(error) => {
+            // In debug mode, output the error to stderr before returning empty string
+            if std::env::var("RUST_BACKTRACE").is_ok() || std::env::var("DEBUG").is_ok() {
+                eprintln!(
+                    "DEBUG: Placeholder evaluation error (replaced with empty string): {}",
+                    error
+                );
+            }
             // Return empty string for any evaluation error
             return Ok(String::new());
         }

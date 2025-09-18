@@ -11,6 +11,146 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 
+/// Write file function that follows the original WriteFileFunction pattern
+/// Uses eval_with_stdlib for proper file handling in different contexts
+pub struct WriteFileFunction<F>
+where
+    F: Fn(&Value, &mut dyn Write) -> Result<(), WdlError> + Send + Sync + 'static,
+{
+    name: String,
+    argument_type: Type,
+    serializer: Box<F>,
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+}
+
+impl<F> Function for WriteFileFunction<F>
+where
+    F: Fn(&Value, &mut dyn Write) -> Result<(), WdlError> + Send + Sync + 'static,
+{
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!("{} expects 1 argument, got {}", self.name, args.len()),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        if !arg_type.coerces(&self.argument_type, true) {
+            let pos = args[0].source_position().clone();
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "{} expects {}, got {}",
+                    self.name, self.argument_type, arg_type
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        Ok(Type::file(false))
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("{} expects 1 argument, got {}", self.name, args.len()),
+            });
+        }
+
+        let value = args[0].eval(env, stdlib)?;
+
+        // Use task directory if available, otherwise use write_dir
+        let target_dir = if let Some(task_dir) = stdlib.task_dir() {
+            task_dir.as_path()
+        } else {
+            std::path::Path::new(&self.write_dir)
+        };
+
+        // Create target directory if it doesn't exist
+        std::fs::create_dir_all(target_dir).map_err(|e| WdlError::RuntimeError {
+            message: format!(
+                "Failed to create directory '{}': {}",
+                target_dir.display(),
+                e
+            ),
+        })?;
+
+        // Create a temporary file in the target directory
+        let mut temp_file =
+            tempfile::NamedTempFile::new_in(target_dir).map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to create temporary file: {}", e),
+            })?;
+
+        let temp_path = temp_file.path().to_path_buf();
+
+        // Serialize the value to the file and handle persistence
+        let virtual_filename = {
+            (self.serializer)(&value, &mut temp_file)?;
+            temp_file.flush().map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to flush file: {}", e),
+            })?;
+
+            // Set file permissions (equivalent to chmod 0o660)
+            let mut perms = std::fs::metadata(&temp_path)
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to get file metadata: {}", e),
+                })?
+                .permissions();
+            perms.set_mode(0o660);
+            std::fs::set_permissions(&temp_path, perms).map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to set file permissions: {}", e),
+            })?;
+
+            // Persist the temp file to prevent automatic deletion
+            temp_file
+                .persist(&temp_path)
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to persist temporary file: {}", e),
+                })?;
+
+            // Virtualize the filename using PathMapper
+            let virtual_name = self.path_mapper.virtualize_filename(&temp_path)?;
+
+            // Debug output to see the actual file paths
+            if std::env::var("RUST_BACKTRACE").is_ok() || std::env::var("DEBUG").is_ok() {
+                eprintln!(
+                    "DEBUG: {} created file: real_path={:?}, virtual_name={}",
+                    self.name, temp_path, virtual_name
+                );
+            }
+
+            virtual_name
+        };
+
+        Value::file(virtual_filename)
+    }
+}
+
 /// Create a read function implementation based on a parse function
 ///
 /// This is similar to miniwdl's _read() method that generates read_* function
@@ -85,46 +225,12 @@ where
 {
     use crate::stdlib::create_static_function;
 
-    create_static_function(name, vec![argument_type], Type::file(false), move |args| {
-        let value = &args[0];
-
-        // Create write directory if it doesn't exist
-        std::fs::create_dir_all(&write_dir).map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to create write directory '{}': {}", write_dir, e),
-        })?;
-
-        // Create a temporary file in the write directory
-        let temp_file =
-            tempfile::NamedTempFile::new_in(&write_dir).map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to create temporary file: {}", e),
-            })?;
-
-        let temp_path = temp_file.path().to_path_buf();
-
-        // Serialize the value to the file
-        {
-            let mut file = temp_file;
-            serialize(value, &mut file)?;
-            file.flush().map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to flush file: {}", e),
-            })?;
-        }
-
-        // Set file permissions (equivalent to chmod 0o660)
-        let mut perms = std::fs::metadata(&temp_path)
-            .map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to get file metadata: {}", e),
-            })?
-            .permissions();
-        perms.set_mode(0o660);
-        std::fs::set_permissions(&temp_path, perms).map_err(|e| WdlError::RuntimeError {
-            message: format!("Failed to set file permissions: {}", e),
-        })?;
-
-        // Virtualize the filename using PathMapper
-        let virtual_filename = path_mapper.virtualize_filename(&temp_path)?;
-
-        Value::file(virtual_filename)
+    Box::new(WriteFileFunction {
+        name,
+        argument_type,
+        serializer: Box::new(serialize),
+        path_mapper,
+        write_dir,
     })
 }
 
@@ -144,6 +250,27 @@ pub fn create_read_string_function(
                 content
             };
             Ok(Value::string(trimmed.to_string()))
+        },
+        path_mapper,
+    )
+}
+
+/// Create read_lines function: read_lines(File) -> Array[String]
+/// Reads a file and returns its content as an array of lines
+pub fn create_read_lines_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
+    create_read_function(
+        "read_lines".to_string(),
+        Type::array(Type::string(false), false, false),
+        |content: &str| {
+            // Split content into lines and convert to Value array
+            let lines: Vec<Value> = content
+                .lines()
+                .map(|line| Value::string(line.to_string()))
+                .collect();
+
+            Ok(Value::array(Type::string(false), lines))
         },
         path_mapper,
     )

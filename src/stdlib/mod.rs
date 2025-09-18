@@ -521,6 +521,9 @@ impl StdLib {
         self.register_function(io::create_read_string_function(
             self.path_mapper.clone_boxed(),
         ));
+        self.register_function(io::create_read_lines_function(
+            self.path_mapper.clone_boxed(),
+        ));
         self.register_function(io::create_read_int_function(self.path_mapper.clone_boxed()));
         self.register_function(io::create_read_float_function(
             self.path_mapper.clone_boxed(),
@@ -586,6 +589,7 @@ mod tests {
 
         // Test that read functions are registered
         assert!(stdlib.get_function("read_string").is_some());
+        assert!(stdlib.get_function("read_lines").is_some());
         assert!(stdlib.get_function("read_int").is_some());
         assert!(stdlib.get_function("read_float").is_some());
         assert!(stdlib.get_function("read_boolean").is_some());
