@@ -18,6 +18,7 @@ pub mod operators;
 pub mod io;
 pub mod strings;
 pub mod arrays;
+pub mod map;
 
 // Re-export all function structs for convenience
 
@@ -403,12 +404,12 @@ impl StdLib {
         self.register_function(arrays::create_transpose_function());
 
         // Map functions
-        // self.register_function(Box::new(KeysFunction));
-        // self.register_function(Box::new(ValuesFunction));
-        // self.register_function(Box::new(ContainsKeyFunction));
-        // self.register_function(Box::new(ContainsFunction));
-        // self.register_function(Box::new(AsPairsFunction));
-        // self.register_function(Box::new(AsMapFunction));
+        self.register_function(map::create_keys_function());
+        self.register_function(map::create_as_pairs_function());
+        self.register_function(map::create_as_map_function());
+        self.register_function(map::create_collect_by_key_function());
+        self.register_function(map::create_contains_key_function());
+        self.register_function(map::create_values_function());
 
         // String functions
         self.register_function(strings::create_find_function());
