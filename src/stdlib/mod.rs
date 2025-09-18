@@ -484,6 +484,7 @@ impl StdLib {
     fn register_operators(&mut self) {
         // Arithmetic operators
         self.register_function(operators::create_add_function()); // Special add operator with string concatenation
+        self.register_function(operators::create_interpolation_add_function()); // Interpolation add operator for placeholders
         self.register_function(operators::create_sub_function()); // Standard subtraction
         self.register_function(operators::create_mul_function()); // Standard multiplication
         self.register_function(operators::create_div_function()); // Standard division

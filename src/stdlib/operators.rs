@@ -329,88 +329,6 @@ impl EqualityOperator {
             operation: Box::new(operation),
         }
     }
-
-    /// Check if types are equatable (can be compared for equality)
-    fn are_equatable_types(&self, left_type: &Type, right_type: &Type) -> bool {
-        // Two types are equatable if they can be coerced to a common type
-        // This follows WDL's equatable logic from miniwdl
-
-        match (left_type, right_type) {
-            // Same base types are equatable
-            (Type::Int { .. }, Type::Int { .. }) => true,
-            (Type::Float { .. }, Type::Float { .. }) => true,
-            (Type::String { .. }, Type::String { .. }) => true,
-            (Type::Boolean { .. }, Type::Boolean { .. }) => true,
-            (Type::File { .. }, Type::File { .. }) => true,
-            (Type::Directory { .. }, Type::Directory { .. }) => true,
-
-            // Int and Float are equatable (numeric coercion)
-            (Type::Int { .. }, Type::Float { .. }) => true,
-            (Type::Float { .. }, Type::Int { .. }) => true,
-
-            // Arrays are equatable if their item types are equatable
-            (
-                Type::Array {
-                    item_type: left_item,
-                    ..
-                },
-                Type::Array {
-                    item_type: right_item,
-                    ..
-                },
-            ) => self.are_equatable_types(left_item, right_item),
-
-            // Maps are equatable if their key and value types are equatable
-            (
-                Type::Map {
-                    key_type: left_key,
-                    value_type: left_val,
-                    ..
-                },
-                Type::Map {
-                    key_type: right_key,
-                    value_type: right_val,
-                    ..
-                },
-            ) => {
-                self.are_equatable_types(left_key, right_key)
-                    && self.are_equatable_types(left_val, right_val)
-            }
-
-            // Pairs are equatable if both components are equatable
-            (
-                Type::Pair {
-                    left_type: ll,
-                    right_type: lr,
-                    ..
-                },
-                Type::Pair {
-                    left_type: rl,
-                    right_type: rr,
-                    ..
-                },
-            ) => self.are_equatable_types(ll, rl) && self.are_equatable_types(lr, rr),
-
-            // StructInstances with same type name are equatable
-            (
-                Type::StructInstance {
-                    type_name: left_name,
-                    ..
-                },
-                Type::StructInstance {
-                    type_name: right_name,
-                    ..
-                },
-            ) => left_name == right_name,
-
-            // Any type is equatable with any other type
-            (Type::Any { .. }, _) => true,
-            (_, Type::Any { .. }) => true,
-
-            // Different base types are not equatable
-            _ => false,
-        }
-    }
 }
 impl Function for EqualityOperator {
     fn infer_type(
@@ -443,8 +361,9 @@ impl Function for EqualityOperator {
         let left_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
         let right_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
 
-        // Check that operands are equatable
-        if !self.are_equatable_types(&left_type, &right_type) {
+        // Check that operands are equatable using the proper Type::equatable method
+        // This handles String/File comparisons and all other WDL type coercion rules
+        if !left_type.equatable(&right_type, false) {
             return Err(WdlError::Validation {
                 pos: args[0].source_position().clone(),
                 message: format!("Cannot test equality of {} and {}", left_type, right_type),
@@ -905,6 +824,7 @@ pub fn create_gte_function() -> Box<dyn Function> {
 /// # Type Rules
 /// - Two values are equatable if their types can be coerced to a common type
 /// - Int and Float are equatable through coercion
+/// - String and File are equatable per WDL specification
 /// - Optional types are handled appropriately
 /// - Arrays, Maps, and Pairs are equatable if their components are equatable
 /// - Result is always Boolean
@@ -918,15 +838,14 @@ pub fn create_gte_function() -> Box<dyn Function> {
 pub fn create_equal_operator(name: String, negate: bool) -> Box<dyn Function> {
     let name_clone = name.clone();
     let operation = move |left: &Value, right: &Value| -> Result<Value, WdlError> {
-        // Use Value's built-in equality comparison
-        // This handles all the type coercion logic automatically
-        let are_equal = match (left, right) {
-            // Handle numeric comparisons with coercion
-            (Value::Int { value: l, .. }, Value::Float { value: r, .. }) => (*l as f64) == *r,
-            (Value::Float { value: l, .. }, Value::Int { value: r, .. }) => *l == (*r as f64),
-            // For all other cases, use direct equality
-            _ => left == right,
-        };
+        // Use Value's proper equals method which handles all WDL type coercion rules
+        // including String/File comparisons per WDL specification
+        let are_equal = left.equals(right).map_err(|e| {
+            WdlError::validation_error(
+                crate::error::SourcePosition::new("".to_string(), "".to_string(), 0, 0, 0, 0),
+                format!("Equality comparison failed: {}", e),
+            )
+        })?;
 
         // Apply negation if this is the != operator
         let result = if negate { !are_equal } else { are_equal };
@@ -1154,6 +1073,198 @@ pub fn create_add_function() -> Box<dyn Function> {
     Box::new(AddOperator::new())
 }
 
+/// Interpolation Add operator implementation for use within placeholders
+/// Returns null if any operand is null, following WDL interpolation semantics
+/// Similar to miniwdl's _InterpolationAddOperator
+pub struct InterpolationAddOperator {
+    name: String,
+}
+
+impl Default for InterpolationAddOperator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InterpolationAddOperator {
+    pub fn new() -> Self {
+        Self {
+            name: "_interpolation_add".to_string(),
+        }
+    }
+}
+
+impl Function for InterpolationAddOperator {
+    fn infer_type(
+        &self,
+        args: &mut [Expression],
+        type_env: &Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        // Check argument count
+        if args.len() != 2 {
+            let pos = if args.is_empty() {
+                SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!(
+                    "Interpolation add operator expects 2 arguments, got {}",
+                    args.len()
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Infer types of both operands
+        let left_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let right_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Check for string concatenation first
+        if matches!(left_type, Type::String { .. }) || matches!(right_type, Type::String { .. }) {
+            // At least one operand is a string, check if both can be coerced to string
+            // For interpolation add, we need to be more flexible with optional types
+            let left_coercible = left_type.coerces(&Type::string(false), true)
+                || left_type.coerces(&Type::string(true), true);
+            let right_coercible = right_type.coerces(&Type::string(false), true)
+                || right_type.coerces(&Type::string(true), true);
+
+            if left_coercible && right_coercible {
+                // Key difference: return optional String if any operand is optional
+                let optional = left_type.is_optional() || right_type.is_optional();
+                return Ok(Type::string(optional));
+            } else {
+                return Err(WdlError::Validation {
+                    pos: args[0].source_position().clone(),
+                    message: format!("Cannot add/concatenate {} and {}", left_type, right_type),
+                    source_text: None,
+                    declared_wdl_version: None,
+                });
+            }
+        }
+
+        // Neither operand is a string, check for numeric addition
+        if matches!(left_type, Type::Int { .. } | Type::Float { .. })
+            && matches!(right_type, Type::Int { .. } | Type::Float { .. })
+        {
+            // Return Float if either operand is Float, otherwise Int
+            // Make result optional if any operand is optional
+            let optional = left_type.is_optional() || right_type.is_optional();
+            if matches!(left_type, Type::Float { .. }) || matches!(right_type, Type::Float { .. }) {
+                Ok(Type::float(optional))
+            } else {
+                Ok(Type::int(optional))
+            }
+        } else {
+            Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!("Cannot add/concatenate {} and {}", left_type, right_type),
+                source_text: None,
+                declared_wdl_version: None,
+            })
+        }
+    }
+
+    fn eval(
+        &self,
+        args: &[Expression],
+        env: &Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        // Check argument count
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "Interpolation add operator expects 2 arguments, got {}",
+                    args.len()
+                ),
+            });
+        }
+
+        // Evaluate operands
+        let left_value = args[0].eval(env, stdlib)?;
+        let right_value = args[1].eval(env, stdlib)?;
+
+        // Key difference: return null if any operand is null
+        if left_value.is_null() || right_value.is_null() {
+            return Ok(Value::null());
+        }
+
+        // Check for string concatenation first
+        if matches!(left_value, Value::String { .. }) || matches!(right_value, Value::String { .. })
+        {
+            // String concatenation
+            let left_str =
+                left_value
+                    .coerce(&Type::string(false))
+                    .map_err(|_| WdlError::RuntimeError {
+                        message: "Cannot coerce left operand to string for concatenation"
+                            .to_string(),
+                    })?;
+            let right_str =
+                right_value
+                    .coerce(&Type::string(false))
+                    .map_err(|_| WdlError::RuntimeError {
+                        message: "Cannot coerce right operand to string for concatenation"
+                            .to_string(),
+                    })?;
+
+            let left_string = left_str.as_string().ok_or_else(|| WdlError::RuntimeError {
+                message: "Invalid left operand for string concatenation".to_string(),
+            })?;
+            let right_string = right_str
+                .as_string()
+                .ok_or_else(|| WdlError::RuntimeError {
+                    message: "Invalid right operand for string concatenation".to_string(),
+                })?;
+
+            return Ok(Value::string(format!("{}{}", left_string, right_string)));
+        }
+
+        // Check if both values are numeric for arithmetic addition
+        if (matches!(left_value, Value::Int { .. } | Value::Float { .. }))
+            && (matches!(right_value, Value::Int { .. } | Value::Float { .. }))
+        {
+            // Numeric addition - check if both are Int variants for precision
+            if matches!(left_value, Value::Int { .. }) && matches!(right_value, Value::Int { .. }) {
+                let left_int = left_value.as_int().unwrap();
+                let right_int = right_value.as_int().unwrap();
+                Ok(Value::int(left_int + right_int))
+            } else {
+                // At least one is Float, use float arithmetic
+                let left_float = left_value
+                    .as_float()
+                    .ok_or_else(|| WdlError::RuntimeError {
+                        message: "Cannot convert left operand to number for addition".to_string(),
+                    })?;
+                let right_float = right_value
+                    .as_float()
+                    .ok_or_else(|| WdlError::RuntimeError {
+                        message: "Cannot convert right operand to number for addition".to_string(),
+                    })?;
+                Ok(Value::float(left_float + right_float))
+            }
+        } else {
+            Err(WdlError::RuntimeError {
+                message: "Cannot add/concatenate the given operand types".to_string(),
+            })
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Create an interpolation add operator function for use within placeholders
+pub fn create_interpolation_add_function() -> Box<dyn Function> {
+    Box::new(InterpolationAddOperator::new())
+}
+
 /// Create a logical AND operator function (&&)
 pub fn create_logical_and_function() -> Box<dyn Function> {
     Box::new(LogicalOperator::new_and())
@@ -1279,5 +1390,277 @@ mod tests {
         let stdlib = StdLib::new("1.0");
         let result = add_fn.eval(&args, &env, &stdlib);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_equality_operator_string_file() {
+        // Test the core fix: String and File values with same path should be equal
+        // This tests the Value::equals method directly which is what the fix uses
+
+        // Create String and File values with the same path
+        let string_val = Value::string("/path/to/file.txt".to_string());
+        let file_val = Value::file("/path/to/file.txt".to_string()).unwrap();
+
+        // Test String equals File (should be true)
+        let result = string_val.equals(&file_val).unwrap();
+        assert_eq!(
+            result, true,
+            "String and File with same path should be equal"
+        );
+
+        // Test File equals String (should be true)
+        let result = file_val.equals(&string_val).unwrap();
+        assert_eq!(
+            result, true,
+            "File and String with same path should be equal"
+        );
+
+        // Test different paths should not be equal
+        let different_file_val = Value::file("/different/path.txt".to_string()).unwrap();
+        let result = string_val.equals(&different_file_val).unwrap();
+        assert_eq!(
+            result, false,
+            "String and File with different paths should not be equal"
+        );
+
+        // Test same type comparisons still work
+        let string_val2 = Value::string("/path/to/file.txt".to_string());
+        let result = string_val.equals(&string_val2).unwrap();
+        assert_eq!(result, true, "Same String values should be equal");
+
+        let file_val2 = Value::file("/path/to/file.txt".to_string()).unwrap();
+        let result = file_val.equals(&file_val2).unwrap();
+        assert_eq!(result, true, "Same File values should be equal");
+    }
+
+    #[test]
+    fn test_equality_operator_numeric_coercion() {
+        // Test that Int and Float coercion still works correctly after the fix
+        // This tests the Value::equals method for numeric types
+
+        let int_val = Value::int(42);
+        let float_val = Value::float(42.0);
+
+        // Test Int equals Float with same value (should be true)
+        let result = int_val.equals(&float_val).unwrap();
+        assert_eq!(
+            result, true,
+            "Int and Float with same value should be equal"
+        );
+
+        // Test Float equals Int with same value (should be true)
+        let result = float_val.equals(&int_val).unwrap();
+        assert_eq!(
+            result, true,
+            "Float and Int with same value should be equal"
+        );
+
+        // Test different values should not be equal
+        let different_float = Value::float(43.0);
+        let result = int_val.equals(&different_float).unwrap();
+        assert_eq!(
+            result, false,
+            "Int and Float with different values should not be equal"
+        );
+    }
+
+    #[test]
+    fn test_equality_operator_type_checking() {
+        // Test that Type::equatable properly handles String/File types
+        // This validates that the type-level checking works correctly
+
+        let string_type = Type::string(false);
+        let file_type = Type::file(false);
+        let int_type = Type::int(false);
+
+        // Test that String and File types are equatable
+        assert!(
+            string_type.equatable(&file_type, false),
+            "String and File types should be equatable"
+        );
+        assert!(
+            file_type.equatable(&string_type, false),
+            "File and String types should be equatable"
+        );
+
+        // Test that same types are equatable
+        assert!(
+            string_type.equatable(&string_type, false),
+            "String type should be equatable with itself"
+        );
+        assert!(
+            file_type.equatable(&file_type, false),
+            "File type should be equatable with itself"
+        );
+
+        // Test that incompatible types are not equatable
+        assert!(
+            !string_type.equatable(&int_type, false),
+            "String and Int types should not be equatable"
+        );
+        assert!(
+            !file_type.equatable(&int_type, false),
+            "File and Int types should not be equatable"
+        );
+    }
+
+    #[test]
+    fn test_equality_operator_reproduces_original_issue() {
+        // Test that reproduces the original issue from string_to_file.wdl
+        // This test documents the exact scenario that was failing
+
+        // Simulate the exact values from the string_to_file workflow
+        // path1 is a String value, path2 is a File value, both with same content
+        let path1_val = Value::string("/home/uehara/flowy/hello.txt".to_string());
+        let path2_val = Value::file("/home/uehara/flowy/hello.txt".to_string()).unwrap();
+
+        // Test path1 == path2 (this was returning false before the fix)
+        let result = path1_val.equals(&path2_val).unwrap();
+
+        // This should now return true, fixing the original issue
+        assert_eq!(
+            result, true,
+            "paths_equal should be true when String and File have same path value"
+        );
+
+        // Test the reverse comparison as well
+        let result = path2_val.equals(&path1_val).unwrap();
+        assert_eq!(
+            result, true,
+            "File and String comparison should be symmetric"
+        );
+
+        // Test with different file extensions but same base path concept
+        let txt_file = Value::file("readme.txt".to_string()).unwrap();
+        let txt_string = Value::string("readme.txt".to_string());
+        let result = txt_file.equals(&txt_string).unwrap();
+        assert_eq!(
+            result, true,
+            "File and String with same filename should be equal regardless of context"
+        );
+    }
+
+    #[test]
+    fn test_interpolation_add_operator_null_handling() {
+        // Test the core fix: InterpolationAddOperator should return null if any operand is null
+        let interpolation_add_fn = create_interpolation_add_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+
+        // Test with both operands non-null (should concatenate normally)
+        let args = vec![
+            Expression::string_literal(pos.clone(), "hello".to_string()),
+            Expression::string_literal(pos.clone(), " world".to_string()),
+        ];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.2");
+        let result = interpolation_add_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(result.as_string().unwrap(), "hello world");
+
+        // Test with left operand null (should return null)
+        let args = vec![
+            Expression::null(pos.clone()),
+            Expression::string_literal(pos.clone(), " world".to_string()),
+        ];
+        let result = interpolation_add_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!(
+            result.is_null(),
+            "InterpolationAddOperator should return null when left operand is null"
+        );
+
+        // Test with right operand null (should return null)
+        let args = vec![
+            Expression::string_literal(pos.clone(), "hello".to_string()),
+            Expression::null(pos.clone()),
+        ];
+        let result = interpolation_add_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!(
+            result.is_null(),
+            "InterpolationAddOperator should return null when right operand is null"
+        );
+
+        // Test with both operands null (should return null)
+        let args = vec![Expression::null(pos.clone()), Expression::null(pos.clone())];
+        let result = interpolation_add_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!(
+            result.is_null(),
+            "InterpolationAddOperator should return null when both operands are null"
+        );
+    }
+
+    #[test]
+    fn test_interpolation_add_operator_type_inference() {
+        // Test that InterpolationAddOperator correctly handles optional types in type inference
+        let interpolation_add_fn = create_interpolation_add_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+
+        // Test with non-optional string + optional string = optional string
+        let mut args = vec![
+            Expression::string_literal(pos.clone(), "hello".to_string()),
+            Expression::Ident {
+                pos: pos.clone(),
+                name: "optional_var".to_string(),
+                inferred_type: None,
+            },
+        ];
+
+        let mut type_env = Bindings::new();
+        type_env = type_env.bind(
+            "optional_var".to_string(),
+            Type::string(true), // optional string
+            None,
+        );
+
+        let stdlib = StdLib::new("1.2");
+        let result_type = interpolation_add_fn
+            .infer_type(&mut args, &type_env, &stdlib, &[])
+            .unwrap();
+
+        // Result should be optional string since one operand is optional
+        assert!(
+            result_type.is_optional(),
+            "Result should be optional when any operand is optional"
+        );
+        assert!(
+            matches!(result_type, Type::String { .. }),
+            "Result should be String type"
+        );
+    }
+
+    #[test]
+    fn test_interpolation_add_vs_regular_add_difference() {
+        // Test that demonstrates the key difference between regular add and interpolation add
+        let regular_add_fn = create_add_function();
+        let interpolation_add_fn = create_interpolation_add_function();
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+
+        // Create environment with a null value
+        let mut env = Bindings::new();
+        env = env.bind("null_var".to_string(), Value::null(), None);
+
+        let args = vec![
+            Expression::string_literal(pos.clone(), "hello".to_string()),
+            Expression::Ident {
+                pos: pos.clone(),
+                name: "null_var".to_string(),
+                inferred_type: None,
+            },
+        ];
+
+        let stdlib = StdLib::new("1.2");
+
+        // Regular add operator coerces null to empty string, so "hello" + null = "hello"
+        let regular_result = regular_add_fn.eval(&args, &env, &stdlib).unwrap();
+        assert_eq!(
+            regular_result.as_string().unwrap(),
+            "hello",
+            "Regular add should coerce null to empty string"
+        );
+
+        // Interpolation add operator should return null when any operand is null
+        let interpolation_result = interpolation_add_fn.eval(&args, &env, &stdlib).unwrap();
+        assert!(
+            interpolation_result.is_null(),
+            "Interpolation add should return null with null operand"
+        );
     }
 }
