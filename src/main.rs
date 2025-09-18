@@ -94,8 +94,11 @@ fn display_error_with_location(error: &WdlError, wdl_file: Option<&std::path::Pa
 }
 
 /// Display a single error, handling MultipleValidation recursively
-fn display_single_error<F>(error: &WdlError, display_with_pos: &F, wdl_file: Option<&std::path::Path>)
-where
+fn display_single_error<F>(
+    error: &WdlError,
+    display_with_pos: &F,
+    wdl_file: Option<&std::path::Path>,
+) where
     F: Fn(&SourcePosition, &str),
 {
     match error {
@@ -187,7 +190,9 @@ where
         WdlError::WorkflowValidationError { pos, message, .. } => {
             display_with_pos(pos, &format!("Workflow validation error: {}", message));
         }
-        WdlError::MultipleValidation { exceptions, count, .. } => {
+        WdlError::MultipleValidation {
+            exceptions, count, ..
+        } => {
             eprintln!("Multiple validation errors ({} errors):", count);
             for (i, exception) in exceptions.iter().enumerate() {
                 eprintln!("  {}.", i + 1);

@@ -11,8 +11,9 @@ use std::collections::HashMap;
 
 /// Keys function implementation
 ///
-/// Returns all keys from a Map as an Array.
+/// Returns all keys from a Map, Struct, or Object as an Array.
 /// Signature: keys(Map[K, V]) -> Array[K]
+///           keys(Struct|Object) -> Array[String]
 pub struct KeysFunction;
 
 impl crate::stdlib::Function for KeysFunction {
@@ -20,7 +21,13 @@ impl crate::stdlib::Function for KeysFunction {
         "keys"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("keys(): expected 1 argument, got {}", args.len()),
@@ -33,40 +40,72 @@ impl crate::stdlib::Function for KeysFunction {
                 // Return Array[K] where K is the key type
                 Ok(Type::array(key_type.as_ref().clone(), false, false))
             }
+            Type::StructInstance { .. } | Type::Object { .. } => {
+                // For Struct and Object, keys are always strings
+                Ok(Type::array(Type::string(false), false, false))
+            }
             _ => Err(WdlError::RuntimeError {
-                message: "keys(): argument must be a Map".to_string(),
+                message: format!(
+                    "keys(): argument must be a Map, Struct, or Object, got {}",
+                    arg_type
+                ),
             }),
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("keys(): expected 1 argument, got {}", args.len()),
             });
         }
 
-        let map_value = args[0].eval(env, stdlib)?;
-        let pairs = match &map_value {
-            Value::Map { pairs, .. } => pairs,
-            _ => return Err(WdlError::RuntimeError {
-                message: "keys(): argument must be a Map".to_string(),
+        let arg_value = args[0].eval(env, stdlib)?;
+
+        match &arg_value {
+            Value::Map { pairs, .. } => {
+                let mut keys = Vec::new();
+                for (key, _) in pairs {
+                    keys.push(key.clone());
+                }
+
+                // Infer the key type from the first key, or use the map's key type
+                let key_type = if let Some(first_key) = keys.first() {
+                    first_key.wdl_type().clone()
+                } else {
+                    Type::string(false) // Default to String if empty map
+                };
+
+                Ok(Value::array(key_type, keys))
+            }
+            Value::Struct { members, .. } => {
+                // For structs, return field names as string keys
+                let mut keys = Vec::new();
+                for field_name in members.keys() {
+                    keys.push(Value::string(field_name.clone()));
+                }
+
+                // Sort keys for consistent ordering (like struct definition order)
+                keys.sort_by(|a, b| {
+                    let a_str = a.as_string().unwrap_or("");
+                    let b_str = b.as_string().unwrap_or("");
+                    a_str.cmp(b_str)
+                });
+
+                Ok(Value::array(Type::string(false), keys))
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: format!(
+                    "keys(): argument must be a Map, Struct, or Object, got {}",
+                    arg_value.wdl_type()
+                ),
             }),
-        };
-
-        let mut keys = Vec::new();
-        for (key, _) in pairs {
-            keys.push(key.clone());
         }
-
-        // Infer the key type from the first key, or use the map's key type
-        let key_type = if let Some(first_key) = keys.first() {
-            first_key.wdl_type().clone()
-        } else {
-            Type::string(false) // Default to String if empty map
-        };
-
-        Ok(Value::array(key_type, keys))
     }
 }
 
@@ -86,7 +125,13 @@ impl crate::stdlib::Function for AsPairsFunction {
         "as_pairs"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("as_pairs(): expected 1 argument, got {}", args.len()),
@@ -95,9 +140,17 @@ impl crate::stdlib::Function for AsPairsFunction {
 
         let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
         match &arg_type {
-            Type::Map { key_type, value_type, .. } => {
+            Type::Map {
+                key_type,
+                value_type,
+                ..
+            } => {
                 // Return Array[Pair[K, V]]
-                let pair_type = Type::pair(key_type.as_ref().clone(), value_type.as_ref().clone(), false);
+                let pair_type = Type::pair(
+                    key_type.as_ref().clone(),
+                    value_type.as_ref().clone(),
+                    false,
+                );
                 Ok(Type::array(pair_type, false, false))
             }
             _ => Err(WdlError::RuntimeError {
@@ -106,7 +159,12 @@ impl crate::stdlib::Function for AsPairsFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("as_pairs(): expected 1 argument, got {}", args.len()),
@@ -116,9 +174,11 @@ impl crate::stdlib::Function for AsPairsFunction {
         let map_value = args[0].eval(env, stdlib)?;
         let pairs = match &map_value {
             Value::Map { pairs, .. } => pairs,
-            _ => return Err(WdlError::RuntimeError {
-                message: "as_pairs(): argument must be a Map".to_string(),
-            }),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "as_pairs(): argument must be a Map".to_string(),
+                })
+            }
         };
 
         let mut pair_values = Vec::new();
@@ -157,7 +217,13 @@ impl crate::stdlib::Function for AsMapFunction {
         "as_map"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("as_map(): expected 1 argument, got {}", args.len()),
@@ -168,9 +234,17 @@ impl crate::stdlib::Function for AsMapFunction {
         match &arg_type {
             Type::Array { item_type, .. } => {
                 match item_type.as_ref() {
-                    Type::Pair { left_type, right_type, .. } => {
+                    Type::Pair {
+                        left_type,
+                        right_type,
+                        ..
+                    } => {
                         // Return Map[K, V] where K is left_type and V is right_type
-                        Ok(Type::map(left_type.as_ref().clone(), right_type.as_ref().clone(), false))
+                        Ok(Type::map(
+                            left_type.as_ref().clone(),
+                            right_type.as_ref().clone(),
+                            false,
+                        ))
                     }
                     _ => Err(WdlError::RuntimeError {
                         message: "as_map(): argument must be an Array[Pair]".to_string(),
@@ -183,7 +257,12 @@ impl crate::stdlib::Function for AsMapFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("as_map(): expected 1 argument, got {}", args.len()),
@@ -193,9 +272,11 @@ impl crate::stdlib::Function for AsMapFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let array = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "as_map(): argument must be an Array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "as_map(): argument must be an Array".to_string(),
+                })
+            }
         };
 
         let mut map_pairs = Vec::new();
@@ -204,16 +285,21 @@ impl crate::stdlib::Function for AsMapFunction {
         for (i, pair_value) in array.iter().enumerate() {
             let (key, value) = match pair_value {
                 Value::Pair { left, right, .. } => (left.as_ref(), right.as_ref()),
-                _ => return Err(WdlError::RuntimeError {
-                    message: "as_map(): all array elements must be Pairs".to_string(),
-                }),
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "as_map(): all array elements must be Pairs".to_string(),
+                    })
+                }
             };
 
             // Check for duplicate keys using string representation
             let key_str = format!("{:?}", key);
             if let Some(existing_index) = seen_keys.get(&key_str) {
                 return Err(WdlError::RuntimeError {
-                    message: format!("as_map(): duplicate key at indices {} and {}", existing_index, i),
+                    message: format!(
+                        "as_map(): duplicate key at indices {} and {}",
+                        existing_index, i
+                    ),
                 });
             }
             seen_keys.insert(key_str, i);
@@ -248,7 +334,13 @@ impl crate::stdlib::Function for CollectByKeyFunction {
         "collect_by_key"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("collect_by_key(): expected 1 argument, got {}", args.len()),
@@ -259,10 +351,19 @@ impl crate::stdlib::Function for CollectByKeyFunction {
         match &arg_type {
             Type::Array { item_type, .. } => {
                 match item_type.as_ref() {
-                    Type::Pair { left_type, right_type, .. } => {
+                    Type::Pair {
+                        left_type,
+                        right_type,
+                        ..
+                    } => {
                         // Return Map[K, Array[V]] where K is left_type and V is right_type
-                        let value_array_type = Type::array(right_type.as_ref().clone(), false, false);
-                        Ok(Type::map(left_type.as_ref().clone(), value_array_type, false))
+                        let value_array_type =
+                            Type::array(right_type.as_ref().clone(), false, false);
+                        Ok(Type::map(
+                            left_type.as_ref().clone(),
+                            value_array_type,
+                            false,
+                        ))
                     }
                     _ => Err(WdlError::RuntimeError {
                         message: "collect_by_key(): argument must be an Array[Pair]".to_string(),
@@ -275,7 +376,12 @@ impl crate::stdlib::Function for CollectByKeyFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("collect_by_key(): expected 1 argument, got {}", args.len()),
@@ -285,9 +391,11 @@ impl crate::stdlib::Function for CollectByKeyFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let array = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "collect_by_key(): argument must be an Array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "collect_by_key(): argument must be an Array".to_string(),
+                })
+            }
         };
 
         let mut grouped: HashMap<String, (Value, Vec<Value>)> = HashMap::new();
@@ -295,28 +403,35 @@ impl crate::stdlib::Function for CollectByKeyFunction {
         for pair_value in array {
             let (key, value) = match pair_value {
                 Value::Pair { left, right, .. } => (left.as_ref(), right.as_ref()),
-                _ => return Err(WdlError::RuntimeError {
-                    message: "collect_by_key(): all array elements must be Pairs".to_string(),
-                }),
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "collect_by_key(): all array elements must be Pairs".to_string(),
+                    })
+                }
             };
 
             // Use string representation as HashMap key
             let key_str = format!("{:?}", key);
-            grouped.entry(key_str).or_insert_with(|| (key.clone(), Vec::new())).1.push(value.clone());
+            grouped
+                .entry(key_str)
+                .or_insert_with(|| (key.clone(), Vec::new()))
+                .1
+                .push(value.clone());
         }
 
         // Convert grouped HashMap to map pairs
         let mut map_pairs = Vec::new();
-        let (key_type, value_type) = if let Some((_, (first_key, first_values))) = grouped.iter().next() {
-            let value_item_type = if let Some(first_value) = first_values.first() {
-                first_value.wdl_type().clone()
+        let (key_type, value_type) =
+            if let Some((_, (first_key, first_values))) = grouped.iter().next() {
+                let value_item_type = if let Some(first_value) = first_values.first() {
+                    first_value.wdl_type().clone()
+                } else {
+                    Type::any()
+                };
+                (first_key.wdl_type().clone(), value_item_type)
             } else {
-                Type::any()
+                (Type::string(false), Type::any())
             };
-            (first_key.wdl_type().clone(), value_item_type)
-        } else {
-            (Type::string(false), Type::any())
-        };
 
         for (_, (key, values)) in grouped {
             let value_array = Value::array(value_type.clone(), values);
@@ -344,7 +459,13 @@ impl crate::stdlib::Function for ContainsKeyFunction {
         "contains_key"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
                 message: format!("contains_key(): expected 2 arguments, got {}", args.len()),
@@ -355,11 +476,17 @@ impl crate::stdlib::Function for ContainsKeyFunction {
         let key_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
 
         match &map_type {
-            Type::Map { key_type: map_key_type, .. } => {
+            Type::Map {
+                key_type: map_key_type,
+                ..
+            } => {
                 // Check if the key type is compatible with the map's key type
                 if !key_type.coerces(map_key_type, true) {
                     return Err(WdlError::RuntimeError {
-                        message: format!("contains_key(): key type {} is not compatible with map key type {}", key_type, map_key_type),
+                        message: format!(
+                            "contains_key(): key type {} is not compatible with map key type {}",
+                            key_type, map_key_type
+                        ),
                     });
                 }
                 Ok(Type::boolean(false))
@@ -370,7 +497,12 @@ impl crate::stdlib::Function for ContainsKeyFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
                 message: format!("contains_key(): expected 2 arguments, got {}", args.len()),
@@ -382,9 +514,11 @@ impl crate::stdlib::Function for ContainsKeyFunction {
 
         let pairs = match &map_value {
             Value::Map { pairs, .. } => pairs,
-            _ => return Err(WdlError::RuntimeError {
-                message: "contains_key(): first argument must be a Map".to_string(),
-            }),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "contains_key(): first argument must be a Map".to_string(),
+                })
+            }
         };
 
         // Check if the key exists in the map
@@ -415,7 +549,13 @@ impl crate::stdlib::Function for ValuesFunction {
         "values"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("values(): expected 1 argument, got {}", args.len()),
@@ -434,7 +574,12 @@ impl crate::stdlib::Function for ValuesFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("values(): expected 1 argument, got {}", args.len()),
@@ -444,9 +589,11 @@ impl crate::stdlib::Function for ValuesFunction {
         let map_value = args[0].eval(env, stdlib)?;
         let pairs = match &map_value {
             Value::Map { pairs, .. } => pairs,
-            _ => return Err(WdlError::RuntimeError {
-                message: "values(): argument must be a Map".to_string(),
-            }),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "values(): argument must be a Map".to_string(),
+                })
+            }
         };
 
         let mut values = Vec::new();

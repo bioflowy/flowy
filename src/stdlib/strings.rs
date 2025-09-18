@@ -3,28 +3,28 @@
 //! This module provides string manipulation functions as defined in the WDL specification.
 
 use crate::error::WdlError;
+use crate::expr::ExpressionBase;
+use crate::stdlib::create_static_function;
 use crate::types::Type;
 use crate::value::Value;
-use crate::stdlib::create_static_function;
-use crate::expr::ExpressionBase;
 use regex::Regex;
 
 pub fn create_find_function() -> Box<dyn crate::stdlib::Function> {
     create_static_function(
         "find".to_string(),
         vec![Type::string(false), Type::string(false)], // input, pattern
-        Type::string(true), // returns String? (optional)
+        Type::string(true),                             // returns String? (optional)
         |args: &[Value]| -> Result<Value, WdlError> {
             let input = args[0].as_string().unwrap();
             let pattern = args[1].as_string().unwrap();
 
             // Compile the regex pattern as POSIX ERE
-            let regex = Regex::new(&pattern).map_err(|e| WdlError::RuntimeError {
+            let regex = Regex::new(pattern).map_err(|e| WdlError::RuntimeError {
                 message: format!("find(): invalid regex pattern '{}': {}", pattern, e),
             })?;
 
             // Find the first match
-            match regex.find(&input) {
+            match regex.find(input) {
                 Some(match_obj) => {
                     // Return the matched text
                     Ok(Value::string(match_obj.as_str().to_string()))
@@ -52,7 +52,11 @@ pub fn create_find_function() -> Box<dyn crate::stdlib::Function> {
 pub fn create_sub_function() -> Box<dyn crate::stdlib::Function> {
     create_static_function(
         "sub".to_string(),
-        vec![Type::string(false), Type::string(false), Type::string(false)], // input, pattern, replace
+        vec![
+            Type::string(false),
+            Type::string(false),
+            Type::string(false),
+        ], // input, pattern, replace
         Type::string(false), // returns String
         |args: &[Value]| -> Result<Value, WdlError> {
             let input = args[0].as_string().unwrap();
@@ -60,12 +64,12 @@ pub fn create_sub_function() -> Box<dyn crate::stdlib::Function> {
             let replace = args[2].as_string().unwrap();
 
             // Compile the regex pattern as POSIX ERE
-            let regex = Regex::new(&pattern).map_err(|e| WdlError::RuntimeError {
+            let regex = Regex::new(pattern).map_err(|e| WdlError::RuntimeError {
                 message: format!("sub(): invalid regex pattern '{}': {}", pattern, e),
             })?;
 
             // Replace all occurrences
-            let result = regex.replace_all(&input, replace);
+            let result = regex.replace_all(input, replace);
             Ok(Value::string(result.to_string()))
         },
     )
@@ -95,6 +99,12 @@ pub struct JoinPathsFunction {
     name: String,
 }
 
+impl Default for JoinPathsFunction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JoinPathsFunction {
     pub fn new() -> Self {
         Self {
@@ -105,7 +115,7 @@ impl JoinPathsFunction {
     /// Join paths together using platform-specific path joining
     fn join_paths(&self, paths: &[String]) -> Result<String, WdlError> {
         use std::path::Path;
-        
+
         if paths.is_empty() {
             return Err(WdlError::RuntimeError {
                 message: "join_paths: cannot join empty path list".to_string(),
@@ -113,23 +123,28 @@ impl JoinPathsFunction {
         }
 
         let mut result = std::path::PathBuf::new();
-        
+
         // First path can be absolute or relative
         let first_path = &paths[0];
         result.push(first_path);
-        
+
         // Subsequent paths must be relative
         for (i, path) in paths[1..].iter().enumerate() {
             if path.starts_with('/') {
                 return Err(WdlError::RuntimeError {
-                    message: format!("join_paths: path at index {} ('{}') must be relative", i + 1, path),
+                    message: format!(
+                        "join_paths: path at index {} ('{}') must be relative",
+                        i + 1,
+                        path
+                    ),
                 });
             }
             result.push(path);
         }
 
         // Convert to string
-        result.to_str()
+        result
+            .to_str()
             .map(|s| s.to_string())
             .ok_or_else(|| WdlError::RuntimeError {
                 message: "join_paths: result path contains invalid UTF-8".to_string(),
@@ -138,17 +153,33 @@ impl JoinPathsFunction {
 }
 
 impl crate::stdlib::Function for JoinPathsFunction {
-    fn infer_type(&self, args: &mut [crate::expr::Expression], _type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<crate::types::Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        _type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<crate::types::Type, WdlError> {
         // Check argument count (1 or 2 arguments allowed)
         if args.is_empty() || args.len() > 2 {
             let pos = if args.is_empty() {
-                crate::error::SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+                crate::error::SourcePosition::new(
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    0,
+                    0,
+                    0,
+                    0,
+                )
             } else {
                 args[0].source_position().clone()
             };
             return Err(WdlError::Validation {
                 pos,
-                message: format!("Function 'join_paths' expects 1 or 2 arguments, got {}", args.len()),
+                message: format!(
+                    "Function 'join_paths' expects 1 or 2 arguments, got {}",
+                    args.len()
+                ),
                 source_text: None,
                 declared_wdl_version: None,
             });
@@ -183,7 +214,10 @@ impl crate::stdlib::Function for JoinPathsFunction {
             if !matches!(first_type, Type::File { .. } | Type::String { .. }) {
                 return Err(WdlError::Validation {
                     pos: args[0].source_position().clone(),
-                    message: format!("Function 'join_paths' first argument must be File or String, got {}", first_type),
+                    message: format!(
+                        "Function 'join_paths' first argument must be File or String, got {}",
+                        first_type
+                    ),
                     source_text: None,
                     declared_wdl_version: None,
                 });
@@ -220,11 +254,19 @@ impl crate::stdlib::Function for JoinPathsFunction {
         Ok(Type::file(false))
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<crate::value::Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<crate::value::Value, WdlError> {
         // Check argument count
         if args.is_empty() || args.len() > 2 {
             return Err(WdlError::RuntimeError {
-                message: format!("Function 'join_paths' expects 1 or 2 arguments, got {}", args.len()),
+                message: format!(
+                    "Function 'join_paths' expects 1 or 2 arguments, got {}",
+                    args.len()
+                ),
             });
         }
 
@@ -250,7 +292,8 @@ impl crate::stdlib::Function for JoinPathsFunction {
                 }
                 _ => {
                     return Err(WdlError::RuntimeError {
-                        message: "Function 'join_paths' single argument must be Array[String]".to_string(),
+                        message: "Function 'join_paths' single argument must be Array[String]"
+                            .to_string(),
                     });
                 }
             }
@@ -262,7 +305,8 @@ impl crate::stdlib::Function for JoinPathsFunction {
                 crate::value::Value::String { value, .. } => value,
                 _ => {
                     return Err(WdlError::RuntimeError {
-                        message: "Function 'join_paths' first argument must be File or String".to_string(),
+                        message: "Function 'join_paths' first argument must be File or String"
+                            .to_string(),
                     });
                 }
             };
@@ -291,7 +335,9 @@ impl crate::stdlib::Function for JoinPathsFunction {
                 }
                 _ => {
                     return Err(WdlError::RuntimeError {
-                        message: "Function 'join_paths' second argument must be String or Array[String]".to_string(),
+                        message:
+                            "Function 'join_paths' second argument must be String or Array[String]"
+                                .to_string(),
                     });
                 }
             }
@@ -312,6 +358,68 @@ pub fn create_join_paths_function() -> Box<dyn crate::stdlib::Function> {
     Box::new(JoinPathsFunction::new())
 }
 
+/// Create sep function: sep(separator: String, array: Array[String]) -> String
+/// Joins array elements using the provided separator string
+pub fn create_sep_function() -> Box<dyn crate::stdlib::Function> {
+    use crate::stdlib::create_static_function;
+
+    create_static_function(
+        "sep".to_string(),
+        vec![
+            Type::string(false),                            // separator: String
+            Type::array(Type::string(false), false, false), // array: Array[String]
+        ],
+        Type::string(false), // returns String
+        |args| {
+            let separator = args[0].as_string().ok_or_else(|| WdlError::RuntimeError {
+                message: "sep() first argument must be a string".to_string(),
+            })?;
+
+            let array = args[1].as_array().ok_or_else(|| WdlError::RuntimeError {
+                message: "sep() second argument must be an array".to_string(),
+            })?;
+
+            // Convert all array elements to strings and join them
+            let mut string_parts = Vec::new();
+            for value in array {
+                let string_val = value.as_string().ok_or_else(|| WdlError::RuntimeError {
+                    message: "sep() array elements must all be strings".to_string(),
+                })?;
+                string_parts.push(string_val);
+            }
+
+            let result = string_parts.join(separator);
+            Ok(Value::string(result))
+        },
+    )
+}
+
+/// Create defined function: defined(value: Any) -> Boolean  
+/// Returns true if the value is not null/None, false otherwise
+pub fn create_defined_function() -> Box<dyn crate::stdlib::Function> {
+    use crate::stdlib::create_static_function;
+
+    create_static_function(
+        "defined".to_string(),
+        vec![Type::any()],    // value: Any (optional)
+        Type::boolean(false), // returns Boolean
+        |args| {
+            let value = &args[0];
+
+            // Check if the value is null/None
+            let is_defined = !matches!(value, Value::Null);
+
+            Ok(Value::boolean(is_defined))
+        },
+    )
+}
+
+impl Default for BasenameFunction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BasenameFunction {
     pub fn new() -> Self {
         Self {
@@ -322,12 +430,13 @@ impl BasenameFunction {
     /// Extract basename from a path string
     fn get_basename(&self, path: &str, suffix: Option<&str>) -> String {
         use std::path::Path;
-        
+
         let path_obj = Path::new(path);
-        let basename = path_obj.file_name()
+        let basename = path_obj
+            .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or(path); // Fallback to original path if cannot extract filename
-        
+
         // Remove suffix if provided and matches
         if let Some(suffix) = suffix {
             if basename.ends_with(suffix) && basename.len() > suffix.len() {
@@ -343,17 +452,33 @@ impl BasenameFunction {
 }
 
 impl crate::stdlib::Function for BasenameFunction {
-    fn infer_type(&self, args: &mut [crate::expr::Expression], _type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<crate::types::Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        _type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<crate::types::Type, WdlError> {
         // Check argument count (1 or 2 arguments allowed)
         if args.is_empty() || args.len() > 2 {
             let pos = if args.is_empty() {
-                crate::error::SourcePosition::new("unknown".to_string(), "unknown".to_string(), 0, 0, 0, 0)
+                crate::error::SourcePosition::new(
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    0,
+                    0,
+                    0,
+                    0,
+                )
             } else {
                 args[0].source_position().clone()
             };
             return Err(WdlError::Validation {
                 pos,
-                message: format!("Function 'basename' expects 1 or 2 arguments, got {}", args.len()),
+                message: format!(
+                    "Function 'basename' expects 1 or 2 arguments, got {}",
+                    args.len()
+                ),
                 source_text: None,
                 declared_wdl_version: None,
             });
@@ -361,10 +486,16 @@ impl crate::stdlib::Function for BasenameFunction {
 
         // First argument must be File, Directory, or String (which can be coerced to File)
         let first_type = args[0].infer_type(_type_env, stdlib, struct_typedefs)?;
-        if !matches!(first_type, Type::File { .. } | Type::Directory { .. } | Type::String { .. }) {
+        if !matches!(
+            first_type,
+            Type::File { .. } | Type::Directory { .. } | Type::String { .. }
+        ) {
             return Err(WdlError::Validation {
                 pos: args[0].source_position().clone(),
-                message: format!("Function 'basename' first argument must be File, Directory, or String, got {}", first_type),
+                message: format!(
+                    "Function 'basename' first argument must be File, Directory, or String, got {}",
+                    first_type
+                ),
                 source_text: None,
                 declared_wdl_version: None,
             });
@@ -376,7 +507,10 @@ impl crate::stdlib::Function for BasenameFunction {
             if !matches!(second_type, Type::String { .. }) {
                 return Err(WdlError::Validation {
                     pos: args[1].source_position().clone(),
-                    message: format!("Function 'basename' second argument must be String, got {}", second_type),
+                    message: format!(
+                        "Function 'basename' second argument must be String, got {}",
+                        second_type
+                    ),
                     source_text: None,
                     declared_wdl_version: None,
                 });
@@ -387,11 +521,19 @@ impl crate::stdlib::Function for BasenameFunction {
         Ok(Type::string(false))
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<crate::value::Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<crate::value::Value, WdlError> {
         // Check argument count
         if args.is_empty() || args.len() > 2 {
             return Err(WdlError::RuntimeError {
-                message: format!("Function 'basename' expects 1 or 2 arguments, got {}", args.len()),
+                message: format!(
+                    "Function 'basename' expects 1 or 2 arguments, got {}",
+                    args.len()
+                ),
             });
         }
 
@@ -403,7 +545,9 @@ impl crate::stdlib::Function for BasenameFunction {
             crate::value::Value::String { value, .. } => value,
             _ => {
                 return Err(WdlError::RuntimeError {
-                    message: "Function 'basename' first argument must be File, Directory, or String".to_string(),
+                    message:
+                        "Function 'basename' first argument must be File, Directory, or String"
+                            .to_string(),
                 });
             }
         };
@@ -445,15 +589,27 @@ mod tests {
         let stdlib = crate::stdlib::StdLib::new("1.2");
 
         // Test case from WDL spec: find("hello world", "e..o") -> "ello"
-        let input = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "hello world".to_string());
-        let pattern = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "e..o".to_string());
+        let input = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "hello world".to_string(),
+        );
+        let pattern = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "e..o".to_string(),
+        );
         let result = find_fn.eval(&[input, pattern], &env, &stdlib).unwrap();
 
         assert_eq!(result.as_string().unwrap(), "ello");
 
         // Test case: no match -> None
-        let input2 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "hello world".to_string());
-        let pattern2 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "goodbye".to_string());
+        let input2 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "hello world".to_string(),
+        );
+        let pattern2 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "goodbye".to_string(),
+        );
         let result2 = find_fn.eval(&[input2, pattern2], &env, &stdlib).unwrap();
 
         assert!(result2.is_null());
@@ -466,8 +622,14 @@ mod tests {
         let stdlib = crate::stdlib::StdLib::new("1.2");
 
         // Test case from spec: find("hello\tBob", "\\t") -> "\t"
-        let input = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "hello\tBob".to_string());
-        let pattern = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "\\t".to_string());
+        let input = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "hello\tBob".to_string(),
+        );
+        let pattern = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "\\t".to_string(),
+        );
         let result = find_fn.eval(&[input, pattern], &env, &stdlib).unwrap();
 
         assert_eq!(result.as_string().unwrap(), "\t");
@@ -480,27 +642,69 @@ mod tests {
         let stdlib = crate::stdlib::StdLib::new("1.2");
 
         // Test case from WDL spec: sub("I like chocolate when\nit's late", "like", "love") -> "I love chocolate when\nit's late"
-        let input = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "I like chocolate when\nit's late".to_string());
-        let pattern = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "like".to_string());
-        let replace = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "love".to_string());
-        let result = sub_fn.eval(&[input, pattern, replace], &env, &stdlib).unwrap();
+        let input = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "I like chocolate when\nit's late".to_string(),
+        );
+        let pattern = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "like".to_string(),
+        );
+        let replace = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "love".to_string(),
+        );
+        let result = sub_fn
+            .eval(&[input, pattern, replace], &env, &stdlib)
+            .unwrap();
 
-        assert_eq!(result.as_string().unwrap(), "I love chocolate when\nit's late");
+        assert_eq!(
+            result.as_string().unwrap(),
+            "I love chocolate when\nit's late"
+        );
 
-        // Test case: sub("late", "late$", "early") -> "I like chocolate when\nit's early"  
-        let input2 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "I like chocolate when\nit's late".to_string());
-        let pattern2 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "late$".to_string());
-        let replace2 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "early".to_string());
-        let result2 = sub_fn.eval(&[input2, pattern2, replace2], &env, &stdlib).unwrap();
+        // Test case: sub("late", "late$", "early") -> "I like chocolate when\nit's early"
+        let input2 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "I like chocolate when\nit's late".to_string(),
+        );
+        let pattern2 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "late$".to_string(),
+        );
+        let replace2 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "early".to_string(),
+        );
+        let result2 = sub_fn
+            .eval(&[input2, pattern2, replace2], &env, &stdlib)
+            .unwrap();
 
-        assert_eq!(result2.as_string().unwrap(), "I like chocolate when\nit's early");
+        assert_eq!(
+            result2.as_string().unwrap(),
+            "I like chocolate when\nit's early"
+        );
 
         // Test case: newline replacement sub(chocolike, "\\n", " ") -> "I like chocolate when it's late"
-        let input3 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "I like chocolate when\nit's late".to_string());
-        let pattern3 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), "\\n".to_string());
-        let replace3 = crate::expr::Expression::string_literal(crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1), " ".to_string());
-        let result3 = sub_fn.eval(&[input3, pattern3, replace3], &env, &stdlib).unwrap();
+        let input3 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "I like chocolate when\nit's late".to_string(),
+        );
+        let pattern3 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "\\n".to_string(),
+        );
+        let replace3 = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            " ".to_string(),
+        );
+        let result3 = sub_fn
+            .eval(&[input3, pattern3, replace3], &env, &stdlib)
+            .unwrap();
 
-        assert_eq!(result3.as_string().unwrap(), "I like chocolate when it's late");
+        assert_eq!(
+            result3.as_string().unwrap(),
+            "I like chocolate when it's late"
+        );
     }
 }

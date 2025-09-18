@@ -3,10 +3,10 @@
 //! This module provides array manipulation functions as defined in the WDL specification.
 
 use crate::error::WdlError;
+use crate::expr::ExpressionBase;
+use crate::stdlib::create_static_function;
 use crate::types::Type;
 use crate::value::Value;
-use crate::stdlib::create_static_function;
-use crate::expr::ExpressionBase;
 use crate::value::ValueBase;
 
 /// Create the prefix function
@@ -21,7 +21,10 @@ use crate::value::ValueBase;
 pub fn create_prefix_function() -> Box<dyn crate::stdlib::Function> {
     create_static_function(
         "prefix".to_string(),
-        vec![Type::string(false), Type::array(Type::string(false), false, false)], // prefix, array
+        vec![
+            Type::string(false),
+            Type::array(Type::string(false), false, false),
+        ], // prefix, array
         Type::array(Type::string(false), false, false), // returns Array[String]
         |args: &[Value]| -> Result<Value, WdlError> {
             let prefix = args[0].as_string().unwrap();
@@ -58,7 +61,10 @@ pub fn create_prefix_function() -> Box<dyn crate::stdlib::Function> {
 pub fn create_suffix_function() -> Box<dyn crate::stdlib::Function> {
     create_static_function(
         "suffix".to_string(),
-        vec![Type::string(false), Type::array(Type::string(false), false, false)], // suffix, array
+        vec![
+            Type::string(false),
+            Type::array(Type::string(false), false, false),
+        ], // suffix, array
         Type::array(Type::string(false), false, false), // returns Array[String]
         |args: &[Value]| -> Result<Value, WdlError> {
             let suffix = args[0].as_string().unwrap();
@@ -85,22 +91,104 @@ pub fn create_suffix_function() -> Box<dyn crate::stdlib::Function> {
 
 /// Create the length function
 ///
-/// Returns the number of elements in an array.
+/// Returns the number of elements in an array, map, object, or string.
 ///
 /// **Parameters**
-/// 1. `Array[Any]`: the array to measure
+/// 1. `Array[X]|Map[X, Y]|Object|String`: the value to measure
 ///
-/// **Returns**: Int representing the number of elements
+/// **Returns**: Int representing the number of elements/characters
 pub fn create_length_function() -> Box<dyn crate::stdlib::Function> {
-    create_static_function(
-        "length".to_string(),
-        vec![Type::array(Type::any(), false, false)], // Array[Any]
-        Type::int(false), // returns Int
-        |args: &[Value]| -> Result<Value, WdlError> {
-            let array = args[0].as_array().unwrap();
-            Ok(Value::int(array.len() as i64))
-        },
-    )
+    Box::new(LengthFunction)
+}
+
+/// Length function implementation that supports Array, Map, Object, and String
+struct LengthFunction;
+
+impl crate::stdlib::Function for LengthFunction {
+    fn name(&self) -> &str {
+        "length"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        // Check argument count
+        if args.len() != 1 {
+            let pos = if args.is_empty() {
+                crate::error::SourcePosition::new(
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!("Function 'length' expects 1 argument, got {}", args.len()),
+                source_text: None,
+                declared_wdl_version: None,
+            });
+        }
+
+        // Infer the type of the argument
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Check if the argument type is supported
+        match &arg_type {
+            Type::Array { .. }
+            | Type::Map { .. }
+            | Type::StructInstance { .. }
+            | Type::Object { .. }
+            | Type::String { .. } => Ok(Type::int(false)),
+            other => Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!(
+                    "Function 'length' argument 1 expects type Array[Any]|Map[Any,Any]|Object|String, got {}",
+                    other
+                ),
+                source_text: None,
+                declared_wdl_version: None,
+            }),
+        }
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("Function 'length' expects 1 argument, got {}", args.len()),
+            });
+        }
+
+        // Evaluate the argument
+        let arg_value = args[0].eval(env, stdlib)?;
+
+        // Calculate length based on value type
+        match &arg_value {
+            Value::Array { values, .. } => Ok(Value::int(values.len() as i64)),
+            Value::Map { pairs, .. } => Ok(Value::int(pairs.len() as i64)),
+            Value::Struct { members, .. } => Ok(Value::int(members.len() as i64)),
+            Value::String { value, .. } => Ok(Value::int(value.len() as i64)),
+            other => Err(WdlError::RuntimeError {
+                message: format!(
+                    "Function 'length' argument 1 expects type Array[Any]|Map[Any,Any]|Object|String, got {}",
+                    other.wdl_type()
+                ),
+            }),
+        }
+    }
 }
 
 /// Create the range function
@@ -114,7 +202,7 @@ pub fn create_length_function() -> Box<dyn crate::stdlib::Function> {
 pub fn create_range_function() -> Box<dyn crate::stdlib::Function> {
     create_static_function(
         "range".to_string(),
-        vec![Type::int(false)], // Int
+        vec![Type::int(false)],                      // Int
         Type::array(Type::int(false), false, false), // returns Array[Int]
         |args: &[Value]| -> Result<Value, WdlError> {
             let n = args[0].as_int().unwrap();
@@ -146,7 +234,13 @@ impl crate::stdlib::Function for SelectFirstFunction {
         "select_first"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("select_first(): expected 1 argument, got {}", args.len()),
@@ -165,7 +259,12 @@ impl crate::stdlib::Function for SelectFirstFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("select_first(): expected 1 argument, got {}", args.len()),
@@ -175,9 +274,11 @@ impl crate::stdlib::Function for SelectFirstFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let array = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "select_first(): argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "select_first(): argument must be an array".to_string(),
+                })
+            }
         };
 
         for value in array {
@@ -208,7 +309,13 @@ impl crate::stdlib::Function for SelectAllFunction {
         "select_all"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("select_all(): expected 1 argument, got {}", args.len()),
@@ -219,7 +326,11 @@ impl crate::stdlib::Function for SelectAllFunction {
         match &arg_type {
             Type::Array { item_type, .. } => {
                 // Return Array[T] where T is the item type without optional flag
-                Ok(Type::array(item_type.as_ref().clone().with_optional(false), false, false))
+                Ok(Type::array(
+                    item_type.as_ref().clone().with_optional(false),
+                    false,
+                    false,
+                ))
             }
             _ => Err(WdlError::RuntimeError {
                 message: "select_all(): argument must be an array".to_string(),
@@ -227,7 +338,12 @@ impl crate::stdlib::Function for SelectAllFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("select_all(): expected 1 argument, got {}", args.len()),
@@ -237,9 +353,11 @@ impl crate::stdlib::Function for SelectAllFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let array = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "select_all(): argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "select_all(): argument must be an array".to_string(),
+                })
+            }
         };
 
         let mut result_values = Vec::new();
@@ -282,7 +400,13 @@ impl crate::stdlib::Function for FlattenFunction {
         "flatten"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("flatten(): expected 1 argument, got {}", args.len()),
@@ -293,7 +417,10 @@ impl crate::stdlib::Function for FlattenFunction {
         match &arg_type {
             Type::Array { item_type, .. } => {
                 match item_type.as_ref() {
-                    Type::Array { item_type: inner_item_type, .. } => {
+                    Type::Array {
+                        item_type: inner_item_type,
+                        ..
+                    } => {
                         // Return Array[T] where T is the inner array's item type
                         Ok(Type::array(inner_item_type.as_ref().clone(), false, false))
                     }
@@ -308,7 +435,12 @@ impl crate::stdlib::Function for FlattenFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("flatten(): expected 1 argument, got {}", args.len()),
@@ -318,9 +450,11 @@ impl crate::stdlib::Function for FlattenFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let outer_array = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "flatten(): argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "flatten(): argument must be an array".to_string(),
+                })
+            }
         };
 
         let mut result_values = Vec::new();
@@ -348,10 +482,11 @@ impl crate::stdlib::Function for FlattenFunction {
         // If no elements were flattened, infer type from the function signature
         if result_values.is_empty() {
             let mut args_copy = args.to_vec();
-            result_item_type = match self.infer_type(&mut args_copy, &crate::env::Bindings::new(), stdlib, &[])? {
-                Type::Array { item_type, .. } => item_type.as_ref().clone(),
-                _ => Type::any(),
-            };
+            result_item_type =
+                match self.infer_type(&mut args_copy, &crate::env::Bindings::new(), stdlib, &[])? {
+                    Type::Array { item_type, .. } => item_type.as_ref().clone(),
+                    _ => Type::any(),
+                };
         }
 
         Ok(Value::array(result_item_type, result_values))
@@ -374,7 +509,13 @@ impl crate::stdlib::Function for ZipFunction {
         "zip"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
                 message: format!("zip(): expected 2 arguments, got {}", args.len()),
@@ -385,17 +526,29 @@ impl crate::stdlib::Function for ZipFunction {
         let arg1_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
 
         let (item_type0, nonempty0) = match &arg0_type {
-            Type::Array { item_type, nonempty, .. } => (item_type.as_ref().clone(), *nonempty),
-            _ => return Err(WdlError::RuntimeError {
-                message: "zip(): first argument must be an array".to_string(),
-            }),
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): first argument must be an array".to_string(),
+                })
+            }
         };
 
         let (item_type1, nonempty1) = match &arg1_type {
-            Type::Array { item_type, nonempty, .. } => (item_type.as_ref().clone(), *nonempty),
-            _ => return Err(WdlError::RuntimeError {
-                message: "zip(): second argument must be an array".to_string(),
-            }),
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): second argument must be an array".to_string(),
+                })
+            }
         };
 
         // Return Array[Pair[A, B]] where A and B are the item types
@@ -406,7 +559,12 @@ impl crate::stdlib::Function for ZipFunction {
         ))
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
                 message: format!("zip(): expected 2 arguments, got {}", args.len()),
@@ -418,21 +576,29 @@ impl crate::stdlib::Function for ZipFunction {
 
         let array1 = match array1_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "zip(): first argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): first argument must be an array".to_string(),
+                })
+            }
         };
 
         let array2 = match array2_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "zip(): second argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): second argument must be an array".to_string(),
+                })
+            }
         };
 
         if array1.len() != array2.len() {
             return Err(WdlError::RuntimeError {
-                message: format!("zip(): arrays must have same length, got {} and {}", array1.len(), array2.len()),
+                message: format!(
+                    "zip(): arrays must have same length, got {} and {}",
+                    array1.len(),
+                    array2.len()
+                ),
             });
         }
 
@@ -474,7 +640,13 @@ impl crate::stdlib::Function for CrossFunction {
         "cross"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
                 message: format!("cross(): expected 2 arguments, got {}", args.len()),
@@ -485,17 +657,29 @@ impl crate::stdlib::Function for CrossFunction {
         let arg1_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
 
         let (item_type0, nonempty0) = match &arg0_type {
-            Type::Array { item_type, nonempty, .. } => (item_type.as_ref().clone(), *nonempty),
-            _ => return Err(WdlError::RuntimeError {
-                message: "cross(): first argument must be an array".to_string(),
-            }),
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): first argument must be an array".to_string(),
+                })
+            }
         };
 
         let (item_type1, nonempty1) = match &arg1_type {
-            Type::Array { item_type, nonempty, .. } => (item_type.as_ref().clone(), *nonempty),
-            _ => return Err(WdlError::RuntimeError {
-                message: "cross(): second argument must be an array".to_string(),
-            }),
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): second argument must be an array".to_string(),
+                })
+            }
         };
 
         // Return Array[Pair[A, B]] where A and B are the item types
@@ -506,7 +690,12 @@ impl crate::stdlib::Function for CrossFunction {
         ))
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 2 {
             return Err(WdlError::RuntimeError {
                 message: format!("cross(): expected 2 arguments, got {}", args.len()),
@@ -518,16 +707,20 @@ impl crate::stdlib::Function for CrossFunction {
 
         let array1 = match array1_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "cross(): first argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): first argument must be an array".to_string(),
+                })
+            }
         };
 
         let array2 = match array2_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "cross(): second argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): second argument must be an array".to_string(),
+                })
+            }
         };
 
         let mut result_values = Vec::new();
@@ -585,10 +778,13 @@ pub fn create_quote_function() -> Box<dyn crate::stdlib::Function> {
                     Value::Boolean { value, .. } => value.to_string(),
                     Value::File { value, .. } => value.clone(),
                     Value::Directory { value, .. } => value.clone(),
-                    Value::Null { .. } => "null".to_string(),
+                    Value::Null => "null".to_string(),
                     _ => {
                         return Err(WdlError::RuntimeError {
-                            message: format!("quote(): cannot convert value to string: {:?}", value),
+                            message: format!(
+                                "quote(): cannot convert value to string: {:?}",
+                                value
+                            ),
                         });
                     }
                 };
@@ -626,10 +822,13 @@ pub fn create_squote_function() -> Box<dyn crate::stdlib::Function> {
                     Value::Boolean { value, .. } => value.to_string(),
                     Value::File { value, .. } => value.clone(),
                     Value::Directory { value, .. } => value.clone(),
-                    Value::Null { .. } => "null".to_string(),
+                    Value::Null => "null".to_string(),
                     _ => {
                         return Err(WdlError::RuntimeError {
-                            message: format!("squote(): cannot convert value to string: {:?}", value),
+                            message: format!(
+                                "squote(): cannot convert value to string: {:?}",
+                                value
+                            ),
                         });
                     }
                 };
@@ -652,7 +851,13 @@ impl crate::stdlib::Function for UnzipFunction {
         "unzip"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("unzip(): expected 1 argument, got {}", args.len()),
@@ -661,9 +866,17 @@ impl crate::stdlib::Function for UnzipFunction {
 
         let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
         match &arg_type {
-            Type::Array { item_type, nonempty, .. } => {
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => {
                 match item_type.as_ref() {
-                    Type::Pair { left_type, right_type, .. } => {
+                    Type::Pair {
+                        left_type,
+                        right_type,
+                        ..
+                    } => {
                         // Return Pair[Array[A], Array[B]] where A and B are the pair's component types
                         Ok(Type::pair(
                             Type::array(left_type.as_ref().clone(), false, *nonempty),
@@ -682,7 +895,12 @@ impl crate::stdlib::Function for UnzipFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("unzip(): expected 1 argument, got {}", args.len()),
@@ -692,9 +910,11 @@ impl crate::stdlib::Function for UnzipFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let pair_array = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "unzip(): argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "unzip(): argument must be an array".to_string(),
+                })
+            }
         };
 
         let mut left_values = Vec::new();
@@ -749,7 +969,13 @@ impl crate::stdlib::Function for TransposeFunction {
         "transpose"
     }
 
-    fn infer_type(&self, args: &mut [crate::expr::Expression], type_env: &crate::env::Bindings<crate::types::Type>, stdlib: &crate::stdlib::StdLib, struct_typedefs: &[crate::tree::StructTypeDef]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("transpose(): expected 1 argument, got {}", args.len()),
@@ -760,9 +986,16 @@ impl crate::stdlib::Function for TransposeFunction {
         match &arg_type {
             Type::Array { item_type, .. } => {
                 match item_type.as_ref() {
-                    Type::Array { item_type: inner_item_type, .. } => {
+                    Type::Array {
+                        item_type: inner_item_type,
+                        ..
+                    } => {
                         // Return Array[Array[T]] where T is the inner array's item type (same structure)
-                        Ok(Type::array(Type::array(inner_item_type.as_ref().clone(), false, false), false, false))
+                        Ok(Type::array(
+                            Type::array(inner_item_type.as_ref().clone(), false, false),
+                            false,
+                            false,
+                        ))
                     }
                     _ => Err(WdlError::RuntimeError {
                         message: "transpose(): argument must be an array of arrays".to_string(),
@@ -775,7 +1008,12 @@ impl crate::stdlib::Function for TransposeFunction {
         }
     }
 
-    fn eval(&self, args: &[crate::expr::Expression], env: &crate::env::Bindings<crate::value::Value>, stdlib: &crate::stdlib::StdLib) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 1 {
             return Err(WdlError::RuntimeError {
                 message: format!("transpose(): expected 1 argument, got {}", args.len()),
@@ -785,21 +1023,28 @@ impl crate::stdlib::Function for TransposeFunction {
         let array_value = args[0].eval(env, stdlib)?;
         let matrix = match array_value.as_array() {
             Some(arr) => arr,
-            None => return Err(WdlError::RuntimeError {
-                message: "transpose(): argument must be an array".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "transpose(): argument must be an array".to_string(),
+                })
+            }
         };
 
         if matrix.is_empty() {
-            return Ok(Value::array(Type::array(Type::any(), false, false), Vec::new()));
+            return Ok(Value::array(
+                Type::array(Type::any(), false, false),
+                Vec::new(),
+            ));
         }
 
         // Get the first row to determine column count and item type
         let first_row = match matrix[0].as_array() {
             Some(row) => row,
-            None => return Err(WdlError::RuntimeError {
-                message: "transpose(): array must contain only Array elements".to_string(),
-            }),
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "transpose(): array must contain only Array elements".to_string(),
+                })
+            }
         };
 
         let col_count = first_row.len();
@@ -838,7 +1083,10 @@ impl crate::stdlib::Function for TransposeFunction {
             transposed_values.push(Value::array(item_type.clone(), column_values));
         }
 
-        Ok(Value::array(Type::array(item_type, false, false), transposed_values))
+        Ok(Value::array(
+            Type::array(item_type, false, false),
+            transposed_values,
+        ))
     }
 }
 
@@ -862,27 +1110,50 @@ mod tests {
         // Test prefix("pre_", ["a", "b", "c"]) -> ["pre_a", "pre_b", "pre_c"]
         let prefix_expr = crate::expr::Expression::string_literal(
             crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-            "pre_".to_string()
+            "pre_".to_string(),
         );
         let array_expr = crate::expr::Expression::array(
             crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
             vec![
                 crate::expr::Expression::string_literal(
-                    crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-                    "a".to_string()
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "a".to_string(),
                 ),
                 crate::expr::Expression::string_literal(
-                    crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-                    "b".to_string()
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "b".to_string(),
                 ),
                 crate::expr::Expression::string_literal(
-                    crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-                    "c".to_string()
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "c".to_string(),
                 ),
-            ]
+            ],
         );
 
-        let result = prefix_fn.eval(&[prefix_expr, array_expr], &env, &stdlib).unwrap();
+        let result = prefix_fn
+            .eval(&[prefix_expr, array_expr], &env, &stdlib)
+            .unwrap();
         let result_array = result.as_array().unwrap();
 
         assert_eq!(result_array.len(), 3);
@@ -900,32 +1171,219 @@ mod tests {
         // Test suffix("_suf", ["a", "b", "c"]) -> ["a_suf", "b_suf", "c_suf"]
         let suffix_expr = crate::expr::Expression::string_literal(
             crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-            "_suf".to_string()
+            "_suf".to_string(),
         );
         let array_expr = crate::expr::Expression::array(
             crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
             vec![
                 crate::expr::Expression::string_literal(
-                    crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-                    "a".to_string()
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "a".to_string(),
                 ),
                 crate::expr::Expression::string_literal(
-                    crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-                    "b".to_string()
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "b".to_string(),
                 ),
                 crate::expr::Expression::string_literal(
-                    crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
-                    "c".to_string()
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "c".to_string(),
                 ),
-            ]
+            ],
         );
 
-        let result = suffix_fn.eval(&[suffix_expr, array_expr], &env, &stdlib).unwrap();
+        let result = suffix_fn
+            .eval(&[suffix_expr, array_expr], &env, &stdlib)
+            .unwrap();
         let result_array = result.as_array().unwrap();
 
         assert_eq!(result_array.len(), 3);
         assert_eq!(result_array[0].as_string().unwrap(), "a_suf");
         assert_eq!(result_array[1].as_string().unwrap(), "b_suf");
         assert_eq!(result_array[2].as_string().unwrap(), "c_suf");
+    }
+
+    #[test]
+    fn test_length_function_comprehensive() {
+        let length_fn = create_length_function();
+        let env = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+
+        // Test array length - [1, 2, 3] should return 3
+        let array_expr = crate::expr::Expression::array(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![
+                crate::expr::Expression::int(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    1,
+                ),
+                crate::expr::Expression::int(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    2,
+                ),
+                crate::expr::Expression::int(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    3,
+                ),
+            ],
+        );
+
+        let result = length_fn.eval(&[array_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 3);
+
+        // Test empty array length - [] should return 0
+        let empty_array_expr = crate::expr::Expression::array(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![],
+        );
+
+        let result = length_fn.eval(&[empty_array_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 0);
+
+        // Test string length - "ABCDE" should return 5
+        let string_expr = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "ABCDE".to_string(),
+        );
+
+        let result = length_fn.eval(&[string_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 5);
+
+        // Test map length - {"a": 1, "b": 2} should return 2
+        let map_expr = crate::expr::Expression::map(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![
+                (
+                    crate::expr::Expression::string_literal(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        "a".to_string(),
+                    ),
+                    crate::expr::Expression::int(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        1,
+                    ),
+                ),
+                (
+                    crate::expr::Expression::string_literal(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        "b".to_string(),
+                    ),
+                    crate::expr::Expression::int(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        2,
+                    ),
+                ),
+            ],
+        );
+
+        let result = length_fn.eval(&[map_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 2);
+
+        // Test struct/object length - {a: 1, b: "test"} should return 2
+        let struct_expr = crate::expr::Expression::struct_expr(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![
+                (
+                    "a".to_string(),
+                    crate::expr::Expression::int(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        1,
+                    ),
+                ),
+                (
+                    "b".to_string(),
+                    crate::expr::Expression::string_literal(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        "test".to_string(),
+                    ),
+                ),
+            ],
+        );
+
+        let result = length_fn.eval(&[struct_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 2);
     }
 }
