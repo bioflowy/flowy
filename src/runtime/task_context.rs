@@ -5,6 +5,7 @@
 
 // Note: error types available if needed
 use crate::env::Bindings;
+use crate::error::SourcePosition;
 use crate::expr::ExpressionBase;
 use crate::runtime::config::{Config, ContainerBackend, ResourceLimits};
 use crate::runtime::container::{
@@ -19,6 +20,8 @@ use crate::tree::Task;
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
 use std::collections::HashMap;
+use std::fs;
+use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
@@ -704,11 +707,11 @@ impl TaskContext {
 
         for output_decl in &self.task.outputs {
             if let Some(output_expr) = &output_decl.expr {
-                let output_value = output_expr.eval(&eval_env, &stdlib)?;
+                let mut output_value = output_expr.eval(&eval_env, &stdlib)?;
 
                 // Try to coerce the output value to the expected type
                 let expected_type = &output_decl.decl_type;
-                let output_value = output_value.coerce(expected_type)?;
+                output_value = output_value.coerce(expected_type)?;
 
                 // Validate output type matches declaration (after coercion)
                 if !self.value_matches_type(&output_value, expected_type) {
@@ -719,6 +722,18 @@ impl TaskContext {
                         pos: Some(output_decl.pos.clone()),
                     });
                 }
+
+                // Handle File/Directory outputs (including nested in compound values)
+                output_value = self.finalize_output_value(
+                    output_value,
+                    expected_type,
+                    stdlib.path_mapper(),
+                    &output_decl.name,
+                    &output_decl.pos,
+                )?;
+
+                // Re-coerce after adjustments to ensure optional/null handling matches declaration
+                output_value = output_value.coerce(expected_type)?;
 
                 // Add this output to both the final outputs and the evaluation environment
                 // This allows subsequent outputs to reference previously evaluated outputs
@@ -765,6 +780,362 @@ impl TaskContext {
         // Use the value's type to check if it coerces to the expected type
         let value_type = value.wdl_type();
         value_type.coerces(expected_type, true)
+    }
+
+    fn finalize_output_value(
+        &self,
+        value: Value,
+        expected_type: &Type,
+        path_mapper: &dyn crate::stdlib::PathMapper,
+        output_name: &str,
+        pos: &SourcePosition,
+    ) -> RuntimeResult<Value> {
+        use crate::types::Type;
+
+        match (expected_type, value) {
+            (Type::File { optional }, Value::File { value: path, .. }) => {
+                match self.resolve_output_path(
+                    &path,
+                    *optional,
+                    path_mapper,
+                    output_name,
+                    pos,
+                    expected_type,
+                    false,
+                )? {
+                    Some(_) => Ok(Value::File {
+                        value: path,
+                        wdl_type: expected_type.clone(),
+                    }),
+                    None => Ok(Value::Null),
+                }
+            }
+            (Type::File { optional }, Value::Null) => {
+                if *optional {
+                    Ok(Value::Null)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        "value is None",
+                        "None",
+                        pos,
+                    ))
+                }
+            }
+            (Type::Directory { optional }, Value::Directory { value: path, .. }) => {
+                match self.resolve_output_path(
+                    &path,
+                    *optional,
+                    path_mapper,
+                    output_name,
+                    pos,
+                    expected_type,
+                    true,
+                )? {
+                    Some(_) => Ok(Value::Directory {
+                        value: path,
+                        wdl_type: expected_type.clone(),
+                    }),
+                    None => Ok(Value::Null),
+                }
+            }
+            (Type::Directory { optional }, Value::Null) => {
+                if *optional {
+                    Ok(Value::Null)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        "value is None",
+                        "None",
+                        pos,
+                    ))
+                }
+            }
+            (
+                Type::Array {
+                    item_type,
+                    optional: _optional,
+                    ..
+                },
+                Value::Array { values, wdl_type },
+            ) => {
+                let mut new_values = Vec::with_capacity(values.len());
+                for (idx, item) in values.into_iter().enumerate() {
+                    let child_name = format!("{}[{}]", output_name, idx);
+                    let processed =
+                        self.finalize_output_value(item, item_type, path_mapper, &child_name, pos)?;
+                    new_values.push(processed);
+                }
+                Ok(Value::Array {
+                    values: new_values,
+                    wdl_type,
+                })
+            }
+            (Type::Array { optional, .. }, Value::Null) => {
+                if *optional {
+                    Ok(Value::Null)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        "value is None",
+                        "None",
+                        pos,
+                    ))
+                }
+            }
+            (
+                Type::Map {
+                    key_type,
+                    value_type,
+                    optional: _optional,
+                    ..
+                },
+                Value::Map { pairs, wdl_type },
+            ) => {
+                let mut new_pairs = Vec::with_capacity(pairs.len());
+                for (key, val) in pairs.into_iter() {
+                    let new_key =
+                        self.finalize_output_value(key, key_type, path_mapper, output_name, pos)?;
+                    let child_name = format!("{}[{}]", output_name, new_key);
+                    let new_val =
+                        self.finalize_output_value(val, value_type, path_mapper, &child_name, pos)?;
+                    new_pairs.push((new_key, new_val));
+                }
+                Ok(Value::Map {
+                    pairs: new_pairs,
+                    wdl_type,
+                })
+            }
+            (Type::Map { optional, .. }, Value::Null) => {
+                if *optional {
+                    Ok(Value::Null)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        "value is None",
+                        "None",
+                        pos,
+                    ))
+                }
+            }
+            (
+                Type::Pair {
+                    left_type,
+                    right_type,
+                    optional: _optional,
+                },
+                Value::Pair {
+                    left,
+                    right,
+                    wdl_type,
+                },
+            ) => {
+                let left_value = self.finalize_output_value(
+                    *left,
+                    left_type,
+                    path_mapper,
+                    &format!("{}.left", output_name),
+                    pos,
+                )?;
+                let right_value = self.finalize_output_value(
+                    *right,
+                    right_type,
+                    path_mapper,
+                    &format!("{}.right", output_name),
+                    pos,
+                )?;
+                Ok(Value::Pair {
+                    left: Box::new(left_value),
+                    right: Box::new(right_value),
+                    wdl_type,
+                })
+            }
+            (Type::Pair { optional, .. }, Value::Null) => {
+                if *optional {
+                    Ok(Value::Null)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        "value is None",
+                        "None",
+                        pos,
+                    ))
+                }
+            }
+            (
+                Type::StructInstance {
+                    members,
+                    optional: _optional,
+                    ..
+                },
+                Value::Struct {
+                    members: struct_members,
+                    extra_keys,
+                    wdl_type,
+                },
+            ) => {
+                let mut new_members = HashMap::with_capacity(struct_members.len());
+                let type_members = members.as_ref();
+                let default_member_type = Type::any().with_optional(true);
+                for (name, member_value) in struct_members.into_iter() {
+                    let child_name = format!("{}.{}", output_name, name);
+                    let member_type = if let Some(map) = type_members {
+                        map.get(&name).unwrap_or(&default_member_type)
+                    } else {
+                        &default_member_type
+                    };
+                    let processed = self.finalize_output_value(
+                        member_value,
+                        member_type,
+                        path_mapper,
+                        &child_name,
+                        pos,
+                    )?;
+                    new_members.insert(name, processed);
+                }
+                Ok(Value::Struct {
+                    members: new_members,
+                    extra_keys,
+                    wdl_type,
+                })
+            }
+            (Type::StructInstance { optional, .. }, Value::Null) => {
+                if *optional {
+                    Ok(Value::Null)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        "value is None",
+                        "None",
+                        pos,
+                    ))
+                }
+            }
+            (
+                Type::Object { members, .. },
+                Value::Struct {
+                    members: struct_members,
+                    extra_keys,
+                    wdl_type,
+                },
+            ) => {
+                let mut new_members = HashMap::with_capacity(struct_members.len());
+                let default_member_type = Type::any().with_optional(true);
+                for (name, member_value) in struct_members.into_iter() {
+                    let child_name = format!("{}.{}", output_name, name);
+                    let member_type = members.get(&name).unwrap_or(&default_member_type);
+                    let processed = self.finalize_output_value(
+                        member_value,
+                        member_type,
+                        path_mapper,
+                        &child_name,
+                        pos,
+                    )?;
+                    new_members.insert(name, processed);
+                }
+                Ok(Value::Struct {
+                    members: new_members,
+                    extra_keys,
+                    wdl_type,
+                })
+            }
+            (Type::Object { .. }, Value::Null) => Ok(Value::Null),
+            (_, other) => Ok(other),
+        }
+    }
+
+    fn resolve_output_path(
+        &self,
+        path: &str,
+        optional: bool,
+        path_mapper: &dyn crate::stdlib::PathMapper,
+        output_name: &str,
+        pos: &SourcePosition,
+        expected_type: &Type,
+        expect_directory: bool,
+    ) -> RuntimeResult<Option<String>> {
+        let resolved = path_mapper.devirtualize_filename(path)?;
+        match fs::metadata(&resolved) {
+            Ok(metadata) => {
+                let type_ok = if expect_directory {
+                    metadata.is_dir()
+                } else {
+                    metadata.is_file()
+                };
+
+                if type_ok {
+                    Ok(Some(path.to_string()))
+                } else if optional {
+                    eprintln!(
+                        "[flowy] Optional output '{}' skipped because path is not a {}: {}",
+                        output_name,
+                        if expect_directory {
+                            "directory"
+                        } else {
+                            "file"
+                        },
+                        resolved.display()
+                    );
+                    Ok(None)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        &format!(
+                            "expected {}, but found different type at {}",
+                            if expect_directory {
+                                "directory"
+                            } else {
+                                "file"
+                            },
+                            resolved.display()
+                        ),
+                        path,
+                        pos,
+                    ))
+                }
+            }
+            Err(err) => {
+                if optional && err.kind() == ErrorKind::NotFound {
+                    eprintln!(
+                        "[flowy] Optional output '{}' not found (treated as None): {}",
+                        output_name,
+                        resolved.display()
+                    );
+                    Ok(None)
+                } else {
+                    Err(self.output_missing_error(
+                        output_name,
+                        expected_type,
+                        &format!("{}", err),
+                        path,
+                        pos,
+                    ))
+                }
+            }
+        }
+    }
+
+    fn output_missing_error(
+        &self,
+        output_name: &str,
+        expected_type: &Type,
+        detail: &str,
+        actual: &str,
+        pos: &SourcePosition,
+    ) -> RuntimeError {
+        RuntimeError::OutputError {
+            message: format!("{} - {}", output_name, detail),
+            expected_type: expected_type.to_string(),
+            actual: actual.to_string(),
+            pos: Some(pos.clone()),
+        }
     }
 }
 
