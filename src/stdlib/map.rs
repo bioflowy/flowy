@@ -514,6 +514,9 @@ impl crate::stdlib::Function for ContainsKeyFunction {
 
         let pairs = match &map_value {
             Value::Map { pairs, .. } => pairs,
+            Value::Null => {
+                return Ok(Value::boolean(false));
+            }
             _ => {
                 return Err(WdlError::RuntimeError {
                     message: "contains_key(): first argument must be a Map".to_string(),

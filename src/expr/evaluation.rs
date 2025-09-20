@@ -275,7 +275,12 @@ impl ExpressionBase for Expression {
                 }
             }
 
-            Expression::Get { expr, field, .. } => {
+            Expression::Get {
+                expr,
+                field,
+                inferred_type,
+                ..
+            } => {
                 // Special case: If this is a member access like hello.message,
                 // try to resolve it as a qualified name first
                 if let Expression::Ident {
@@ -295,6 +300,12 @@ impl ExpressionBase for Expression {
                     Value::Struct { members, .. } => {
                         if let Some(value) = members.get(field) {
                             Ok(value.clone())
+                        } else if inferred_type
+                            .as_ref()
+                            .map(|ty| ty.is_optional())
+                            .unwrap_or(false)
+                        {
+                            Ok(Value::null())
                         } else {
                             Err(WdlError::validation_error(
                                 HasSourcePosition::source_position(self).clone(),

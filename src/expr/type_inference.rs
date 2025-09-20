@@ -309,17 +309,31 @@ impl Expression {
                                         struct_typedefs.iter().find(|s| s.name == *type_name)
                                     {
                                         if let Some(field_type) = struct_def.members.get(field) {
-                                            return Ok(field_type.clone());
+                                            field_type.clone()
+                                        } else {
+                                            return Err(WdlError::no_such_member_error(
+                                                pos.clone(),
+                                                field.clone(),
+                                            ));
                                         }
+                                    } else {
+                                        return Err(WdlError::static_type_mismatch(
+                                            pos.clone(),
+                                            "Struct with known members".to_string(),
+                                            expr_type.to_string(),
+                                            "Cannot access field on struct without member information"
+                                                .to_string(),
+                                        ));
                                     }
+                                } else {
+                                    return Err(WdlError::static_type_mismatch(
+                                        pos.clone(),
+                                        "Struct with known members".to_string(),
+                                        expr_type.to_string(),
+                                        "Cannot access field on struct without member information"
+                                            .to_string(),
+                                    ));
                                 }
-                                return Err(WdlError::static_type_mismatch(
-                                    pos.clone(),
-                                    "Struct with known members".to_string(),
-                                    expr_type.to_string(),
-                                    "Cannot access field on struct without member information"
-                                        .to_string(),
-                                ));
                             }
                         }
                         _ => {
