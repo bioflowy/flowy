@@ -438,6 +438,7 @@ impl StdLib {
 
         // Array functions
         self.register_function(arrays::create_length_function());
+        self.register_function(arrays::create_contains_function());
         self.register_function(arrays::create_select_first_function());
         self.register_function(arrays::create_select_all_function());
         self.register_function(arrays::create_flatten_function());
@@ -536,6 +537,10 @@ impl StdLib {
         self.register_function(io::create_read_lines_function(
             self.path_mapper.clone_boxed(),
         ));
+        self.register_function(io::create_read_map_function(self.path_mapper.clone_boxed()));
+        self.register_function(io::create_read_json_function(
+            self.path_mapper.clone_boxed(),
+        ));
         self.register_function(tsv::create_read_tsv_function(
             self.path_mapper.clone_boxed(),
         ));
@@ -605,6 +610,8 @@ mod tests {
         // Test that read functions are registered
         assert!(stdlib.get_function("read_string").is_some());
         assert!(stdlib.get_function("read_lines").is_some());
+        assert!(stdlib.get_function("read_map").is_some());
+        assert!(stdlib.get_function("read_json").is_some());
         assert!(stdlib.get_function("read_tsv").is_some());
         assert!(stdlib.get_function("read_int").is_some());
         assert!(stdlib.get_function("read_float").is_some());
@@ -618,6 +625,7 @@ mod tests {
 
         // Test that array functions are registered
         assert!(stdlib.get_function("length").is_some());
+        assert!(stdlib.get_function("contains").is_some());
         assert!(stdlib.get_function("select_first").is_some());
         assert!(stdlib.get_function("select_all").is_some());
 

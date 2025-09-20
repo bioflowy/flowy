@@ -5,7 +5,7 @@
 use crate::error::WdlError;
 use crate::expr::ExpressionBase;
 use crate::stdlib::create_static_function;
-use crate::types::Type;
+use crate::types::{unify_types, Type};
 use crate::value::Value;
 use crate::value::ValueBase;
 
@@ -241,22 +241,23 @@ impl crate::stdlib::Function for SelectFirstFunction {
         stdlib: &crate::stdlib::StdLib,
         struct_typedefs: &[crate::tree::StructTypeDef],
     ) -> Result<Type, WdlError> {
-        if args.len() != 1 {
+        if args.is_empty() || args.len() > 2 {
             return Err(WdlError::RuntimeError {
-                message: format!("select_first(): expected 1 argument, got {}", args.len()),
+                message: format!(
+                    "select_first(): expected 1 or 2 arguments, got {}",
+                    args.len()
+                ),
             });
         }
 
-        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
-        match &arg_type {
-            Type::Array { item_type, .. } => {
-                // Return the item type without optional flag
-                Ok(item_type.as_ref().clone().with_optional(false))
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "select_first(): argument must be an array".to_string(),
-            }),
-        }
+        let array_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let fallback_type = if args.len() == 2 {
+            Some(args[1].infer_type(type_env, stdlib, struct_typedefs)?)
+        } else {
+            None
+        };
+
+        select_first_result_type(&array_type, fallback_type.as_ref())
     }
 
     fn eval(
@@ -265,9 +266,12 @@ impl crate::stdlib::Function for SelectFirstFunction {
         env: &crate::env::Bindings<crate::value::Value>,
         stdlib: &crate::stdlib::StdLib,
     ) -> Result<Value, WdlError> {
-        if args.len() != 1 {
+        if args.is_empty() || args.len() > 2 {
             return Err(WdlError::RuntimeError {
-                message: format!("select_first(): expected 1 argument, got {}", args.len()),
+                message: format!(
+                    "select_first(): expected 1 or 2 arguments, got {}",
+                    args.len()
+                ),
             });
         }
 
@@ -281,10 +285,26 @@ impl crate::stdlib::Function for SelectFirstFunction {
             }
         };
 
+        let fallback_value = if args.len() == 2 {
+            Some(args[1].eval(env, stdlib)?)
+        } else {
+            None
+        };
+
+        let array_type = array_value.wdl_type().clone();
+        let fallback_type = fallback_value
+            .as_ref()
+            .map(|value| value.wdl_type().clone());
+        let result_type = select_first_result_type(&array_type, fallback_type.as_ref())?;
+
         for value in array {
             if !value.is_null() {
-                return Ok(value.clone());
+                return value.coerce(&result_type);
             }
+        }
+
+        if let Some(fallback) = fallback_value {
+            return fallback.coerce(&result_type);
         }
 
         Err(WdlError::RuntimeError {
@@ -296,6 +316,143 @@ impl crate::stdlib::Function for SelectFirstFunction {
 /// Create the select_first function
 pub fn create_select_first_function() -> Box<dyn crate::stdlib::Function> {
     Box::new(SelectFirstFunction)
+}
+
+fn select_first_result_type(
+    array_type: &Type,
+    fallback_type: Option<&Type>,
+) -> Result<Type, WdlError> {
+    let item_type = match array_type {
+        Type::Array { item_type, .. } => item_type.as_ref().clone(),
+        _ => {
+            return Err(WdlError::RuntimeError {
+                message: "select_first(): argument must be an array".to_string(),
+            })
+        }
+    };
+
+    let mut element_type = item_type.clone().with_optional(false);
+
+    if let Some(fallback) = fallback_type {
+        let fallback_non_optional = fallback.clone().with_optional(false);
+
+        if !element_type.coerces(&fallback_non_optional, true)
+            && !fallback_non_optional.coerces(&element_type, true)
+        {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "select_first(): fallback type {} incompatible with array element type {}",
+                    fallback, item_type
+                ),
+            });
+        }
+
+        let unified = unify_types(vec![&element_type, &fallback_non_optional], true, false);
+        element_type = unified.with_optional(false);
+    }
+
+    Ok(element_type)
+}
+
+/// Contains function implementation
+pub struct ContainsFunction;
+
+impl crate::stdlib::Function for ContainsFunction {
+    fn name(&self) -> &str {
+        "contains"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!("contains(): expected 2 arguments, got {}", args.len()),
+            });
+        }
+
+        let array_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let value_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Reuse select_first compatibility logic (ignoring the resulting type)
+        select_first_result_type(&array_type, Some(&value_type))?;
+
+        Ok(Type::boolean(false))
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!("contains(): expected 2 arguments, got {}", args.len()),
+            });
+        }
+
+        let array_value = args[0].eval(env, stdlib)?;
+        let array = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "contains(): first argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let search_value_raw = args[1].eval(env, stdlib)?;
+
+        let array_type = array_value.wdl_type().clone();
+        let array_item_type = match &array_type {
+            Type::Array { item_type, .. } => item_type.as_ref().clone(),
+            _ => unreachable!("array_value must be an array"),
+        };
+
+        let search_value_type = search_value_raw.wdl_type().clone();
+        let comparison_type = select_first_result_type(&array_type, Some(&search_value_type))?;
+
+        let allow_null = array_item_type.is_optional();
+        let search_is_null = search_value_raw.is_null();
+
+        if search_is_null && !allow_null {
+            return Err(WdlError::RuntimeError {
+                message: "contains(): cannot search for None in non-optional array".to_string(),
+            });
+        }
+
+        let search_value = if search_is_null {
+            Value::null()
+        } else {
+            search_value_raw.coerce(&comparison_type)?
+        };
+
+        for element in array {
+            if element.is_null() {
+                if search_is_null {
+                    return Ok(Value::boolean(true));
+                }
+                continue;
+            }
+
+            let coerced_element = element.coerce(&comparison_type)?;
+            if coerced_element == search_value {
+                return Ok(Value::boolean(true));
+            }
+        }
+
+        Ok(Value::boolean(false))
+    }
+}
+
+/// Create the contains function
+pub fn create_contains_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(ContainsFunction)
 }
 
 /// SelectAll function implementation

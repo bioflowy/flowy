@@ -8,9 +8,10 @@ use crate::expr::ExpressionBase;
 use crate::stdlib::Function;
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
-use std::fs;
+use serde_json::Value as JsonValue;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::{collections::HashSet, fs};
 
 /// Write file function that follows the original WriteFileFunction pattern
 /// Uses eval_with_stdlib for proper file handling in different contexts
@@ -275,6 +276,85 @@ pub fn create_read_lines_function(
         },
         path_mapper,
     )
+}
+
+/// Create read_map function: read_map(File) -> Map[String, String]
+/// Reads a two-column TSV file into an ordered Map
+pub fn create_read_map_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
+    create_read_function(
+        "read_map".to_string(),
+        Type::map(Type::string(false), Type::string(false), false),
+        |content: &str| parse_map_content(content),
+        path_mapper,
+    )
+}
+
+/// Create read_json function: read_json(File) -> Any
+/// Reads a file containing JSON and converts it to a WDL value
+pub fn create_read_json_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
+    create_read_function(
+        "read_json".to_string(),
+        Type::any(),
+        |content: &str| {
+            let json_value: JsonValue =
+                serde_json::from_str(content).map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to parse JSON: {}", e),
+                })?;
+            Ok(Value::from_json(json_value))
+        },
+        path_mapper,
+    )
+}
+
+fn parse_map_content(content: &str) -> Result<Value, WdlError> {
+    let mut pairs: Vec<(Value, Value)> = Vec::new();
+    let mut seen_keys: HashSet<String> = HashSet::new();
+
+    if content.is_empty() {
+        return Ok(Value::map(Type::string(false), Type::string(false), pairs));
+    }
+
+    for (index, raw_line) in content.lines().enumerate() {
+        let line = raw_line.trim_end_matches('\r');
+        let mut columns = line.splitn(3, '\t');
+
+        let key = columns.next().unwrap_or("");
+        let value = columns.next();
+        let extra = columns.next();
+
+        if key.is_empty() && value.is_none() {
+            continue; // skip blank lines
+        }
+
+        let value = match value {
+            Some(v) if extra.is_none() => v,
+            Some(_) | None => {
+                return Err(WdlError::RuntimeError {
+                    message: format!(
+                        "read_map(): line {} does not contain exactly two columns",
+                        index + 1
+                    ),
+                });
+            }
+        };
+
+        if !seen_keys.insert(key.to_string()) {
+            return Err(WdlError::RuntimeError {
+                message: format!("read_map(): duplicate key '{}' detected", key),
+            });
+        }
+
+        pairs.push((
+            Value::string(key.to_string()),
+            Value::string(value.to_string()),
+        ));
+    }
+
+    Ok(Value::map(Type::string(false), Type::string(false), pairs))
 }
 
 /// Create read_int function: read_int(File) -> Int
