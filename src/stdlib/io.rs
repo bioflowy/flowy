@@ -2,6 +2,7 @@
 //!
 //! This module provides file reading and writing functions similar to miniwdl's I/O functions.
 
+use crate::env::Bindings;
 use crate::error::{SourcePosition, WdlError};
 use crate::expr::ExpressionBase;
 use crate::stdlib::Function;
@@ -360,52 +361,6 @@ pub fn create_write_lines_function(
                 file.write_all(line.as_bytes())
                     .map_err(|e| WdlError::RuntimeError {
                         message: format!("Failed to write line: {}", e),
-                    })?;
-                file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
-                    message: format!("Failed to write newline: {}", e),
-                })?;
-            }
-            Ok(())
-        },
-        path_mapper,
-        write_dir,
-    )
-}
-
-/// Create write_tsv function: write_tsv(Array[Array[String]]) -> File
-/// Writes a 2D array as tab-separated values
-pub fn create_write_tsv_function(
-    path_mapper: Box<dyn crate::stdlib::PathMapper>,
-    write_dir: String,
-) -> Box<dyn Function> {
-    create_write_function(
-        "write_tsv".to_string(),
-        Type::array(Type::array(Type::string(false), false, false), false, false),
-        |value: &Value, file: &mut dyn Write| {
-            let array = value.as_array().ok_or_else(|| WdlError::RuntimeError {
-                message: "Expected array value for write_tsv".to_string(),
-            })?;
-
-            for row in array {
-                let row_array = row.as_array().ok_or_else(|| WdlError::RuntimeError {
-                    message: "Expected array of arrays for write_tsv".to_string(),
-                })?;
-
-                let line_parts: Result<Vec<String>, WdlError> = row_array
-                    .iter()
-                    .map(|cell| {
-                        cell.as_string().map(|s| s.to_string()).ok_or_else(|| {
-                            WdlError::RuntimeError {
-                                message: "All TSV cells must be strings".to_string(),
-                            }
-                        })
-                    })
-                    .collect();
-
-                let line = line_parts?.join("\t");
-                file.write_all(line.as_bytes())
-                    .map_err(|e| WdlError::RuntimeError {
-                        message: format!("Failed to write TSV line: {}", e),
                     })?;
                 file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
                     message: format!("Failed to write newline: {}", e),

@@ -13,6 +13,7 @@
 //! 6. `Array[T]+` coerces to `Array[T]` but the reverse is not true in general
 
 use crate::error::{SourcePosition, WdlError};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -66,7 +67,7 @@ pub enum Type {
     /// Instance of a struct type
     StructInstance {
         type_name: String,
-        members: Option<HashMap<String, Type>>,
+        members: Option<IndexMap<String, Type>>,
         optional: bool,
     },
 
@@ -542,7 +543,7 @@ impl Type {
         &self,
         literal_keys: &HashSet<String>,
         value_type: &Type,
-        struct_members: &HashMap<String, Type>,
+        struct_members: &IndexMap<String, Type>,
         check_quant: bool,
     ) -> Result<(), WdlError> {
         let struct_keys: HashSet<String> = struct_members.keys().cloned().collect();
@@ -680,9 +681,11 @@ impl Type {
             } => {
                 // Find the struct definition
                 if let Some(struct_def) = struct_typedefs.iter().find(|s| s.name == *type_name) {
+                    let members = struct_def.members.clone();
+
                     Ok(Type::StructInstance {
                         type_name: type_name.clone(),
-                        members: Some(struct_def.members.clone()),
+                        members: Some(members),
                         optional: *optional,
                     })
                 } else {
@@ -752,7 +755,7 @@ impl fmt::Display for Type {
 }
 
 /// Generate a canonical ID for a struct type based on its members.
-fn struct_type_id(members: &HashMap<String, Type>) -> String {
+fn struct_type_id(members: &IndexMap<String, Type>) -> String {
     let mut member_strs: Vec<String> = members
         .iter()
         .map(|(name, ty)| {
@@ -1044,11 +1047,13 @@ mod tests {
 
     #[test]
     fn test_struct_type_id() {
-        let mut members1 = HashMap::new();
+        use indexmap::IndexMap;
+
+        let mut members1 = IndexMap::new();
         members1.insert("a".to_string(), Type::int(false));
         members1.insert("b".to_string(), Type::string(false));
 
-        let mut members2 = HashMap::new();
+        let mut members2 = IndexMap::new();
         members2.insert("b".to_string(), Type::string(false));
         members2.insert("a".to_string(), Type::int(false));
 

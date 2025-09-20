@@ -613,6 +613,7 @@ checksum = "f2481980430f9f78649238835720ddccc57e52df14ffce1c6f37391d61b563e9"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.5",
+ "serde",
 ]
 
 [[package]]
@@ -698,6 +699,7 @@ dependencies = [
  "futures",
  "futures-util",
  "glob",
+ "indexmap 2.11.0",
  "nom",
  "nom_locate",
  "once_cell",

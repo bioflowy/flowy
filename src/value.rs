@@ -304,9 +304,13 @@ impl Value {
                         ..
                     } => {
                         // Convert to Object type for processing
+                        let object_members = resolved_members
+                            .into_iter()
+                            .map(|(name, ty)| (name, ty))
+                            .collect::<std::collections::HashMap<_, _>>();
                         let object_type = Type::Object {
                             is_call_output: false,
-                            members: resolved_members,
+                            members: object_members,
                         };
                         self.coerce_with_structs(&object_type, struct_typedefs)
                     }

@@ -477,7 +477,7 @@ pub mod utils {
         fn test_struct_coerce_to_object() {
             use crate::types::Type;
             use crate::value::{Value, ValueBase};
-            use std::collections::HashMap;
+            use indexmap::IndexMap;
 
             // Create a struct value with members
             let mut members = HashMap::new();
@@ -525,7 +525,7 @@ pub mod utils {
         fn test_map_coerce_to_specific_struct() {
             use crate::types::Type;
             use crate::value::{Value, ValueBase};
-            use std::collections::HashMap;
+            use indexmap::IndexMap;
 
             // Create a Map value (like { "a": 10, "b": 11, "c": 12 })
             // Note: We use the actual struct member names as map keys for the test to succeed
@@ -538,7 +538,7 @@ pub mod utils {
             let map_value = Value::map(Type::string(false), Type::int(false), pairs);
 
             // Create a specific struct type (like Words struct with members a, b, c)
-            let mut struct_members = HashMap::new();
+            let mut struct_members = IndexMap::new();
             struct_members.insert("a".to_string(), Type::int(false));
             struct_members.insert("b".to_string(), Type::int(false));
             struct_members.insert("c".to_string(), Type::int(false));

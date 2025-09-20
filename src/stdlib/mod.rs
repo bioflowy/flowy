@@ -19,6 +19,7 @@ pub mod math;
 pub mod operators;
 pub mod strings;
 pub mod task_output;
+pub mod tsv;
 
 // Re-export all function structs for convenience
 
@@ -535,6 +536,9 @@ impl StdLib {
         self.register_function(io::create_read_lines_function(
             self.path_mapper.clone_boxed(),
         ));
+        self.register_function(tsv::create_read_tsv_function(
+            self.path_mapper.clone_boxed(),
+        ));
         self.register_function(io::create_read_int_function(self.path_mapper.clone_boxed()));
         self.register_function(io::create_read_float_function(
             self.path_mapper.clone_boxed(),
@@ -551,7 +555,7 @@ impl StdLib {
             self.path_mapper.clone_boxed(),
             self.write_dir.clone(),
         ));
-        self.register_function(io::create_write_tsv_function(
+        self.register_function(tsv::create_write_tsv_function(
             self.path_mapper.clone_boxed(),
             self.write_dir.clone(),
         ));
@@ -601,6 +605,7 @@ mod tests {
         // Test that read functions are registered
         assert!(stdlib.get_function("read_string").is_some());
         assert!(stdlib.get_function("read_lines").is_some());
+        assert!(stdlib.get_function("read_tsv").is_some());
         assert!(stdlib.get_function("read_int").is_some());
         assert!(stdlib.get_function("read_float").is_some());
         assert!(stdlib.get_function("read_boolean").is_some());

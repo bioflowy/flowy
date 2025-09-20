@@ -4,6 +4,7 @@ use super::{BinaryOperator, Expression, ExpressionBase, StringPart, UnaryOperato
 use crate::env::Bindings;
 use crate::error::{HasSourcePosition, MultiErrorContext, WdlError};
 use crate::types::Type;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 impl Expression {
@@ -470,7 +471,7 @@ impl Expression {
 
     fn resolve_struct_member_type(
         type_name: &str,
-        members: Option<&HashMap<String, Type>>,
+        members: Option<&IndexMap<String, Type>>,
         field: &str,
         pos: &crate::error::SourcePosition,
         struct_typedefs: &[crate::tree::StructTypeDef],
