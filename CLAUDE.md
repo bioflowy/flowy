@@ -174,3 +174,18 @@ String? optional_value = null
 ```
 
 This is a common mistake that causes parsing errors. Always use `None` for null/empty optional values in WDL code.
+
+### WDL Specification Reference
+**IMPORTANT**: When implementing or modifying WDL standard library functions, always check the official WDL 1.2 specification:
+
+- **Location**: `spec/wdl-1.2/SPEC.md`
+- **Standard Library Section**: Lines 10545+ contain function signatures and behavior
+- **Function Examples**: Each function includes examples showing correct usage
+
+**Example**: The `select_first` function has two signatures:
+```
+X select_first(Array[X?]+)           # Single argument - non-empty array
+X select_first(Array[X?], X)         # Two arguments - array + default value
+```
+
+Always verify function signatures, parameter types, and behavior against the specification before implementation.
