@@ -2,7 +2,7 @@
 name = "miniwdl-rust"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.78.0"
+rust-version = "1.82.0"
 description = "Rust port of miniwdl - Workflow Description Language (WDL) parser and runtime"
 license = "MIT"
 repository = "https://github.com/chanzuckerberg/miniwdl"

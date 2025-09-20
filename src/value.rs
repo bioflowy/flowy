@@ -306,7 +306,6 @@ impl Value {
                         // Convert to Object type for processing
                         let object_members = resolved_members
                             .into_iter()
-                            .map(|(name, ty)| (name, ty))
                             .collect::<std::collections::HashMap<_, _>>();
                         let object_type = Type::Object {
                             is_call_output: false,
