@@ -11,7 +11,11 @@ use std::path::PathBuf;
 /// This creates a StdLib instance with TaskPathMapper for proper file path handling
 /// in task execution contexts. This replaces the old approach of overriding individual functions.
 pub fn create_task_output_stdlib(wdl_version: &str, task_dir: PathBuf) -> StdLib {
-    let write_dir = task_dir.to_string_lossy().to_string();
+    let write_dir = task_dir
+        .join("work")
+        .join("write_")
+        .to_string_lossy()
+        .to_string();
     StdLib::with_path_mapper(
         wdl_version,
         Box::new(TaskPathMapper::new(task_dir)),

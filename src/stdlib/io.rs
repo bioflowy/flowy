@@ -86,13 +86,13 @@ where
 
         // Use task directory if available, otherwise use write_dir
         let target_dir = if let Some(task_dir) = stdlib.task_dir() {
-            task_dir.as_path()
+            task_dir.join("work").join("write_")
         } else {
-            std::path::Path::new(&self.write_dir)
+            std::path::PathBuf::from(&self.write_dir)
         };
 
         // Create target directory if it doesn't exist
-        std::fs::create_dir_all(target_dir).map_err(|e| WdlError::RuntimeError {
+        std::fs::create_dir_all(&target_dir).map_err(|e| WdlError::RuntimeError {
             message: format!(
                 "Failed to create directory '{}': {}",
                 target_dir.display(),
@@ -102,7 +102,7 @@ where
 
         // Create a temporary file in the target directory
         let mut temp_file =
-            tempfile::NamedTempFile::new_in(target_dir).map_err(|e| WdlError::RuntimeError {
+            tempfile::NamedTempFile::new_in(&target_dir).map_err(|e| WdlError::RuntimeError {
                 message: format!("Failed to create temporary file: {}", e),
             })?;
 
@@ -614,10 +614,37 @@ pub fn create_glob_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> 
                 message: "glob() requires a string pattern".to_string(),
             })?;
 
+            // Resolve relative globs against the task work directory when available
+            let resolved_pattern = {
+                let pattern_path = std::path::Path::new(pattern);
+                if pattern_path.is_absolute() {
+                    pattern.to_string()
+                } else if let Some(task_mapper) = path_mapper
+                    .as_any()
+                    .downcast_ref::<crate::stdlib::TaskPathMapper>()
+                {
+                    task_mapper
+                        .task_dir()
+                        .join("work")
+                        .join(pattern_path)
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(pattern_path))
+                        .map_err(|e| WdlError::RuntimeError {
+                            message: format!("Failed to resolve glob pattern: {}", e),
+                        })?
+                        .to_string_lossy()
+                        .to_string()
+                }
+            };
+
             // Use glob crate to find matching files
-            let glob_result = glob::glob(pattern).map_err(|e| WdlError::RuntimeError {
-                message: format!("Invalid glob pattern '{}': {}", pattern, e),
-            })?;
+            let glob_result =
+                glob::glob(&resolved_pattern).map_err(|e| WdlError::RuntimeError {
+                    message: format!("Invalid glob pattern '{}': {}", resolved_pattern, e),
+                })?;
 
             let mut files = Vec::new();
             for entry in glob_result {

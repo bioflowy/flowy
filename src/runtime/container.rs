@@ -14,6 +14,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 
+/// Host task directory mount point inside the container (mirrors miniwdl)
+pub const CONTAINER_TASK_DIR: &str = "/mnt/miniwdl_task_container";
+/// Working directory inside the container where the command executes
+pub const CONTAINER_WORK_DIR: &str = "/mnt/miniwdl_task_container/work";
+
 /// Result type for container operations
 pub type ContainerResult<T> = Result<T, RuntimeError>;
 
@@ -156,14 +161,14 @@ pub fn prepare_container_execution(
         })?;
 
     // Build command to execute the script file
-    // The actual command is written to container_command.sh by the task context
+    // The actual command is written to command.sh by the task context
     let command = vec![
         "/bin/bash".to_string(),
-        "/tmp/work/container_command.sh".to_string(),
+        format!("{}/command.sh", CONTAINER_TASK_DIR),
     ];
 
     // Set up working directory
-    let working_dir = "/tmp/work".to_string();
+    let working_dir = CONTAINER_WORK_DIR.to_string();
 
     // Extract environment variables
     let mut environment = HashMap::new();
@@ -186,7 +191,7 @@ pub fn prepare_container_execution(
     // Set up path mappings starting with the run directory
     let mut path_mappings = vec![PathMapping {
         host_path: run_dir.to_path_buf(),
-        container_path: PathBuf::from("/tmp/work"),
+        container_path: PathBuf::from(CONTAINER_TASK_DIR),
         read_only: false,
     }];
 

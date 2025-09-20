@@ -7,7 +7,10 @@
 use crate::env::Bindings;
 use crate::expr::ExpressionBase;
 use crate::runtime::config::{Config, ContainerBackend, ResourceLimits};
-use crate::runtime::container::{prepare_container_execution, ContainerFactory, ContainerRuntime};
+use crate::runtime::container::{
+    prepare_container_execution, ContainerFactory, ContainerRuntime, CONTAINER_TASK_DIR,
+    CONTAINER_WORK_DIR,
+};
 use crate::runtime::error::{RuntimeError, RuntimeResult};
 use crate::runtime::fs_utils::{
     create_dir_all, read_file_to_string, write_file_atomic, WorkflowDirectory,
@@ -35,8 +38,10 @@ pub struct TaskContext {
     pub config: Config,
     /// Workflow directory structure
     pub workflow_dir: WorkflowDirectory,
-    /// Task-specific working directory
+    /// Task-specific directory (mounted into containers)
     pub task_dir: PathBuf,
+    /// Directory where the task command executes (task_dir/work)
+    pub work_dir: PathBuf,
     /// Environment variables for command execution
     pub env_vars: HashMap<String, String>,
     /// Start time of task execution
@@ -88,6 +93,8 @@ impl TaskContext {
     ) -> RuntimeResult<Self> {
         let task_dir = workflow_dir.work.join(&task.name);
         create_dir_all(&task_dir)?;
+        let work_dir = task_dir.join("work");
+        create_dir_all(&work_dir)?;
 
         // Merge environment variables from config and system
         let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
@@ -121,6 +128,7 @@ impl TaskContext {
             config: config.clone(),
             workflow_dir,
             task_dir,
+            work_dir,
             env_vars,
             start_time: None,
             resource_limits: config.resources,
@@ -163,7 +171,7 @@ impl TaskContext {
             stdout: command_result.stdout_path,
             stderr: command_result.stderr_path,
             duration,
-            work_dir: self.task_dir.clone(),
+            work_dir: self.work_dir.clone(),
         })
     }
 
@@ -207,10 +215,8 @@ impl TaskContext {
             {
                 if will_use_container {
                     // For container execution, create mapping for individual file mounts
-                    let container_path = format!(
-                        "/mnt/miniwdl_task_container/work/_miniwdl_inputs/0/{}",
-                        name
-                    );
+                    let container_path =
+                        format!("{}/_miniwdl_inputs/0/{}", CONTAINER_WORK_DIR, name);
                     input_file_mappings.push((file_path.clone(), container_path.clone()));
 
                     // Update the input binding to use container path
@@ -221,7 +227,7 @@ impl TaskContext {
                     updated_inputs = updated_inputs.bind(name.to_string(), updated_value, None);
                 } else {
                     // For host execution, use traditional staging approach
-                    let dest = self.task_dir.join(name);
+                    let dest = self.work_dir.join(name);
                     if self.config.copy_input_files {
                         crate::runtime::fs_utils::copy_file(file_path, &dest)?;
                     } else {
@@ -346,7 +352,7 @@ impl TaskContext {
         let script_path = self.task_dir.join("command.sh");
         let script_content = format!(
             "#!/bin/bash\nset -euo pipefail\ncd \"{}\"\n{}\n",
-            self.task_dir.display(),
+            self.work_dir.display(),
             command_str
         );
         write_file_atomic(&script_path, script_content)?;
@@ -357,7 +363,7 @@ impl TaskContext {
         // Execute command with timeout
         let mut cmd = Command::new("bash");
         cmd.arg(&script_path)
-            .current_dir(&self.task_dir)
+            .current_dir(&self.work_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -515,10 +521,10 @@ impl TaskContext {
             .await?;
 
         // Write command to script file in task directory (which gets mounted)
-        let script_path = self.task_dir.join("container_command.sh");
+        let script_path = self.task_dir.join("command.sh");
         let script_content = format!(
-            "#!/bin/bash\nset -euo pipefail\ncd /tmp/work\n{}\n",
-            command_str
+            "#!/bin/bash\nset -euo pipefail\ncd {}\n{}\n",
+            CONTAINER_WORK_DIR, command_str
         );
 
         // Debug: Print the actual command being executed
@@ -537,7 +543,7 @@ impl TaskContext {
         let mut updated_execution = container_execution;
         updated_execution.command = vec![
             "/bin/bash".to_string(),
-            "/tmp/work/container_command.sh".to_string(),
+            format!("{}/command.sh", CONTAINER_TASK_DIR),
         ];
 
         // Debug: Print updated Docker command
@@ -1011,7 +1017,7 @@ mod tests {
         );
 
         // Check that file was staged
-        let staged_file = context.task_dir.join("input_file");
+        let staged_file = context.work_dir.join("input_file");
         assert!(
             staged_file.exists() || staged_file.is_symlink(),
             "File should be staged at: {}",

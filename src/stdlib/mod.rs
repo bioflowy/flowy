@@ -86,13 +86,24 @@ impl PathMapper for TaskPathMapper {
         if path.is_absolute() {
             Ok(path.to_path_buf())
         } else {
-            Ok(self.task_dir.join(path))
+            let candidate = self.task_dir.join("work").join(path);
+            if candidate.exists() {
+                Ok(candidate)
+            } else {
+                Ok(self.task_dir.join(path))
+            }
         }
     }
 
     fn virtualize_filename(&self, path: &Path) -> Result<String, WdlError> {
         // Make paths relative to task_dir if they're within it
         if let Ok(relative_path) = path.strip_prefix(&self.task_dir) {
+            let relative_path = if let Ok(stripped) = relative_path.strip_prefix("work") {
+                stripped
+            } else {
+                relative_path
+            };
+
             relative_path
                 .to_str()
                 .map(|s| s.to_string())
