@@ -1,1704 +1,1546 @@
 //! Array manipulation functions for WDL standard library
+//!
+//! This module provides array manipulation functions as defined in the WDL specification.
 
-use super::Function;
 use crate::error::WdlError;
-use crate::types::Type;
-use crate::value::{Value, ValueBase};
+use crate::expr::ExpressionBase;
+use crate::stdlib::create_static_function;
+use crate::types::{unify_types, Type};
+use crate::value::Value;
+use crate::value::ValueBase;
 
-/// Length function - returns the length of arrays, strings, or maps
-pub struct LengthFunction;
+/// Create the prefix function
+///
+/// Prepends a prefix string to each element in a string array.
+///
+/// **Parameters**
+/// 1. `String`: the prefix to prepend
+/// 2. `Array[String]`: the array of strings
+///
+/// **Returns**: Array[String] with prefix prepended to each element
+pub fn create_prefix_function() -> Box<dyn crate::stdlib::Function> {
+    create_static_function(
+        "prefix".to_string(),
+        vec![
+            Type::string(false),
+            Type::array(Type::string(false), false, false),
+        ], // prefix, array
+        Type::array(Type::string(false), false, false), // returns Array[String]
+        |args: &[Value]| -> Result<Value, WdlError> {
+            let prefix = args[0].as_string().unwrap();
+            let array = args[1].as_array().unwrap();
 
-impl Function for LengthFunction {
+            let mut result_values = Vec::new();
+            for value in array {
+                match value.as_string() {
+                    Some(s) => {
+                        result_values.push(Value::string(format!("{}{}", prefix, s)));
+                    }
+                    None => {
+                        return Err(WdlError::RuntimeError {
+                            message: "prefix(): array must contain only String values".to_string(),
+                        });
+                    }
+                }
+            }
+
+            Ok(Value::array(Type::string(false), result_values))
+        },
+    )
+}
+
+/// Create the suffix function
+///
+/// Appends a suffix string to each element in a string array.
+///
+/// **Parameters**
+/// 1. `String`: the suffix to append
+/// 2. `Array[String]`: the array of strings
+///
+/// **Returns**: Array[String] with suffix appended to each element
+pub fn create_suffix_function() -> Box<dyn crate::stdlib::Function> {
+    create_static_function(
+        "suffix".to_string(),
+        vec![
+            Type::string(false),
+            Type::array(Type::string(false), false, false),
+        ], // suffix, array
+        Type::array(Type::string(false), false, false), // returns Array[String]
+        |args: &[Value]| -> Result<Value, WdlError> {
+            let suffix = args[0].as_string().unwrap();
+            let array = args[1].as_array().unwrap();
+
+            let mut result_values = Vec::new();
+            for value in array {
+                match value.as_string() {
+                    Some(s) => {
+                        result_values.push(Value::string(format!("{}{}", s, suffix)));
+                    }
+                    None => {
+                        return Err(WdlError::RuntimeError {
+                            message: "suffix(): array must contain only String values".to_string(),
+                        });
+                    }
+                }
+            }
+
+            Ok(Value::array(Type::string(false), result_values))
+        },
+    )
+}
+
+/// Create the length function
+///
+/// Returns the number of elements in an array, map, object, or string.
+///
+/// **Parameters**
+/// 1. `Array[X]|Map[X, Y]|Object|String`: the value to measure
+///
+/// **Returns**: Int representing the number of elements/characters
+pub fn create_length_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(LengthFunction)
+}
+
+/// Length function implementation that supports Array, Map, Object, and String
+struct LengthFunction;
+
+impl crate::stdlib::Function for LengthFunction {
     fn name(&self) -> &str {
         "length"
     }
 
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        // Check argument count
         if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
+            let pos = if args.is_empty() {
+                crate::error::SourcePosition::new(
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            } else {
+                args[0].source_position().clone()
+            };
+            return Err(WdlError::Validation {
+                pos,
+                message: format!("Function 'length' expects 1 argument, got {}", args.len()),
+                source_text: None,
+                declared_wdl_version: None,
             });
         }
 
-        match &args[0] {
-            Type::Array { .. } | Type::String { .. } | Type::Map { .. } => Ok(Type::int(false)),
-            _ => Err(WdlError::RuntimeError {
-                message: "length() expects Array, String, or Map argument".to_string(),
+        // Infer the type of the argument
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Check if the argument type is supported
+        match &arg_type {
+            Type::Array { .. }
+            | Type::Map { .. }
+            | Type::StructInstance { .. }
+            | Type::Object { .. }
+            | Type::String { .. } => Ok(Type::int(false)),
+            other => Err(WdlError::Validation {
+                pos: args[0].source_position().clone(),
+                message: format!(
+                    "Function 'length' argument 1 expects type Array[Any]|Map[Any,Any]|Object|String, got {}",
+                    other
+                ),
+                source_text: None,
+                declared_wdl_version: None,
             }),
         }
     }
 
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        match &args[0] {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("Function 'length' expects 1 argument, got {}", args.len()),
+            });
+        }
+
+        // Evaluate the argument
+        let arg_value = args[0].eval(env, stdlib)?;
+
+        // Calculate length based on value type
+        match &arg_value {
             Value::Array { values, .. } => Ok(Value::int(values.len() as i64)),
-            Value::String { value, .. } => Ok(Value::int(value.len() as i64)),
             Value::Map { pairs, .. } => Ok(Value::int(pairs.len() as i64)),
-            _ => Err(WdlError::RuntimeError {
-                message: "length() expects Array, String, or Map argument".to_string(),
+            Value::Struct { members, .. } => Ok(Value::int(members.len() as i64)),
+            Value::String { value, .. } => Ok(Value::int(value.len() as i64)),
+            other => Err(WdlError::RuntimeError {
+                message: format!(
+                    "Function 'length' argument 1 expects type Array[Any]|Map[Any,Any]|Object|String, got {}",
+                    other.wdl_type()
+                ),
             }),
         }
     }
 }
 
-/// Select first non-null element from an array
+/// Create the range function
+///
+/// Creates an array of integers from 0 to n-1.
+///
+/// **Parameters**
+/// 1. `Int`: the number of elements (n)
+///
+/// **Returns**: Array[Int] containing [0, 1, 2, ..., n-1]
+pub fn create_range_function() -> Box<dyn crate::stdlib::Function> {
+    create_static_function(
+        "range".to_string(),
+        vec![Type::int(false)],                      // Int
+        Type::array(Type::int(false), false, false), // returns Array[Int]
+        |args: &[Value]| -> Result<Value, WdlError> {
+            let n = args[0].as_int().unwrap();
+
+            if n < 0 {
+                return Err(WdlError::RuntimeError {
+                    message: "range(): argument must be non-negative".to_string(),
+                });
+            }
+
+            let mut result_values = Vec::new();
+            for i in 0..n {
+                result_values.push(Value::int(i));
+            }
+
+            Ok(Value::array(Type::int(false), result_values))
+        },
+    )
+}
+
+/// SelectFirst function implementation
+///
+/// Returns the first non-null element in the array.
+/// The return type is inferred from the array's item type.
 pub struct SelectFirstFunction;
 
-impl Function for SelectFirstFunction {
+impl crate::stdlib::Function for SelectFirstFunction {
     fn name(&self) -> &str {
         "select_first"
     }
 
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.is_empty() || args.len() > 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: if args.is_empty() { 1 } else { 2 },
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array { item_type, .. } = &args[0] {
-            if args.len() == 2 {
-                // With fallback argument, return the common type of array items and fallback
-                let fallback_type = &args[1];
-                // For simplicity, return the fallback type (should be same as item type)
-                Ok(fallback_type.clone())
-            } else {
-                // Return the non-optional version of the item type
-                Ok(item_type.clone().with_optional(false))
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "select_first() expects Array as first argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, .. } = &args[0] {
-            for value in values {
-                if !matches!(value, Value::Null) {
-                    // Return the value but with the correct non-optional type
-                    // This ensures the return type matches what infer_type promises
-                    let result_value = value.clone();
-
-                    // If this is from Array[T?], make sure we return T (non-optional)
-                    let non_optional_type = result_value.wdl_type().clone().with_optional(false);
-                    return result_value.coerce(&non_optional_type);
-                }
-            }
-
-            // No non-null values found, check if fallback is provided
-            if args.len() == 2 {
-                Ok(args[1].clone())
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: "select_first() found no non-null values and no fallback provided"
-                        .to_string(),
-                })
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "select_first() expects Array as first argument".to_string(),
-            })
-        }
-    }
-}
-
-/// Select all non-null elements from an array
-pub struct SelectAllFunction;
-
-impl Function for SelectAllFunction {
-    fn name(&self) -> &str {
-        "select_all"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array { item_type, .. } = &args[0] {
-            // Return array of non-optional items
-            Ok(Type::array(
-                item_type.clone().with_optional(false),
-                false,
-                true,
-            ))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "select_all() expects Array argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, wdl_type } = &args[0] {
-            let non_null_values: Vec<Value> = values
-                .iter()
-                .filter(|v| !matches!(v, Value::Null))
-                .cloned()
-                .collect();
-
-            if let Type::Array { item_type, .. } = wdl_type {
-                // Create the correct return type: Array[T] (non-optional item type)
-                // For select_all, we need to infer the actual concrete type from values
-                let actual_item_type = if non_null_values.is_empty() {
-                    // If no non-null values, use the original item type but make it non-optional
-                    item_type.clone().with_optional(false)
-                } else {
-                    // Infer from the first non-null value and make it non-optional
-                    let first_value_type = non_null_values[0].wdl_type();
-                    first_value_type.clone().with_optional(false)
-                };
-
-                // Convert each value to have the non-optional type
-                let converted_values: Result<Vec<Value>, WdlError> = non_null_values
-                    .into_iter()
-                    .map(|v| {
-                        // For select_all, we need to create new values with non-optional types
-                        // since the coercion of Int? to Int fails when value is not null
-                        match (&v, &actual_item_type) {
-                            (Value::Int { value, .. }, Type::Int { .. }) => Ok(Value::Int {
-                                value: *value,
-                                wdl_type: actual_item_type.clone(),
-                            }),
-                            (Value::Float { value, .. }, Type::Float { .. }) => Ok(Value::Float {
-                                value: *value,
-                                wdl_type: actual_item_type.clone(),
-                            }),
-                            (Value::String { value, .. }, Type::String { .. }) => {
-                                Ok(Value::String {
-                                    value: value.clone(),
-                                    wdl_type: actual_item_type.clone(),
-                                })
-                            }
-                            (Value::Boolean { value, .. }, Type::Boolean { .. }) => {
-                                Ok(Value::Boolean {
-                                    value: *value,
-                                    wdl_type: actual_item_type.clone(),
-                                })
-                            }
-                            (Value::File { value, .. }, Type::File { .. }) => Ok(Value::File {
-                                value: value.clone(),
-                                wdl_type: actual_item_type.clone(),
-                            }),
-                            (Value::Directory { value, .. }, Type::Directory { .. }) => {
-                                Ok(Value::Directory {
-                                    value: value.clone(),
-                                    wdl_type: actual_item_type.clone(),
-                                })
-                            }
-                            // For complex types or mismatched types, fall back to coercion
-                            _ => v.coerce(&actual_item_type),
-                        }
-                    })
-                    .collect();
-
-                let converted_values = converted_values?;
-                let result_array_type =
-                    Type::array(actual_item_type, false, !converted_values.is_empty());
-
-                Ok(Value::Array {
-                    values: converted_values,
-                    wdl_type: result_array_type,
-                })
-            } else {
-                unreachable!()
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "select_all() expects Array argument".to_string(),
-            })
-        }
-    }
-}
-
-/// Flatten a 2D array into a 1D array
-pub struct FlattenFunction;
-
-impl Function for FlattenFunction {
-    fn name(&self) -> &str {
-        "flatten"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array { item_type, .. } = &args[0] {
-            if let Type::Array {
-                item_type: inner_type,
-                ..
-            } = item_type.as_ref()
-            {
-                // Array[Array[T]] -> Array[T]
-                Ok(Type::array(*inner_type.clone(), false, false))
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: "flatten() expects Array[Array[T]] argument".to_string(),
-                })
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "flatten() expects Array argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, wdl_type } = &args[0] {
-            let mut flattened = Vec::new();
-
-            for value in values {
-                if let Value::Array { values: inner, .. } = value {
-                    flattened.extend(inner.clone());
-                } else {
-                    return Err(WdlError::RuntimeError {
-                        message: "flatten() expects Array[Array[T]]".to_string(),
-                    });
-                }
-            }
-
-            if let Type::Array { item_type, .. } = wdl_type {
-                if let Type::Array {
-                    item_type: inner_type,
-                    ..
-                } = item_type.as_ref()
-                {
-                    return Ok(Value::array(*inner_type.clone(), flattened));
-                }
-            }
-
-            Err(WdlError::RuntimeError {
-                message: "flatten() type error".to_string(),
-            })
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "flatten() expects Array argument".to_string(),
-            })
-        }
-    }
-}
-
-/// Generate a range of integers from 0 to n-1
-pub struct RangeFunction;
-
-impl Function for RangeFunction {
-    fn name(&self) -> &str {
-        "range"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if !matches!(args[0], Type::Int { .. }) {
-            return Err(WdlError::TypeMismatch {
-                expected: Type::int(false),
-                actual: args[0].clone(),
-            });
-        }
-
-        Ok(Type::array(Type::int(false), false, true))
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Some(n) = args[0].as_int() {
-            if n < 0 {
-                return Err(WdlError::RuntimeError {
-                    message: "range() expects non-negative integer".to_string(),
-                });
-            }
-
-            let values: Vec<Value> = (0..n).map(Value::int).collect();
-            Ok(Value::array(Type::int(false), values))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "range() expects Int argument".to_string(),
-            })
-        }
-    }
-}
-
-/// Prefix function - prepends a prefix to each array element
-pub struct PrefixFunction;
-
-impl Function for PrefixFunction {
-    fn name(&self) -> &str {
-        "prefix"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
-
-        // First argument should be String (prefix)
-        if !matches!(args[0], Type::String { .. }) {
             return Err(WdlError::RuntimeError {
-                message: "prefix() first argument must be String".to_string(),
+                message: format!(
+                    "select_first(): expected 1 or 2 arguments, got {}",
+                    args.len()
+                ),
             });
         }
 
-        // Second argument should be Array
-        if let Type::Array { nonempty, .. } = &args[1] {
-            Ok(Type::array(Type::string(false), false, *nonempty))
+        let array_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let fallback_type = if args.len() == 2 {
+            Some(args[1].infer_type(type_env, stdlib, struct_typedefs)?)
         } else {
-            Err(WdlError::RuntimeError {
-                message: "prefix() second argument must be Array".to_string(),
-            })
-        }
+            None
+        };
+
+        select_first_result_type(&array_type, fallback_type.as_ref())
     }
 
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        let prefix = match &args[0] {
-            Value::String { value, .. } => value,
-            _ => {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "select_first(): expected 1 or 2 arguments, got {}",
+                    args.len()
+                ),
+            });
+        }
+
+        let array_value = args[0].eval(env, stdlib)?;
+        let array = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
                 return Err(WdlError::RuntimeError {
-                    message: "prefix() first argument must be String".to_string(),
+                    message: "select_first(): argument must be an array".to_string(),
                 })
             }
         };
 
-        if let Value::Array { values, .. } = &args[1] {
-            let prefixed_values: Vec<Value> = values
-                .iter()
-                .map(|v| {
-                    let string_value = match v {
-                        Value::String { value, .. } => value.clone(),
-                        Value::Int { value, .. } => value.to_string(),
-                        Value::Float { value, .. } => value.to_string(),
-                        Value::Boolean { value, .. } => value.to_string(),
-                        _ => format!("{}", v),
-                    };
-                    Value::string(format!("{}{}", prefix, string_value))
-                })
-                .collect();
-
-            Ok(Value::array(Type::string(false), prefixed_values))
+        let fallback_value = if args.len() == 2 {
+            Some(args[1].eval(env, stdlib)?)
         } else {
-            Err(WdlError::RuntimeError {
-                message: "prefix() second argument must be Array".to_string(),
-            })
-        }
-    }
-}
-
-/// Suffix function - appends a suffix to each array element
-pub struct SuffixFunction;
-
-impl Function for SuffixFunction {
-    fn name(&self) -> &str {
-        "suffix"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
-
-        // First argument should be String (suffix)
-        if !matches!(args[0], Type::String { .. }) {
-            return Err(WdlError::RuntimeError {
-                message: "suffix() first argument must be String".to_string(),
-            });
-        }
-
-        // Second argument should be Array
-        if let Type::Array { nonempty, .. } = &args[1] {
-            Ok(Type::array(Type::string(false), false, *nonempty))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "suffix() second argument must be Array".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        let suffix = match &args[0] {
-            Value::String { value, .. } => value,
-            _ => {
-                return Err(WdlError::RuntimeError {
-                    message: "suffix() first argument must be String".to_string(),
-                })
-            }
+            None
         };
 
-        if let Value::Array { values, .. } = &args[1] {
-            let suffixed_values: Vec<Value> = values
-                .iter()
-                .map(|v| {
-                    let string_value = match v {
-                        Value::String { value, .. } => value.clone(),
-                        Value::Int { value, .. } => value.to_string(),
-                        Value::Float { value, .. } => value.to_string(),
-                        Value::Boolean { value, .. } => value.to_string(),
-                        _ => format!("{}", v),
-                    };
-                    Value::string(format!("{}{}", string_value, suffix))
-                })
-                .collect();
+        let array_type = array_value.wdl_type().clone();
+        let fallback_type = fallback_value
+            .as_ref()
+            .map(|value| value.wdl_type().clone());
+        let result_type = select_first_result_type(&array_type, fallback_type.as_ref())?;
 
-            Ok(Value::array(Type::string(false), suffixed_values))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "suffix() second argument must be Array".to_string(),
-            })
+        for value in array {
+            if !value.is_null() {
+                return value.coerce(&result_type);
+            }
         }
+
+        if let Some(fallback) = fallback_value {
+            return fallback.coerce(&result_type);
+        }
+
+        Err(WdlError::RuntimeError {
+            message: "select_first(): all elements in array are null".to_string(),
+        })
     }
 }
 
-/// Quote function - wraps each array element in double quotes
-pub struct QuoteFunction;
-
-impl Function for QuoteFunction {
-    fn name(&self) -> &str {
-        "quote"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array { nonempty, .. } = &args[0] {
-            Ok(Type::array(Type::string(false), false, *nonempty))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "quote() expects Array argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, .. } = &args[0] {
-            let quoted_values: Vec<Value> = values
-                .iter()
-                .map(|v| {
-                    let string_value = match v {
-                        Value::String { value, .. } => value.clone(),
-                        Value::Int { value, .. } => value.to_string(),
-                        Value::Float { value, .. } => value.to_string(),
-                        Value::Boolean { value, .. } => value.to_string(),
-                        _ => format!("{}", v),
-                    };
-                    Value::string(format!("\"{}\"", string_value))
-                })
-                .collect();
-
-            Ok(Value::array(Type::string(false), quoted_values))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "quote() expects Array argument".to_string(),
-            })
-        }
-    }
+/// Create the select_first function
+pub fn create_select_first_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(SelectFirstFunction)
 }
 
-/// Single quote function - wraps each array element in single quotes
-pub struct SquoteFunction;
-
-impl Function for SquoteFunction {
-    fn name(&self) -> &str {
-        "squote"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array { nonempty, .. } = &args[0] {
-            Ok(Type::array(Type::string(false), false, *nonempty))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "squote() expects Array argument".to_string(),
+fn select_first_result_type(
+    array_type: &Type,
+    fallback_type: Option<&Type>,
+) -> Result<Type, WdlError> {
+    let item_type = match array_type {
+        Type::Array { item_type, .. } => item_type.as_ref().clone(),
+        _ => {
+            return Err(WdlError::RuntimeError {
+                message: "select_first(): argument must be an array".to_string(),
             })
         }
-    }
+    };
 
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, .. } = &args[0] {
-            let quoted_values: Vec<Value> = values
-                .iter()
-                .map(|v| {
-                    let string_value = match v {
-                        Value::String { value, .. } => value.clone(),
-                        Value::Int { value, .. } => value.to_string(),
-                        Value::Float { value, .. } => value.to_string(),
-                        Value::Boolean { value, .. } => value.to_string(),
-                        _ => format!("{}", v),
-                    };
-                    Value::string(format!("'{}'", string_value))
-                })
-                .collect();
+    let mut element_type = item_type.clone().with_optional(false);
 
-            Ok(Value::array(Type::string(false), quoted_values))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "squote() expects Array argument".to_string(),
-            })
-        }
-    }
-}
+    if let Some(fallback) = fallback_type {
+        let fallback_non_optional = fallback.clone().with_optional(false);
 
-pub struct ZipFunction;
-
-impl Function for ZipFunction {
-    fn name(&self) -> &str {
-        "zip"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
-
-        if let (
-            Type::Array {
-                item_type: left_type,
-                nonempty: left_nonempty,
-                ..
-            },
-            Type::Array {
-                item_type: right_type,
-                nonempty: right_nonempty,
-                ..
-            },
-        ) = (&args[0], &args[1])
+        if !element_type.coerces(&fallback_non_optional, true)
+            && !fallback_non_optional.coerces(&element_type, true)
         {
-            let pair_type = Type::pair((**left_type).clone(), (**right_type).clone(), false);
-            Ok(Type::array(
-                pair_type,
-                false,
-                *left_nonempty && *right_nonempty,
-            ))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "zip() expects two Array arguments".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let (
-            Value::Array {
-                values: left_values,
-                ..
-            },
-            Value::Array {
-                values: right_values,
-                ..
-            },
-        ) = (&args[0], &args[1])
-        {
-            let pairs: Vec<Value> = left_values
-                .iter()
-                .zip(right_values.iter())
-                .map(|(left, right)| {
-                    Value::pair(
-                        left.wdl_type().clone(),
-                        right.wdl_type().clone(),
-                        left.clone(),
-                        right.clone(),
-                    )
-                })
-                .collect();
-
-            if let Some(first_pair) = pairs.first() {
-                Ok(Value::array(first_pair.wdl_type().clone(), pairs))
-            } else {
-                // Empty arrays case
-                let pair_type = Type::pair(Type::any(), Type::any(), false);
-                Ok(Value::array(pair_type, pairs))
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "zip() expects two Array arguments".to_string(),
-            })
-        }
-    }
-}
-
-pub struct CrossFunction;
-
-impl Function for CrossFunction {
-    fn name(&self) -> &str {
-        "cross"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "select_first(): fallback type {} incompatible with array element type {}",
+                    fallback, item_type
+                ),
             });
         }
 
-        if let (
-            Type::Array {
-                item_type: left_type,
-                ..
-            },
-            Type::Array {
-                item_type: right_type,
-                ..
-            },
-        ) = (&args[0], &args[1])
-        {
-            let pair_type = Type::pair((**left_type).clone(), (**right_type).clone(), false);
-            Ok(Type::array(pair_type, false, false))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "cross() expects two Array arguments".to_string(),
-            })
-        }
+        let unified = unify_types(vec![&element_type, &fallback_non_optional], true, false);
+        element_type = unified.with_optional(false);
     }
 
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let (
-            Value::Array {
-                values: left_values,
-                ..
-            },
-            Value::Array {
-                values: right_values,
-                ..
-            },
-        ) = (&args[0], &args[1])
-        {
-            let mut cross_product = Vec::new();
-
-            for left_val in left_values {
-                for right_val in right_values {
-                    cross_product.push(Value::pair(
-                        left_val.wdl_type().clone(),
-                        right_val.wdl_type().clone(),
-                        left_val.clone(),
-                        right_val.clone(),
-                    ));
-                }
-            }
-
-            if let Some(first_pair) = cross_product.first() {
-                Ok(Value::array(first_pair.wdl_type().clone(), cross_product))
-            } else {
-                // Empty arrays case
-                let pair_type = Type::pair(Type::any(), Type::any(), false);
-                Ok(Value::array(pair_type, cross_product))
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "cross() expects two Array arguments".to_string(),
-            })
-        }
-    }
+    Ok(element_type)
 }
 
-pub struct TransposeFunction;
-
-impl Function for TransposeFunction {
-    fn name(&self) -> &str {
-        "transpose"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array {
-            item_type,
-            nonempty,
-            ..
-        } = &args[0]
-        {
-            if let Type::Array {
-                item_type: inner_type,
-                ..
-            } = item_type.as_ref()
-            {
-                // Array[Array[T]] -> Array[Array[T]] (same type structure)
-                Ok(Type::array(
-                    Type::array((**inner_type).clone(), false, false),
-                    false,
-                    *nonempty,
-                ))
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: "transpose() expects Array[Array[T]] argument".to_string(),
-                })
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "transpose() expects Array argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, .. } = &args[0] {
-            if values.is_empty() {
-                return Ok(Value::array(
-                    Type::array(Type::any(), false, false),
-                    Vec::new(),
-                ));
-            }
-
-            // Get the length of the first inner array to determine dimensions
-            let first_inner_len = if let Value::Array {
-                values: first_inner,
-                ..
-            } = &values[0]
-            {
-                first_inner.len()
-            } else {
-                return Err(WdlError::RuntimeError {
-                    message: "transpose() expects Array[Array[T]]".to_string(),
-                });
-            };
-
-            // Create transposed matrix
-            let mut transposed = vec![Vec::new(); first_inner_len];
-
-            for row in values {
-                if let Value::Array {
-                    values: row_values, ..
-                } = row
-                {
-                    if row_values.len() != first_inner_len {
-                        return Err(WdlError::RuntimeError {
-                            message:
-                                "transpose() requires all inner arrays to have the same length"
-                                    .to_string(),
-                        });
-                    }
-                    for (col_idx, value) in row_values.iter().enumerate() {
-                        transposed[col_idx].push(value.clone());
-                    }
-                } else {
-                    return Err(WdlError::RuntimeError {
-                        message: "transpose() expects Array[Array[T]]".to_string(),
-                    });
-                }
-            }
-
-            // Convert back to Value arrays
-            let transposed_arrays: Vec<Value> = transposed
-                .into_iter()
-                .map(|col| {
-                    let item_type = if let Some(first) = col.first() {
-                        first.wdl_type().clone()
-                    } else {
-                        Type::any()
-                    };
-                    Value::array(item_type, col)
-                })
-                .collect();
-
-            let inner_array_type = if let Some(first) = transposed_arrays.first() {
-                first.wdl_type().clone()
-            } else {
-                Type::array(Type::any(), false, false)
-            };
-
-            Ok(Value::array(inner_array_type, transposed_arrays))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "transpose() expects Array argument".to_string(),
-            })
-        }
-    }
-}
-
-pub struct UnzipFunction;
-
-impl Function for UnzipFunction {
-    fn name(&self) -> &str {
-        "unzip"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Array {
-            item_type,
-            nonempty,
-            ..
-        } = &args[0]
-        {
-            if let Type::Pair {
-                left_type,
-                right_type,
-                ..
-            } = item_type.as_ref()
-            {
-                // Array[Pair[L,R]] -> Pair[Array[L], Array[R]]
-                let left_array = Type::array((**left_type).clone(), false, *nonempty);
-                let right_array = Type::array((**right_type).clone(), false, *nonempty);
-                Ok(Type::pair(left_array, right_array, false))
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: "unzip() expects Array[Pair[L,R]] argument".to_string(),
-                })
-            }
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "unzip() expects Array argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Array { values, .. } = &args[0] {
-            let mut left_values = Vec::new();
-            let mut right_values = Vec::new();
-
-            for pair in values {
-                if let Value::Pair { left, right, .. } = pair {
-                    left_values.push(left.as_ref().clone());
-                    right_values.push(right.as_ref().clone());
-                } else {
-                    return Err(WdlError::RuntimeError {
-                        message: "unzip() expects Array[Pair[L,R]]".to_string(),
-                    });
-                }
-            }
-
-            let left_item_type = if let Some(first) = left_values.first() {
-                first.wdl_type().clone()
-            } else {
-                Type::any()
-            };
-
-            let right_item_type = if let Some(first) = right_values.first() {
-                first.wdl_type().clone()
-            } else {
-                Type::any()
-            };
-
-            let left_array = Value::array(left_item_type, left_values);
-            let right_array = Value::array(right_item_type, right_values);
-
-            Ok(Value::pair(
-                left_array.wdl_type().clone(),
-                right_array.wdl_type().clone(),
-                left_array,
-                right_array,
-            ))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "unzip() expects Array argument".to_string(),
-            })
-        }
-    }
-}
-
-/// Get keys from a map
-pub struct KeysFunction;
-
-impl Function for KeysFunction {
-    fn name(&self) -> &str {
-        "keys"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        match &args[0] {
-            Type::Map { key_type, .. } => {
-                // Map[X, Y] -> Array[X]
-                Ok(Type::array(key_type.as_ref().clone(), false, false))
-            }
-            Type::StructInstance { .. } => {
-                // Struct -> Array[String]
-                Ok(Type::array(Type::string(false), false, false))
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "keys() expects Map or Struct argument".to_string(),
-            }),
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        match &args[0] {
-            Value::Map {
-                pairs, wdl_type, ..
-            } => {
-                let keys: Vec<Value> = pairs.iter().map(|(k, _)| k.clone()).collect();
-
-                // Get key type from map type
-                let key_type = if let Type::Map { key_type, .. } = wdl_type {
-                    key_type.as_ref().clone()
-                } else {
-                    Type::any()
-                };
-
-                Ok(Value::array(key_type, keys))
-            }
-            Value::Struct { members, .. } => {
-                // Get struct member names as string keys
-                let keys: Vec<Value> = members
-                    .keys()
-                    .map(|name| Value::string(name.clone()))
-                    .collect();
-
-                Ok(Value::array(Type::string(false), keys))
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "keys() expects Map or Struct argument".to_string(),
-            }),
-        }
-    }
-}
-
-/// Get values from a map
-pub struct ValuesFunction;
-
-impl Function for ValuesFunction {
-    fn name(&self) -> &str {
-        "values"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        if let Type::Map { value_type, .. } = &args[0] {
-            Ok(Type::array(value_type.as_ref().clone(), false, false))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "values() expects Map argument".to_string(),
-            })
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if let Value::Map {
-            pairs, wdl_type, ..
-        } = &args[0]
-        {
-            let values: Vec<Value> = pairs.iter().map(|(_, v)| v.clone()).collect();
-
-            // Get value type from map type
-            let value_type = if let Type::Map { value_type, .. } = wdl_type {
-                value_type.as_ref().clone()
-            } else {
-                Type::any()
-            };
-
-            Ok(Value::array(value_type, values))
-        } else {
-            Err(WdlError::RuntimeError {
-                message: "values() expects Map argument".to_string(),
-            })
-        }
-    }
-}
-/// Check if a map/object contains a specific key
-pub struct ContainsKeyFunction;
-
-/// Check if an array contains a specific value
+/// Contains function implementation
 pub struct ContainsFunction;
 
-/// Convert Map[X,Y] to Array[Pair[X,Y]] - WDL 1.2 as_pairs function
-pub struct AsPairsFunction;
-
-/// Convert Array[Pair[X,Y]] to Map[X,Y] - WDL 1.2 as_map function
-pub struct AsMapFunction;
-
-impl Function for AsPairsFunction {
-    fn name(&self) -> &str {
-        "as_pairs"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: "as_pairs".to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-        match &args[0] {
-            Type::Map {
-                key_type,
-                value_type,
-                ..
-            } => {
-                let pair_type = Type::pair(
-                    key_type.as_ref().clone(),
-                    value_type.as_ref().clone(),
-                    false,
-                );
-                Ok(Type::array(pair_type, false, false))
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "as_pairs() expects Map argument".to_string(),
-            }),
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::RuntimeError {
-                message: "as_pairs() expects exactly 1 argument".to_string(),
-            });
-        }
-        match &args[0] {
-            Value::Map { pairs, wdl_type } => {
-                // Extract key and value types from the map type
-                if let Type::Map {
-                    key_type,
-                    value_type,
-                    ..
-                } = wdl_type
-                {
-                    // Create Pair type for the array elements
-                    let pair_type = Type::pair(
-                        key_type.as_ref().clone(),
-                        value_type.as_ref().clone(),
-                        false,
-                    );
-
-                    // Convert each (key, value) pair to a Pair value
-                    let mut pair_values: Vec<Value> = Vec::new();
-                    for (key, value) in pairs {
-                        // Use correct argument order: left_type, right_type, left, right
-                        let pair_value = Value::pair(
-                            key_type.as_ref().clone(),
-                            value_type.as_ref().clone(),
-                            key.clone(),
-                            value.clone(),
-                        );
-                        pair_values.push(pair_value);
-                    }
-
-                    // Create Array[Pair[X,Y]] type
-                    let array_type = Type::array(pair_type, false, false);
-                    Ok(Value::Array {
-                        values: pair_values,
-                        wdl_type: array_type,
-                    })
-                } else {
-                    Err(WdlError::RuntimeError {
-                        message: "as_pairs() argument must have Map type".to_string(),
-                    })
-                }
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "as_pairs() expects Map argument".to_string(),
-            }),
-        }
-    }
-}
-impl Function for AsMapFunction {
-    fn name(&self) -> &str {
-        "as_map"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: "as_map".to_string(),
-                expected: 1,
-                actual: args.len(),
-            });
-        }
-
-        match &args[0] {
-            Type::Array { item_type, .. } => {
-                // Check if it's Array[Pair[X,Y]]
-                if let Type::Pair {
-                    left_type,
-                    right_type,
-                    ..
-                } = item_type.as_ref()
-                {
-                    // Return Map[X,Y]
-                    Ok(Type::map(
-                        left_type.as_ref().clone(),
-                        right_type.as_ref().clone(),
-                        false,
-                    ))
-                } else {
-                    Err(WdlError::RuntimeError {
-                        message: "as_map() expects Array[Pair[X,Y]] argument".to_string(),
-                    })
-                }
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "as_map() expects Array argument".to_string(),
-            }),
-        }
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if args.len() != 1 {
-            return Err(WdlError::RuntimeError {
-                message: "as_map() expects exactly 1 argument".to_string(),
-            });
-        }
-
-        match &args[0] {
-            Value::Array { values, wdl_type } => {
-                // Extract the array element type
-                if let Type::Array { item_type, .. } = wdl_type {
-                    // Verify it's Pair type
-                    if let Type::Pair {
-                        left_type,
-                        right_type,
-                        ..
-                    } = item_type.as_ref()
-                    {
-                        // Convert each Pair value to (key, value) for the map
-                        let mut map_pairs: Vec<(Value, Value)> = Vec::new();
-                        let mut seen_keys = std::collections::HashSet::new();
-
-                        for pair_value in values {
-                            if let Value::Pair { left, right, .. } = pair_value {
-                                // Check for duplicate keys
-                                let key_str = format!("{:?}", left);
-                                if seen_keys.contains(&key_str) {
-                                    return Err(WdlError::RuntimeError {
-                                        message: format!("as_map() duplicate key: {:?}", left),
-                                    });
-                                }
-                                seen_keys.insert(key_str);
-
-                                map_pairs.push((left.as_ref().clone(), right.as_ref().clone()));
-                            } else {
-                                return Err(WdlError::RuntimeError {
-                                    message: "as_map() expects Array[Pair[X,Y]]".to_string(),
-                                });
-                            }
-                        }
-
-                        // Create Map[X,Y] type
-                        let map_type = Type::map(
-                            left_type.as_ref().clone(),
-                            right_type.as_ref().clone(),
-                            false,
-                        );
-
-                        Ok(Value::Map {
-                            pairs: map_pairs,
-                            wdl_type: map_type,
-                        })
-                    } else {
-                        Err(WdlError::RuntimeError {
-                            message: "as_map() expects Array[Pair[X,Y]]".to_string(),
-                        })
-                    }
-                } else {
-                    Err(WdlError::RuntimeError {
-                        message: "as_map() argument must have Array type".to_string(),
-                    })
-                }
-            }
-            _ => Err(WdlError::RuntimeError {
-                message: "as_map() expects Array argument".to_string(),
-            }),
-        }
-    }
-}
-
-impl Function for ContainsKeyFunction {
-    fn name(&self) -> &str {
-        "contains_key"
-    }
-
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
-
-        // All overloads return Boolean
-        Ok(Type::boolean(false))
-    }
-
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
-        if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
-            });
-        }
-
-        match (&args[0], &args[1]) {
-            // contains_key(Map[P, Y], P) - check if map contains key
-            (Value::Map { pairs, .. }, key_value) => {
-                let contains = pairs.iter().any(|(k, _)| k == key_value);
-                Ok(Value::boolean(contains))
-            }
-
-            // contains_key(Object, String) - check if object has member
-            (Value::Struct { members, .. }, Value::String { value: key, .. }) => {
-                let contains = members.contains_key(key);
-                Ok(Value::boolean(contains))
-            }
-
-            // contains_key(Map/Struct/Object, Array[String]) - compound key check
-            (container, Value::Array { values, .. }) => {
-                // Convert array to string keys
-                let mut keys: Vec<String> = Vec::new();
-                for val in values {
-                    match val {
-                        Value::String { value, .. } => keys.push(value.clone()),
-                        _ => {
-                            return Err(WdlError::RuntimeError {
-                                message: "contains_key with Array argument requires Array[String]"
-                                    .to_string(),
-                            });
-                        }
-                    }
-                }
-
-                // Check compound key recursively
-                let contains = self.check_compound_key(container, &keys)?;
-                Ok(Value::boolean(contains))
-            }
-
-            _ => Err(WdlError::RuntimeError {
-                message: format!(
-                    "contains_key() unsupported argument types: {:?} and {:?}",
-                    args[0].wdl_type(),
-                    args[1].wdl_type()
-                ),
-            }),
-        }
-    }
-}
-impl Function for ContainsFunction {
+impl crate::stdlib::Function for ContainsFunction {
     fn name(&self) -> &str {
         "contains"
     }
 
-    fn infer_type(&self, args: &[Type]) -> Result<Type, WdlError> {
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
         if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
+            return Err(WdlError::RuntimeError {
+                message: format!("contains(): expected 2 arguments, got {}", args.len()),
             });
         }
 
-        // contains always returns Boolean
+        let array_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let value_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        // Reuse select_first compatibility logic (ignoring the resulting type)
+        select_first_result_type(&array_type, Some(&value_type))?;
+
         Ok(Type::boolean(false))
     }
 
-    fn eval(&self, args: &[Value]) -> Result<Value, WdlError> {
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
         if args.len() != 2 {
-            return Err(WdlError::ArgumentCountMismatch {
-                function: self.name().to_string(),
-                expected: 2,
-                actual: args.len(),
+            return Err(WdlError::RuntimeError {
+                message: format!("contains(): expected 2 arguments, got {}", args.len()),
             });
         }
 
-        match &args[0] {
-            // contains(Array[X], X) - check if array contains the element
-            Value::Array { values, .. } => {
-                let search_value = &args[1];
-                let contains = values.iter().any(|v| v == search_value);
-                Ok(Value::boolean(contains))
+        let array_value = args[0].eval(env, stdlib)?;
+        let array = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "contains(): first argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let search_value_raw = args[1].eval(env, stdlib)?;
+
+        let array_type = array_value.wdl_type().clone();
+        let array_item_type = match &array_type {
+            Type::Array { item_type, .. } => item_type.as_ref().clone(),
+            _ => unreachable!("array_value must be an array"),
+        };
+
+        let search_value_type = search_value_raw.wdl_type().clone();
+        let comparison_type = select_first_result_type(&array_type, Some(&search_value_type))?;
+
+        let allow_null = array_item_type.is_optional();
+        let search_is_null = search_value_raw.is_null();
+
+        if search_is_null && !allow_null {
+            return Err(WdlError::RuntimeError {
+                message: "contains(): cannot search for None in non-optional array".to_string(),
+            });
+        }
+
+        let search_value = if search_is_null {
+            Value::null()
+        } else {
+            search_value_raw.coerce(&comparison_type)?
+        };
+
+        for element in array {
+            if element.is_null() {
+                if search_is_null {
+                    return Ok(Value::boolean(true));
+                }
+                continue;
             }
 
+            let coerced_element = element.coerce(&comparison_type)?;
+            if coerced_element == search_value {
+                return Ok(Value::boolean(true));
+            }
+        }
+
+        Ok(Value::boolean(false))
+    }
+}
+
+/// Create the contains function
+pub fn create_contains_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(ContainsFunction)
+}
+
+/// SelectAll function implementation
+///
+/// Returns a new array with all non-null elements from the input array.
+/// The return type is inferred from the array's item type.
+pub struct SelectAllFunction;
+
+impl crate::stdlib::Function for SelectAllFunction {
+    fn name(&self) -> &str {
+        "select_all"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("select_all(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        match &arg_type {
+            Type::Array { item_type, .. } => {
+                // Return Array[T] where T is the item type without optional flag
+                Ok(Type::array(
+                    item_type.as_ref().clone().with_optional(false),
+                    false,
+                    false,
+                ))
+            }
             _ => Err(WdlError::RuntimeError {
-                message: format!(
-                    "contains() requires Array as first argument, got: {:?}",
-                    args[0].wdl_type()
-                ),
+                message: "select_all(): argument must be an array".to_string(),
             }),
         }
     }
-}
 
-impl ContainsKeyFunction {
-    /// Check for compound key presence recursively
-    fn check_compound_key(&self, container: &Value, keys: &[String]) -> Result<bool, WdlError> {
-        if keys.is_empty() {
-            return Ok(true);
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("select_all(): expected 1 argument, got {}", args.len()),
+            });
         }
 
-        let first_key = &keys[0];
-        let remaining_keys = &keys[1..];
-
-        match container {
-            Value::Map { pairs, .. } => {
-                // Look for the first key in the map
-                for (k, v) in pairs {
-                    if let Value::String { value: key_str, .. } = k {
-                        if key_str == first_key {
-                            if remaining_keys.is_empty() {
-                                return Ok(true);
-                            } else {
-                                return self.check_compound_key(v, remaining_keys);
-                            }
-                        }
-                    }
-                }
-                Ok(false)
+        let array_value = args[0].eval(env, stdlib)?;
+        let array = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "select_all(): argument must be an array".to_string(),
+                })
             }
+        };
 
-            Value::Struct { members, .. } => {
-                if let Some(value) = members.get(first_key) {
-                    if remaining_keys.is_empty() {
-                        Ok(true)
-                    } else {
-                        self.check_compound_key(value, remaining_keys)
-                    }
-                } else {
-                    Ok(false)
-                }
+        let mut result_values = Vec::new();
+        for value in array {
+            if !value.is_null() {
+                result_values.push(value.clone());
             }
-
-            _ => Ok(false),
         }
+
+        // Infer the result type from the first non-null element, or use the input type
+        let result_item_type = if let Some(first) = result_values.first() {
+            first.wdl_type().clone()
+        } else {
+            // If all elements are null, use the original item type without optional
+            let mut args_copy = args.to_vec();
+            let arg_type = args_copy[0].infer_type(&crate::env::Bindings::new(), stdlib, &[])?;
+            match &arg_type {
+                Type::Array { item_type, .. } => item_type.as_ref().clone().with_optional(false),
+                _ => Type::any(),
+            }
+        };
+
+        Ok(Value::array(result_item_type, result_values))
     }
 }
+
+/// Create the select_all function
+pub fn create_select_all_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(SelectAllFunction)
+}
+
+/// Flatten function implementation
+///
+/// Converts a 2D array into a 1D array by combining all sub-arrays.
+/// The return type is inferred from the nested array's item type.
+pub struct FlattenFunction;
+
+impl crate::stdlib::Function for FlattenFunction {
+    fn name(&self) -> &str {
+        "flatten"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("flatten(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        match &arg_type {
+            Type::Array { item_type, .. } => {
+                match item_type.as_ref() {
+                    Type::Array {
+                        item_type: inner_item_type,
+                        ..
+                    } => {
+                        // Return Array[T] where T is the inner array's item type
+                        Ok(Type::array(inner_item_type.as_ref().clone(), false, false))
+                    }
+                    _ => Err(WdlError::RuntimeError {
+                        message: "flatten(): argument must be an array of arrays".to_string(),
+                    }),
+                }
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "flatten(): argument must be an array".to_string(),
+            }),
+        }
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("flatten(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let array_value = args[0].eval(env, stdlib)?;
+        let outer_array = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "flatten(): argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let mut result_values = Vec::new();
+        let mut result_item_type = Type::any();
+
+        for value in outer_array {
+            match value.as_array() {
+                Some(inner_array) => {
+                    for inner_value in inner_array {
+                        // Use the type of the first inner value as the result type
+                        if result_values.is_empty() {
+                            result_item_type = inner_value.wdl_type().clone();
+                        }
+                        result_values.push(inner_value.clone());
+                    }
+                }
+                None => {
+                    return Err(WdlError::RuntimeError {
+                        message: "flatten(): array must contain only Array elements".to_string(),
+                    });
+                }
+            }
+        }
+
+        // If no elements were flattened, infer type from the function signature
+        if result_values.is_empty() {
+            let mut args_copy = args.to_vec();
+            result_item_type =
+                match self.infer_type(&mut args_copy, &crate::env::Bindings::new(), stdlib, &[])? {
+                    Type::Array { item_type, .. } => item_type.as_ref().clone(),
+                    _ => Type::any(),
+                };
+        }
+
+        Ok(Value::array(result_item_type, result_values))
+    }
+}
+
+/// Create the flatten function
+pub fn create_flatten_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(FlattenFunction)
+}
+
+/// Zip function implementation
+///
+/// Pairs corresponding elements from two arrays.
+/// The return type is inferred from the input array types.
+pub struct ZipFunction;
+
+impl crate::stdlib::Function for ZipFunction {
+    fn name(&self) -> &str {
+        "zip"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!("zip(): expected 2 arguments, got {}", args.len()),
+            });
+        }
+
+        let arg0_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let arg1_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        let (item_type0, nonempty0) = match &arg0_type {
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): first argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let (item_type1, nonempty1) = match &arg1_type {
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): second argument must be an array".to_string(),
+                })
+            }
+        };
+
+        // Return Array[Pair[A, B]] where A and B are the item types
+        Ok(Type::array(
+            Type::pair(item_type0, item_type1, false),
+            false,
+            nonempty0 || nonempty1, // nonempty if either array is nonempty
+        ))
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!("zip(): expected 2 arguments, got {}", args.len()),
+            });
+        }
+
+        let array1_value = args[0].eval(env, stdlib)?;
+        let array2_value = args[1].eval(env, stdlib)?;
+
+        let array1 = match array1_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): first argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let array2 = match array2_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "zip(): second argument must be an array".to_string(),
+                })
+            }
+        };
+
+        if array1.len() != array2.len() {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "zip(): arrays must have same length, got {} and {}",
+                    array1.len(),
+                    array2.len()
+                ),
+            });
+        }
+
+        let mut result_values = Vec::new();
+        for (left, right) in array1.iter().zip(array2.iter()) {
+            let pair = Value::pair(
+                left.wdl_type().clone(),
+                right.wdl_type().clone(),
+                left.clone(),
+                right.clone(),
+            );
+            result_values.push(pair);
+        }
+
+        // Infer result item type from the first pair if available
+        let result_item_type = if let Some(first) = result_values.first() {
+            first.wdl_type().clone()
+        } else {
+            Type::pair(Type::any(), Type::any(), false)
+        };
+
+        Ok(Value::array(result_item_type, result_values))
+    }
+}
+
+/// Create the zip function
+pub fn create_zip_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(ZipFunction)
+}
+
+/// Cross function implementation
+///
+/// Creates all possible pairs between elements of two arrays.
+/// The return type is inferred from the input array types.
+pub struct CrossFunction;
+
+impl crate::stdlib::Function for CrossFunction {
+    fn name(&self) -> &str {
+        "cross"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!("cross(): expected 2 arguments, got {}", args.len()),
+            });
+        }
+
+        let arg0_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        let arg1_type = args[1].infer_type(type_env, stdlib, struct_typedefs)?;
+
+        let (item_type0, nonempty0) = match &arg0_type {
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): first argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let (item_type1, nonempty1) = match &arg1_type {
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => (item_type.as_ref().clone(), *nonempty),
+            _ => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): second argument must be an array".to_string(),
+                })
+            }
+        };
+
+        // Return Array[Pair[A, B]] where A and B are the item types
+        Ok(Type::array(
+            Type::pair(item_type0, item_type1, false),
+            false,
+            nonempty0 || nonempty1, // nonempty if either array is nonempty
+        ))
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 2 {
+            return Err(WdlError::RuntimeError {
+                message: format!("cross(): expected 2 arguments, got {}", args.len()),
+            });
+        }
+
+        let array1_value = args[0].eval(env, stdlib)?;
+        let array2_value = args[1].eval(env, stdlib)?;
+
+        let array1 = match array1_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): first argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let array2 = match array2_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "cross(): second argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let mut result_values = Vec::new();
+        for left in array1.iter() {
+            for right in array2.iter() {
+                let pair = Value::pair(
+                    left.wdl_type().clone(),
+                    right.wdl_type().clone(),
+                    left.clone(),
+                    right.clone(),
+                );
+                result_values.push(pair);
+            }
+        }
+
+        // Infer result item type from the first pair if available
+        let result_item_type = if let Some(first) = result_values.first() {
+            first.wdl_type().clone()
+        } else {
+            Type::pair(Type::any(), Type::any(), false)
+        };
+
+        Ok(Value::array(result_item_type, result_values))
+    }
+}
+
+/// Create the cross function
+pub fn create_cross_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(CrossFunction)
+}
+
+/// Create the quote function
+///
+/// Wraps each element in an array with double quotes.
+///
+/// **Parameters**
+/// 1. `Array[T]`: array of elements to quote
+///
+/// **Returns**: Array[String] with each element wrapped in double quotes
+pub fn create_quote_function() -> Box<dyn crate::stdlib::Function> {
+    create_static_function(
+        "quote".to_string(),
+        vec![Type::array(Type::any(), false, false)], // Array[Any]
+        Type::array(Type::string(false), false, false), // returns Array[String]
+        |args: &[Value]| -> Result<Value, WdlError> {
+            let array = args[0].as_array().unwrap();
+
+            let mut result_values = Vec::new();
+            for value in array {
+                // Convert value to string and wrap with double quotes
+                let str_value = match value {
+                    Value::String { value, .. } => value.clone(),
+                    Value::Int { value, .. } => value.to_string(),
+                    Value::Float { value, .. } => value.to_string(),
+                    Value::Boolean { value, .. } => value.to_string(),
+                    Value::File { value, .. } => value.clone(),
+                    Value::Directory { value, .. } => value.clone(),
+                    Value::Null => "null".to_string(),
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: format!(
+                                "quote(): cannot convert value to string: {:?}",
+                                value
+                            ),
+                        });
+                    }
+                };
+                result_values.push(Value::string(format!("\"{}\"", str_value)));
+            }
+
+            Ok(Value::array(Type::string(false), result_values))
+        },
+    )
+}
+
+/// Create the squote function
+///
+/// Wraps each element in an array with single quotes.
+///
+/// **Parameters**
+/// 1. `Array[T]`: array of elements to quote
+///
+/// **Returns**: Array[String] with each element wrapped in single quotes
+pub fn create_squote_function() -> Box<dyn crate::stdlib::Function> {
+    create_static_function(
+        "squote".to_string(),
+        vec![Type::array(Type::any(), false, false)], // Array[Any]
+        Type::array(Type::string(false), false, false), // returns Array[String]
+        |args: &[Value]| -> Result<Value, WdlError> {
+            let array = args[0].as_array().unwrap();
+
+            let mut result_values = Vec::new();
+            for value in array {
+                // Convert value to string and wrap with single quotes
+                let str_value = match value {
+                    Value::String { value, .. } => value.clone(),
+                    Value::Int { value, .. } => value.to_string(),
+                    Value::Float { value, .. } => value.to_string(),
+                    Value::Boolean { value, .. } => value.to_string(),
+                    Value::File { value, .. } => value.clone(),
+                    Value::Directory { value, .. } => value.clone(),
+                    Value::Null => "null".to_string(),
+                    _ => {
+                        return Err(WdlError::RuntimeError {
+                            message: format!(
+                                "squote(): cannot convert value to string: {:?}",
+                                value
+                            ),
+                        });
+                    }
+                };
+                result_values.push(Value::string(format!("'{}'", str_value)));
+            }
+
+            Ok(Value::array(Type::string(false), result_values))
+        },
+    )
+}
+
+/// Unzip function implementation
+///
+/// Separates a list of pairs into two separate arrays.
+/// The return type is inferred from the pair types.
+pub struct UnzipFunction;
+
+impl crate::stdlib::Function for UnzipFunction {
+    fn name(&self) -> &str {
+        "unzip"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("unzip(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        match &arg_type {
+            Type::Array {
+                item_type,
+                nonempty,
+                ..
+            } => {
+                match item_type.as_ref() {
+                    Type::Pair {
+                        left_type,
+                        right_type,
+                        ..
+                    } => {
+                        // Return Pair[Array[A], Array[B]] where A and B are the pair's component types
+                        Ok(Type::pair(
+                            Type::array(left_type.as_ref().clone(), false, *nonempty),
+                            Type::array(right_type.as_ref().clone(), false, *nonempty),
+                            false,
+                        ))
+                    }
+                    _ => Err(WdlError::RuntimeError {
+                        message: "unzip(): argument must be an array of pairs".to_string(),
+                    }),
+                }
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "unzip(): argument must be an array".to_string(),
+            }),
+        }
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("unzip(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let array_value = args[0].eval(env, stdlib)?;
+        let pair_array = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "unzip(): argument must be an array".to_string(),
+                })
+            }
+        };
+
+        let mut left_values = Vec::new();
+        let mut right_values = Vec::new();
+        let mut left_type = Type::any();
+        let mut right_type = Type::any();
+
+        for value in pair_array {
+            match value {
+                Value::Pair { left, right, .. } => {
+                    // Use types from the first pair
+                    if left_values.is_empty() {
+                        left_type = left.wdl_type().clone();
+                        right_type = right.wdl_type().clone();
+                    }
+                    left_values.push(left.as_ref().clone());
+                    right_values.push(right.as_ref().clone());
+                }
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "unzip(): array must contain only Pair elements".to_string(),
+                    });
+                }
+            }
+        }
+
+        let left_array = Value::array(left_type.clone(), left_values);
+        let right_array = Value::array(right_type.clone(), right_values);
+
+        Ok(Value::pair(
+            Type::array(left_type, false, false),
+            Type::array(right_type, false, false),
+            left_array,
+            right_array,
+        ))
+    }
+}
+
+/// Create the unzip function
+pub fn create_unzip_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(UnzipFunction)
+}
+
+/// Transpose function implementation
+///
+/// Transposes a 2D array (matrix) by swapping rows and columns.
+/// The return type is inferred from the nested array's item type.
+pub struct TransposeFunction;
+
+impl crate::stdlib::Function for TransposeFunction {
+    fn name(&self) -> &str {
+        "transpose"
+    }
+
+    fn infer_type(
+        &self,
+        args: &mut [crate::expr::Expression],
+        type_env: &crate::env::Bindings<crate::types::Type>,
+        stdlib: &crate::stdlib::StdLib,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("transpose(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
+        match &arg_type {
+            Type::Array { item_type, .. } => {
+                match item_type.as_ref() {
+                    Type::Array {
+                        item_type: inner_item_type,
+                        ..
+                    } => {
+                        // Return Array[Array[T]] where T is the inner array's item type (same structure)
+                        Ok(Type::array(
+                            Type::array(inner_item_type.as_ref().clone(), false, false),
+                            false,
+                            false,
+                        ))
+                    }
+                    _ => Err(WdlError::RuntimeError {
+                        message: "transpose(): argument must be an array of arrays".to_string(),
+                    }),
+                }
+            }
+            _ => Err(WdlError::RuntimeError {
+                message: "transpose(): argument must be an array".to_string(),
+            }),
+        }
+    }
+
+    fn eval(
+        &self,
+        args: &[crate::expr::Expression],
+        env: &crate::env::Bindings<crate::value::Value>,
+        stdlib: &crate::stdlib::StdLib,
+    ) -> Result<Value, WdlError> {
+        if args.len() != 1 {
+            return Err(WdlError::RuntimeError {
+                message: format!("transpose(): expected 1 argument, got {}", args.len()),
+            });
+        }
+
+        let array_value = args[0].eval(env, stdlib)?;
+        let matrix = match array_value.as_array() {
+            Some(arr) => arr,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "transpose(): argument must be an array".to_string(),
+                })
+            }
+        };
+
+        if matrix.is_empty() {
+            return Ok(Value::array(
+                Type::array(Type::any(), false, false),
+                Vec::new(),
+            ));
+        }
+
+        // Get the first row to determine column count and item type
+        let first_row = match matrix[0].as_array() {
+            Some(row) => row,
+            None => {
+                return Err(WdlError::RuntimeError {
+                    message: "transpose(): array must contain only Array elements".to_string(),
+                })
+            }
+        };
+
+        let col_count = first_row.len();
+        let item_type = if col_count > 0 {
+            first_row[0].wdl_type().clone()
+        } else {
+            Type::any()
+        };
+
+        // Validate all rows have the same length
+        for (i, row_value) in matrix.iter().enumerate() {
+            match row_value.as_array() {
+                Some(row) => {
+                    if row.len() != col_count {
+                        return Err(WdlError::RuntimeError {
+                            message: format!("transpose(): ragged input matrix - row {} has {} elements, expected {}", i, row.len(), col_count),
+                        });
+                    }
+                }
+                None => {
+                    return Err(WdlError::RuntimeError {
+                        message: "transpose(): array must contain only Array elements".to_string(),
+                    });
+                }
+            }
+        }
+
+        // Transpose the matrix
+        let mut transposed_values = Vec::new();
+        for col in 0..col_count {
+            let mut column_values = Vec::new();
+            for row_value in matrix {
+                let row = row_value.as_array().unwrap(); // Already validated above
+                column_values.push(row[col].clone());
+            }
+            transposed_values.push(Value::array(item_type.clone(), column_values));
+        }
+
+        Ok(Value::array(
+            Type::array(item_type, false, false),
+            transposed_values,
+        ))
+    }
+}
+
+/// Create the transpose function
+pub fn create_transpose_function() -> Box<dyn crate::stdlib::Function> {
+    Box::new(TransposeFunction)
+}
+
 #[cfg(test)]
-mod contains_key_tests {
+mod tests {
     use super::*;
-    use crate::types::Type;
-    use crate::value::Value;
-    use std::collections::HashMap;
+    use crate::env::Bindings;
+    use crate::expr::ExpressionBase;
 
     #[test]
-    fn test_contains_key_map() {
-        let function = ContainsKeyFunction;
+    fn test_prefix_function() {
+        let prefix_fn = create_prefix_function();
+        let env = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.2");
 
-        // Create a map: {"a": 1, "b": 2}
-        let map_value = Value::map(
-            Type::string(false),
-            Type::int(false),
+        // Test prefix("pre_", ["a", "b", "c"]) -> ["pre_a", "pre_b", "pre_c"]
+        let prefix_expr = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "pre_".to_string(),
+        );
+        let array_expr = crate::expr::Expression::array(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
             vec![
-                (Value::string("a".to_string()), Value::int(1)),
-                (Value::string("b".to_string()), Value::int(2)),
+                crate::expr::Expression::string_literal(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "a".to_string(),
+                ),
+                crate::expr::Expression::string_literal(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "b".to_string(),
+                ),
+                crate::expr::Expression::string_literal(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "c".to_string(),
+                ),
             ],
         );
 
-        // Test existing key
-        let result = function
-            .eval(&[map_value.clone(), Value::string("a".to_string())])
+        let result = prefix_fn
+            .eval(&[prefix_expr, array_expr], &env, &stdlib)
             .unwrap();
-        assert!(result.as_bool().unwrap());
+        let result_array = result.as_array().unwrap();
 
-        // Test non-existing key
-        let result = function
-            .eval(&[map_value.clone(), Value::string("c".to_string())])
-            .unwrap();
-        assert!(!result.as_bool().unwrap());
+        assert_eq!(result_array.len(), 3);
+        assert_eq!(result_array[0].as_string().unwrap(), "pre_a");
+        assert_eq!(result_array[1].as_string().unwrap(), "pre_b");
+        assert_eq!(result_array[2].as_string().unwrap(), "pre_c");
     }
 
     #[test]
-    fn test_contains_key_struct() {
-        let function = ContainsKeyFunction;
+    fn test_suffix_function() {
+        let suffix_fn = create_suffix_function();
+        let env = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.2");
 
-        // Create a struct with members
-        let mut members = HashMap::new();
-        members.insert("name".to_string(), Value::string("John".to_string()));
-        members.insert("age".to_string(), Value::int(30));
-
-        let struct_type = Type::StructInstance {
-            type_name: "Person".to_string(),
-            members: None,
-            optional: false,
-        };
-
-        let struct_value = Value::struct_value_unchecked(struct_type, members, None);
-
-        // Test existing member
-        let result = function
-            .eval(&[struct_value.clone(), Value::string("name".to_string())])
-            .unwrap();
-        assert!(result.as_bool().unwrap());
-
-        // Test non-existing member
-        let result = function
-            .eval(&[struct_value.clone(), Value::string("email".to_string())])
-            .unwrap();
-        assert!(!result.as_bool().unwrap());
-    }
-
-    #[test]
-    fn test_contains_key_compound() {
-        let function = ContainsKeyFunction;
-
-        // Create nested structure: {"details": {"phone": "123"}}
-        let mut inner_members = HashMap::new();
-        inner_members.insert(
-            "phone".to_string(),
-            Value::string("123-456-7890".to_string()),
+        // Test suffix("_suf", ["a", "b", "c"]) -> ["a_suf", "b_suf", "c_suf"]
+        let suffix_expr = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "_suf".to_string(),
         );
-
-        let inner_struct_type = Type::StructInstance {
-            type_name: "Details".to_string(),
-            members: None,
-            optional: false,
-        };
-        let inner_struct = Value::struct_value_unchecked(inner_struct_type, inner_members, None);
-
-        let mut outer_members = HashMap::new();
-        outer_members.insert("name".to_string(), Value::string("John".to_string()));
-        outer_members.insert("details".to_string(), inner_struct);
-
-        let outer_struct_type = Type::StructInstance {
-            type_name: "Person".to_string(),
-            members: None,
-            optional: false,
-        };
-        let outer_struct = Value::struct_value_unchecked(outer_struct_type, outer_members, None);
-
-        // Test compound key ["details", "phone"] - should exist
-        let keys_array = Value::array(
-            Type::string(false),
+        let array_expr = crate::expr::Expression::array(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
             vec![
-                Value::string("details".to_string()),
-                Value::string("phone".to_string()),
+                crate::expr::Expression::string_literal(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "a".to_string(),
+                ),
+                crate::expr::Expression::string_literal(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "b".to_string(),
+                ),
+                crate::expr::Expression::string_literal(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    "c".to_string(),
+                ),
             ],
         );
 
-        let result = function.eval(&[outer_struct.clone(), keys_array]).unwrap();
-        assert!(result.as_bool().unwrap());
+        let result = suffix_fn
+            .eval(&[suffix_expr, array_expr], &env, &stdlib)
+            .unwrap();
+        let result_array = result.as_array().unwrap();
 
-        // Test compound key ["details", "email"] - should not exist
-        let keys_array = Value::array(
-            Type::string(false),
+        assert_eq!(result_array.len(), 3);
+        assert_eq!(result_array[0].as_string().unwrap(), "a_suf");
+        assert_eq!(result_array[1].as_string().unwrap(), "b_suf");
+        assert_eq!(result_array[2].as_string().unwrap(), "c_suf");
+    }
+
+    #[test]
+    fn test_length_function_comprehensive() {
+        let length_fn = create_length_function();
+        let env = Bindings::new();
+        let stdlib = crate::stdlib::StdLib::new("1.2");
+
+        // Test array length - [1, 2, 3] should return 3
+        let array_expr = crate::expr::Expression::array(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
             vec![
-                Value::string("details".to_string()),
-                Value::string("email".to_string()),
+                crate::expr::Expression::int(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    1,
+                ),
+                crate::expr::Expression::int(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    2,
+                ),
+                crate::expr::Expression::int(
+                    crate::error::SourcePosition::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        1,
+                        1,
+                        1,
+                        1,
+                    ),
+                    3,
+                ),
             ],
         );
 
-        let result = function.eval(&[outer_struct.clone(), keys_array]).unwrap();
-        assert!(!result.as_bool().unwrap());
-    }
+        let result = length_fn.eval(&[array_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 3);
 
-    #[test]
-    fn test_as_pairs_function_is_implemented() {
-        // This test confirms that as_pairs is now implemented
-        use crate::stdlib::StdLib;
-        let stdlib = StdLib::new("1.2");
-
-        // Try to find the as_pairs function - should return Some now
-        let as_pairs_fn = stdlib.get_function("as_pairs");
-        assert!(
-            as_pairs_fn.is_some(),
-            "as_pairs function should be implemented"
+        // Test empty array length - [] should return 0
+        let empty_array_expr = crate::expr::Expression::array(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![],
         );
 
-        // Verify function name
-        if let Some(func) = as_pairs_fn {
-            assert_eq!(func.name(), "as_pairs");
-        }
-    }
+        let result = length_fn.eval(&[empty_array_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 0);
 
-    #[test]
-    fn test_as_pairs_function_expected_behavior() {
-        // This test validates the actual behavior of as_pairs function
-        use crate::types::Type;
-        use crate::value::Value;
+        // Test string length - "ABCDE" should return 5
+        let string_expr = crate::expr::Expression::string_literal(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            "ABCDE".to_string(),
+        );
 
-        // Create a test map: {"a": 1, "b": 2}
-        let pairs = vec![
-            (Value::string("a".to_string()), Value::int(1)),
-            (Value::string("b".to_string()), Value::int(2)),
-        ];
-        let test_map = Value::Map {
-            pairs,
-            wdl_type: Type::map(Type::string(false), Type::int(false), false),
-        };
+        let result = length_fn.eval(&[string_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 5);
 
-        // Function should now be implemented
-        let stdlib = crate::stdlib::StdLib::new("1.2");
-        if let Some(as_pairs_fn) = stdlib.get_function("as_pairs") {
-            let result = as_pairs_fn.eval(&[test_map]);
+        // Test map length - {"a": 1, "b": 2} should return 2
+        let map_expr = crate::expr::Expression::map(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![
+                (
+                    crate::expr::Expression::string_literal(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        "a".to_string(),
+                    ),
+                    crate::expr::Expression::int(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        1,
+                    ),
+                ),
+                (
+                    crate::expr::Expression::string_literal(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        "b".to_string(),
+                    ),
+                    crate::expr::Expression::int(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        2,
+                    ),
+                ),
+            ],
+        );
 
-            // Should return Array[Pair[String, Int]]
-            // Expected: [("a", 1), ("b", 2)]
-            assert!(result.is_ok());
+        let result = length_fn.eval(&[map_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 2);
 
-            if let Ok(array_value) = result {
-                if let Value::Array { values, .. } = array_value {
-                    assert_eq!(values.len(), 2);
+        // Test struct/object length - {a: 1, b: "test"} should return 2
+        let struct_expr = crate::expr::Expression::struct_expr(
+            crate::error::SourcePosition::new("test".to_string(), "test".to_string(), 1, 1, 1, 1),
+            vec![
+                (
+                    "a".to_string(),
+                    crate::expr::Expression::int(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        1,
+                    ),
+                ),
+                (
+                    "b".to_string(),
+                    crate::expr::Expression::string_literal(
+                        crate::error::SourcePosition::new(
+                            "test".to_string(),
+                            "test".to_string(),
+                            1,
+                            1,
+                            1,
+                            1,
+                        ),
+                        "test".to_string(),
+                    ),
+                ),
+            ],
+        );
 
-                    // Check pairs (order may vary for maps, so check both exist)
-                    let mut found_a = false;
-                    let mut found_b = false;
-
-                    for value in &values {
-                        if let Value::Pair { left, right, .. } = value {
-                            let key = left.as_string().unwrap();
-                            if key == "a" {
-                                assert_eq!(right.as_int().unwrap(), 1);
-                                found_a = true;
-                            } else if key == "b" {
-                                assert_eq!(right.as_int().unwrap(), 2);
-                                found_b = true;
-                            }
-                        } else {
-                            panic!("Expected Pair value");
-                        }
-                    }
-
-                    assert!(found_a, "Should find pair ('a', 1)");
-                    assert!(found_b, "Should find pair ('b', 2)");
-                } else {
-                    panic!("Expected Array value");
-                }
-            } else {
-                panic!("Function evaluation should succeed");
-            }
-        } else {
-            panic!("as_pairs function not found in standard library");
-        }
-    }
-
-    #[test]
-    fn test_as_map_function_is_implemented() {
-        // Test that as_map function is now implemented
-        let stdlib = crate::stdlib::StdLib::new("1.2");
-
-        // Try to get as_map function - should succeed
-        let result = stdlib.get_function("as_map");
-        assert!(result.is_some(), "as_map function should be implemented");
-
-        // Verify the function name
-        if let Some(as_map_fn) = result {
-            assert_eq!(as_map_fn.name(), "as_map");
-        }
-    }
-
-    #[test]
-    fn test_as_map_function_expected_behavior() {
-        // Test the expected behavior of as_map once implemented
-        // This test should fail until as_map is implemented
-        let stdlib = crate::stdlib::StdLib::new("1.2");
-
-        if let Some(as_map_fn) = stdlib.get_function("as_map") {
-            use crate::types::Type;
-            use crate::value::Value;
-
-            // Create Array[Pair[String, Int]] = [("a", 1), ("b", 2)]
-            let pair1 = Value::pair(
-                Type::string(false),
-                Type::int(false),
-                Value::string("a".to_string()),
-                Value::int(1),
-            );
-            let pair2 = Value::pair(
-                Type::string(false),
-                Type::int(false),
-                Value::string("b".to_string()),
-                Value::int(2),
-            );
-
-            let pairs_array = Value::array(
-                Type::pair(Type::string(false), Type::int(false), false),
-                vec![pair1, pair2],
-            );
-
-            // Test type inference
-            let inferred_type = as_map_fn.infer_type(&[pairs_array.wdl_type().clone()]);
-            assert!(inferred_type.is_ok());
-
-            if let Ok(map_type) = inferred_type {
-                assert!(matches!(map_type, Type::Map { .. }));
-            }
-
-            // Test evaluation
-            let result = as_map_fn.eval(&[pairs_array]);
-            assert!(
-                result.is_ok(),
-                "as_map should successfully convert Array[Pair] to Map"
-            );
-
-            if let Ok(map_value) = result {
-                // Should be a Map with {"a": 1, "b": 2}
-                if let Value::Map { pairs, .. } = map_value {
-                    assert_eq!(pairs.len(), 2);
-                    // Check the map contains the expected key-value pairs
-                    let keys: Vec<String> = pairs
-                        .iter()
-                        .map(|(k, _)| {
-                            if let Value::String { value, .. } = k {
-                                value.clone()
-                            } else {
-                                panic!("Key should be string")
-                            }
-                        })
-                        .collect();
-                    assert!(keys.contains(&"a".to_string()));
-                    assert!(keys.contains(&"b".to_string()));
-                }
-            }
-        } else {
-            panic!("as_map function should be implemented");
-        }
+        let result = length_fn.eval(&[struct_expr], &env, &stdlib).unwrap();
+        assert_eq!(result.as_int().unwrap(), 2);
     }
 }

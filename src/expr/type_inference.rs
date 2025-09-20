@@ -4,6 +4,7 @@ use super::{BinaryOperator, Expression, ExpressionBase, StringPart, UnaryOperato
 use crate::env::Bindings;
 use crate::error::{HasSourcePosition, MultiErrorContext, WdlError};
 use crate::types::Type;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 impl Expression {
@@ -109,81 +110,7 @@ impl Expression {
                 if pairs.is_empty() {
                     Type::map(Type::any(), Type::any(), false)
                 } else {
-                    // First, check if this could be a struct literal
-                    // All keys must be string literals for struct consideration
-                    let mut member_types: HashMap<String, Type> = HashMap::new();
-                    let mut could_be_struct = true;
-
-                    for (key_expr, value_expr) in pairs.iter() {
-                        // Check if key is a string literal
-                        if let Expression::String { parts, .. } = key_expr {
-                            if parts.len() == 1 {
-                                if let crate::expr::StringPart::Text(key_name) = &parts[0] {
-                                    if let Some(value_type) = value_expr.get_type() {
-                                        member_types.insert(key_name.clone(), value_type.clone());
-                                    } else {
-                                        could_be_struct = false;
-                                        break;
-                                    }
-                                } else {
-                                    could_be_struct = false;
-                                    break;
-                                }
-                            } else {
-                                could_be_struct = false;
-                                break;
-                            }
-                        } else {
-                            could_be_struct = false;
-                            break;
-                        }
-                    }
-
-                    // If this could be a struct, try to match with struct_typedefs
-                    let mut found_struct_type: Option<Type> = None;
-                    if could_be_struct {
-                        for struct_def in struct_typedefs {
-                            // Check if all provided members match a known struct type
-                            let mut matches = true;
-                            for (provided_name, provided_type) in &member_types {
-                                if let Some(expected_type) = struct_def.members.get(provided_name) {
-                                    if !provided_type.coerces(expected_type, true) {
-                                        matches = false;
-                                        break;
-                                    }
-                                } else {
-                                    matches = false;
-                                    break;
-                                }
-                            }
-
-                            // If this struct definition matches, use it
-                            if matches && member_types.len() <= struct_def.members.len() {
-                                found_struct_type = Some(Type::StructInstance {
-                                    type_name: struct_def.name.clone(),
-                                    members: Some(struct_def.members.clone()),
-                                    optional: false,
-                                });
-                                break;
-                            }
-                        }
-                    }
-
-                    // Use struct type if found, otherwise fall back to Map
-                    if let Some(struct_type) = found_struct_type {
-                        struct_type
-                    } else {
-                        // No struct match found, treat as regular map
-                        let key_types: Vec<&Type> =
-                            pairs.iter().filter_map(|(k, _)| k.get_type()).collect();
-                        let value_types: Vec<&Type> =
-                            pairs.iter().filter_map(|(_, v)| v.get_type()).collect();
-
-                        let unified_key_type = crate::types::unify_types(key_types, true, false);
-                        let unified_value_type =
-                            crate::types::unify_types(value_types, true, false);
-                        Type::map(unified_key_type, unified_value_type, false)
-                    }
+                    Self::infer_map_type(pairs.as_slice(), struct_typedefs)?
                 }
             }
 
@@ -199,146 +126,31 @@ impl Expression {
             Expression::At {
                 expr, index, pos, ..
             } => {
-                // Array/Map subscript access
-                if let Some(expr_type) = expr.get_type() {
-                    match expr_type {
-                        Type::Array { item_type, .. } => item_type.as_ref().clone(),
-                        Type::Map { value_type, .. } => value_type.as_ref().clone(),
-                        _ => {
-                            return Err(WdlError::static_type_mismatch(
-                                pos.clone(),
-                                "Array or Map".to_string(),
-                                expr_type.to_string(),
-                                "Subscript operation requires array or map type".to_string(),
-                            ));
-                        }
-                    }
-                } else {
-                    return Err(WdlError::static_type_mismatch(
+                let container_type = expr.get_type().ok_or_else(|| {
+                    WdlError::static_type_mismatch(
                         pos.clone(),
                         "Array or Map".to_string(),
                         "Unknown".to_string(),
                         "Cannot infer type for subscript operation".to_string(),
-                    ));
-                }
+                    )
+                })?;
+
+                Self::infer_subscript_type(container_type, index, pos)?
             }
 
             Expression::Get {
                 expr, field, pos, ..
             } => {
-                // Object member access
-                if let Some(expr_type) = expr.get_type() {
-                    match expr_type {
-                        // Special case: Array of call outputs (scatter context)
-                        Type::Array {
-                            item_type,
-                            optional,
-                            nonempty,
-                        } => {
-                            if let Type::Object {
-                                members,
-                                is_call_output: true,
-                            } = item_type.as_ref()
-                            {
-                                // This is an array of call outputs from a scatter
-                                // call.output syntax should return Array[OutputType]
-                                if let Some(field_type) = members.get(field) {
-                                    Type::Array {
-                                        item_type: Box::new(field_type.clone()),
-                                        optional: *optional,
-                                        nonempty: *nonempty,
-                                    }
-                                } else {
-                                    return Err(WdlError::no_such_member_error(
-                                        pos.clone(),
-                                        field.clone(),
-                                    ));
-                                }
-                            } else {
-                                return Err(WdlError::static_type_mismatch(
-                                    pos.clone(),
-                                    "Object, Pair, or Struct".to_string(),
-                                    expr_type.to_string(),
-                                    "Member access on array only allowed for scattered call outputs".to_string(),
-                                ));
-                            }
-                        }
-                        Type::Pair {
-                            left_type,
-                            right_type,
-                            ..
-                        } => {
-                            // Pair field access: pair.left or pair.right
-                            match field.as_str() {
-                                "left" => left_type.as_ref().clone(),
-                                "right" => right_type.as_ref().clone(),
-                                _ => {
-                                    return Err(WdlError::no_such_member_error(
-                                        pos.clone(),
-                                        field.clone(),
-                                    ));
-                                }
-                            }
-                        }
-                        Type::Object { members, .. } => {
-                            // Object field access: obj.field
-                            if let Some(field_type) = members.get(field) {
-                                field_type.clone()
-                            } else {
-                                return Err(WdlError::no_such_member_error(
-                                    pos.clone(),
-                                    field.clone(),
-                                ));
-                            }
-                        }
-                        Type::StructInstance { members, .. } => {
-                            // Struct field access - now with proper struct resolution
-                            if let Some(ref member_types) = members {
-                                if let Some(field_type) = member_types.get(field) {
-                                    field_type.clone()
-                                } else {
-                                    return Err(WdlError::no_such_member_error(
-                                        pos.clone(),
-                                        field.clone(),
-                                    ));
-                                }
-                            } else {
-                                // Try to resolve struct type using struct_typedefs
-                                if let Type::StructInstance { type_name, .. } = expr_type {
-                                    if let Some(struct_def) =
-                                        struct_typedefs.iter().find(|s| s.name == *type_name)
-                                    {
-                                        if let Some(field_type) = struct_def.members.get(field) {
-                                            return Ok(field_type.clone());
-                                        }
-                                    }
-                                }
-                                return Err(WdlError::static_type_mismatch(
-                                    pos.clone(),
-                                    "Struct with known members".to_string(),
-                                    expr_type.to_string(),
-                                    "Cannot access field on struct without member information"
-                                        .to_string(),
-                                ));
-                            }
-                        }
-                        _ => {
-                            return Err(WdlError::static_type_mismatch(
-                                pos.clone(),
-                                "Object, Pair, or Struct".to_string(),
-                                expr_type.to_string(),
-                                "Member access requires object, pair, or struct type".to_string(),
-                            ));
-                        }
-                    }
-                } else {
-                    return Err(WdlError::static_type_mismatch(
+                let container_type = expr.get_type().ok_or_else(|| {
+                    WdlError::static_type_mismatch(
                         pos.clone(),
                         "Object, Pair, or Struct".to_string(),
                         "Unknown".to_string(),
                         "Cannot infer type for member access".to_string(),
-                    ));
-                }
+                    )
+                })?;
+
+                Self::infer_get_type(container_type, field, pos, struct_typedefs)?
             }
 
             Expression::IfThenElse {
@@ -366,7 +178,7 @@ impl Expression {
                 let branch_types = vec![&true_type, &false_type];
 
                 // Check if any branch is Any (non-optional) - like read_json()
-                if branch_types.iter().any(|ty| {
+                let result_type = if branch_types.iter().any(|ty| {
                     matches!(
                         ty,
                         Type::Any {
@@ -375,34 +187,31 @@ impl Expression {
                         }
                     )
                 }) {
-                    return Ok(Type::any());
-                }
-
-                // Check if both branches are Any (optional) - both are None
-                if branch_types
+                    Type::any()
+                } else if branch_types
                     .iter()
                     .all(|ty| matches!(ty, Type::Any { optional: true, .. }))
                 {
-                    return Ok(Type::any().with_optional(true));
-                }
+                    Type::any().with_optional(true)
+                } else {
+                    let unified_type = crate::types::unify_types(branch_types, true, false);
 
-                // Try to unify the types
-                let unified_type = crate::types::unify_types(branch_types, true, false);
+                    if matches!(unified_type, Type::Any { .. })
+                        && !matches!(true_type, Type::Any { .. })
+                        && !matches!(false_type, Type::Any { .. })
+                    {
+                        return Err(WdlError::static_type_mismatch(
+                            HasSourcePosition::source_position(self).clone(),
+                            true_type.to_string(),
+                            false_type.to_string(),
+                            "Unable to unify consequent & alternative types".to_string(),
+                        ));
+                    }
 
-                // Check if unification failed (returns Any when it can't unify)
-                if matches!(unified_type, Type::Any { .. })
-                    && !matches!(true_type, Type::Any { .. })
-                    && !matches!(false_type, Type::Any { .. })
-                {
-                    return Err(WdlError::static_type_mismatch(
-                        HasSourcePosition::source_position(self).clone(),
-                        true_type.to_string(),
-                        false_type.to_string(),
-                        "Unable to unify consequent & alternative types".to_string(),
-                    ));
-                }
+                    unified_type
+                };
 
-                unified_type
+                result_type
             }
 
             Expression::Apply {
@@ -412,11 +221,8 @@ impl Expression {
             } => {
                 // Use stdlib function infer_type
                 if let Some(func) = stdlib.get_function(function_name) {
-                    let arg_types: Vec<Type> = arguments
-                        .iter()
-                        .filter_map(|arg| arg.get_type().cloned())
-                        .collect();
-                    func.infer_type(&arg_types)?
+                    let mut arg_expressions: Vec<Expression> = arguments.clone();
+                    func.infer_type(&mut arg_expressions, type_env, stdlib, struct_typedefs)?
                 } else {
                     return Err(WdlError::RuntimeError {
                         message: format!("Unknown function: {}", function_name),
@@ -474,76 +280,226 @@ impl Expression {
             },
         };
 
-        // Store the inferred type in the expression
-        let computed_type = inferred_type.clone();
+        self.store_inferred_type(&inferred_type);
+        Ok(inferred_type)
+    }
+
+    fn store_inferred_type(&mut self, ty: &Type) {
+        let clone = ty.clone();
         match self {
-            Expression::Boolean {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Int {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Float {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::String {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Null {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Array {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Pair {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Map {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Struct {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Ident {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::At {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Get {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::IfThenElse {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::Apply {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::BinaryOp {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type.clone()),
-            Expression::UnaryOp {
-                inferred_type: stored_type,
-                ..
-            } => *stored_type = Some(computed_type),
+            Expression::Boolean { inferred_type, .. }
+            | Expression::Int { inferred_type, .. }
+            | Expression::Float { inferred_type, .. }
+            | Expression::String { inferred_type, .. }
+            | Expression::Null { inferred_type, .. }
+            | Expression::Array { inferred_type, .. }
+            | Expression::Pair { inferred_type, .. }
+            | Expression::Map { inferred_type, .. }
+            | Expression::Struct { inferred_type, .. }
+            | Expression::Ident { inferred_type, .. }
+            | Expression::At { inferred_type, .. }
+            | Expression::Get { inferred_type, .. }
+            | Expression::IfThenElse { inferred_type, .. }
+            | Expression::Apply { inferred_type, .. }
+            | Expression::BinaryOp { inferred_type, .. }
+            | Expression::UnaryOp { inferred_type, .. } => *inferred_type = Some(clone),
+        }
+    }
+
+    fn infer_map_type(
+        pairs: &[(Expression, Expression)],
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        let mut could_be_struct = true;
+        let mut member_types: HashMap<String, Type> = HashMap::new();
+
+        for (key_expr, value_expr) in pairs {
+            match key_expr {
+                Expression::String { parts, .. } if parts.len() == 1 => {
+                    if let StringPart::Text(key_name) = &parts[0] {
+                        if let Some(value_type) = value_expr.get_type() {
+                            member_types.insert(key_name.clone(), value_type.clone());
+                        } else {
+                            could_be_struct = false;
+                            break;
+                        }
+                    } else {
+                        could_be_struct = false;
+                        break;
+                    }
+                }
+                _ => {
+                    could_be_struct = false;
+                    break;
+                }
+            }
         }
 
-        Ok(inferred_type)
+        if could_be_struct {
+            for struct_def in struct_typedefs {
+                let mut matches = true;
+                for (provided_name, provided_type) in &member_types {
+                    if let Some(expected_type) = struct_def.members.get(provided_name) {
+                        if !provided_type.coerces(expected_type, true) {
+                            matches = false;
+                            break;
+                        }
+                    } else {
+                        matches = false;
+                        break;
+                    }
+                }
+
+                if matches && member_types.len() <= struct_def.members.len() {
+                    return Ok(Type::StructInstance {
+                        type_name: struct_def.name.clone(),
+                        members: Some(struct_def.members.clone()),
+                        optional: false,
+                    });
+                }
+            }
+        }
+
+        let key_types: Vec<&Type> = pairs.iter().filter_map(|(k, _)| k.get_type()).collect();
+        let value_types: Vec<&Type> = pairs.iter().filter_map(|(_, v)| v.get_type()).collect();
+        let unified_key_type = crate::types::unify_types(key_types, true, false);
+        let unified_value_type = crate::types::unify_types(value_types, true, false);
+        Ok(Type::map(unified_key_type, unified_value_type, false))
+    }
+
+    fn infer_subscript_type(
+        container_type: &Type,
+        index: &Expression,
+        pos: &crate::error::SourcePosition,
+    ) -> Result<Type, WdlError> {
+        match container_type {
+            Type::Array { item_type, .. } => {
+                if let Some(index_type) = index.get_type() {
+                    if !index_type.coerces(&Type::int(false), true) {
+                        return Err(WdlError::static_type_mismatch(
+                            HasSourcePosition::source_position(index).clone(),
+                            "Int".to_string(),
+                            index_type.to_string(),
+                            "Array index must be Int".to_string(),
+                        ));
+                    }
+                }
+                Ok(item_type.as_ref().clone())
+            }
+            Type::Map { value_type, .. } => Ok(value_type.as_ref().clone()),
+            other => Err(WdlError::static_type_mismatch(
+                pos.clone(),
+                "Array or Map".to_string(),
+                other.to_string(),
+                "Subscript operation requires array or map type".to_string(),
+            )),
+        }
+    }
+
+    fn infer_get_type(
+        expr_type: &Type,
+        field: &str,
+        pos: &crate::error::SourcePosition,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        match expr_type {
+            Type::Array {
+                item_type,
+                optional,
+                nonempty,
+            } => {
+                if let Type::Object {
+                    members,
+                    is_call_output: true,
+                } = item_type.as_ref()
+                {
+                    if let Some(field_type) = members.get(field) {
+                        Ok(Type::Array {
+                            item_type: Box::new(field_type.clone()),
+                            optional: *optional,
+                            nonempty: *nonempty,
+                        })
+                    } else {
+                        Err(WdlError::no_such_member_error(
+                            pos.clone(),
+                            field.to_string(),
+                        ))
+                    }
+                } else {
+                    Err(WdlError::static_type_mismatch(
+                        pos.clone(),
+                        "Object, Pair, or Struct".to_string(),
+                        expr_type.to_string(),
+                        "Member access on array only allowed for scattered call outputs"
+                            .to_string(),
+                    ))
+                }
+            }
+            Type::Pair {
+                left_type,
+                right_type,
+                ..
+            } => match field {
+                "left" => Ok(left_type.as_ref().clone()),
+                "right" => Ok(right_type.as_ref().clone()),
+                _ => Err(WdlError::no_such_member_error(
+                    pos.clone(),
+                    field.to_string(),
+                )),
+            },
+            Type::Object { members, .. } => members
+                .get(field)
+                .cloned()
+                .ok_or_else(|| WdlError::no_such_member_error(pos.clone(), field.to_string())),
+            Type::StructInstance {
+                type_name, members, ..
+            } => Self::resolve_struct_member_type(
+                type_name,
+                members.as_ref(),
+                field,
+                pos,
+                struct_typedefs,
+            ),
+            _ => Err(WdlError::static_type_mismatch(
+                pos.clone(),
+                "Object, Pair, or Struct".to_string(),
+                expr_type.to_string(),
+                "Member access requires object, pair, or struct type".to_string(),
+            )),
+        }
+    }
+
+    fn resolve_struct_member_type(
+        type_name: &str,
+        members: Option<&IndexMap<String, Type>>,
+        field: &str,
+        pos: &crate::error::SourcePosition,
+        struct_typedefs: &[crate::tree::StructTypeDef],
+    ) -> Result<Type, WdlError> {
+        if let Some(member_types) = members {
+            return member_types
+                .get(field)
+                .cloned()
+                .ok_or_else(|| WdlError::no_such_member_error(pos.clone(), field.to_string()));
+        }
+
+        let struct_def = struct_typedefs
+            .iter()
+            .find(|s| s.name == type_name)
+            .ok_or_else(|| {
+                WdlError::static_type_mismatch(
+                    pos.clone(),
+                    "Struct with known members".to_string(),
+                    type_name.to_string(),
+                    "Cannot access field on struct without member information".to_string(),
+                )
+            })?;
+
+        struct_def
+            .members
+            .get(field)
+            .cloned()
+            .ok_or_else(|| WdlError::no_such_member_error(pos.clone(), field.to_string()))
     }
 
     fn infer_struct_type(

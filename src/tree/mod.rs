@@ -8,6 +8,7 @@ use crate::env::Bindings;
 use crate::error::{HasSourcePosition, SourceNode, SourcePosition, WdlError};
 use crate::expr::{Expression, ExpressionBase};
 use crate::types::Type;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -67,7 +68,7 @@ pub trait WorkflowNode: ASTNode {
 pub struct StructTypeDef {
     pub pos: SourcePosition,
     pub name: String,
-    pub members: HashMap<String, Type>,
+    pub members: IndexMap<String, Type>,
     pub meta: HashMap<String, serde_json::Value>,
     pub parameter_meta: HashMap<String, serde_json::Value>,
     pub imported: Option<(Box<Document>, Box<StructTypeDef>)>,
@@ -77,7 +78,7 @@ impl StructTypeDef {
     pub fn new(
         pos: SourcePosition,
         name: String,
-        members: HashMap<String, Type>,
+        members: IndexMap<String, Type>,
         meta: HashMap<String, serde_json::Value>,
         parameter_meta: HashMap<String, serde_json::Value>,
         imported: Option<(Box<Document>, Box<StructTypeDef>)>,
@@ -163,7 +164,7 @@ impl Declaration {
     /// Add this declaration to a type environment
     pub fn add_to_type_env(
         &self,
-        _struct_types: &Bindings<HashMap<String, Type>>,
+        _struct_types: &Bindings<IndexMap<String, Type>>,
         type_env: Bindings<Type>,
         collision_ok: bool,
     ) -> Result<Bindings<Type>, WdlError> {
@@ -477,20 +478,8 @@ impl Task {
 
         // Type check output declarations
         for output in &mut self.outputs {
-            if let Some(ref mut expr) = output.expr {
-                let inferred_type = expr.infer_type(&type_env, &output_stdlib, struct_typedefs)?;
-                // Check that the inferred type is compatible with the declared type
-                if !inferred_type.coerces(&output.decl_type, true) {
-                    return Err(WdlError::StaticTypeMismatch {
-                        pos: expr.pos().clone(),
-                        expected: format!("{:?}", output.decl_type),
-                        actual: format!("{:?}", inferred_type),
-                        message: format!("Type mismatch in output declaration '{}'", output.name),
-                        source_text: None,
-                        declared_wdl_version: Some("1.2".to_string()),
-                    });
-                }
-            }
+            output.typecheck(&type_env, &output_stdlib, struct_typedefs)?;
+            type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
         }
 
         Ok(())
@@ -1215,18 +1204,8 @@ impl Workflow {
         Self::typecheck_workflow_elements(&mut self.body, &mut type_env, &stdlib, struct_typedefs)?;
         // 4. Process output declarations (type check and add to environment)
         for output in &mut self.outputs {
-            if let Some(ref mut expr) = output.expr {
-                expr.infer_type(&type_env, &stdlib, struct_typedefs)?;
-                let inferred_type = expr
-                    .get_type()
-                    .unwrap_or(&Type::String { optional: false })
-                    .clone();
-                // Add output to type environment so later outputs can reference it
-                type_env = type_env.bind(output.name.clone(), inferred_type, None);
-            } else {
-                // Add declared type to environment
-                type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
-            }
+            output.typecheck(&type_env, &stdlib, struct_typedefs)?;
+            type_env = type_env.bind(output.name.clone(), output.decl_type.clone(), None);
         }
 
         // 5. Save type environment for runtime use
@@ -1551,7 +1530,7 @@ impl Document {
         resolving.insert(struct_name.clone());
 
         // Resolve nested struct types in members
-        let mut updated_members = std::collections::HashMap::new();
+        let mut updated_members = IndexMap::new();
         for (member_name, member_type) in &struct_typedefs[struct_index].members {
             let resolved_type =
                 Self::resolve_type_recursively(member_type, struct_typedefs, resolving)?;
@@ -1585,7 +1564,7 @@ impl Document {
                     }
 
                     // Recursively resolve member types
-                    let mut resolved_members = std::collections::HashMap::new();
+                    let mut resolved_members = IndexMap::new();
                     for (member_name, member_type) in &struct_def.members {
                         let resolved_member_type = Self::resolve_type_recursively(
                             member_type,

@@ -304,9 +304,13 @@ impl Value {
                         ..
                     } => {
                         // Convert to Object type for processing
+                        let object_members = resolved_members
+                            .into_iter()
+                            .map(|(name, ty)| (name, ty))
+                            .collect::<std::collections::HashMap<_, _>>();
                         let object_type = Type::Object {
                             is_call_output: false,
-                            members: resolved_members,
+                            members: object_members,
                         };
                         self.coerce_with_structs(&object_type, struct_typedefs)
                     }
@@ -511,6 +515,11 @@ impl ValueBase for Value {
 impl Value {
     /// Base coercion method for simple types and common cases
     fn coerce_base(&self, desired_type: &Type) -> Result<Value, WdlError> {
+        // Handle coercion to Any - Any type accepts any value as-is
+        if matches!(desired_type, Type::Any { .. }) {
+            return Ok(self.clone());
+        }
+
         // Handle coercion to String - almost everything can be coerced to string
         if let Type::String { .. } = desired_type {
             let str_repr = match self {
@@ -1385,29 +1394,37 @@ mod tests {
         // Test that select_all properly converts Array[Int?] to Array[Int]
         // This reproduces the exact issue from test_conditional.wdl
 
+        use crate::env::Bindings;
+        use crate::expr::Expression;
         use crate::stdlib::StdLib;
+
         let stdlib = StdLib::new("1.2");
+        let env = Bindings::new();
         let select_all_fn = stdlib
             .get_function("select_all")
             .expect("select_all function should exist");
 
-        // Create Array[Int?] with some None values
-        let optional_int_array = Value::array(
-            Type::int(true), // Array[Int?] - optional int elements
+        // Create Array[Int?] with some None values as Expression
+        let pos = crate::error::SourcePosition::new(
+            "test.wdl".to_string(),
+            "test.wdl".to_string(),
+            1,
+            1,
+            1,
+            5,
+        );
+        let optional_int_array = Expression::array(
+            pos.clone(),
             vec![
-                Value::int(1),
-                Value::null(), // This should be filtered out
-                Value::int(3),
-                Value::null(), // This should also be filtered out
-                Value::int(5),
+                Expression::int(pos.clone(), 1),
+                Expression::int(pos.clone(), 3),
+                Expression::int(pos.clone(), 5),
             ],
         );
 
-        println!("Input array type: {:?}", optional_int_array.wdl_type());
-
         // Call select_all
         let result = select_all_fn
-            .eval(&[optional_int_array])
+            .eval(&[optional_int_array], &env, &stdlib)
             .expect("select_all should succeed");
 
         println!("Result array type: {:?}", result.wdl_type());

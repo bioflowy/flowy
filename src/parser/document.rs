@@ -8,6 +8,7 @@ use super::tokens::Token;
 // Note: parse_expression available if needed
 use crate::error::WdlError;
 use crate::tree::{Document, ImportDoc, StructTypeDef, Task, Workflow};
+use indexmap::IndexMap;
 // Note: Type available if needed
 use std::collections::HashMap;
 
@@ -234,7 +235,7 @@ fn parse_struct(stream: &mut TokenStream) -> ParseResult<StructTypeDef> {
 
     stream.expect(Token::LeftBrace)?;
 
-    let mut members = HashMap::new();
+    let mut members = IndexMap::new();
     let mut meta = HashMap::new();
     let mut parameter_meta = HashMap::new();
 

@@ -162,6 +162,120 @@ pub fn parse_placeholder_options(stream: &mut TokenStream) -> ParseResult<HashMa
     Ok(options)
 }
 
+/// Recursively rewrite all `_add` function calls to `_interpolation_add` within an expression
+/// This is used for placeholder expressions where addition operations should have special null handling
+/// Similar to miniwdl's rewrite_adds function in Expr.py
+fn rewrite_adds_for_interpolation(expr: &mut Expression) {
+    match expr {
+        Expression::Apply {
+            function_name,
+            arguments,
+            ..
+        } => {
+            // Rewrite _add to _interpolation_add
+            if function_name == "_add" {
+                *function_name = "_interpolation_add".to_string();
+            }
+
+            // Recursively rewrite in all arguments
+            for arg in arguments {
+                rewrite_adds_for_interpolation(arg);
+            }
+        }
+
+        Expression::BinaryOp {
+            op,
+            left,
+            right,
+            pos,
+            ..
+        } => {
+            // First recursively rewrite in both operands
+            rewrite_adds_for_interpolation(left);
+            rewrite_adds_for_interpolation(right);
+
+            // If this is an addition operation, convert to _interpolation_add function call
+            if matches!(op, crate::expr::BinaryOperator::Add) {
+                // Convert BinaryOp::Add to Apply with _interpolation_add function
+                let new_expr = Expression::Apply {
+                    pos: pos.clone(),
+                    function_name: "_interpolation_add".to_string(),
+                    arguments: vec![(**left).clone(), (**right).clone()],
+                    inferred_type: None,
+                };
+                *expr = new_expr;
+            }
+        }
+
+        Expression::UnaryOp { operand, .. } => {
+            // Recursively rewrite in operand
+            rewrite_adds_for_interpolation(operand);
+        }
+
+        Expression::IfThenElse {
+            condition,
+            true_expr,
+            false_expr,
+            ..
+        } => {
+            // Recursively rewrite in all conditional branches
+            rewrite_adds_for_interpolation(condition);
+            rewrite_adds_for_interpolation(true_expr);
+            rewrite_adds_for_interpolation(false_expr);
+        }
+
+        Expression::Array { items, .. } => {
+            // Recursively rewrite in all array elements
+            for element in items {
+                rewrite_adds_for_interpolation(element);
+            }
+        }
+
+        Expression::Pair { left, right, .. } => {
+            // Recursively rewrite in both pair elements
+            rewrite_adds_for_interpolation(left);
+            rewrite_adds_for_interpolation(right);
+        }
+
+        Expression::Map { pairs, .. } => {
+            // Recursively rewrite in all map pairs
+            for (key, value) in pairs {
+                rewrite_adds_for_interpolation(key);
+                rewrite_adds_for_interpolation(value);
+            }
+        }
+
+        Expression::Struct { members, .. } => {
+            // Recursively rewrite in all struct field values
+            for (_, value) in members {
+                rewrite_adds_for_interpolation(value);
+            }
+        }
+
+        Expression::Get { expr, .. } => {
+            // Recursively rewrite in object expression
+            rewrite_adds_for_interpolation(expr);
+            // field is a String, not an expression
+        }
+
+        Expression::At { expr, index, .. } => {
+            // Recursively rewrite in both expression and index expressions
+            rewrite_adds_for_interpolation(expr);
+            rewrite_adds_for_interpolation(index);
+        }
+
+        // Base cases - literals and identifiers don't contain nested expressions
+        Expression::Boolean { .. }
+        | Expression::Int { .. }
+        | Expression::Float { .. }
+        | Expression::String { .. }
+        | Expression::Null { .. }
+        | Expression::Ident { .. } => {
+            // No nested expressions to rewrite
+        }
+    }
+}
+
 /// Parse a string literal with proper lexer mode switching
 /// This handles interpolation by switching lexer modes during tokenization
 pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression> {
@@ -217,7 +331,11 @@ pub fn parse_string_literal(stream: &mut TokenStream) -> ParseResult<Expression>
                 let options = parse_placeholder_options(stream)?;
 
                 // Then parse the expression inside the placeholder
-                let expr = parse_expression(stream)?;
+                let mut expr = parse_expression(stream)?;
+
+                // Apply interpolation-specific rewriting: convert _add to _interpolation_add
+                // This matches Python miniwdl's behavior in Placeholder constructor
+                rewrite_adds_for_interpolation(&mut expr);
 
                 // Expect placeholder end (either PlaceholderEnd or RightBrace in Normal mode)
                 match stream.peek_token() {
@@ -1007,6 +1125,221 @@ mod tests {
             Err(e) => {
                 println!("Declaration parsing failed: {:?}", e);
                 // This will help us understand if the issue is in declarations vs literals
+            }
+        }
+    }
+
+    #[test]
+    fn test_placeholder_add_rewriting() {
+        // Test that + operators in placeholders are rewritten to _interpolation_add
+        let mut stream = TokenStream::new("\"~{a + b}\"", "1.2").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            assert_eq!(parts.len(), 1);
+            if let StringPart::Placeholder { expr, .. } = &parts[0] {
+                // The expression should be rewritten from BinaryOp::Add to Apply with _interpolation_add
+                if let Expression::Apply {
+                    function_name,
+                    arguments,
+                    ..
+                } = expr.as_ref()
+                {
+                    assert_eq!(function_name, "_interpolation_add", 
+                              "Binary add operation should be rewritten to _interpolation_add in placeholders");
+                    assert_eq!(
+                        arguments.len(),
+                        2,
+                        "Rewritten function should have 2 arguments"
+                    );
+                } else {
+                    panic!(
+                        "Expected Apply expression with _interpolation_add, got: {:?}",
+                        expr
+                    );
+                }
+            } else {
+                panic!("Expected placeholder part");
+            }
+        } else {
+            panic!("Expected string expression");
+        }
+    }
+
+    #[test]
+    fn test_nested_add_rewriting_in_placeholders() {
+        // Test that nested + operations are also rewritten
+        let mut stream = TokenStream::new("\"~{a + b + c}\"", "1.2").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            if let StringPart::Placeholder { expr, .. } = &parts[0] {
+                // Check that the expression tree contains _interpolation_add calls
+                fn contains_interpolation_add(expr: &Expression) -> bool {
+                    match expr {
+                        Expression::Apply {
+                            function_name,
+                            arguments,
+                            ..
+                        } => {
+                            if function_name == "_interpolation_add" {
+                                return true;
+                            }
+                            // Recursively check arguments
+                            arguments.iter().any(contains_interpolation_add)
+                        }
+                        Expression::BinaryOp { left, right, .. } => {
+                            contains_interpolation_add(left) || contains_interpolation_add(right)
+                        }
+                        _ => false,
+                    }
+                }
+
+                assert!(
+                    contains_interpolation_add(expr.as_ref()),
+                    "Nested add operations should contain _interpolation_add calls"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_add_not_rewritten_outside_placeholders() {
+        // Test that + operators outside placeholders are NOT rewritten
+        use crate::parser::expressions::parse_expression;
+
+        let mut stream = TokenStream::new("a + b", "1.2").unwrap();
+        let result = parse_expression(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        // This should remain as BinaryOp, not be rewritten to Apply
+        if let Expression::BinaryOp { op, .. } = expr {
+            assert!(
+                matches!(op, crate::expr::BinaryOperator::Add),
+                "Regular expressions should keep BinaryOp::Add, not be rewritten"
+            );
+        } else {
+            panic!("Expected BinaryOp for regular expression, got: {:?}", expr);
+        }
+    }
+
+    #[test]
+    fn test_placeholder_rewriting_preserves_other_operators() {
+        // Test that only + operators are rewritten, other operators remain unchanged
+        let mut stream = TokenStream::new("\"~{a - b * c}\"", "1.2").unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            if let StringPart::Placeholder { expr, .. } = &parts[0] {
+                // Check that non-add operations remain as BinaryOp
+                fn check_non_add_operators(expr: &Expression) -> bool {
+                    match expr {
+                        Expression::BinaryOp {
+                            op, left, right, ..
+                        } => {
+                            match op {
+                                crate::expr::BinaryOperator::Subtract
+                                | crate::expr::BinaryOperator::Multiply => {
+                                    // These should remain as BinaryOp
+                                    check_non_add_operators(left) && check_non_add_operators(right)
+                                }
+                                crate::expr::BinaryOperator::Add => {
+                                    // Add should have been rewritten, so this is an error
+                                    false
+                                }
+                                _ => {
+                                    check_non_add_operators(left) && check_non_add_operators(right)
+                                }
+                            }
+                        }
+                        Expression::Apply {
+                            function_name,
+                            arguments,
+                            ..
+                        } => {
+                            if function_name == "_interpolation_add" {
+                                // This is expected
+                                arguments.iter().all(check_non_add_operators)
+                            } else {
+                                arguments.iter().all(check_non_add_operators)
+                            }
+                        }
+                        Expression::Ident { .. } => true,
+                        _ => true,
+                    }
+                }
+
+                assert!(
+                    check_non_add_operators(expr.as_ref()),
+                    "Non-add operators should remain as BinaryOp"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_concat_optional_reproduction() {
+        // Test that reproduces the exact concat_optional scenario
+        let mut stream = TokenStream::new(
+            "\"~{salutation + ' ' + name1 + ' '}nice to meet you!\"",
+            "1.2",
+        )
+        .unwrap();
+        let result = parse_string_literal(&mut stream);
+        assert!(result.is_ok());
+
+        let expr = result.unwrap();
+        if let Expression::String { parts, .. } = expr {
+            assert_eq!(parts.len(), 2); // placeholder + "nice to meet you!"
+
+            // Check first part is placeholder with rewritten expression
+            if let StringPart::Placeholder { expr, .. } = &parts[0] {
+                // Expression should contain _interpolation_add calls
+                fn count_interpolation_add_calls(expr: &Expression) -> usize {
+                    match expr {
+                        Expression::Apply {
+                            function_name,
+                            arguments,
+                            ..
+                        } => {
+                            let count = if function_name == "_interpolation_add" {
+                                1
+                            } else {
+                                0
+                            };
+                            count
+                                + arguments
+                                    .iter()
+                                    .map(count_interpolation_add_calls)
+                                    .sum::<usize>()
+                        }
+                        Expression::BinaryOp { left, right, .. } => {
+                            count_interpolation_add_calls(left)
+                                + count_interpolation_add_calls(right)
+                        }
+                        _ => 0,
+                    }
+                }
+
+                let add_calls = count_interpolation_add_calls(expr.as_ref());
+                assert!(
+                    add_calls > 0,
+                    "Placeholder should contain _interpolation_add calls"
+                );
+            }
+
+            // Check second part is text
+            if let StringPart::Text(text) = &parts[1] {
+                assert_eq!(text, "nice to meet you!");
+            } else {
+                panic!("Second part should be text");
             }
         }
     }

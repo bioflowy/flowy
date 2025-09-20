@@ -1,9 +1,0 @@
-{
-  "person": {
-    "name": "Alice",
-    "assay_data": {
-      "test1": "/tmp/test1.txt",
-      "test2": "/tmp/test2.txt"
-    }
-  }
-}

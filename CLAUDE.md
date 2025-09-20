@@ -159,3 +159,18 @@ The project includes a fully functional CLI executable (`src/main.rs`) with:
 - **Task execution with Docker support**
 - **Comprehensive error reporting**
 - **Integration with all core modules**
+
+## WDL Language Notes
+
+### Null Values
+**IMPORTANT**: In WDL, null values are represented as `None`, not `null`.
+
+```wdl
+# Correct
+String? optional_value = None
+
+# Incorrect
+String? optional_value = null
+```
+
+This is a common mistake that causes parsing errors. Always use `None` for null/empty optional values in WDL code.
