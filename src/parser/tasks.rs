@@ -2,7 +2,7 @@
 
 use super::declarations::{parse_input_section, parse_output_section};
 use super::expressions::parse_expression;
-use super::literals::parse_placeholder_options;
+use super::literals::{parse_placeholder_options, rewrite_adds_for_interpolation};
 use super::parser_utils::ParseResult;
 use super::statements::parse_workflow_element;
 use super::token_stream::TokenStream;
@@ -435,7 +435,10 @@ fn parse_command_block_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<S
                 let options = parse_placeholder_options(stream)?;
 
                 // Then parse the expression
-                let expr = parse_expression(stream)?;
+                let mut expr = parse_expression(stream)?;
+
+                // Apply interpolation-specific rewriting for optional concatenation handling
+                rewrite_adds_for_interpolation(&mut expr);
 
                 // Expect placeholder end (either PlaceholderEnd or RightBrace in Normal mode)
                 match stream.peek_token() {
@@ -520,7 +523,10 @@ fn parse_heredoc_with_parts(stream: &mut TokenStream) -> ParseResult<Vec<StringP
                 let options = parse_placeholder_options(stream)?;
 
                 // Then parse the expression
-                let expr = parse_expression(stream)?;
+                let mut expr = parse_expression(stream)?;
+
+                // Apply interpolation-specific rewriting for optional concatenation handling
+                rewrite_adds_for_interpolation(&mut expr);
 
                 // Expect placeholder end (either PlaceholderEnd or RightBrace in Normal mode)
                 match stream.peek_token() {

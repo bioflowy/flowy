@@ -568,6 +568,10 @@ impl StdLib {
             self.path_mapper.clone_boxed(),
             self.write_dir.clone(),
         ));
+        self.register_function(io::create_write_object_function(
+            self.path_mapper.clone_boxed(),
+            self.write_dir.clone(),
+        ));
         self.register_function(io::create_write_json_function(
             self.path_mapper.clone_boxed(),
             self.write_dir.clone(),
@@ -621,6 +625,7 @@ mod tests {
         assert!(stdlib.get_function("write_lines").is_some());
         assert!(stdlib.get_function("write_tsv").is_some());
         assert!(stdlib.get_function("write_map").is_some());
+        assert!(stdlib.get_function("write_object").is_some());
         assert!(stdlib.get_function("write_json").is_some());
 
         // Test that array functions are registered

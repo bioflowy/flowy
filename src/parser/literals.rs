@@ -165,7 +165,7 @@ pub fn parse_placeholder_options(stream: &mut TokenStream) -> ParseResult<HashMa
 /// Recursively rewrite all `_add` function calls to `_interpolation_add` within an expression
 /// This is used for placeholder expressions where addition operations should have special null handling
 /// Similar to miniwdl's rewrite_adds function in Expr.py
-fn rewrite_adds_for_interpolation(expr: &mut Expression) {
+pub(crate) fn rewrite_adds_for_interpolation(expr: &mut Expression) {
     match expr {
         Expression::Apply {
             function_name,

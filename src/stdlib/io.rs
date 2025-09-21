@@ -11,6 +11,7 @@ use crate::value::{Value, ValueBase};
 use serde_json::Value as JsonValue;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::{collections::HashSet, fs};
 
 /// Write file function that follows the original WriteFileFunction pattern
@@ -506,6 +507,128 @@ pub fn create_write_map_function(
     )
 }
 
+/// Create write_object function: write_object(Object|Struct) -> File
+pub fn create_write_object_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function> {
+    create_write_function(
+        "write_object".to_string(),
+        Type::any(),
+        |value: &Value, file: &mut dyn Write| {
+            let (members, value_type) = match value {
+                Value::Struct {
+                    members, wdl_type, ..
+                } => (members, wdl_type),
+                _ => {
+                    return Err(WdlError::RuntimeError {
+                        message: "write_object(): expected Object or Struct value".to_string(),
+                    });
+                }
+            };
+
+            let mut ordered_keys: Vec<String> = Vec::new();
+            let mut seen = HashSet::new();
+
+            match value_type {
+                Type::StructInstance {
+                    members: Some(struct_members),
+                    ..
+                } => {
+                    for key in struct_members.keys() {
+                        if members.contains_key(key) && seen.insert(key.clone()) {
+                            ordered_keys.push(key.clone());
+                        }
+                    }
+                }
+                Type::Object {
+                    members: type_members,
+                    ..
+                } => {
+                    if !type_members.is_empty() {
+                        let mut sorted: Vec<String> = type_members.keys().cloned().collect();
+                        sorted.sort();
+                        for key in sorted {
+                            if members.contains_key(&key) && seen.insert(key.clone()) {
+                                ordered_keys.push(key);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            let mut remaining: Vec<String> = members
+                .keys()
+                .filter(|k| !seen.contains(*k))
+                .cloned()
+                .collect();
+            remaining.sort();
+            ordered_keys.extend(remaining);
+
+            let mut header_parts = Vec::with_capacity(ordered_keys.len());
+            let mut value_parts = Vec::with_capacity(ordered_keys.len());
+
+            for key in ordered_keys {
+                let member_value = members.get(&key).ok_or_else(|| WdlError::RuntimeError {
+                    message: format!("write_object(): missing value for member '{}'", key),
+                })?;
+
+                let serialized = primitive_value_to_string(member_value).ok_or_else(|| {
+                    WdlError::RuntimeError {
+                        message: format!(
+                            "write_object(): member '{}' must be a primitive value",
+                            key
+                        ),
+                    }
+                })?;
+
+                if serialized.contains('\n') || serialized.contains('\r') {
+                    return Err(WdlError::RuntimeError {
+                        message: format!(
+                            "write_object(): value for '{}' must not contain newline characters",
+                            key
+                        ),
+                    });
+                }
+
+                header_parts.push(key);
+                value_parts.push(serialized);
+            }
+
+            file.write_all(header_parts.join("\t").as_bytes())
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write object header: {}", e),
+                })?;
+            file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write newline: {}", e),
+            })?;
+
+            file.write_all(value_parts.join("\t").as_bytes())
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write object values: {}", e),
+                })?;
+            file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write newline: {}", e),
+            })
+        },
+        path_mapper,
+        write_dir,
+    )
+}
+
+fn primitive_value_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::Boolean { value, .. } => Some(value.to_string()),
+        Value::Int { value, .. } => Some(value.to_string()),
+        Value::Float { value, .. } => Some(value.to_string()),
+        Value::String { value, .. }
+        | Value::File { value, .. }
+        | Value::Directory { value, .. } => Some(value.clone()),
+        _ => None,
+    }
+}
+
 /// Create write_json function: write_json(Any) -> File
 /// Writes any value as JSON
 pub fn create_write_json_function(
@@ -726,6 +849,101 @@ pub fn create_size_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> 
         path_mapper: Box<dyn crate::stdlib::PathMapper>,
     }
 
+    impl SizeFunction {
+        fn type_may_contain_paths(ty: &Type) -> bool {
+            match ty {
+                Type::File { .. } | Type::Directory { .. } => true,
+                Type::Array { item_type, .. } => Self::type_may_contain_paths(item_type),
+                Type::Pair {
+                    left_type,
+                    right_type,
+                    ..
+                } => {
+                    Self::type_may_contain_paths(left_type)
+                        || Self::type_may_contain_paths(right_type)
+                }
+                Type::Map {
+                    key_type,
+                    value_type,
+                    ..
+                } => {
+                    Self::type_may_contain_paths(key_type)
+                        || Self::type_may_contain_paths(value_type)
+                }
+                Type::StructInstance { members, .. } => members
+                    .as_ref()
+                    .map_or(true, |m| m.values().any(Self::type_may_contain_paths)),
+                Type::Object { members, .. } => {
+                    if members.is_empty() {
+                        true
+                    } else {
+                        members.values().any(Self::type_may_contain_paths)
+                    }
+                }
+                Type::Any { .. } => true,
+                _ => false,
+            }
+        }
+
+        fn path_size(&self, virtual_path: &str) -> Result<f64, WdlError> {
+            let real_path = self
+                .path_mapper
+                .devirtualize_filename(virtual_path)
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Cannot resolve path '{}': {}", virtual_path, e),
+                })?;
+
+            let metadata = fs::metadata(&real_path).map_err(|e| WdlError::RuntimeError {
+                message: format!("Cannot get metadata for '{}': {}", virtual_path, e),
+            })?;
+
+            if metadata.is_dir() {
+                let bytes = directory_size(&real_path).map_err(|e| WdlError::RuntimeError {
+                    message: format!("Cannot get size of directory '{}': {}", virtual_path, e),
+                })?;
+                Ok(bytes as f64)
+            } else {
+                Ok(metadata.len() as f64)
+            }
+        }
+
+        fn value_size(&self, value: &Value) -> Result<f64, WdlError> {
+            match value {
+                Value::Null
+                | Value::Boolean { .. }
+                | Value::Int { .. }
+                | Value::Float { .. }
+                | Value::String { .. } => Ok(0.0),
+                Value::File { value, .. } | Value::Directory { value, .. } => self.path_size(value),
+                Value::Array { values, .. } => {
+                    let mut total = 0.0;
+                    for element in values {
+                        total += self.value_size(element)?;
+                    }
+                    Ok(total)
+                }
+                Value::Map { pairs, .. } => {
+                    let mut total = 0.0;
+                    for (key, val) in pairs {
+                        total += self.value_size(key)?;
+                        total += self.value_size(val)?;
+                    }
+                    Ok(total)
+                }
+                Value::Pair { left, right, .. } => {
+                    Ok(self.value_size(left)? + self.value_size(right)?)
+                }
+                Value::Struct { members, .. } => {
+                    let mut total = 0.0;
+                    for member_value in members.values() {
+                        total += self.value_size(member_value)?;
+                    }
+                    Ok(total)
+                }
+            }
+        }
+    }
+
     impl Function for SizeFunction {
         fn name(&self) -> &str {
             "size"
@@ -758,39 +976,18 @@ pub fn create_size_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> 
                 });
             }
 
-            // Infer the first argument type
+            // Infer the first argument type and ensure it can contain paths
             let first_arg_type = args[0].infer_type(type_env, stdlib, struct_typedefs)?;
-
-            // Check if it's File? or Array[File?]
-            match &first_arg_type {
-                Type::File { .. } => {
-                    // Valid: size(File?) or size(File?, String)
-                }
-                Type::Array { item_type, .. } => {
-                    // Check if it's Array[File?]
-                    if !matches!(item_type.as_ref(), Type::File { .. }) {
-                        return Err(WdlError::Validation {
-                            pos: args[0].source_position().clone(),
-                            message: format!(
-                                "size() first argument must be File? or Array[File?], got {}",
-                                first_arg_type
-                            ),
-                            source_text: None,
-                            declared_wdl_version: None,
-                        });
-                    }
-                }
-                _ => {
-                    return Err(WdlError::Validation {
-                        pos: args[0].source_position().clone(),
-                        message: format!(
-                            "size() first argument must be File? or Array[File?], got {}",
-                            first_arg_type
-                        ),
-                        source_text: None,
-                        declared_wdl_version: None,
-                    });
-                }
+            if !Self::type_may_contain_paths(&first_arg_type) {
+                return Err(WdlError::Validation {
+                    pos: args[0].source_position().clone(),
+                    message: format!(
+                        "size() first argument must be or contain File/Directory types, got {}",
+                        first_arg_type
+                    ),
+                    source_text: None,
+                    declared_wdl_version: None,
+                });
             }
 
             // Check the optional second argument (unit)
@@ -823,44 +1020,28 @@ pub fn create_size_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> 
 
             // Define byte unit conversion factors
             let get_unit_factor = |unit: &str| -> Result<f64, WdlError> {
-                match unit.to_uppercase().as_str() {
+                let normalized = unit.trim();
+                if normalized.is_empty() {
+                    return Ok(1.0);
+                }
+
+                let upper = normalized.to_uppercase();
+                match upper.as_str() {
                     "B" | "BYTE" | "BYTES" => Ok(1.0),
-                    "KB" | "KILOBYTE" | "KILOBYTES" => Ok(1000.0),
-                    "MB" | "MEGABYTE" | "MEGABYTES" => Ok(1_000_000.0),
-                    "GB" | "GIGABYTE" | "GIGABYTES" => Ok(1_000_000_000.0),
-                    "TB" | "TERABYTE" | "TERABYTES" => Ok(1_000_000_000_000.0),
-                    "KIB" | "KIBIBYTE" | "KIBIBYTES" => Ok(1024.0),
-                    "MIB" | "MEBIBYTE" | "MEBIBYTES" => Ok(1024.0 * 1024.0),
-                    "GIB" | "GIBIBYTE" | "GIBIBYTES" => Ok(1024.0 * 1024.0 * 1024.0),
-                    "TIB" | "TEBIBYTE" | "TEBIBYTES" => Ok(1024.0 * 1024.0 * 1024.0 * 1024.0),
+                    "K" | "KB" | "KILOBYTE" | "KILOBYTES" => Ok(1_000.0),
+                    "M" | "MB" | "MEGABYTE" | "MEGABYTES" => Ok(1_000_000.0),
+                    "G" | "GB" | "GIGABYTE" | "GIGABYTES" => Ok(1_000_000_000.0),
+                    "T" | "TB" | "TERABYTE" | "TERABYTES" => Ok(1_000_000_000_000.0),
+                    "KI" | "KIB" | "KIBIBYTE" | "KIBIBYTES" => Ok(1024.0),
+                    "MI" | "MIB" | "MEBIBYTE" | "MEBIBYTES" => Ok(1024.0 * 1024.0),
+                    "GI" | "GIB" | "GIBIBYTE" | "GIBIBYTES" => Ok(1024.0 * 1024.0 * 1024.0),
+                    "TI" | "TIB" | "TEBIBYTE" | "TEBIBYTES" => {
+                        Ok(1024.0 * 1024.0 * 1024.0 * 1024.0)
+                    }
                     _ => Err(WdlError::RuntimeError {
                         message: format!("Unknown size unit: {}", unit),
                     }),
                 }
-            };
-
-            let get_file_size = |file_value: &Value| -> Result<f64, WdlError> {
-                // Check if file is null/None (optional values)
-                if matches!(file_value, Value::Null) {
-                    return Ok(0.0);
-                }
-
-                let file_path = file_value
-                    .as_string()
-                    .ok_or_else(|| WdlError::RuntimeError {
-                        message: "size() requires a File argument".to_string(),
-                    })?;
-
-                // Devirtualize the file path through PathMapper
-                let real_path = self.path_mapper.devirtualize_filename(file_path)?;
-
-                // Get file size
-                let metadata =
-                    std::fs::metadata(&real_path).map_err(|e| WdlError::RuntimeError {
-                        message: format!("Cannot get size of file '{}': {}", file_path, e),
-                    })?;
-
-                Ok(metadata.len() as f64)
             };
 
             // Evaluate arguments
@@ -877,32 +1058,34 @@ pub fn create_size_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> 
                 1.0 // Default to bytes
             };
 
-            // Handle different first argument types
-            let total_size = match &first_arg {
-                // Single file case
-                file_val if matches!(file_val, Value::File { .. } | Value::Null) => {
-                    get_file_size(file_val)?
-                }
-                // Array of files case
-                Value::Array { values, .. } => {
-                    let mut total = 0.0;
-                    for file_val in values {
-                        total += get_file_size(file_val)?;
-                    }
-                    total
-                }
-                _ => {
-                    return Err(WdlError::RuntimeError {
-                        message: "size() first argument must be File? or Array[File?]".to_string(),
-                    });
-                }
-            };
+            let total_size = self.value_size(&first_arg)?;
 
             Ok(Value::float(total_size / unit_factor))
         }
     }
 
     Box::new(SizeFunction { path_mapper })
+}
+
+fn directory_size(path: &Path) -> std::io::Result<u64> {
+    let mut total = 0u64;
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        let file_type = metadata.file_type();
+
+        if file_type.is_symlink() {
+            continue;
+        }
+
+        if file_type.is_dir() {
+            total += directory_size(&entry.path())?;
+        } else if file_type.is_file() {
+            total += metadata.len();
+        }
+    }
+
+    Ok(total)
 }
 
 #[cfg(test)]
