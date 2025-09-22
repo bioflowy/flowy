@@ -1,8 +1,8 @@
-use miniwdl_rust::runtime::config::Config;
-use miniwdl_rust::runtime::error::RuntimeError;
-use miniwdl_rust::runtime::fs_utils::write_file_atomic;
-use miniwdl_rust::runtime::task_context::TaskContext;
-use miniwdl_rust::runtime::task_runner::{
+use flowy::runtime::config::Config;
+use flowy::runtime::error::RuntimeError;
+use flowy::runtime::fs_utils::write_file_atomic;
+use flowy::runtime::task_context::TaskContext;
+use flowy::runtime::task_runner::{
     deserialize_bindings, serialize_bindings, TaskRunnerRequest, TaskRunnerResponse,
     TASK_RUNNER_PROTOCOL_VERSION,
 };
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("miniwdl-task-runner error: {err}");
+        eprintln!("flowy-task-runner error: {err}");
         std::process::exit(1);
     }
 }
@@ -59,7 +59,7 @@ fn parse_args() -> Result<PathBuf, String> {
     let mut args = env::args().skip(1);
     match args.next() {
         Some(path) => Ok(PathBuf::from(path)),
-        None => Err("usage: miniwdl-task-runner <task_request.json>".to_string()),
+        None => Err("usage: flowy-task-runner <task_request.json>".to_string()),
     }
 }
 
@@ -78,7 +78,7 @@ fn execute_request(request: TaskRunnerRequest) -> Result<TaskRunnerResponse, Run
 
     let task_result = context.execute()?;
 
-    let miniwdl_rust::runtime::task_context::TaskResult {
+    let flowy::runtime::task_context::TaskResult {
         outputs,
         exit_status,
         stdout,

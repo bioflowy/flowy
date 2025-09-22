@@ -641,7 +641,7 @@ impl Function for ArithmeticOperator {
 ///
 /// # Example
 /// ```rust
-/// use miniwdl_rust::stdlib::operators::create_arithmetic_operator;
+/// use flowy::stdlib::operators::create_arithmetic_operator;
 /// let add_fn = create_arithmetic_operator(
 ///     "_add".to_string(),
 ///     |l, r| l + r,    // i64 addition
@@ -713,7 +713,7 @@ where
 ///
 /// # Example
 /// ```rust
-/// use miniwdl_rust::stdlib::operators::create_comparison_operator;
+/// use flowy::stdlib::operators::create_comparison_operator;
 /// let lt_fn = create_comparison_operator(
 ///     "_lt".to_string(),
 ///     |l, r| l < r,        // i64 comparison
@@ -831,7 +831,7 @@ pub fn create_gte_function() -> Box<dyn Function> {
 ///
 /// # Example
 /// ```rust
-/// use miniwdl_rust::stdlib::operators::create_equal_operator;
+/// use flowy::stdlib::operators::create_equal_operator;
 /// let eq_fn = create_equal_operator("_eqeq".to_string(), false);  // == operator
 /// let neq_fn = create_equal_operator("_neq".to_string(), true);   // != operator
 /// ```

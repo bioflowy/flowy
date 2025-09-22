@@ -1,4 +1,4 @@
-//! # miniwdl-rust
+//! # flowy
 //!
 //! Rust port of miniwdl - Workflow Description Language (WDL) parser and runtime.
 //!

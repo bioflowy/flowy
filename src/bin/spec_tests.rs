@@ -1,7 +1,7 @@
 //! WDL Specification Tests Runner
 //!
 //! A miniwdl-compatible specification test runner that parses WDL spec documents
-//! and executes test cases using miniwdl-rust.
+//! and executes test cases using flowy.
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -338,8 +338,8 @@ impl SpecTestRunner {
             None
         };
 
-        // Execute miniwdl-rust
-        let result = self.execute_miniwdl_rust(&wdl_path, input_path.as_ref(), data_dir);
+        // Execute flowy
+        let result = self.execute_flowy(&wdl_path, input_path.as_ref(), data_dir);
 
         let duration = start_time.elapsed()?.as_millis() as u64;
 
@@ -438,17 +438,17 @@ impl SpecTestRunner {
         Ok(())
     }
 
-    /// Execute miniwdl-rust command
-    fn execute_miniwdl_rust(
+    /// Execute flowy command
+    fn execute_flowy(
         &self,
         wdl_path: &Path,
         input_path: Option<&PathBuf>,
         data_dir: &Path,
     ) -> Result<String, String> {
-        // Get absolute path to miniwdl-rust executable
+        // Get absolute path to flowy executable
         let exe_path = std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
-            .join("target/debug/miniwdl-rust");
+            .join("target/debug/flowy");
 
         let mut cmd = Command::new(exe_path);
         cmd.arg("run")
@@ -461,7 +461,7 @@ impl SpecTestRunner {
             cmd.arg("-i").arg(input_file);
         }
 
-        // Note: --debug flag is for spec_tests logging, not for the main miniwdl-rust binary
+        // Note: --debug flag is for spec_tests logging, not for the main flowy binary
         // The main binary doesn't support --debug flag
 
         match cmd.output() {
@@ -472,7 +472,7 @@ impl SpecTestRunner {
                     Err(String::from_utf8_lossy(&output.stderr).to_string())
                 }
             }
-            Err(e) => Err(format!("Failed to execute miniwdl-rust: {}", e)),
+            Err(e) => Err(format!("Failed to execute flowy: {}", e)),
         }
     }
 
