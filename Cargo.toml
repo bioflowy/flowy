@@ -30,5 +30,9 @@ indexmap = { version = "2.2", features = ["serde"] }
 name = "spec_tests"
 path = "src/bin/spec_tests.rs"
 
+[[bin]]
+name = "miniwdl-task-runner"
+path = "src/bin/miniwdl-task-runner.rs"
+
 [dev-dependencies]
 tempfile = "3.21.0"

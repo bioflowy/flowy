@@ -7,12 +7,22 @@
 use crate::env::Bindings;
 use crate::runtime::config::Config;
 use crate::runtime::error::{RuntimeError, RuntimeResult};
-use crate::runtime::fs_utils::WorkflowDirectory;
-use crate::runtime::task_context::{TaskContext, TaskResult};
+use crate::runtime::fs_utils::{
+    create_dir_all, read_file_to_string, write_file_atomic, WorkflowDirectory,
+};
+use crate::runtime::task_context::TaskResult;
+use crate::runtime::task_runner::{
+    deserialize_bindings, serialize_bindings, RunnerConfig, TaskRunnerRequest, TaskRunnerResponse,
+    TASK_RUNNER_PROTOCOL_VERSION,
+};
 use crate::tree::Task;
 use crate::value::Value;
-use std::path::PathBuf;
-use std::time::Instant;
+use serde_json;
+use std::env;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
+use url::Url;
 
 /// Task execution engine
 pub struct TaskEngine {
@@ -52,10 +62,9 @@ impl TaskEngine {
         run_id: &str,
         options: TaskExecutionOptions,
     ) -> RuntimeResult<TaskResult> {
-        // Create execution context
+        // Prepare configuration for this execution
         let mut config = self.config.clone();
 
-        // Apply options
         if let Some(timeout) = options.timeout_override {
             config.task_timeout = timeout;
         }
@@ -66,38 +75,132 @@ impl TaskEngine {
             config.env_vars.insert(key, value);
         }
 
-        let mut context =
-            TaskContext::new(task, inputs, config, self.workflow_dir.clone(), run_id)?;
+        let task_name = task.name.clone();
+        if options.verbose {
+            println!("Executing task: {}", task_name);
+        }
+
+        // Ensure task directory exists
+        let task_dir = self.workflow_dir.work.join(&task_name);
+        create_dir_all(&task_dir)?;
+        create_dir_all(task_dir.join("work"))?;
+
+        // Serialize request for the runner
+        let serialized_inputs = serialize_bindings(&inputs);
+        drop(inputs);
+        let request = TaskRunnerRequest {
+            version: TASK_RUNNER_PROTOCOL_VERSION,
+            run_id: run_id.to_string(),
+            workflow_dir: self.workflow_dir.clone(),
+            task,
+            inputs: serialized_inputs,
+            config: RunnerConfig::from(&config),
+        };
+
+        let mut request_json =
+            serde_json::to_vec_pretty(&request).map_err(|e| RuntimeError::RuntimeError {
+                message: format!("Failed to serialize task runner request: {e}"),
+            })?;
+        request_json.push(b'\n');
+
+        let request_path = task_dir.join("task_request.json");
+        write_file_atomic(&request_path, &request_json)?;
+
+        // Spawn the subprocess task runner
+        let runner_executable = resolve_task_runner_executable();
+        let runner_label = runner_executable.display().to_string();
+        let mut command = Command::new(&runner_executable);
+        command
+            .arg(&request_path)
+            .current_dir(&task_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let child = command.spawn().map_err(|e| RuntimeError::RuntimeError {
+            message: format!("Failed to spawn task runner '{}': {}", runner_label, e),
+        })?;
+
+        let timeout = config.task_timeout;
+        let runner_status = wait_for_runner(child, timeout, &task_name, &runner_label)?;
+        if options.verbose {
+            if let Some(code) = runner_status.code() {
+                println!("Task runner exited with status code {code}");
+            }
+        }
+
+        // Load runner response
+        let response_path = task_dir.join("task_response.json");
+        let response_text = read_file_to_string(&response_path)?;
+        let response: TaskRunnerResponse =
+            serde_json::from_str(&response_text).map_err(|e| RuntimeError::RuntimeError {
+                message: format!("Failed to deserialize task runner response: {e}"),
+            })?;
+
+        if response.version != TASK_RUNNER_PROTOCOL_VERSION {
+            return Err(RuntimeError::RuntimeError {
+                message: format!(
+                    "Task runner protocol mismatch: expected {}, got {}",
+                    TASK_RUNNER_PROTOCOL_VERSION, response.version
+                ),
+            });
+        }
+
+        if !response.success {
+            let message = response
+                .error
+                .unwrap_or_else(|| "Task runner reported failure without message".to_string());
+            return Err(RuntimeError::RunFailed {
+                message,
+                cause: None,
+                pos: None,
+            });
+        }
+
+        let outputs = response
+            .outputs
+            .map(deserialize_bindings)
+            .unwrap_or_else(Bindings::new);
+
+        let stdout_str = response.stdout.ok_or_else(|| RuntimeError::RuntimeError {
+            message: "Task runner response missing stdout location".to_string(),
+        })?;
+        let stderr_str = response.stderr.ok_or_else(|| RuntimeError::RuntimeError {
+            message: "Task runner response missing stderr location".to_string(),
+        })?;
+
+        let stdout = Url::parse(&stdout_str).map_err(|e| RuntimeError::RuntimeError {
+            message: format!("Invalid stdout URL from task runner: {e}"),
+        })?;
+        let stderr = Url::parse(&stderr_str).map_err(|e| RuntimeError::RuntimeError {
+            message: format!("Invalid stderr URL from task runner: {e}"),
+        })?;
+
+        let duration = response
+            .duration_ms
+            .map(|ms| Duration::from_millis(ms as u64))
+            .unwrap_or_else(|| Duration::from_millis(0));
+
+        let exit_status =
+            build_exit_status(response.exit_success, response.exit_code, response.signal);
+
+        let work_dir = response.work_dir.unwrap_or_else(|| task_dir.join("work"));
 
         if options.verbose {
-            println!("Executing task: {}", context.task.name);
+            println!(
+                "Task {} completed in {:?} with exit code {:?}",
+                task_name, duration, response.exit_code
+            );
         }
 
-        // Execute task
-        let start = Instant::now();
-        let result = context.execute();
-        let duration = start.elapsed();
-
-        match result {
-            Ok(task_result) => {
-                if options.verbose {
-                    println!(
-                        "Task {} completed successfully in {:?}",
-                        context.task.name, duration
-                    );
-                }
-                Ok(task_result)
-            }
-            Err(error) => {
-                if options.verbose {
-                    println!(
-                        "Task {} failed after {:?}: {}",
-                        context.task.name, duration, error
-                    );
-                }
-                Err(error)
-            }
-        }
+        Ok(TaskResult {
+            outputs,
+            exit_status,
+            stdout,
+            stderr,
+            duration,
+            work_dir,
+        })
     }
 
     /// Execute a task with default options
@@ -204,6 +307,133 @@ pub struct TaskExecutionStats {
     pub cpu_time: Option<std::time::Duration>,
     /// Working directory size
     pub work_dir_size: Option<u64>,
+}
+
+fn resolve_task_runner_executable() -> PathBuf {
+    if let Ok(explicit) = env::var("MINIWDL_TASK_RUNNER") {
+        return PathBuf::from(explicit);
+    }
+
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(dir) = current_exe.parent() {
+            if let Some(found) = find_runner_in_dir(dir) {
+                return found;
+            }
+            if let Some(parent) = dir.parent() {
+                if let Some(found) = find_runner_in_dir(parent) {
+                    return found;
+                }
+            }
+        }
+    }
+
+    PathBuf::from(default_runner_binary_name())
+}
+
+fn find_runner_in_dir(dir: &Path) -> Option<PathBuf> {
+    let candidate = dir.join(default_runner_binary_name());
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn default_runner_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "miniwdl-task-runner.exe"
+    } else {
+        "miniwdl-task-runner"
+    }
+}
+
+fn wait_for_runner(
+    mut child: Child,
+    timeout: Duration,
+    task_name: &str,
+    command: &str,
+) -> RuntimeResult<ExitStatus> {
+    use std::sync::mpsc;
+    use std::thread;
+
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = child.wait();
+        tx.send(result).ok();
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(status)) => Ok(status),
+        Ok(Err(e)) => Err(RuntimeError::RuntimeError {
+            message: format!("Failed to wait for task runner: {e}"),
+        }),
+        Err(_) => Err(RuntimeError::TaskTimeout {
+            timeout,
+            task_name: task_name.to_string(),
+            command: command.to_string(),
+        }),
+    }
+}
+
+fn build_exit_status(
+    exit_success: bool,
+    exit_code: Option<i32>,
+    signal: Option<i32>,
+) -> ExitStatus {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        if let Some(code) = exit_code {
+            return ExitStatus::from_raw((code & 0xff) << 8);
+        }
+
+        if let Some(sig) = signal {
+            return ExitStatus::from_raw(sig & 0x7f);
+        }
+
+        if exit_success {
+            ExitStatus::from_raw(0)
+        } else {
+            ExitStatus::from_raw(1 << 8)
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        use std::os::windows::process::ExitStatusExt;
+
+        let code = exit_code.unwrap_or(if exit_success { 0 } else { 1 });
+        ExitStatus::from_raw(code as u32)
+    }
+}
+
+#[cfg(test)]
+mod exit_status_tests {
+    use super::*;
+
+    #[test]
+    fn test_build_exit_status_success() {
+        let status = build_exit_status(true, Some(0), None);
+        assert!(status.success());
+        assert_eq!(status.code(), Some(0));
+    }
+
+    #[test]
+    fn test_build_exit_status_failure_code() {
+        let status = build_exit_status(false, Some(3), None);
+        assert_eq!(status.success(), false);
+        assert_eq!(status.code(), Some(3));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_build_exit_status_signal() {
+        use std::os::unix::process::ExitStatusExt;
+        let status = build_exit_status(false, None, Some(9));
+        assert_eq!(status.signal(), Some(9));
+    }
 }
 
 /// Task execution monitor for collecting statistics
