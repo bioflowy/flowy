@@ -4,6 +4,7 @@
 //! including directory management, file staging, and path utilities.
 
 use crate::runtime::error::{IntoRuntimeError, RuntimeResult};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -207,7 +208,7 @@ pub fn make_executable<P: AsRef<Path>>(_path: P) -> RuntimeResult<()> {
 }
 
 /// Directory management for workflow execution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowDirectory {
     /// Root directory for this workflow run
     pub root: PathBuf,

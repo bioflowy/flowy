@@ -10,6 +10,7 @@ pub mod error;
 pub mod fs_utils;
 pub mod task;
 pub mod task_context;
+pub mod task_runner;
 pub mod workflow;
 
 #[cfg(test)]
