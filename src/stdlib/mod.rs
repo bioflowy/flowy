@@ -544,6 +544,12 @@ impl StdLib {
         self.register_function(tsv::create_read_tsv_function(
             self.path_mapper.clone_boxed(),
         ));
+        self.register_function(io::create_read_object_function(
+            self.path_mapper.clone_boxed(),
+        ));
+        self.register_function(io::create_read_objects_function(
+            self.path_mapper.clone_boxed(),
+        ));
         self.register_function(io::create_read_int_function(self.path_mapper.clone_boxed()));
         self.register_function(io::create_read_float_function(
             self.path_mapper.clone_boxed(),
@@ -569,6 +575,10 @@ impl StdLib {
             self.write_dir.clone(),
         ));
         self.register_function(io::create_write_object_function(
+            self.path_mapper.clone_boxed(),
+            self.write_dir.clone(),
+        ));
+        self.register_function(io::create_write_objects_function(
             self.path_mapper.clone_boxed(),
             self.write_dir.clone(),
         ));
@@ -617,6 +627,8 @@ mod tests {
         assert!(stdlib.get_function("read_map").is_some());
         assert!(stdlib.get_function("read_json").is_some());
         assert!(stdlib.get_function("read_tsv").is_some());
+        assert!(stdlib.get_function("read_object").is_some());
+        assert!(stdlib.get_function("read_objects").is_some());
         assert!(stdlib.get_function("read_int").is_some());
         assert!(stdlib.get_function("read_float").is_some());
         assert!(stdlib.get_function("read_boolean").is_some());
@@ -626,6 +638,7 @@ mod tests {
         assert!(stdlib.get_function("write_tsv").is_some());
         assert!(stdlib.get_function("write_map").is_some());
         assert!(stdlib.get_function("write_object").is_some());
+        assert!(stdlib.get_function("write_objects").is_some());
         assert!(stdlib.get_function("write_json").is_some());
 
         // Test that array functions are registered

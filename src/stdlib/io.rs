@@ -12,7 +12,10 @@ use serde_json::Value as JsonValue;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::{collections::HashSet, fs};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+};
 
 /// Write file function that follows the original WriteFileFunction pattern
 /// Uses eval_with_stdlib for proper file handling in different contexts
@@ -292,6 +295,61 @@ pub fn create_read_map_function(
     )
 }
 
+/// Create read_object function: read_object(File) -> Object
+/// Reads a two-row TSV file into an Object value
+pub fn create_read_object_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
+    create_read_function(
+        "read_object".to_string(),
+        Type::object(HashMap::new()),
+        |content: &str| match parse_objects_rows(content, "read_object")? {
+            Some((header, mut rows)) => {
+                if rows.len() != 1 {
+                    return Err(WdlError::RuntimeError {
+                        message: "read_object(): file must have exactly one object".to_string(),
+                    });
+                }
+                let object_type = build_object_type(&header);
+                let values = rows.remove(0);
+                Ok(build_object_value(&header, values, &object_type))
+            }
+            None => Err(WdlError::RuntimeError {
+                message: "read_object(): file must have exactly one object".to_string(),
+            }),
+        },
+        path_mapper,
+    )
+}
+
+/// Create read_objects function: read_objects(File) -> Array[Object]
+/// Reads a TSV file into an array of Object values
+pub fn create_read_objects_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+) -> Box<dyn Function> {
+    create_read_function(
+        "read_objects".to_string(),
+        Type::array(Type::object(HashMap::new()), false, false),
+        |content: &str| match parse_objects_rows(content, "read_objects")? {
+            Some((header, rows)) => {
+                let object_type = build_object_type(&header);
+                if rows.is_empty() {
+                    return Ok(Value::array(object_type, Vec::new()));
+                }
+
+                let objects: Vec<Value> = rows
+                    .into_iter()
+                    .map(|row| build_object_value(&header, row, &object_type))
+                    .collect();
+
+                Ok(Value::array(object_type, objects))
+            }
+            None => Ok(Value::array(Type::object(HashMap::new()), Vec::new())),
+        },
+        path_mapper,
+    )
+}
+
 /// Create read_json function: read_json(File) -> Any
 /// Reads a file containing JSON and converts it to a WDL value
 pub fn create_read_json_function(
@@ -356,6 +414,76 @@ fn parse_map_content(content: &str) -> Result<Value, WdlError> {
     }
 
     Ok(Value::map(Type::string(false), Type::string(false), pairs))
+}
+
+fn parse_objects_rows(
+    content: &str,
+    function_name: &str,
+) -> Result<Option<(Vec<String>, Vec<Vec<String>>)>, WdlError> {
+    let rows = parse_tsv_rows(content);
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let mut iter = rows.into_iter();
+    let header = iter.next().unwrap();
+    if header.is_empty() {
+        return Ok(None);
+    }
+
+    let mut seen = HashSet::new();
+    for name in &header {
+        if name.is_empty() || !seen.insert(name.clone()) {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "{}(): file has empty or duplicate column names",
+                    function_name
+                ),
+            });
+        }
+    }
+
+    let header_len = header.len();
+    let mut data_rows = Vec::new();
+
+    for row in iter {
+        if row.len() != header_len {
+            return Err(WdlError::RuntimeError {
+                message: format!("{}(): file's tab-separated lines are ragged", function_name),
+            });
+        }
+        data_rows.push(row);
+    }
+
+    Ok(Some((header, data_rows)))
+}
+
+fn parse_tsv_rows(content: &str) -> Vec<Vec<String>> {
+    content
+        .lines()
+        .map(|line| line.trim_end_matches('\r'))
+        .filter(|line| !line.is_empty())
+        .map(|line| line.split('\t').map(|cell| cell.to_string()).collect())
+        .collect()
+}
+
+fn build_object_type(header: &[String]) -> Type {
+    let member_types: HashMap<String, Type> = header
+        .iter()
+        .cloned()
+        .map(|name| (name, Type::string(false)))
+        .collect();
+    Type::object(member_types)
+}
+
+fn build_object_value(header: &[String], row: Vec<String>, object_type: &Type) -> Value {
+    let members: HashMap<String, Value> = header
+        .iter()
+        .cloned()
+        .zip(row.into_iter().map(Value::string))
+        .collect();
+
+    Value::struct_value_unchecked(object_type.clone(), members, None)
 }
 
 /// Create read_int function: read_int(File) -> Int
@@ -507,6 +635,131 @@ pub fn create_write_map_function(
     )
 }
 
+fn primitive_value_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::Boolean { value, .. } => Some(value.to_string()),
+        Value::Int { value, .. } => Some(value.to_string()),
+        Value::Float { value, .. } => Some(value.to_string()),
+        Value::String { value, .. }
+        | Value::File { value, .. }
+        | Value::Directory { value, .. } => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn extract_struct_members<'a>(
+    value: &'a Value,
+    function_name: &str,
+) -> Result<(&'a HashMap<String, Value>, &'a Type), WdlError> {
+    match value {
+        Value::Struct {
+            members, wdl_type, ..
+        } => Ok((members, wdl_type)),
+        _ => Err(WdlError::RuntimeError {
+            message: format!("{}(): expected Object or Struct value", function_name),
+        }),
+    }
+}
+
+fn determine_struct_member_order(
+    members: &HashMap<String, Value>,
+    value_type: &Type,
+) -> Vec<String> {
+    let mut ordered_keys: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
+
+    match value_type {
+        Type::StructInstance {
+            members: Some(struct_members),
+            ..
+        } => {
+            for key in struct_members.keys() {
+                if members.contains_key(key) && seen.insert(key.clone()) {
+                    ordered_keys.push(key.clone());
+                }
+            }
+        }
+        Type::Object {
+            members: type_members,
+            ..
+        } => {
+            if !type_members.is_empty() {
+                let mut sorted: Vec<String> = type_members.keys().cloned().collect();
+                sorted.sort();
+                for key in sorted {
+                    if members.contains_key(&key) && seen.insert(key.clone()) {
+                        ordered_keys.push(key);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let mut remaining: Vec<String> = members
+        .keys()
+        .filter(|k| !seen.contains(*k))
+        .cloned()
+        .collect();
+    remaining.sort();
+    ordered_keys.extend(remaining);
+
+    ordered_keys
+}
+
+fn serialize_struct_members(
+    members: &HashMap<String, Value>,
+    ordered_keys: &[String],
+    function_name: &str,
+) -> Result<Vec<String>, WdlError> {
+    let mut value_parts = Vec::with_capacity(ordered_keys.len());
+
+    for key in ordered_keys {
+        let member_value = members.get(key).ok_or_else(|| WdlError::RuntimeError {
+            message: format!("{}(): missing value for member '{}'", function_name, key),
+        })?;
+
+        let serialized =
+            primitive_value_to_string(member_value).ok_or_else(|| WdlError::RuntimeError {
+                message: format!(
+                    "{}(): member '{}' must be a primitive value",
+                    function_name, key
+                ),
+            })?;
+
+        if serialized.contains('\n') || serialized.contains('\r') {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "{}(): value for '{}' must not contain newline characters",
+                    function_name, key
+                ),
+            });
+        }
+
+        value_parts.push(serialized);
+    }
+
+    if members.len() != ordered_keys.len() {
+        let key_set: HashSet<&String> = ordered_keys.iter().collect();
+        let extra_keys: Vec<&String> = members.keys().filter(|k| !key_set.contains(*k)).collect();
+        if !extra_keys.is_empty() {
+            return Err(WdlError::RuntimeError {
+                message: format!(
+                    "{}(): unexpected members found: {}",
+                    function_name,
+                    extra_keys
+                        .iter()
+                        .map(|k| k.as_str())
+                        .collect::<Vec<&str>>()
+                        .join(", ")
+                ),
+            });
+        }
+    }
+
+    Ok(value_parts)
+}
+
 /// Create write_object function: write_object(Object|Struct) -> File
 pub fn create_write_object_function(
     path_mapper: Box<dyn crate::stdlib::PathMapper>,
@@ -516,87 +769,11 @@ pub fn create_write_object_function(
         "write_object".to_string(),
         Type::any(),
         |value: &Value, file: &mut dyn Write| {
-            let (members, value_type) = match value {
-                Value::Struct {
-                    members, wdl_type, ..
-                } => (members, wdl_type),
-                _ => {
-                    return Err(WdlError::RuntimeError {
-                        message: "write_object(): expected Object or Struct value".to_string(),
-                    });
-                }
-            };
+            let (members, value_type) = extract_struct_members(value, "write_object")?;
+            let ordered_keys = determine_struct_member_order(members, value_type);
+            let value_parts = serialize_struct_members(members, &ordered_keys, "write_object")?;
 
-            let mut ordered_keys: Vec<String> = Vec::new();
-            let mut seen = HashSet::new();
-
-            match value_type {
-                Type::StructInstance {
-                    members: Some(struct_members),
-                    ..
-                } => {
-                    for key in struct_members.keys() {
-                        if members.contains_key(key) && seen.insert(key.clone()) {
-                            ordered_keys.push(key.clone());
-                        }
-                    }
-                }
-                Type::Object {
-                    members: type_members,
-                    ..
-                } => {
-                    if !type_members.is_empty() {
-                        let mut sorted: Vec<String> = type_members.keys().cloned().collect();
-                        sorted.sort();
-                        for key in sorted {
-                            if members.contains_key(&key) && seen.insert(key.clone()) {
-                                ordered_keys.push(key);
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-
-            let mut remaining: Vec<String> = members
-                .keys()
-                .filter(|k| !seen.contains(*k))
-                .cloned()
-                .collect();
-            remaining.sort();
-            ordered_keys.extend(remaining);
-
-            let mut header_parts = Vec::with_capacity(ordered_keys.len());
-            let mut value_parts = Vec::with_capacity(ordered_keys.len());
-
-            for key in ordered_keys {
-                let member_value = members.get(&key).ok_or_else(|| WdlError::RuntimeError {
-                    message: format!("write_object(): missing value for member '{}'", key),
-                })?;
-
-                let serialized = primitive_value_to_string(member_value).ok_or_else(|| {
-                    WdlError::RuntimeError {
-                        message: format!(
-                            "write_object(): member '{}' must be a primitive value",
-                            key
-                        ),
-                    }
-                })?;
-
-                if serialized.contains('\n') || serialized.contains('\r') {
-                    return Err(WdlError::RuntimeError {
-                        message: format!(
-                            "write_object(): value for '{}' must not contain newline characters",
-                            key
-                        ),
-                    });
-                }
-
-                header_parts.push(key);
-                value_parts.push(serialized);
-            }
-
-            file.write_all(header_parts.join("\t").as_bytes())
+            file.write_all(ordered_keys.join("\t").as_bytes())
                 .map_err(|e| WdlError::RuntimeError {
                     message: format!("Failed to write object header: {}", e),
                 })?;
@@ -617,16 +794,73 @@ pub fn create_write_object_function(
     )
 }
 
-fn primitive_value_to_string(value: &Value) -> Option<String> {
-    match value {
-        Value::Boolean { value, .. } => Some(value.to_string()),
-        Value::Int { value, .. } => Some(value.to_string()),
-        Value::Float { value, .. } => Some(value.to_string()),
-        Value::String { value, .. }
-        | Value::File { value, .. }
-        | Value::Directory { value, .. } => Some(value.clone()),
-        _ => None,
-    }
+/// Create write_objects function: write_objects(Array[Struct|Object]) -> File
+pub fn create_write_objects_function(
+    path_mapper: Box<dyn crate::stdlib::PathMapper>,
+    write_dir: String,
+) -> Box<dyn Function> {
+    create_write_function(
+        "write_objects".to_string(),
+        Type::array(Type::any(), false, false),
+        |value: &Value, file: &mut dyn Write| {
+            let array_values = value.as_array().ok_or_else(|| WdlError::RuntimeError {
+                message: "write_objects(): expected Array value".to_string(),
+            })?;
+
+            if array_values.is_empty() {
+                return Ok(());
+            }
+
+            let mut header_keys: Vec<String> = Vec::new();
+            let mut rows: Vec<String> = Vec::with_capacity(array_values.len());
+
+            for (idx, element) in array_values.iter().enumerate() {
+                let (members, value_type) = extract_struct_members(element, "write_objects")?;
+                let current_keys = determine_struct_member_order(members, value_type);
+
+                if idx == 0 {
+                    header_keys = current_keys.clone();
+                } else if header_keys.len() != current_keys.len()
+                    || !header_keys
+                        .iter()
+                        .zip(current_keys.iter())
+                        .all(|(a, b)| a == b)
+                {
+                    return Err(WdlError::RuntimeError {
+                        message: format!(
+                            "write_objects(): array elements must have the same member names; element {} differs",
+                            idx
+                        ),
+                    });
+                }
+
+                let row_parts = serialize_struct_members(members, &header_keys, "write_objects")?;
+                rows.push(row_parts.join("\t"));
+            }
+
+            file.write_all(header_keys.join("\t").as_bytes())
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write objects header: {}", e),
+                })?;
+            file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to write newline: {}", e),
+            })?;
+
+            for row in rows {
+                file.write_all(row.as_bytes())
+                    .map_err(|e| WdlError::RuntimeError {
+                        message: format!("Failed to write objects row: {}", e),
+                    })?;
+                file.write_all(b"\n").map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to write newline: {}", e),
+                })?;
+            }
+
+            Ok(())
+        },
+        path_mapper,
+        write_dir,
+    )
 }
 
 /// Create write_json function: write_json(Any) -> File
@@ -808,6 +1042,10 @@ pub fn create_glob_function(path_mapper: Box<dyn crate::stdlib::PathMapper>) -> 
             for entry in glob_result {
                 match entry {
                     Ok(path) => {
+                        if path.is_dir() {
+                            // Skip directories per WDL spec
+                            continue;
+                        }
                         // Convert path to string and virtualize through PathMapper
                         let path_str = path.to_string_lossy().to_string();
                         match path_mapper.virtualize_filename(&path) {
@@ -1092,12 +1330,12 @@ fn directory_size(path: &Path) -> std::io::Result<u64> {
 mod tests {
     use super::*;
     use crate::env::Bindings;
-    use crate::error::SourcePosition;
+    use crate::error::{SourcePosition, WdlError};
     use crate::expr::{Expression, StringPart};
-    use crate::stdlib::{DefaultPathMapper, StdLib};
+    use crate::stdlib::{DefaultPathMapper, StdLib, TaskPathMapper};
     use std::fs;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     #[test]
     fn test_read_string_valid() {
@@ -1174,5 +1412,251 @@ mod tests {
 
         let result = read_boolean_fn.eval(&args, &env, &stdlib).unwrap();
         assert!(result.as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_read_object_basic() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "key_0\tkey_1").unwrap();
+        write!(temp_file, "value_0\tvalue_1").unwrap();
+        let temp_path = temp_file.path().to_str().unwrap();
+
+        let path_mapper = Box::new(DefaultPathMapper);
+        let read_object_fn = create_read_object_function(path_mapper);
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let file_expr = Expression::string(pos, vec![StringPart::Text(temp_path.to_string())]);
+        let args = vec![file_expr];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result = read_object_fn.eval(&args, &env, &stdlib).unwrap();
+        let members = result.as_struct().unwrap();
+        assert_eq!(members.len(), 2);
+        assert_eq!(
+            members.get("key_0").unwrap().as_string().unwrap(),
+            "value_0"
+        );
+        assert_eq!(
+            members.get("key_1").unwrap().as_string().unwrap(),
+            "value_1"
+        );
+    }
+
+    #[test]
+    fn test_read_objects_basic() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "key_0\tkey_1").unwrap();
+        writeln!(temp_file, "value_A0\tvalue_A1").unwrap();
+        writeln!(temp_file, "value_B0\tvalue_B1").unwrap();
+        write!(temp_file, "value_C0\tvalue_C1").unwrap();
+        let temp_path = temp_file.path().to_str().unwrap();
+
+        let path_mapper = Box::new(DefaultPathMapper);
+        let read_objects_fn = create_read_objects_function(path_mapper);
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 5);
+        let file_expr = Expression::string(pos, vec![StringPart::Text(temp_path.to_string())]);
+        let args = vec![file_expr];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result = read_objects_fn.eval(&args, &env, &stdlib).unwrap();
+        let array = result.as_array().unwrap();
+        assert_eq!(array.len(), 3);
+
+        let first = array[0].as_struct().unwrap();
+        assert_eq!(first.get("key_0").unwrap().as_string().unwrap(), "value_A0");
+        assert_eq!(first.get("key_1").unwrap().as_string().unwrap(), "value_A1");
+
+        let third = array[2].as_struct().unwrap();
+        assert_eq!(third.get("key_0").unwrap().as_string().unwrap(), "value_C0");
+        assert_eq!(third.get("key_1").unwrap().as_string().unwrap(), "value_C1");
+    }
+
+    #[test]
+    fn test_write_objects_basic() {
+        let temp_dir = TempDir::new().unwrap();
+        let path_mapper = Box::new(DefaultPathMapper);
+        let write_objects_fn = create_write_objects_function(
+            path_mapper,
+            temp_dir.path().to_string_lossy().to_string(),
+        );
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 1);
+
+        let obj_exprs = vec![
+            Expression::struct_expr(
+                pos.clone(),
+                vec![
+                    (
+                        "key_1".to_string(),
+                        Expression::string_literal(pos.clone(), "value_1".to_string()),
+                    ),
+                    (
+                        "key_2".to_string(),
+                        Expression::string_literal(pos.clone(), "value_2".to_string()),
+                    ),
+                    (
+                        "key_3".to_string(),
+                        Expression::string_literal(pos.clone(), "value_3".to_string()),
+                    ),
+                ],
+            ),
+            Expression::struct_expr(
+                pos.clone(),
+                vec![
+                    (
+                        "key_1".to_string(),
+                        Expression::string_literal(pos.clone(), "value_4".to_string()),
+                    ),
+                    (
+                        "key_2".to_string(),
+                        Expression::string_literal(pos.clone(), "value_5".to_string()),
+                    ),
+                    (
+                        "key_3".to_string(),
+                        Expression::string_literal(pos.clone(), "value_6".to_string()),
+                    ),
+                ],
+            ),
+            Expression::struct_expr(
+                pos.clone(),
+                vec![
+                    (
+                        "key_1".to_string(),
+                        Expression::string_literal(pos.clone(), "value_7".to_string()),
+                    ),
+                    (
+                        "key_2".to_string(),
+                        Expression::string_literal(pos.clone(), "value_8".to_string()),
+                    ),
+                    (
+                        "key_3".to_string(),
+                        Expression::string_literal(pos.clone(), "value_9".to_string()),
+                    ),
+                ],
+            ),
+        ];
+
+        let array_expr = Expression::array(pos.clone(), obj_exprs);
+        let args = vec![array_expr];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result = write_objects_fn.eval(&args, &env, &stdlib).unwrap();
+        let filepath = result.as_string().unwrap();
+        let content = fs::read_to_string(filepath).unwrap();
+
+        assert_eq!(
+            content,
+            "key_1\tkey_2\tkey_3\nvalue_1\tvalue_2\tvalue_3\nvalue_4\tvalue_5\tvalue_6\nvalue_7\tvalue_8\tvalue_9\n"
+        );
+    }
+
+    #[test]
+    fn test_write_objects_mismatched_members() {
+        let temp_dir = TempDir::new().unwrap();
+        let path_mapper = Box::new(DefaultPathMapper);
+        let write_objects_fn = create_write_objects_function(
+            path_mapper,
+            temp_dir.path().to_string_lossy().to_string(),
+        );
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 1);
+
+        let array_expr = Expression::array(
+            pos.clone(),
+            vec![
+                Expression::struct_expr(
+                    pos.clone(),
+                    vec![
+                        (
+                            "key_1".to_string(),
+                            Expression::string_literal(pos.clone(), "value_1".to_string()),
+                        ),
+                        (
+                            "key_2".to_string(),
+                            Expression::string_literal(pos.clone(), "value_2".to_string()),
+                        ),
+                    ],
+                ),
+                Expression::struct_expr(
+                    pos.clone(),
+                    vec![
+                        (
+                            "key_1".to_string(),
+                            Expression::string_literal(pos.clone(), "value_3".to_string()),
+                        ),
+                        (
+                            "key_3".to_string(),
+                            Expression::string_literal(pos.clone(), "value_4".to_string()),
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        let args = vec![array_expr];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let err = write_objects_fn.eval(&args, &env, &stdlib).unwrap_err();
+        match err {
+            WdlError::RuntimeError { message } => {
+                assert!(message.contains("array elements must have the same member names"));
+            }
+            other => panic!("Expected RuntimeError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_write_objects_empty_array() {
+        let temp_dir = TempDir::new().unwrap();
+        let path_mapper = Box::new(DefaultPathMapper);
+        let write_objects_fn = create_write_objects_function(
+            path_mapper,
+            temp_dir.path().to_string_lossy().to_string(),
+        );
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 1);
+        let array_expr = Expression::array(pos.clone(), vec![]);
+        let args = vec![array_expr];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result = write_objects_fn.eval(&args, &env, &stdlib).unwrap();
+        let filepath = result.as_string().unwrap();
+        let metadata = fs::metadata(filepath).unwrap();
+        assert_eq!(metadata.len(), 0);
+    }
+
+    #[test]
+    fn test_glob_ignores_directories() {
+        let task_dir = TempDir::new().unwrap();
+        let work_dir = task_dir.path().join("work");
+        fs::create_dir_all(&work_dir).unwrap();
+        fs::create_dir(work_dir.join("a_dir")).unwrap();
+        fs::write(work_dir.join("a_dir").join("a_inner.txt"), "inner").unwrap();
+        fs::write(work_dir.join("a_file_1.txt"), "one").unwrap();
+        fs::write(work_dir.join("a_file_2.txt"), "two").unwrap();
+
+        let path_mapper = Box::new(TaskPathMapper::new(task_dir.path().to_path_buf()));
+        let glob_fn = create_glob_function(path_mapper);
+
+        let pos = SourcePosition::new("test.wdl".to_string(), "test.wdl".to_string(), 1, 1, 1, 1);
+        let pattern_expr = Expression::string_literal(pos.clone(), "a_*".to_string());
+        let args = vec![pattern_expr];
+        let env = Bindings::new();
+        let stdlib = StdLib::new("1.0");
+
+        let result = glob_fn.eval(&args, &env, &stdlib).unwrap();
+        let files = result.as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        let names: Vec<&str> = files
+            .iter()
+            .map(|value| value.as_string().unwrap())
+            .collect();
+        assert_eq!(names, vec!["a_file_1.txt", "a_file_2.txt"]);
     }
 }
