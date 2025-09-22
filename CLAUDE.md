@@ -105,7 +105,7 @@ The miniwdl Rust port now includes all core functionality with a working CLI exe
 ### Architecture Improvements (2025)
 - **Eliminated circular dependencies**: Refactored parser and expr modules to follow proper compiler architecture patterns
 - **Direct token-based parsing**: Replaced regex-based placeholder parsing with efficient token-stream parsing  
-- **Out-of-process task execution**: Added the `miniwdl-task-runner` helper binary plus JSON request/response artifacts so task evaluation runs in an isolated subprocess, paving the way for remote execution
+- **Out-of-process task execution**: Added the `flowy-task-runner` helper binary plus JSON request/response artifacts so task evaluation runs in an isolated subprocess, paving the way for remote execution
 - **Code cleanup**: Removed unused command parser modules (`command_parser.rs`, `command_preprocessor.rs`)
 - **Test quality**: Removed misleading tests and improved test accuracy (244 high-quality tests)
 

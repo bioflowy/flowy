@@ -1,4 +1,4 @@
-//! miniwdl-rust CLI
+//! flowy CLI
 //!
 //! Command-line interface for executing WDL workflows and tasks.
 
@@ -7,7 +7,7 @@
 #![allow(clippy::missing_transmute_annotations)]
 #![allow(clippy::unneeded_struct_pattern)]
 
-use miniwdl_rust::{
+use flowy::{
     load, runtime,
     tree::{Document, Task, Workflow},
     Bindings, SourcePosition, Type, Value, WdlError,
@@ -355,7 +355,7 @@ fn parse_run_command(args: &[String]) -> Command {
 }
 
 fn print_help(program: &str) {
-    eprintln!("miniwdl-rust - WDL workflow executor");
+    eprintln!("flowy - WDL workflow executor");
     eprintln!();
     eprintln!("Usage:");
     eprintln!(
@@ -405,7 +405,7 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     let document = load(&filename, search_paths_slice, true, 10)?;
 
     // Set up working directory
-    let work_dir = work_dir.unwrap_or_else(|| std::env::temp_dir().join("miniwdl-rust"));
+    let work_dir = work_dir.unwrap_or_else(|| std::env::temp_dir().join("flowy"));
     fs::create_dir_all(&work_dir).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to create working directory: {}", e),
     })?;
@@ -417,7 +417,7 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
         eprintln!("Loading config from {}...", config_file.display());
         load_config(&config_file)?
     } else {
-        miniwdl_rust::runtime::Config::default()
+        flowy::runtime::Config::default()
     };
 
     // Override with command-line options
@@ -508,7 +508,7 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     Ok(())
 }
 
-fn load_config(path: &Path) -> Result<miniwdl_rust::runtime::Config, WdlError> {
+fn load_config(path: &Path) -> Result<flowy::runtime::Config, WdlError> {
     let content = fs::read_to_string(path).map_err(|e| WdlError::RuntimeError {
         message: format!("Failed to read config file: {}", e),
     })?;
@@ -518,7 +518,7 @@ fn load_config(path: &Path) -> Result<miniwdl_rust::runtime::Config, WdlError> {
             message: format!("Invalid JSON in config file: {}", e),
         })?;
 
-    let mut config = miniwdl_rust::runtime::Config::default();
+    let mut config = flowy::runtime::Config::default();
 
     if let serde_json::Value::Object(map) = json {
         // Parse container configuration
@@ -528,10 +528,10 @@ fn load_config(path: &Path) -> Result<miniwdl_rust::runtime::Config, WdlError> {
             }
             if let Some(serde_json::Value::String(backend)) = container_map.get("backend") {
                 config.container.backend = match backend.as_str() {
-                    "Docker" => miniwdl_rust::runtime::ContainerBackend::Docker,
-                    "Podman" => miniwdl_rust::runtime::ContainerBackend::Podman,
-                    "Singularity" => miniwdl_rust::runtime::ContainerBackend::Singularity,
-                    _ => miniwdl_rust::runtime::ContainerBackend::None,
+                    "Docker" => flowy::runtime::ContainerBackend::Docker,
+                    "Podman" => flowy::runtime::ContainerBackend::Podman,
+                    "Singularity" => flowy::runtime::ContainerBackend::Singularity,
+                    _ => flowy::runtime::ContainerBackend::None,
                 };
             }
         }
@@ -555,7 +555,7 @@ fn load_inputs(path: &Path, document: &Document) -> Result<Bindings<Value>, WdlE
     let json: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| WdlError::Validation {
             message: format!("Invalid JSON in input file: {}", e),
-            pos: miniwdl_rust::SourcePosition::new(
+            pos: flowy::SourcePosition::new(
                 path.display().to_string(),
                 path.display().to_string(),
                 1,
@@ -591,7 +591,7 @@ fn load_inputs_for_task(path: &Path, task: &Task) -> Result<Bindings<Value>, Wdl
     let json: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| WdlError::Validation {
             message: format!("Invalid JSON in input file: {}", e),
-            pos: miniwdl_rust::SourcePosition::new(
+            pos: flowy::SourcePosition::new(
                 path.display().to_string(),
                 path.display().to_string(),
                 1,
@@ -904,14 +904,7 @@ fn json_to_value(json: serde_json::Value) -> Result<Value, WdlError> {
             } else {
                 Err(WdlError::Validation {
                     message: format!("Invalid number: {}", n),
-                    pos: miniwdl_rust::SourcePosition::new(
-                        String::new(),
-                        String::new(),
-                        0,
-                        0,
-                        0,
-                        0,
-                    ),
+                    pos: flowy::SourcePosition::new(String::new(), String::new(), 0, 0, 0, 0),
                     source_text: Some(String::new()),
                     declared_wdl_version: Some("1.0".to_string()),
                 })
@@ -988,7 +981,7 @@ fn value_to_json(value: &Value) -> Result<serde_json::Value, WdlError> {
             .map(serde_json::Value::Number)
             .ok_or_else(|| WdlError::Validation {
                 message: format!("Invalid float value: {}", value),
-                pos: miniwdl_rust::SourcePosition::new(String::new(), String::new(), 0, 0, 0, 0),
+                pos: flowy::SourcePosition::new(String::new(), String::new(), 0, 0, 0, 0),
                 source_text: Some(String::new()),
                 declared_wdl_version: Some("1.0".to_string()),
             }),

@@ -278,8 +278,8 @@ impl Function for StaticFunction {
 ///
 /// # Example
 /// ```rust
-/// use miniwdl_rust::stdlib::create_static_function;
-/// use miniwdl_rust::{Type, Value, WdlError};
+/// use flowy::stdlib::create_static_function;
+/// use flowy::{Type, Value, WdlError};
 /// let _floor_fn = create_static_function(
 ///     "floor".to_string(),
 ///     vec![Type::float(false)],

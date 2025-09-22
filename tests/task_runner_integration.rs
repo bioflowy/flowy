@@ -1,11 +1,11 @@
-use miniwdl_rust::env::Bindings;
-use miniwdl_rust::parser;
-use miniwdl_rust::runtime::config::Config;
-use miniwdl_rust::runtime::fs_utils::WorkflowDirectory;
-use miniwdl_rust::runtime::task::TaskEngine;
-use miniwdl_rust::runtime::task_runner::TASK_RUNNER_PROTOCOL_VERSION;
-use miniwdl_rust::tree::Task;
-use miniwdl_rust::Value;
+use flowy::env::Bindings;
+use flowy::parser;
+use flowy::runtime::config::Config;
+use flowy::runtime::fs_utils::WorkflowDirectory;
+use flowy::runtime::task::TaskEngine;
+use flowy::runtime::task_runner::TASK_RUNNER_PROTOCOL_VERSION;
+use flowy::tree::Task;
+use flowy::Value;
 use once_cell::sync::Lazy;
 use serde_json::Value as JsonValue;
 use std::error::Error;
@@ -21,9 +21,9 @@ struct EnvVarGuard {
 
 impl EnvVarGuard {
     fn set(value_path: &PathBuf) -> Self {
-        std::env::set_var("MINIWDL_TASK_RUNNER", value_path);
+        std::env::set_var("FLOWY_TASK_RUNNER", value_path);
         Self {
-            key: "MINIWDL_TASK_RUNNER",
+            key: "FLOWY_TASK_RUNNER",
         }
     }
 }
@@ -38,7 +38,7 @@ impl Drop for EnvVarGuard {
 fn task_runner_creates_expected_artifacts() -> Result<(), Box<dyn Error>> {
     let _lock = RUNNER_GUARD.lock().unwrap();
 
-    let runner_path = locate_miniwdl_task_runner();
+    let runner_path = locate_flowy_task_runner();
     let _env_guard = EnvVarGuard::set(&runner_path);
 
     let temp_dir = TempDir::new()?;
@@ -122,7 +122,7 @@ fn parse_single_task(source: &str) -> Result<(Task, String), Box<dyn Error>> {
     Ok((task, name))
 }
 
-fn locate_miniwdl_task_runner() -> PathBuf {
+fn locate_flowy_task_runner() -> PathBuf {
     let mut path = std::env::current_exe().expect("current_exe not available");
     // current_exe -> target/debug/deps/<test>
     path.pop(); // remove test binary name
@@ -130,13 +130,13 @@ fn locate_miniwdl_task_runner() -> PathBuf {
         path.pop();
     }
     let binary_name = if cfg!(windows) {
-        "miniwdl-task-runner.exe"
+        "flowy-task-runner.exe"
     } else {
-        "miniwdl-task-runner"
+        "flowy-task-runner"
     };
     path.push(binary_name);
     if !path.exists() {
-        panic!("miniwdl-task-runner binary not found at {}", path.display());
+        panic!("flowy-task-runner binary not found at {}", path.display());
     }
     path
 }

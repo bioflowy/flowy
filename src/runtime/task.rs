@@ -310,7 +310,8 @@ pub struct TaskExecutionStats {
 }
 
 fn resolve_task_runner_executable() -> PathBuf {
-    if let Ok(explicit) = env::var("MINIWDL_TASK_RUNNER") {
+    if let Ok(explicit) = env::var("FLOWY_TASK_RUNNER").or_else(|_| env::var("MINIWDL_TASK_RUNNER"))
+    {
         return PathBuf::from(explicit);
     }
 
@@ -341,9 +342,9 @@ fn find_runner_in_dir(dir: &Path) -> Option<PathBuf> {
 
 fn default_runner_binary_name() -> &'static str {
     if cfg!(windows) {
-        "miniwdl-task-runner.exe"
+        "flowy-task-runner.exe"
     } else {
-        "miniwdl-task-runner"
+        "flowy-task-runner"
     }
 }
 
