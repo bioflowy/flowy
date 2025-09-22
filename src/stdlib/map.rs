@@ -7,6 +7,7 @@ use crate::expr::ExpressionBase;
 use crate::stdlib::Function;
 use crate::types::Type;
 use crate::value::{Value, ValueBase};
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 /// Keys function implementation
@@ -398,7 +399,7 @@ impl crate::stdlib::Function for CollectByKeyFunction {
             }
         };
 
-        let mut grouped: HashMap<String, (Value, Vec<Value>)> = HashMap::new();
+        let mut grouped: IndexMap<String, (Value, Vec<Value>)> = IndexMap::new();
 
         for pair_value in array {
             let (key, value) = match pair_value {
