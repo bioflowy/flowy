@@ -8,10 +8,16 @@
 #![allow(clippy::unneeded_struct_pattern)]
 
 use flowy::{
+    core::{
+        api::{ErrorResponse as ApiErrorResponse, ExecuteOptions, ExecuteRequest, ExecuteResponse},
+        inputs::{bindings_from_json_for_document, bindings_from_json_for_task},
+        outputs::bindings_to_json_with_namespace,
+    },
     load, runtime,
-    tree::{Document, Task, Workflow},
-    Bindings, SourcePosition, Type, Value, WdlError,
+    tree::{Document, Task},
+    Bindings, SourcePosition, Value, WdlError,
 };
+use reqwest::blocking::Client;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -40,6 +46,10 @@ enum Command {
         task: Option<String>,
         /// Configuration file (optional)
         config_file: Option<PathBuf>,
+        /// Remote server URL (optional)
+        server: Option<String>,
+        /// Base directory for resolving relative File inputs
+        base_dir: Option<PathBuf>,
     },
 }
 
@@ -285,6 +295,8 @@ fn parse_run_command(args: &[String]) -> Command {
     let mut work_dir = None;
     let mut task = None;
     let mut config_file = None;
+    let mut server = None;
+    let mut base_dir = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -325,6 +337,24 @@ fn parse_run_command(args: &[String]) -> Command {
                     process::exit(1);
                 }
             }
+            "-s" | "--server" => {
+                i += 1;
+                if i < args.len() {
+                    server = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --server requires a URL");
+                    process::exit(1);
+                }
+            }
+            "--basedir" => {
+                i += 1;
+                if i < args.len() {
+                    base_dir = Some(PathBuf::from(&args[i]));
+                } else {
+                    eprintln!("Error: --basedir requires a directory path");
+                    process::exit(1);
+                }
+            }
             "--debug" => {
                 // Skip --debug flag, it's handled in parse_args()
             }
@@ -351,6 +381,8 @@ fn parse_run_command(args: &[String]) -> Command {
         work_dir,
         task,
         config_file,
+        server,
+        base_dir,
     }
 }
 
@@ -368,6 +400,10 @@ fn print_help(program: &str) {
     eprintln!("  -d, --dir <dir>       Working directory (default: temp)");
     eprintln!("  -t, --task <name>     Run specific task instead of workflow");
     eprintln!("  -c, --config <file>   Configuration JSON file");
+    eprintln!("  -s, --server <url>    Execute remotely via flowy-server");
+    eprintln!(
+        "      --basedir <dir>    Base directory for resolving relative File inputs (remote)"
+    );
     eprintln!();
     eprintln!("Global options:");
     eprintln!("  --debug               Enable debug output");
@@ -378,15 +414,47 @@ fn print_help(program: &str) {
 }
 
 fn run_wdl(args: Args) -> Result<(), WdlError> {
-    let (wdl_file, input_file, work_dir, task, config_file) = match args.command {
+    let (wdl_file, input_file, work_dir, task, config_file, server, base_dir) = match args.command {
         Command::Run {
             wdl_file,
             input_file,
             work_dir,
             task,
             config_file,
-        } => (wdl_file, input_file, work_dir, task, config_file),
+            server,
+            base_dir,
+        } => (
+            wdl_file,
+            input_file,
+            work_dir,
+            task,
+            config_file,
+            server,
+            base_dir,
+        ),
     };
+
+    let base_dir_resolved = match base_dir {
+        Some(dir) => {
+            let resolved = if dir.is_absolute() {
+                dir
+            } else {
+                std::env::current_dir()
+                    .map_err(|e| WdlError::RuntimeError {
+                        message: format!("Failed to get current directory: {}", e),
+                    })?
+                    .join(dir)
+            };
+            Some(resolved)
+        }
+        None => None,
+    };
+
+    if let Some(server_url) = server {
+        return run_remote(&server_url, wdl_file, input_file, task, base_dir_resolved);
+    }
+
+    let _base_dir_guard = flowy::core::inputs::set_input_base_dir(base_dir_resolved.clone());
 
     // Read WDL file
     let _wdl_content = fs::read_to_string(&wdl_file).map_err(|e| WdlError::RuntimeError {
@@ -502,10 +570,109 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     eprintln!("\nExecution completed successfully!");
     eprintln!("Outputs:");
 
-    let output_json = outputs_to_json_with_namespace(&result.outputs, workflow_name.as_deref())?;
+    let output_json = bindings_to_json_with_namespace(&result.outputs, workflow_name.as_deref())?;
     println!("{}", serde_json::to_string_pretty(&output_json).unwrap());
 
     Ok(())
+}
+
+fn run_remote(
+    server: &str,
+    wdl_file: PathBuf,
+    input_file: Option<PathBuf>,
+    task: Option<String>,
+    base_dir: Option<PathBuf>,
+) -> Result<(), WdlError> {
+    let wdl = fs::read_to_string(&wdl_file).map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read WDL file: {}", e),
+    })?;
+
+    let inputs = if let Some(path) = input_file {
+        let content = fs::read_to_string(&path).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to read input file: {}", e),
+        })?;
+        serde_json::from_str(&content).map_err(|e| WdlError::Validation {
+            message: format!("Invalid JSON in input file: {}", e),
+            pos: flowy::SourcePosition::new(
+                path.display().to_string(),
+                path.display().to_string(),
+                1,
+                1,
+                1,
+                1,
+            ),
+            source_text: Some(content),
+            declared_wdl_version: Some("1.0".to_string()),
+        })?
+    } else {
+        serde_json::Value::Object(serde_json::Map::new())
+    };
+
+    let base_dir_path = if let Some(dir) = base_dir {
+        if dir.is_absolute() {
+            dir
+        } else {
+            std::env::current_dir()
+                .map_err(|e| WdlError::RuntimeError {
+                    message: format!("Failed to get current directory: {}", e),
+                })?
+                .join(dir)
+        }
+    } else {
+        std::env::current_dir().map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to get current directory: {}", e),
+        })?
+    };
+
+    let request = ExecuteRequest {
+        wdl,
+        inputs,
+        options: Some(ExecuteOptions {
+            task,
+            run_id: None,
+            base_dir: Some(base_dir_path.to_string_lossy().to_string()),
+        }),
+    };
+
+    let client = Client::new();
+    let url = format!("{}/api/v1/tasks", server.trim_end_matches('/'));
+
+    let response = client
+        .post(&url)
+        .json(&request)
+        .send()
+        .map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to contact server: {}", e),
+        })?;
+
+    if response.status().is_success() {
+        let response_json: ExecuteResponse =
+            response.json().map_err(|e| WdlError::RuntimeError {
+                message: format!("Failed to parse server response: {}", e),
+            })?;
+
+        println!("status: {}", response_json.status);
+        println!("duration_ms: {}", response_json.duration_ms);
+        println!(
+            "outputs: {}",
+            serde_json::to_string_pretty(&response_json.outputs).unwrap()
+        );
+        if let Some(stdout) = response_json.stdout {
+            println!("stdout:\n{}", stdout);
+        }
+        if let Some(stderr) = response_json.stderr {
+            println!("stderr:\n{}", stderr);
+        }
+        Ok(())
+    } else {
+        let error: ApiErrorResponse = response.json().unwrap_or(ApiErrorResponse {
+            status: "error".to_string(),
+            message: "Unknown server error".to_string(),
+        });
+        Err(WdlError::RuntimeError {
+            message: format!("Server error: {}", error.message),
+        })
+    }
 }
 
 fn load_config(path: &Path) -> Result<flowy::runtime::Config, WdlError> {
@@ -567,19 +734,7 @@ fn load_inputs(path: &Path, document: &Document) -> Result<Bindings<Value>, WdlE
             declared_wdl_version: Some("1.0".to_string()),
         })?;
 
-    // Get workflow information if available
-    if let Some(ref workflow) = document.workflow {
-        json_to_bindings_with_types(json, workflow)
-    } else {
-        // If no workflow, try to find task inputs
-        if document.tasks.len() == 1 {
-            let task = &document.tasks[0];
-            json_to_bindings_with_task_types(json, task)
-        } else {
-            // Fallback to untyped conversion
-            json_to_bindings(json)
-        }
-    }
+    bindings_from_json_for_document(json, document)
 }
 
 /// Load inputs specifically for a task
@@ -603,418 +758,5 @@ fn load_inputs_for_task(path: &Path, task: &Task) -> Result<Bindings<Value>, Wdl
             declared_wdl_version: Some("1.0".to_string()),
         })?;
 
-    json_to_bindings_with_task_types(json, task)
-}
-
-/// Resolve a file path from a string, handling relative paths
-fn resolve_file_path(path: &str) -> Result<PathBuf, WdlError> {
-    let path_buf = PathBuf::from(path);
-
-    let resolved = if path_buf.is_absolute() {
-        path_buf
-    } else {
-        // Resolve relative to current directory
-        std::env::current_dir()
-            .map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to get current directory: {}", e),
-            })?
-            .join(&path_buf)
-    };
-
-    // Check if file exists
-    if !resolved.exists() {
-        return Err(WdlError::RuntimeError {
-            message: format!("Input file not found: {}", path),
-        });
-    }
-
-    // Get canonical path
-    resolved.canonicalize().map_err(|e| WdlError::RuntimeError {
-        message: format!("Failed to resolve file path '{}': {}", path, e),
-    })
-}
-
-/// Convert JSON to bindings using workflow type information (miniwdl-style)
-fn json_to_bindings_with_types(
-    json: serde_json::Value,
-    workflow: &Workflow,
-) -> Result<Bindings<Value>, WdlError> {
-    let mut bindings = Bindings::new();
-
-    if let serde_json::Value::Object(map) = json {
-        for (key, json_value) in map {
-            // Remove workflow name prefix if present
-            let input_name = if key.starts_with(&format!("{}.", workflow.name)) {
-                key.strip_prefix(&format!("{}.", workflow.name))
-                    .unwrap()
-                    .to_string()
-            } else {
-                key.clone()
-            };
-
-            // Find input type from workflow declarations
-            let input_type = workflow
-                .inputs
-                .iter()
-                .find(|decl| decl.name == input_name)
-                .map(|decl| &decl.decl_type);
-
-            // Convert JSON to WDL value using type information
-            let wdl_value = if let Some(ty) = input_type {
-                json_to_value_typed(json_value, ty)?
-            } else {
-                // Fallback to untyped conversion for unknown inputs
-                json_to_value(json_value)?
-            };
-
-            bindings = bindings.bind(input_name, wdl_value, None);
-        }
-    }
-
-    Ok(bindings)
-}
-
-/// Convert JSON to bindings using task type information
-fn json_to_bindings_with_task_types(
-    json: serde_json::Value,
-    task: &Task,
-) -> Result<Bindings<Value>, WdlError> {
-    let mut bindings = Bindings::new();
-
-    if let serde_json::Value::Object(map) = json {
-        for (key, json_value) in map {
-            // Remove task name prefix if present
-            let input_name = if key.starts_with(&format!("{}.", task.name)) {
-                key.strip_prefix(&format!("{}.", task.name))
-                    .unwrap()
-                    .to_string()
-            } else {
-                key.clone()
-            };
-
-            // Find input type from task declarations
-            let input_type = task
-                .inputs
-                .iter()
-                .find(|decl| decl.name == input_name)
-                .map(|decl| &decl.decl_type);
-
-            // Convert JSON to WDL value using type information
-            let wdl_value = if let Some(ty) = input_type {
-                json_to_value_typed(json_value, ty)?
-            } else {
-                json_to_value(json_value)?
-            };
-
-            bindings = bindings.bind(input_name, wdl_value, None);
-        }
-    }
-
-    Ok(bindings)
-}
-
-/// Convert JSON to WDL value using type information (like miniwdl's from_json)
-fn json_to_value_typed(json: serde_json::Value, wdl_type: &Type) -> Result<Value, WdlError> {
-    match (json, wdl_type) {
-        // File type: convert string to File value with resolved path
-        (serde_json::Value::String(s), Type::File { optional }) => {
-            let resolved_path = resolve_file_path(&s)?;
-            Ok(Value::File {
-                value: resolved_path.to_string_lossy().to_string(),
-                wdl_type: Type::File {
-                    optional: *optional,
-                },
-            })
-        }
-        // String type: keep as string
-        (serde_json::Value::String(s), Type::String { optional }) => Ok(Value::String {
-            value: s,
-            wdl_type: Type::String {
-                optional: *optional,
-            },
-        }),
-        // Boolean type
-        (serde_json::Value::Bool(b), Type::Boolean { optional }) => Ok(Value::Boolean {
-            value: b,
-            wdl_type: Type::Boolean {
-                optional: *optional,
-            },
-        }),
-        // Integer type
-        (serde_json::Value::Number(n), Type::Int { optional }) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Int {
-                    value: i,
-                    wdl_type: Type::Int {
-                        optional: *optional,
-                    },
-                })
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: format!("Cannot convert {} to Int", n),
-                })
-            }
-        }
-        // Float type
-        (serde_json::Value::Number(n), Type::Float { optional }) => {
-            if let Some(f) = n.as_f64() {
-                Ok(Value::Float {
-                    value: f,
-                    wdl_type: Type::Float {
-                        optional: *optional,
-                    },
-                })
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: format!("Cannot convert {} to Float", n),
-                })
-            }
-        }
-        // Array type: recursively convert elements
-        (
-            serde_json::Value::Array(arr),
-            Type::Array {
-                item_type,
-                optional,
-                nonempty,
-            },
-        ) => {
-            let values: Result<Vec<_>, _> = arr
-                .into_iter()
-                .map(|v| json_to_value_typed(v, item_type))
-                .collect();
-            Ok(Value::Array {
-                values: values?,
-                wdl_type: Type::Array {
-                    item_type: item_type.clone(),
-                    optional: *optional,
-                    nonempty: *nonempty,
-                },
-            })
-        }
-        // Map type: convert JSON object to WDL Map
-        (
-            serde_json::Value::Object(obj),
-            Type::Map {
-                key_type,
-                value_type,
-                optional,
-                ..
-            },
-        ) => {
-            let pairs: Result<Vec<_>, _> = obj
-                .into_iter()
-                .map(|(k, v)| {
-                    let wdl_key = json_to_value_typed(serde_json::Value::String(k), key_type)?;
-                    let wdl_value = json_to_value_typed(v, value_type)?;
-                    Ok((wdl_key, wdl_value))
-                })
-                .collect();
-            Ok(Value::Map {
-                pairs: pairs?,
-                wdl_type: Type::Map {
-                    key_type: key_type.clone(),
-                    value_type: value_type.clone(),
-                    optional: *optional,
-                    literal_keys: None,
-                },
-            })
-        }
-        // StructInstance type: convert JSON object to WDL Struct
-        (
-            serde_json::Value::Object(obj),
-            Type::StructInstance {
-                type_name,
-                members,
-                optional,
-                ..
-            },
-        ) => {
-            if let Some(ref struct_members) = members {
-                let mut wdl_members = std::collections::HashMap::new();
-
-                for (member_name, member_type) in struct_members {
-                    if let Some(json_value) = obj.get(member_name) {
-                        let wdl_value = json_to_value_typed(json_value.clone(), member_type)?;
-                        wdl_members.insert(member_name.clone(), wdl_value);
-                    } else if !member_type.is_optional() {
-                        return Err(WdlError::RuntimeError {
-                            message: format!("Missing required struct member: {}", member_name),
-                        });
-                    }
-                }
-
-                Ok(Value::Struct {
-                    members: wdl_members,
-                    extra_keys: std::collections::HashSet::new(),
-                    wdl_type: Type::StructInstance {
-                        type_name: type_name.clone(),
-                        members: members.clone(),
-                        optional: *optional,
-                    },
-                })
-            } else {
-                Err(WdlError::RuntimeError {
-                    message: format!("Struct type {} has no member information", type_name),
-                })
-            }
-        }
-        // Fallback to untyped conversion for other cases
-        (json_val, _) => json_to_value(json_val),
-    }
-}
-
-fn json_to_bindings(json: serde_json::Value) -> Result<Bindings<Value>, WdlError> {
-    let mut bindings = Bindings::new();
-
-    if let serde_json::Value::Object(map) = json {
-        for (key, value) in map {
-            let wdl_value = json_to_value(value)?;
-            bindings = bindings.bind(key, wdl_value, None);
-        }
-    }
-
-    Ok(bindings)
-}
-
-fn json_to_value(json: serde_json::Value) -> Result<Value, WdlError> {
-    match json {
-        serde_json::Value::Null => {
-            // Create a null string value as placeholder
-            Ok(Value::String {
-                value: String::new(),
-                wdl_type: Type::String { optional: true },
-            })
-        }
-        serde_json::Value::Bool(b) => Ok(Value::Boolean {
-            value: b,
-            wdl_type: Type::Boolean { optional: false },
-        }),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Int {
-                    value: i,
-                    wdl_type: Type::Int { optional: false },
-                })
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Float {
-                    value: f,
-                    wdl_type: Type::Float { optional: false },
-                })
-            } else {
-                Err(WdlError::Validation {
-                    message: format!("Invalid number: {}", n),
-                    pos: flowy::SourcePosition::new(String::new(), String::new(), 0, 0, 0, 0),
-                    source_text: Some(String::new()),
-                    declared_wdl_version: Some("1.0".to_string()),
-                })
-            }
-        }
-        serde_json::Value::String(s) => Ok(Value::String {
-            value: s,
-            wdl_type: Type::String { optional: false },
-        }),
-        serde_json::Value::Array(arr) => {
-            let values: Result<Vec<_>, _> = arr.into_iter().map(json_to_value).collect();
-            Ok(Value::Array {
-                values: values?,
-                wdl_type: Type::Array {
-                    item_type: Box::new(Type::String { optional: false }),
-                    optional: false,
-                    nonempty: false,
-                },
-            })
-        }
-        serde_json::Value::Object(map) => {
-            let mut struct_map = std::collections::HashMap::new();
-            for (key, value) in map {
-                struct_map.insert(key, json_to_value(value)?);
-            }
-            Ok(Value::Struct {
-                members: struct_map,
-                extra_keys: std::collections::HashSet::new(),
-                wdl_type: Type::String { optional: false }, // Placeholder type
-            })
-        }
-    }
-}
-
-fn outputs_to_json_with_namespace(
-    outputs: &Bindings<Value>,
-    namespace: Option<&str>,
-) -> Result<serde_json::Value, WdlError> {
-    let mut map = serde_json::Map::new();
-
-    // Prepare namespace prefix (like miniwdl's values_to_json)
-    let namespace_prefix = if let Some(ns) = namespace {
-        if ns.is_empty() {
-            String::new()
-        } else if ns.ends_with('.') {
-            ns.to_string()
-        } else {
-            format!("{}.", ns)
-        }
-    } else {
-        String::new()
-    };
-
-    for binding in outputs.iter() {
-        let json_value = value_to_json(binding.value())?;
-        // Add namespace prefix unless the binding name starts with "_" (following miniwdl logic)
-        let key = if !binding.name().starts_with('_') && !namespace_prefix.is_empty() {
-            format!("{}{}", namespace_prefix, binding.name())
-        } else {
-            binding.name().to_string()
-        };
-        map.insert(key, json_value);
-    }
-
-    Ok(serde_json::Value::Object(map))
-}
-
-fn value_to_json(value: &Value) -> Result<serde_json::Value, WdlError> {
-    match value {
-        Value::Null => Ok(serde_json::Value::Null),
-        Value::Boolean { value, .. } => Ok(serde_json::Value::Bool(*value)),
-        Value::Int { value, .. } => Ok(serde_json::Value::Number((*value).into())),
-        Value::Float { value, .. } => serde_json::Number::from_f64(*value)
-            .map(serde_json::Value::Number)
-            .ok_or_else(|| WdlError::Validation {
-                message: format!("Invalid float value: {}", value),
-                pos: flowy::SourcePosition::new(String::new(), String::new(), 0, 0, 0, 0),
-                source_text: Some(String::new()),
-                declared_wdl_version: Some("1.0".to_string()),
-            }),
-        Value::String { value, .. } => Ok(serde_json::Value::String(value.clone())),
-        Value::File { value, .. } => Ok(serde_json::Value::String(value.clone())),
-        Value::Directory { value, .. } => Ok(serde_json::Value::String(value.clone())),
-        Value::Array { values, .. } => {
-            let arr: Result<Vec<_>, _> = values.iter().map(value_to_json).collect();
-            Ok(serde_json::Value::Array(arr?))
-        }
-        Value::Pair { left, right, .. } => {
-            let mut map = serde_json::Map::new();
-            map.insert("left".to_string(), value_to_json(left)?);
-            map.insert("right".to_string(), value_to_json(right)?);
-            Ok(serde_json::Value::Object(map))
-        }
-        Value::Map { pairs, .. } => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in pairs {
-                let key_str = match k {
-                    Value::String { value, .. } => value.clone(),
-                    _ => format!("{:?}", k),
-                };
-                map.insert(key_str, value_to_json(v)?);
-            }
-            Ok(serde_json::Value::Object(map))
-        }
-        Value::Struct { members, .. } => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in members {
-                map.insert(k.clone(), value_to_json(v)?);
-            }
-            Ok(serde_json::Value::Object(map))
-        }
-    }
+    bindings_from_json_for_task(json, task)
 }

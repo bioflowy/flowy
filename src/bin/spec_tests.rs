@@ -10,6 +10,26 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Execution backend for running spec tests
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionBackend {
+    /// Execute tests using the local `flowy` binary
+    Flowy,
+    /// Execute tests via the `flowy-client` CLI (remote server)
+    FlowyClient,
+}
+
+fn parse_execution_backend(value: &str) -> Result<ExecutionBackend, String> {
+    match value {
+        "flowy" => Ok(ExecutionBackend::Flowy),
+        "flowy-client" | "client" | "remote" => Ok(ExecutionBackend::FlowyClient),
+        other => Err(format!(
+            "Unknown backend '{}'. Expected 'flowy' or 'flowy-client'",
+            other
+        )),
+    }
+}
+
 /// Test case extracted from the WDL specification
 #[derive(Debug, Clone)]
 pub struct SpecTestCase {
@@ -49,6 +69,8 @@ pub struct SpecTestRunner {
     pub keep_files: bool,
     pub debug: bool,
     pub xfail_tests: HashSet<String>,
+    pub execution_backend: ExecutionBackend,
+    pub client_server: Option<String>,
 }
 
 impl Default for SpecTestRunner {
@@ -72,6 +94,8 @@ impl SpecTestRunner {
             keep_files: false,
             debug: false,
             xfail_tests: HashSet::new(),
+            execution_backend: ExecutionBackend::Flowy,
+            client_server: None,
         }
     }
 
@@ -82,6 +106,16 @@ impl SpecTestRunner {
 
     pub fn with_debug(mut self, debug: bool) -> Self {
         self.debug = debug;
+        self
+    }
+
+    pub fn with_execution_backend(mut self, backend: ExecutionBackend) -> Self {
+        self.execution_backend = backend;
+        self
+    }
+
+    pub fn with_client_server<S: Into<String>>(mut self, server: Option<S>) -> Self {
+        self.client_server = server.map(Into::into);
         self
     }
 
@@ -445,34 +479,121 @@ impl SpecTestRunner {
         input_path: Option<&PathBuf>,
         data_dir: &Path,
     ) -> Result<String, String> {
-        // Get absolute path to flowy executable
-        let exe_path = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("target/debug/flowy");
+        match self.execution_backend {
+            ExecutionBackend::Flowy => {
+                let exe_path = std::env::current_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."))
+                    .join("target/debug/flowy");
 
-        let mut cmd = Command::new(exe_path);
-        cmd.arg("run")
-            .arg(wdl_path)
-            .current_dir(data_dir) // Run in data directory to resolve file paths
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+                let mut cmd = Command::new(exe_path);
+                cmd.arg("run")
+                    .arg(wdl_path)
+                    .current_dir(data_dir)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
 
-        if let Some(input_file) = input_path {
-            cmd.arg("-i").arg(input_file);
-        }
+                if let Some(input_file) = input_path {
+                    cmd.arg("-i").arg(input_file);
+                }
 
-        // Note: --debug flag is for spec_tests logging, not for the main flowy binary
-        // The main binary doesn't support --debug flag
-
-        match cmd.output() {
-            Ok(output) => {
-                if output.status.success() {
-                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-                } else {
-                    Err(String::from_utf8_lossy(&output.stderr).to_string())
+                match cmd.output() {
+                    Ok(output) => {
+                        if output.status.success() {
+                            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                        } else {
+                            Err(String::from_utf8_lossy(&output.stderr).to_string())
+                        }
+                    }
+                    Err(e) => Err(format!("Failed to execute flowy: {}", e)),
                 }
             }
-            Err(e) => Err(format!("Failed to execute flowy: {}", e)),
+            ExecutionBackend::FlowyClient => {
+                let exe_path = std::env::current_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."))
+                    .join("target/debug/flowy-client");
+
+                let mut cmd = Command::new(exe_path);
+                cmd.arg("run")
+                    .arg(wdl_path)
+                    .current_dir(data_dir)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+
+                if let Some(input_file) = input_path {
+                    cmd.arg("-i").arg(input_file);
+                }
+
+                if let Some(server) = &self.client_server {
+                    cmd.arg("-s").arg(server);
+                }
+
+                let base_dir_path = if data_dir.is_absolute() {
+                    data_dir.to_path_buf()
+                } else {
+                    std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join(data_dir)
+                };
+
+                cmd.arg("--basedir").arg(base_dir_path);
+                match cmd.output() {
+                    Ok(output) => {
+                        if output.status.success() {
+                            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                            Ok(Self::extract_outputs_json(&stdout)
+                                .unwrap_or_else(|| stdout.trim().to_string()))
+                        } else {
+                            Err(String::from_utf8_lossy(&output.stderr).to_string())
+                        }
+                    }
+                    Err(e) => Err(format!("Failed to execute flowy-client: {}", e)),
+                }
+            }
+        }
+    }
+
+    /// Extract the JSON payload printed by `flowy-client`'s `outputs:` section.
+    fn extract_outputs_json(stdout: &str) -> Option<String> {
+        let mut collecting = false;
+        let mut buffer: Vec<String> = Vec::new();
+
+        for line in stdout.lines() {
+            let trimmed = line.trim_end();
+            if !collecting {
+                if let Some(rest) = trimmed.strip_prefix("outputs:") {
+                    collecting = true;
+                    let rest = rest.trim_start();
+                    if !rest.is_empty() {
+                        buffer.push(rest.to_string());
+                    }
+                }
+                continue;
+            }
+
+            let lower = trimmed.to_ascii_lowercase();
+            if trimmed.starts_with("stdout:")
+                || trimmed.starts_with("stderr:")
+                || trimmed.starts_with("status:")
+                || trimmed.starts_with("duration_ms:")
+                || lower.starts_with("status:")
+                || lower.starts_with("stdout:")
+                || lower.starts_with("stderr:")
+            {
+                break;
+            }
+
+            buffer.push(line.to_string());
+        }
+
+        if buffer.is_empty() {
+            return None;
+        }
+
+        let json = buffer.join("\n").trim().to_string();
+        if json.is_empty() {
+            None
+        } else {
+            Some(json)
         }
     }
 
@@ -710,11 +831,14 @@ fn main() {
         eprintln!("  <spec_file>           Path to WDL SPEC.md file");
         eprintln!("  <data_dir>           Path to test data directory");
         eprintln!("Options:");
-        eprintln!("  --list                List all tests");
-        eprintln!("  --name <test_name>    Run specific test");
-        eprintln!("  --pattern <pattern>   Run tests matching pattern");
-        eprintln!("  --keep-files          Keep test files after execution");
-        eprintln!("  --debug               Enable debug output");
+        eprintln!("  --list                   List all tests");
+        eprintln!("  --name <test_name>       Run specific test");
+        eprintln!("  --pattern <pattern>      Run tests matching pattern");
+        eprintln!("  --keep-files             Keep test files after execution");
+        eprintln!("  --debug                  Enable debug output");
+        eprintln!("  --runner <flowy|flowy-client>");
+        eprintln!("                            Choose execution backend (default: flowy)");
+        eprintln!("  --client-server <url>    Server URL when using flowy-client");
         std::process::exit(1);
     }
 
@@ -725,6 +849,8 @@ fn main() {
     let mut list_tests = false;
     let mut test_name: Option<String> = None;
     let mut pattern: Option<String> = None;
+    let mut backend = ExecutionBackend::Flowy;
+    let mut client_server: Option<String> = None;
 
     // Parse command line arguments
     let mut i = 3;
@@ -745,10 +871,38 @@ fn main() {
             }
             "--keep-files" => runner = runner.with_keep_files(true),
             "--debug" => runner = runner.with_debug(true),
+            "--runner" | "--backend" => {
+                i += 1;
+                if i < args.len() {
+                    match parse_execution_backend(&args[i]) {
+                        Ok(value) => backend = value,
+                        Err(err) => {
+                            eprintln!("Error: {}", err);
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    eprintln!("Error: --runner/--backend requires a value (flowy or flowy-client)");
+                    std::process::exit(1);
+                }
+            }
+            "--client-server" => {
+                i += 1;
+                if i < args.len() {
+                    client_server = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --client-server requires a URL");
+                    std::process::exit(1);
+                }
+            }
             _ => {}
         }
         i += 1;
     }
+
+    runner = runner
+        .with_execution_backend(backend)
+        .with_client_server(client_server);
 
     // Execute unified workflow
     match runner.run_unified(&spec_file, &data_dir, list_tests, test_name, pattern) {

@@ -22,6 +22,8 @@
 #![allow(unused_variables)]
 #![allow(clippy::missing_transmute_annotations)]
 
+pub mod cli_config;
+pub mod core;
 pub mod env;
 pub mod error;
 pub mod expr;
