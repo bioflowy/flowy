@@ -6,6 +6,33 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process;
+use std::thread;
+use std::time::Duration as StdDuration;
+
+#[derive(Debug, serde::Deserialize)]
+struct EnqueueJobResponse {
+    run_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct JobStatusResponse {
+    #[allow(dead_code)]
+    run_id: String,
+    state: String,
+    #[allow(dead_code)]
+    worker_id: Option<String>,
+    #[serde(default)]
+    result: Option<JobResultStatus>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum JobResultStatus {
+    Success { response: ExecuteResponse },
+    Failure { message: String },
+}
+
+const QUEUE_POLL_INTERVAL: StdDuration = StdDuration::from_secs(2);
 
 fn main() {
     if let Err(err) = run() {
@@ -26,6 +53,7 @@ fn run() -> Result<(), String> {
             config_file,
             server,
             base_dir,
+            queue,
         } => execute_remote(
             wdl_file,
             input_file,
@@ -34,6 +62,7 @@ fn run() -> Result<(), String> {
             config_file,
             server,
             base_dir,
+            queue,
             args.debug,
         ),
     }
@@ -53,6 +82,7 @@ enum Command {
         config_file: Option<PathBuf>,
         server: Option<String>,
         base_dir: Option<PathBuf>,
+        queue: bool,
     },
 }
 
@@ -64,6 +94,7 @@ fn execute_remote(
     config_file: Option<PathBuf>,
     server: Option<String>,
     base_dir: Option<PathBuf>,
+    queue: bool,
     cli_debug: bool,
 ) -> Result<(), String> {
     if let Some(path) = &work_dir {
@@ -214,7 +245,29 @@ fn execute_remote(
     }
 
     let client = Client::new();
-    let url = format!("{}/api/v1/tasks", server_url.trim_end_matches('/'));
+    let server_base = server_url.trim_end_matches('/');
+
+    if queue {
+        if debug {
+            eprintln!("[flowy-client] debug: enqueue job via daemon");
+        }
+        let response = execute_via_queue(&client, server_base, &request, debug)?;
+        print_execute_response(&response);
+        return Ok(());
+    }
+
+    let response = execute_direct(&client, server_base, &request, debug)?;
+    print_execute_response(&response);
+    Ok(())
+}
+
+fn execute_direct(
+    client: &Client,
+    server_base: &str,
+    request: &ExecuteRequest,
+    debug: bool,
+) -> Result<ExecuteResponse, String> {
+    let url = format!("{}/api/v1/tasks", server_base);
 
     if debug {
         eprintln!("[flowy-client] debug: POST {}", url);
@@ -222,7 +275,7 @@ fn execute_remote(
 
     let response = client
         .post(&url)
-        .json(&request)
+        .json(request)
         .send()
         .map_err(|e| format!("Failed to contact server: {}", e))?;
 
@@ -246,27 +299,140 @@ fn execute_remote(
         return Err(format!("Server error (HTTP {}): {}", status, body));
     }
 
-    let response: ExecuteResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse server response: {}", e))?;
+    serde_json::from_str(&body).map_err(|e| format!("Failed to parse server response: {}", e))
+}
 
-    println!("status: {}", response.status);
-    println!("duration_ms: {}", response.duration_ms);
-    println!(
-        "outputs: {}",
-        serde_json::to_string_pretty(&response.outputs).unwrap()
-    );
-    if let Some(stdout) = response.stdout {
-        println!("stdout:\n{}", stdout);
-    }
-    if let Some(stderr) = response.stderr {
-        println!("stderr:\n{}", stderr);
-    }
+fn execute_via_queue(
+    client: &Client,
+    server_base: &str,
+    request: &ExecuteRequest,
+    debug: bool,
+) -> Result<ExecuteResponse, String> {
+    let run_id = enqueue_job(client, server_base, request, debug)?;
+    println!("run_id: {}", run_id);
+    wait_for_job_completion(client, server_base, &run_id, debug)
+}
+
+fn enqueue_job(
+    client: &Client,
+    server_base: &str,
+    request: &ExecuteRequest,
+    debug: bool,
+) -> Result<String, String> {
+    let url = format!("{}/api/v1/jobs", server_base);
 
     if debug {
-        eprintln!("[flowy-client] debug: execution finished successfully");
+        eprintln!("[flowy-client] debug: enqueue POST {}", url);
     }
 
-    Ok(())
+    let response = client
+        .post(&url)
+        .json(request)
+        .send()
+        .map_err(|e| format!("Failed to contact server: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .map_err(|e| format!("Failed to read enqueue response body: {}", e))?;
+
+    if debug {
+        eprintln!(
+            "[flowy-client] debug: enqueue response status={} body={} ",
+            status, body
+        );
+    }
+
+    if !status.is_success() {
+        if let Ok(err) = serde_json::from_str::<ErrorResponse>(&body) {
+            return Err(format!("Server error: {}", err.message));
+        }
+        return Err(format!("Server error (HTTP {}): {}", status, body));
+    }
+
+    let response: EnqueueJobResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse enqueue response: {}", e))?;
+
+    Ok(response.run_id)
+}
+
+fn wait_for_job_completion(
+    client: &Client,
+    server_base: &str,
+    run_id: &str,
+    debug: bool,
+) -> Result<ExecuteResponse, String> {
+    loop {
+        let status = fetch_job_status(client, server_base, run_id)?;
+        let state = status.state;
+        let result = status.result;
+
+        match state.as_str() {
+            "succeeded" => {
+                if let Some(JobResultStatus::Success { response }) = result {
+                    return Ok(response);
+                }
+                return Err("Job succeeded but no result returned".to_string());
+            }
+            "failed" => {
+                if let Some(JobResultStatus::Failure { message }) = result {
+                    return Err(format!("Job failed: {}", message));
+                }
+                return Err("Job failed without error message".to_string());
+            }
+            "pending" | "running" => {
+                if debug {
+                    eprintln!("[flowy-client] debug: job {} state {}", run_id, state);
+                }
+                thread::sleep(QUEUE_POLL_INTERVAL);
+            }
+            other => {
+                return Err(format!("Unknown job state '{}'", other));
+            }
+        }
+    }
+}
+
+fn fetch_job_status(
+    client: &Client,
+    server_base: &str,
+    run_id: &str,
+) -> Result<JobStatusResponse, String> {
+    let url = format!("{}/api/v1/jobs/{}", server_base, run_id);
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("Failed to contact server: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .map_err(|e| format!("Failed to read job status body: {}", e))?;
+
+    if status.is_success() {
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse job status: {}", e))
+    } else {
+        if let Ok(err) = serde_json::from_str::<ErrorResponse>(&body) {
+            Err(format!("Server error: {}", err.message))
+        } else {
+            Err(format!("Server error (HTTP {}): {}", status, body))
+        }
+    }
+}
+
+fn print_execute_response(response: &ExecuteResponse) {
+    println!("status: {}", response.status);
+    println!("duration_ms: {}", response.duration_ms);
+    match serde_json::to_string_pretty(&response.outputs) {
+        Ok(pretty) => println!("outputs: {}", pretty),
+        Err(_) => println!("outputs: {}", response.outputs.to_string()),
+    }
+    if let Some(stdout) = &response.stdout {
+        println!("stdout:\n{}", stdout);
+    }
+    if let Some(stderr) = &response.stderr {
+        println!("stderr:\n{}", stderr);
+    }
 }
 
 fn parse_args() -> Args {
@@ -340,6 +506,7 @@ fn parse_run_command(program: &str, args: &[String]) -> Command {
     let mut config_file = None;
     let mut server = None;
     let mut base_dir = None;
+    let mut queue = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -398,6 +565,9 @@ fn parse_run_command(program: &str, args: &[String]) -> Command {
                     process::exit(1);
                 }
             }
+            "--queue" => {
+                queue = true;
+            }
             "-h" | "--help" => {
                 print_help(program);
                 process::exit(0);
@@ -431,6 +601,7 @@ fn parse_run_command(program: &str, args: &[String]) -> Command {
         config_file,
         server,
         base_dir,
+        queue,
     }
 }
 
@@ -450,6 +621,7 @@ fn print_help(program: &str) {
     eprintln!("  -c, --config <file>   (Ignored) Provided for CLI compatibility");
     eprintln!("  -s, --server <url>    flowy-server base URL (saved to ~/.flowy)");
     eprintln!("      --basedir <dir>    Base directory for resolving relative File inputs (default: current dir)");
+    eprintln!("      --queue            Enqueue job and wait for daemon execution");
     eprintln!("  --debug               Enable verbose client logging");
     eprintln!("  -h, --help            Show this help message");
     eprintln!();

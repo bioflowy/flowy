@@ -29,6 +29,7 @@ axum = { version = "0.7", features = ["json"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 uuid = { version = "1", features = ["v4"] }
 toml = "0.8"
+whoami = "1.4"
 
 [[bin]]
 name = "spec_tests"
@@ -45,6 +46,10 @@ path = "src/bin/flowy-server.rs"
 [[bin]]
 name = "flowy-client"
 path = "src/bin/flowy-client.rs"
+
+[[bin]]
+name = "daemon-flowy"
+path = "src/bin/daemon_flowy.rs"
 
 [dev-dependencies]
 tempfile = "3.21.0"

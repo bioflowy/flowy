@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteRequest {
     pub wdl: String,
     #[serde(default)]
@@ -19,7 +19,7 @@ pub struct ExecuteOptions {
     pub base_dir: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteResponse {
     pub status: String,
     pub outputs: serde_json::Value,
@@ -30,7 +30,7 @@ pub struct ExecuteResponse {
     pub duration_ms: u128,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub status: String,
     pub message: String,

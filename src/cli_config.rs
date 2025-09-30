@@ -10,6 +10,14 @@ pub struct CliConfig {
     pub server_url: Option<String>,
     #[serde(rename = "DEBUG", skip_serializing_if = "Option::is_none")]
     pub debug: Option<bool>,
+    #[serde(rename = "WORKER_ID", skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    #[serde(rename = "HEARTBEAT_SECS", skip_serializing_if = "Option::is_none")]
+    pub heartbeat_secs: Option<u64>,
+    #[serde(rename = "POLL_SECS", skip_serializing_if = "Option::is_none")]
+    pub poll_secs: Option<u64>,
+    #[serde(rename = "MAX_JOBS", skip_serializing_if = "Option::is_none")]
+    pub max_jobs: Option<usize>,
 }
 
 pub fn config_file_path() -> Result<PathBuf, String> {
