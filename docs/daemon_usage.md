@@ -29,21 +29,20 @@ cargo run --bin daemon-flowy -- \
 起動すると `daemon-flowy` が定期的にサーバーへジョブを問い合わせ、ハートビートを送信します。
 
 ## 3. ジョブを投入 (flowy-client)
-`flowy-client --queue` を使うと、即時実行ではなくジョブキュー経由で実行できます。以下はサンプル:
+`flowy-client` は常にジョブキュー経由で実行します。以下はサンプル:
 
 ```bash
 cargo run --bin flowy-client -- run examples/docker_simple.wdl \
   -i examples/docker_hello_inputs.json \
   --server http://localhost:3030 \
-  --basedir $(pwd) \
-  --queue
+  --basedir $(pwd)
 ```
 
-- `--queue` を指定すると `/api/v1/jobs` にリクエストを登録し、`daemon-flowy` が実行するまでポーリングします。
+- `--queue` フラグは後方互換性のために残っていますが、指定の有無に関わらず `/api/v1/jobs` にリクエストを登録し、`daemon-flowy` が実行するまでポーリングします。
 - `--basedir` は `File` 入力の相対パス解決に使用されます。
 
 ## 4. 実行結果の確認
-`flowy-client --queue` はジョブ完了まで待機し、終了時に `status`, `duration_ms`, `outputs`, `stdout`, `stderr` を表示します。途中で `run_id: <ID>` が表示されるので、必要に応じて REST API 経由で状態を確認できます。
+`flowy-client` はジョブ完了まで待機し、終了時に `status`, `duration_ms`, `outputs`, `stdout`, `stderr` を表示します。途中で `run_id: <ID>` が表示されるので、必要に応じて REST API 経由で状態を確認できます。
 
 ### 手動でジョブ状態を確認する場合
 

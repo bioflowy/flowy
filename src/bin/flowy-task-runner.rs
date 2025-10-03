@@ -95,6 +95,13 @@ fn execute_request(request: TaskRunnerRequest) -> Result<TaskRunnerResponse, Run
     let exit_success = exit_status.success();
     let signal = exit_signal(&exit_status);
 
+    let duration_ms_raw = duration.as_millis();
+    let duration_ms = if duration_ms_raw > u64::MAX as u128 {
+        u64::MAX
+    } else {
+        duration_ms_raw as u64
+    };
+
     Ok(TaskRunnerResponse::success(
         run_id,
         exit_code,
@@ -102,7 +109,7 @@ fn execute_request(request: TaskRunnerRequest) -> Result<TaskRunnerResponse, Run
         exit_success,
         stdout,
         stderr,
-        duration.as_millis(),
+        duration_ms,
         outputs_serialized,
         work_dir,
     ))

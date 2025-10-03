@@ -178,7 +178,7 @@ impl TaskEngine {
 
         let duration = response
             .duration_ms
-            .map(|ms| Duration::from_millis(ms as u64))
+            .map(Duration::from_millis)
             .unwrap_or_else(|| Duration::from_millis(0));
 
         let exit_status =

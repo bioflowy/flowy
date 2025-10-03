@@ -27,7 +27,7 @@ pub struct ExecuteResponse {
     pub stdout: Option<String>,
     #[serde(default)]
     pub stderr: Option<String>,
-    pub duration_ms: u128,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

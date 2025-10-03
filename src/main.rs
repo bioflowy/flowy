@@ -18,10 +18,14 @@ use flowy::{
     Bindings, SourcePosition, Value, WdlError,
 };
 use reqwest::blocking::Client;
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::thread;
 use std::time::Duration;
+
+const QUEUE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// CLI arguments structure
 struct Args {
@@ -576,6 +580,28 @@ fn run_wdl(args: Args) -> Result<(), WdlError> {
     Ok(())
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct JobStatusResponse {
+    run_id: String,
+    state: String,
+    worker_id: Option<String>,
+    #[serde(default)]
+    result: Option<JobResultStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum JobResultStatus {
+    Success { response: ExecuteResponse },
+    Failure { message: String },
+}
+
+#[derive(Debug, Deserialize)]
+struct EnqueueJobResponse {
+    run_id: String,
+}
+
 fn run_remote(
     server: &str,
     wdl_file: PathBuf,
@@ -635,42 +661,132 @@ fn run_remote(
     };
 
     let client = Client::new();
-    let url = format!("{}/api/v1/tasks", server.trim_end_matches('/'));
+    let server_base = server.trim_end_matches('/');
 
+    let run_id = enqueue_job(&client, server_base, &request)?;
+    println!("run_id: {}", run_id);
+    let response_json = wait_for_job_completion(&client, server_base, &run_id)?;
+
+    println!("status: {}", response_json.status);
+    println!("duration_ms: {}", response_json.duration_ms);
+    println!(
+        "outputs: {}",
+        serde_json::to_string_pretty(&response_json.outputs).unwrap()
+    );
+    if let Some(stdout) = response_json.stdout {
+        println!("stdout:\n{}", stdout);
+    }
+    if let Some(stderr) = response_json.stderr {
+        println!("stderr:\n{}", stderr);
+    }
+    Ok(())
+}
+
+fn enqueue_job(
+    client: &Client,
+    server_base: &str,
+    request: &ExecuteRequest,
+) -> Result<String, WdlError> {
+    let url = format!("{}/api/v1/jobs", server_base);
     let response = client
         .post(&url)
-        .json(&request)
+        .json(request)
         .send()
         .map_err(|e| WdlError::RuntimeError {
             message: format!("Failed to contact server: {}", e),
         })?;
 
-    if response.status().is_success() {
-        let response_json: ExecuteResponse =
-            response.json().map_err(|e| WdlError::RuntimeError {
-                message: format!("Failed to parse server response: {}", e),
-            })?;
+    let status = response.status();
+    let body = response.text().map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read enqueue response body: {}", e),
+    })?;
 
-        println!("status: {}", response_json.status);
-        println!("duration_ms: {}", response_json.duration_ms);
-        println!(
-            "outputs: {}",
-            serde_json::to_string_pretty(&response_json.outputs).unwrap()
-        );
-        if let Some(stdout) = response_json.stdout {
-            println!("stdout:\n{}", stdout);
+    if !status.is_success() {
+        if let Ok(err) = serde_json::from_str::<ApiErrorResponse>(&body) {
+            return Err(WdlError::RuntimeError {
+                message: format!("Server error: {}", err.message),
+            });
         }
-        if let Some(stderr) = response_json.stderr {
-            println!("stderr:\n{}", stderr);
-        }
-        Ok(())
-    } else {
-        let error: ApiErrorResponse = response.json().unwrap_or(ApiErrorResponse {
-            status: "error".to_string(),
-            message: "Unknown server error".to_string(),
+        return Err(WdlError::RuntimeError {
+            message: format!("Server error (HTTP {}): {}", status, body),
         });
+    }
+
+    let response: EnqueueJobResponse =
+        serde_json::from_str(&body).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to parse enqueue response: {}", e),
+        })?;
+
+    Ok(response.run_id)
+}
+
+fn wait_for_job_completion(
+    client: &Client,
+    server_base: &str,
+    run_id: &str,
+) -> Result<ExecuteResponse, WdlError> {
+    loop {
+        let status = fetch_job_status(client, server_base, run_id)?;
+        match status.state.as_str() {
+            "succeeded" => {
+                if let Some(JobResultStatus::Success { response }) = status.result {
+                    return Ok(response);
+                }
+                return Err(WdlError::RuntimeError {
+                    message: "Job succeeded but no result returned".to_string(),
+                });
+            }
+            "failed" => {
+                if let Some(JobResultStatus::Failure { message }) = status.result {
+                    return Err(WdlError::RuntimeError {
+                        message: format!("Job failed: {}", message),
+                    });
+                }
+                return Err(WdlError::RuntimeError {
+                    message: "Job failed without error message".to_string(),
+                });
+            }
+            "pending" | "running" => {
+                thread::sleep(QUEUE_POLL_INTERVAL);
+            }
+            other => {
+                return Err(WdlError::RuntimeError {
+                    message: format!("Unknown job state '{}'", other),
+                });
+            }
+        }
+    }
+}
+
+fn fetch_job_status(
+    client: &Client,
+    server_base: &str,
+    run_id: &str,
+) -> Result<JobStatusResponse, WdlError> {
+    let url = format!("{}/api/v1/jobs/{}", server_base, run_id);
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to contact server: {}", e),
+        })?;
+
+    let status = response.status();
+    let body = response.text().map_err(|e| WdlError::RuntimeError {
+        message: format!("Failed to read job status body: {}", e),
+    })?;
+
+    if status.is_success() {
+        serde_json::from_str(&body).map_err(|e| WdlError::RuntimeError {
+            message: format!("Failed to parse job status: {}", e),
+        })
+    } else if let Ok(err) = serde_json::from_str::<ApiErrorResponse>(&body) {
         Err(WdlError::RuntimeError {
-            message: format!("Server error: {}", error.message),
+            message: format!("Server error: {}", err.message),
+        })
+    } else {
+        Err(WdlError::RuntimeError {
+            message: format!("Server error (HTTP {}): {}", status, body),
         })
     }
 }

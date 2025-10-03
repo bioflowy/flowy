@@ -251,55 +251,15 @@ fn execute_remote(
         if debug {
             eprintln!("[flowy-client] debug: enqueue job via daemon");
         }
-        let response = execute_via_queue(&client, server_base, &request, debug)?;
-        print_execute_response(&response);
-        return Ok(());
+    } else {
+        eprintln!(
+            "Warning: direct execution via flowy-server is no longer supported; using daemon queue"
+        );
     }
 
-    let response = execute_direct(&client, server_base, &request, debug)?;
+    let response = execute_via_queue(&client, server_base, &request, debug)?;
     print_execute_response(&response);
     Ok(())
-}
-
-fn execute_direct(
-    client: &Client,
-    server_base: &str,
-    request: &ExecuteRequest,
-    debug: bool,
-) -> Result<ExecuteResponse, String> {
-    let url = format!("{}/api/v1/tasks", server_base);
-
-    if debug {
-        eprintln!("[flowy-client] debug: POST {}", url);
-    }
-
-    let response = client
-        .post(&url)
-        .json(request)
-        .send()
-        .map_err(|e| format!("Failed to contact server: {}", e))?;
-
-    let status = response.status();
-    if debug {
-        eprintln!("[flowy-client] debug: HTTP status {}", status);
-    }
-
-    let body = response
-        .text()
-        .map_err(|e| format!("Failed to read server response body: {}", e))?;
-
-    if debug {
-        eprintln!("[flowy-client] debug: response body = {}", body);
-    }
-
-    if !status.is_success() {
-        if let Ok(err) = serde_json::from_str::<ErrorResponse>(&body) {
-            return Err(format!("Server error: {}", err.message));
-        }
-        return Err(format!("Server error (HTTP {}): {}", status, body));
-    }
-
-    serde_json::from_str(&body).map_err(|e| format!("Failed to parse server response: {}", e))
 }
 
 fn execute_via_queue(
@@ -506,7 +466,7 @@ fn parse_run_command(program: &str, args: &[String]) -> Command {
     let mut config_file = None;
     let mut server = None;
     let mut base_dir = None;
-    let mut queue = false;
+    let mut queue = true;
 
     let mut i = 0;
     while i < args.len() {
@@ -621,7 +581,7 @@ fn print_help(program: &str) {
     eprintln!("  -c, --config <file>   (Ignored) Provided for CLI compatibility");
     eprintln!("  -s, --server <url>    flowy-server base URL (saved to ~/.flowy)");
     eprintln!("      --basedir <dir>    Base directory for resolving relative File inputs (default: current dir)");
-    eprintln!("      --queue            Enqueue job and wait for daemon execution");
+    eprintln!("      --queue            (Deprecated) Jobs always enqueue for daemon execution");
     eprintln!("  --debug               Enable verbose client logging");
     eprintln!("  -h, --help            Show this help message");
     eprintln!();

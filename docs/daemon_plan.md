@@ -10,7 +10,7 @@ Build a long-running daemon (`daemon-flowy`) that polls `flowy-server` for jobs,
   - `ServerClient`: REST client encapsulating job claim, heartbeat, completion APIs.
   - `JobManager`: tracks in-flight jobs, spawns task runners, handles heartbeats.
   - `TaskRunner`: wraps existing execution logic (workflow/task) inside non-blocking async process.
-  - `flowy-client --queue`: enqueues a job and polls the job-status endpoint until the daemon completes execution.
+  - `flowy-client`: enqueues a job and polls the job-status endpoint until the daemon completes execution.
 
 ## Server API Extensions (Phase 1)
 1. `POST /api/v1/workers/register` (optional) to obtain worker_id.
@@ -71,5 +71,5 @@ Server stores job state machine: Pending → Running → (Succeeded | Failed | T
 1. Server API endpoints + schema updates.
 2. `ServerClient` REST wrapper with retries/backoff.
 3. `JobManager` + heartbeat loop + async task execution.
-4. CLI/config updates (`flowy-client --queue`, worker defaults), logging.
+4. CLI/config updates (`flowy-client` defaults to queue execution, worker defaults), logging.
 5. Tests & docs (`docs/daemon_plan.md`, README updates).

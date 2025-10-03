@@ -496,6 +496,8 @@ impl SpecTestRunner {
                     cmd.arg("-i").arg(input_file);
                 }
 
+                self.log_command(&cmd, data_dir);
+
                 match cmd.output() {
                     Ok(output) => {
                         if output.status.success() {
@@ -536,6 +538,9 @@ impl SpecTestRunner {
                 };
 
                 cmd.arg("--basedir").arg(base_dir_path);
+
+                self.log_command(&cmd, data_dir);
+
                 match cmd.output() {
                     Ok(output) => {
                         if output.status.success() {
@@ -550,6 +555,30 @@ impl SpecTestRunner {
                 }
             }
         }
+    }
+
+    fn log_command(&self, cmd: &Command, cwd: &Path) {
+        if !self.debug {
+            return;
+        }
+
+        let program = cmd.get_program().to_string_lossy();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let args_display = if args.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", args.join(" "))
+        };
+
+        eprintln!(
+            "DEBUG: Executing command (cwd={}): {}{}",
+            cwd.display(),
+            program,
+            args_display
+        );
     }
 
     /// Extract the JSON payload printed by `flowy-client`'s `outputs:` section.
@@ -822,6 +851,11 @@ fn sanitize_name(name: &str) -> String {
         .to_string()
 }
 
+fn extract_option_value<'a>(arg: &'a str, flag: &str) -> Option<&'a str> {
+    arg.strip_prefix(flag)
+        .map(|rest| rest.trim_start_matches(|c: char| c == '=' || c.is_whitespace()))
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
@@ -852,51 +886,73 @@ fn main() {
     let mut backend = ExecutionBackend::Flowy;
     let mut client_server: Option<String> = None;
 
+    let mut set_backend_value = |raw: &str| match parse_execution_backend(raw) {
+        Ok(value) => {
+            backend = value;
+        }
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            std::process::exit(1);
+        }
+    };
+
     // Parse command line arguments
     let mut i = 3;
     while i < args.len() {
-        match args[i].as_str() {
-            "--list" => list_tests = true,
-            "--name" => {
-                i += 1;
-                if i < args.len() {
-                    test_name = Some(args[i].clone());
-                }
+        let arg = &args[i];
+
+        if arg == "--list" {
+            list_tests = true;
+        } else if arg == "--name" {
+            i += 1;
+            if i < args.len() {
+                test_name = Some(args[i].clone());
             }
-            "--pattern" => {
-                i += 1;
-                if i < args.len() {
-                    pattern = Some(args[i].clone());
-                }
+        } else if arg == "--pattern" {
+            i += 1;
+            if i < args.len() {
+                pattern = Some(args[i].clone());
             }
-            "--keep-files" => runner = runner.with_keep_files(true),
-            "--debug" => runner = runner.with_debug(true),
-            "--runner" | "--backend" => {
-                i += 1;
-                if i < args.len() {
-                    match parse_execution_backend(&args[i]) {
-                        Ok(value) => backend = value,
-                        Err(err) => {
-                            eprintln!("Error: {}", err);
-                            std::process::exit(1);
-                        }
-                    }
-                } else {
-                    eprintln!("Error: --runner/--backend requires a value (flowy or flowy-client)");
-                    std::process::exit(1);
-                }
+        } else if arg == "--keep-files" {
+            runner = runner.with_keep_files(true);
+        } else if arg == "--debug" {
+            runner = runner.with_debug(true);
+        } else if arg == "--runner" || arg == "--backend" {
+            i += 1;
+            if i < args.len() {
+                set_backend_value(&args[i]);
+            } else {
+                eprintln!("Error: --runner/--backend requires a value (flowy or flowy-client)");
+                std::process::exit(1);
             }
-            "--client-server" => {
-                i += 1;
-                if i < args.len() {
-                    client_server = Some(args[i].clone());
-                } else {
-                    eprintln!("Error: --client-server requires a URL");
-                    std::process::exit(1);
-                }
+        } else if let Some(value) = extract_option_value(arg, "--runner") {
+            if value.is_empty() {
+                eprintln!("Error: --runner requires a value (flowy or flowy-client)");
+                std::process::exit(1);
             }
-            _ => {}
+            set_backend_value(value);
+        } else if let Some(value) = extract_option_value(arg, "--backend") {
+            if value.is_empty() {
+                eprintln!("Error: --backend requires a value (flowy or flowy-client)");
+                std::process::exit(1);
+            }
+            set_backend_value(value);
+        } else if arg == "--client-server" {
+            i += 1;
+            if i < args.len() {
+                client_server = Some(args[i].clone());
+            } else {
+                eprintln!("Error: --client-server requires a URL");
+                std::process::exit(1);
+            }
+        } else if let Some(value) = extract_option_value(arg, "--client-server") {
+            if value.is_empty() {
+                eprintln!("Error: --client-server requires a URL");
+                std::process::exit(1);
+            }
+            client_server = Some(value.to_string());
         }
+
         i += 1;
     }
 

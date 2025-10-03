@@ -22,14 +22,14 @@ cargo build --bin flowy-server --bin flowy-client
 # デフォルトの 0.0.0.0:3030 で待ち受け
 cargo run --bin flowy-server
 ```
-- サーバーは `/api/v1/tasks` で POST リクエストを受け付けます。
-- 各リクエストごとに一時ディレクトリ上でワークフロー / タスクを実行し、完了すると JSON で結果を返します。
+- サーバーは `/api/v1/jobs` などのジョブキュー API を提供します (直接実行エンドポイント `/api/v1/tasks` は廃止済み)。
+- すべての実行リクエストはキューに登録され、`daemon-flowy` などのワーカーが取り出して処理します。
 - 標準出力レベルで `flowy-server listening on http://0.0.0.0:3030` が表示されれば起動成功です。
 
 別のターミナルを開き、`flowy-server` を起動したまま `flowy-client` や `curl` でアクセスします。
 
 ## REST リクエスト形式
-`POST /api/v1/tasks` に以下の JSON を送信します。
+`POST /api/v1/jobs` に以下の JSON を送信してジョブを登録します。
 ```json
 {
   "wdl": "<WDL ファイルの中身>",
@@ -43,17 +43,9 @@ cargo run --bin flowy-server
 - `wdl` にはファイル内容の文字列を入れます。
 - `inputs` は WDL 名空間に揃えた JSON オブジェクトで、省略した場合は空オブジェクトとして扱われます。
 - `options.task` を指定するとワークフローではなく該当タスクを直接実行します。ワークフローが存在する場合は未指定でワークフローが実行されます。
-- レスポンスは `ExecuteResponse` として以下の構造で返ります。
-```json
-{
-  "status": "ok",
-  "outputs": { /* WDL 出力 */ },
-  "stdout": "...",
-  "stderr": "...",
-  "duration_ms": 1234
-}
-```
-エラー時は `status: "error"` と `message` を含む `ErrorResponse` が返るので、HTTP ステータスコードと併せて確認してください。
+- レスポンスは `{"run_id": "..."}` の形式でジョブ ID を返します。ワーカーが実行を完了すると `/api/v1/jobs/{run_id}` で結果が取得できます。
+- ジョブ状態は `pending` → `running` → (`succeeded` / `failed`) のいずれかへ遷移します。完了時の `result` フィールドに `ExecuteResponse` またはエラー情報が含まれます。
+- エラー時は `status: "error"` と `message` を含む `ErrorResponse` が返るので、HTTP ステータスコードと併せて確認してください。
 
 ## flowy-client の使い方
 `flowy-client` は `flowy` CLI と同じ形式で利用できます。
@@ -67,9 +59,11 @@ flowy-client run path/to/workflow.wdl \
 主なオプション:
 - `-i, --input`: JSON 入力ファイルのパス (省略時は空オブジェクト `{}` を送信)
 - `-t, --task`: 文書内 task を直接実行する場合に指定
-- `-s, --server`: `flowy-server` のベース URL (`/api/v1/tasks` は自動で付与)。省略時はローカル設定ファイルから読み込みます
+- `-s, --server`: `flowy-server` のベース URL。省略時はローカル設定ファイルから読み込みます
 - `--basedir`: `File` 型の相対パスを解決する基準ディレクトリ (省略時は実行時のカレントディレクトリ)
 - `--debug`: クライアント側の詳細ログを有効化 (設定ファイルの `DEBUG` でも指定可)
+
+すべてのリクエストはデフォルトでジョブキューに登録されるため、旧来の `--queue` フラグを付けなくても `daemon-flowy` などのワーカーが処理します。
 
 `--basedir` で指定されたパスは `flowy-server` にそのまま送信され、サーバー側で `File` 入力の相対パスを解決する際の基準になります。クライアントとサーバーが同じファイルシステムを共有しているケース (NFS など) を想定しており、該当ディレクトリ以下に入力ファイルが存在する必要があります。
 
@@ -109,11 +103,15 @@ jq -n \
     options: {task: "test"}
   }' > request.json
 
-curl -X POST http://localhost:3030/api/v1/tasks \
+response=$(curl -s -X POST http://localhost:3030/api/v1/jobs \
   -H 'Content-Type: application/json' \
-  --data @request.json
+  --data @request.json)
+
+run_id=$(echo "$response" | jq -r '.run_id')
+
+curl http://localhost:3030/api/v1/jobs/$run_id
 ```
-上記では単一タスク `test` を直接実行する例です。`wdl` はファイル内容を 1 行化して埋め込んでいますが、実際には `jq -Rs` や専用スクリプトでエスケープすると安全です。
+上記では単一タスク `test` のジョブを登録し、実行完了後に結果を取得する例です。`wdl` はファイル内容を 1 行化して埋め込んでいますが、実際には `jq -Rs` や専用スクリプトでエスケープすると安全です。
 
 ## トラブルシューティング
 - **サーバーに接続できない**: ポート `3030` が空いていること、`flowy-server` プロセスが稼働していることを確認してください。

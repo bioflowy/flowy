@@ -6,10 +6,7 @@ use axum::{
     Json, Router,
 };
 use flowy::cli_config;
-use flowy::core::{
-    api::{ErrorResponse, ExecuteRequest, ExecuteResponse},
-    executor::{self, ExecuteJobError},
-};
+use flowy::core::api::{ExecuteRequest, ExecuteResponse};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -18,7 +15,6 @@ use std::net::SocketAddr;
 use std::sync::OnceLock;
 use std::time::Instant;
 use tokio::sync::Mutex;
-use tokio::task;
 use uuid::Uuid;
 
 static DEBUG_ENABLED: OnceLock<bool> = OnceLock::new();
@@ -71,7 +67,6 @@ async fn main() {
     }
 
     let app = Router::new()
-        .route("/api/v1/tasks", post(handle_execute))
         .route("/api/v1/jobs", post(handle_enqueue_job))
         .route("/api/v1/jobs/claim", post(handle_claim_job))
         .route("/api/v1/jobs/:run_id", get(handle_get_job_status))
@@ -92,72 +87,6 @@ async fn main() {
     if let Err(err) = axum::serve(listener, app.into_make_service()).await {
         eprintln!("Server error: {}", err);
     }
-}
-
-async fn handle_execute(
-    Json(req): Json<ExecuteRequest>,
-) -> Result<Json<ExecuteResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let debug = debug_enabled();
-    if debug {
-        let task = req
-            .options
-            .as_ref()
-            .and_then(|opts| opts.task.as_deref())
-            .unwrap_or("<workflow>");
-        let input_summary = if let Some(map) = req.inputs.as_object() {
-            format!("keys={:?}", map.keys().collect::<Vec<_>>())
-        } else {
-            "non-object inputs".to_string()
-        };
-        eprintln!(
-            "[flowy-server] received request: task={}, wdl_bytes={}, {}",
-            task,
-            req.wdl.len(),
-            input_summary
-        );
-    }
-
-    let blocking_result = task::spawn_blocking(move || process_request(req)).await;
-
-    match blocking_result {
-        Ok(Ok(response)) => {
-            if debug {
-                eprintln!(
-                    "[flowy-server] request succeeded: duration_ms={}",
-                    response.duration_ms
-                );
-            }
-            Ok(Json(response))
-        }
-        Ok(Err(err)) => {
-            if debug {
-                eprintln!("[flowy-server] request failed: {}", err);
-            }
-            Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    status: "error".to_string(),
-                    message: err.to_string(),
-                }),
-            ))
-        }
-        Err(join_err) => {
-            if debug {
-                eprintln!("[flowy-server] handler panicked: {}", join_err);
-            }
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    status: "error".to_string(),
-                    message: format!("Task execution panicked: {}", join_err),
-                }),
-            ))
-        }
-    }
-}
-
-fn process_request(req: ExecuteRequest) -> Result<ExecuteResponse, ServerError> {
-    executor::execute_request(req).map_err(ServerError::from)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -443,27 +372,4 @@ async fn handle_failed(
         .fail(&run_id, &payload.worker_id, payload.message)
         .map_err(|err| err.status_code())?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(thiserror::Error, Debug)]
-enum ServerError {
-    #[error("{0}")]
-    InvalidRequest(String),
-    #[error("WDL error: {0}")]
-    Wdl(String),
-    #[error("Runtime error: {0}")]
-    Runtime(String),
-    #[error("IO error: {0}")]
-    Io(String),
-}
-
-impl From<ExecuteJobError> for ServerError {
-    fn from(value: ExecuteJobError) -> Self {
-        match value {
-            ExecuteJobError::InvalidRequest(msg) => ServerError::InvalidRequest(msg),
-            ExecuteJobError::Wdl(msg) => ServerError::Wdl(msg),
-            ExecuteJobError::Runtime(msg) => ServerError::Runtime(msg),
-            ExecuteJobError::Io(msg) => ServerError::Io(msg),
-        }
-    }
 }

@@ -224,7 +224,7 @@ pub struct TaskRunnerResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stderr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub duration_ms: Option<u128>,
+    pub duration_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outputs: Option<Vec<SerializedBinding<Value>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -243,7 +243,7 @@ impl TaskRunnerResponse {
         exit_success: bool,
         stdout: String,
         stderr: String,
-        duration_ms: u128,
+        duration_ms: u64,
         outputs: Vec<SerializedBinding<Value>>,
         work_dir: PathBuf,
     ) -> Self {
@@ -307,8 +307,8 @@ pub fn deserialize_bindings(bindings: Vec<SerializedBinding<Value>>) -> Bindings
 }
 
 /// Convert a duration in milliseconds back into `Duration`.
-pub fn duration_from_millis(millis: u128) -> Duration {
-    Duration::from_millis(millis as u64)
+pub fn duration_from_millis(millis: u64) -> Duration {
+    Duration::from_millis(millis)
 }
 
 #[cfg(test)]

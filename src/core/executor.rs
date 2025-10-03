@@ -114,12 +114,19 @@ fn run_workflow(
     )
     .map_err(|e| ExecuteJobError::Wdl(e.to_string()))?;
 
+    let duration_ms_raw = result.duration.as_millis();
+    let duration_ms = if duration_ms_raw > u64::MAX as u128 {
+        u64::MAX
+    } else {
+        duration_ms_raw as u64
+    };
+
     Ok(ExecuteResponse {
         status: "ok".to_string(),
         outputs,
         stdout: None,
         stderr: None,
-        duration_ms: result.duration.as_millis(),
+        duration_ms,
     })
 }
 
@@ -144,12 +151,19 @@ fn run_task(
     let stdout = read_file_from_url(&result.stdout)?;
     let stderr = read_file_from_url(&result.stderr)?;
 
+    let duration_ms_raw = result.duration.as_millis();
+    let duration_ms = if duration_ms_raw > u64::MAX as u128 {
+        u64::MAX
+    } else {
+        duration_ms_raw as u64
+    };
+
     Ok(ExecuteResponse {
         status: "ok".to_string(),
         outputs,
         stdout: Some(stdout),
         stderr: Some(stderr),
-        duration_ms: result.duration.as_millis(),
+        duration_ms,
     })
 }
 
