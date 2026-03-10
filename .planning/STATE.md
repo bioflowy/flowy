@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-lexer-parser-and-ast-02-03-PLAN.md
-last_updated: "2026-03-10T07:01:17.777Z"
+stopped_at: Completed 02-lexer-parser-and-ast-02-04-PLAN.md
+last_updated: "2026-03-10T07:13:06.479Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-lexer-parser-and-ast P01 | 3min | 2 tasks | 7 files |
 | Phase 02-lexer-parser-and-ast P02 | 3min | 2 tasks | 3 files |
 | Phase 02-lexer-parser-and-ast P03 | 8min | 2 tasks | 4 files |
+| Phase 02-lexer-parser-and-ast P04 | 9min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - [Phase 02-lexer-parser-and-ast]: TokXxx exported naming for all token constants enables external lexer_test package to reference them directly
 - [Phase 02-lexer-parser-and-ast]: parseExpr stub propagates TokError as ParseError; expectName() accepts type-keywords as struct/task/workflow names
 - [Phase 02-lexer-parser-and-ast]: Workflow input/output sections parsed directly in parseWorkflow loop; body-only elements use parseWorkflowBodyElement
+- [Phase 02-lexer-parser-and-ast]: ** right-associativity: rightBP=59 < leftBP=60 with loop condition leftBP<=minBP — unambiguously right-associative for 2**3**2→2**(3**2)
+- [Phase 02-lexer-parser-and-ast]: Unary minus/not rightBP=55 (between */ at 50 and ** at 60): -x**2→-(x**2) matching Python/math convention
+- [Phase 02-lexer-parser-and-ast]: isNameToken expanded with TokEnv — 'env' keyword valid as variable reference in expression context (needed for ${env} in command blocks)
 
 ### Pending Todos
 
@@ -88,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T07:01:17.773Z
-Stopped at: Completed 02-lexer-parser-and-ast-02-03-PLAN.md
+Last session: 2026-03-10T07:13:06.475Z
+Stopped at: Completed 02-lexer-parser-and-ast-02-04-PLAN.md
 Resume file: None

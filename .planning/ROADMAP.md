@@ -124,7 +124,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Type Data Structures | 1/1 | Complete   | 2026-03-10 |
-| 2. Lexer, Parser, and AST | 2/5 | In Progress|  |
+| 2. Lexer, Parser, and AST | 4/5 | In Progress|  |
 | 3. Type Checker | 0/TBD | Not started | - |
 | 4. Expression Evaluator and Standard Library | 0/TBD | Not started | - |
 | 5. Task Execution | 0/TBD | Not started | - |
