@@ -30,13 +30,13 @@
 
 ### Expression Evaluator
 
-- [ ] **EXPR-01**: 算術・比較・論理演算子（`**` 指数含む）を評価できる
-- [ ] **EXPR-02**: if-then-else 式を評価できる
-- [ ] **EXPR-03**: メンバーアクセス（`struct.field`, `pair.left`, `pair.right`）を評価できる
-- [ ] **EXPR-04**: 配列・マップのインデックスアクセスを評価できる
-- [ ] **EXPR-05**: 関数呼び出しを評価できる（stdlib 関数の呼び出し）
-- [ ] **EXPR-06**: コマンドテンプレートの展開（プレースホルダ置換 + dedent アルゴリズム）を実装する
-- [ ] **EXPR-07**: command block dedent を「プレースホルダをセンチネル置換してから最小インデント計算」の正しいアルゴリズムで実装する
+- [x] **EXPR-01**: 算術・比較・論理演算子（`**` 指数含む）を評価できる
+- [x] **EXPR-02**: if-then-else 式を評価できる
+- [x] **EXPR-03**: メンバーアクセス（`struct.field`, `pair.left`, `pair.right`）を評価できる
+- [x] **EXPR-04**: 配列・マップのインデックスアクセスを評価できる
+- [x] **EXPR-05**: 関数呼び出しを評価できる（stdlib 関数の呼び出し）
+- [x] **EXPR-06**: コマンドテンプレートの展開（プレースホルダ置換 + dedent アルゴリズム）を実装する
+- [x] **EXPR-07**: command block dedent を「プレースホルダをセンチネル置換してから最小インデント計算」の正しいアルゴリズムで実装する
 
 ### Standard Library
 
@@ -129,13 +129,13 @@
 | TYPE-06 | Phase 3: Type Checker | Complete |
 | TYPE-07 | Phase 3: Type Checker | Complete |
 | TYPE-08 | Phase 3: Type Checker | Complete |
-| EXPR-01 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| EXPR-02 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| EXPR-03 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| EXPR-04 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| EXPR-05 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| EXPR-06 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| EXPR-07 | Phase 4: Expression Evaluator and Standard Library | Pending |
+| EXPR-01 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| EXPR-02 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| EXPR-03 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| EXPR-04 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| EXPR-05 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| EXPR-06 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| EXPR-07 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-01 | Phase 4: Expression Evaluator and Standard Library | Pending |
 | STDLIB-02 | Phase 4: Expression Evaluator and Standard Library | Pending |
 | STDLIB-03 | Phase 4: Expression Evaluator and Standard Library | Pending |

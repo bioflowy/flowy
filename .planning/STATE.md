@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 4 context gathered
-last_updated: "2026-03-10T09:39:35.464Z"
+stopped_at: Completed 04-expression-evaluator-and-standard-library-01-PLAN.md
+last_updated: "2026-03-10T10:12:41.176Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 16
+  completed_plans: 11
   percent: 0
 ---
 
@@ -60,6 +60,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03-type-checker P02 | 3 | 1 tasks | 3 files |
 | Phase 03-type-checker P03 | 8min | 1 tasks | 2 files |
 | Phase 03-type-checker P04 | 4min | 1 tasks | 3 files |
+| Phase 04-expression-evaluator-and-standard-library P01 | 2 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,9 @@ Recent decisions affecting current work:
 - [Phase 03-type-checker]: checkExprType skips complex expressions (BinaryExpr, ApplyExpr) — deferred to Phase 4
 - [Phase 03-type-checker]: checkGetExpr falls back to structDefs when StructType.Members is nil — Pass 1 registers name-only StructType; fallback avoids a separate pre-pass to populate struct member maps
 - [Phase 03-type-checker]: checkStructExpr and checkGetExpr extracted to struct_check.go — both exceed 30 lines, triggering REFACTOR condition from the plan
+- [Phase 04-expression-evaluator-and-standard-library]: exprPos() helper uses type-switch since ast.Expr interface has no ExprPos() method (only unexported exprNode() marker)
+- [Phase 04-expression-evaluator-and-standard-library]: ApplyExpr case in Eval() delegates to evalApply() immediately — stdlibFuncs dispatch works as soon as Wave 1 plans register functions
+- [Phase 04-expression-evaluator-and-standard-library]: stdlibFuncs map starts empty; downstream plans register implementations by assigning to the package-level var
 
 ### Pending Todos
 
@@ -111,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T09:39:35.460Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-expression-evaluator-and-standard-library/04-CONTEXT.md
+Last session: 2026-03-10T10:12:41.172Z
+Stopped at: Completed 04-expression-evaluator-and-standard-library-01-PLAN.md
+Resume file: None
