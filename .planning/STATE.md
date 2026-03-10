@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-03-10T05:39:01.780Z"
+stopped_at: Completed 01-type-data-structures-01-01-PLAN.md
+last_updated: "2026-03-10T05:54:55.610Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01-type-data-structures P01 | 15min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,9 @@ Recent decisions affecting current work:
 - [Init]: Hand-written lexer/parser (Rob Pike state-function pattern + Pratt) — no viable WDL 1.2 grammar for Go parser generators
 - [Init]: Docker moby client v28.x behind ContainerRunner interface — enables unit testing without live daemon
 - [Init]: golang.org/x/sync/errgroup with SetLimit for scatter parallelism — prevents goroutine leaks
+- [Phase 01-type-data-structures]: AnyType{Optional:true} serves as None literal type — TypeName()=='None', IsOptional()==true — no separate NoneType struct needed
+- [Phase 01-type-data-structures]: Value structs embed concrete type fields (not interface) so empty ArrayValue distinguishes Array[Int] from Array[String]
+- [Phase 01-type-data-structures]: StructType field named 'Name' not 'TypeName' to prevent Go interface method collision
 
 ### Pending Todos
 
@@ -74,6 +78,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T05:39:01.777Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-type-data-structures/01-CONTEXT.md
+Last session: 2026-03-10T05:54:55.607Z
+Stopped at: Completed 01-type-data-structures-01-01-PLAN.md
+Resume file: None

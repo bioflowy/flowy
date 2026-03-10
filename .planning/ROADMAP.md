@@ -12,7 +12,7 @@ flowy is a WDL 1.2 workflow engine in Go, porting miniwdl's Python implementatio
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Type Data Structures** - Define all WDL 1.2 type and value data structures in Go; initialize the Go module
+- [x] **Phase 1: Type Data Structures** - Define all WDL 1.2 type and value data structures in Go; initialize the Go module (completed 2026-03-10)
 - [ ] **Phase 2: Lexer, Parser, and AST** - Parse any valid WDL 1.2 file into a typed AST with line/column error reporting
 - [ ] **Phase 3: Type Checker** - Validate AST types with full forward-reference resolution, coercion rules, and scatter/if promotion; `flowy check` becomes usable
 - [ ] **Phase 4: Expression Evaluator and Standard Library** - Evaluate all WDL 1.2 expressions and implement all ~30 stdlib functions
@@ -116,7 +116,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Type Data Structures | 0/1 | Not started | - |
+| 1. Type Data Structures | 1/1 | Complete   | 2026-03-10 |
 | 2. Lexer, Parser, and AST | 0/TBD | Not started | - |
 | 3. Type Checker | 0/TBD | Not started | - |
 | 4. Expression Evaluator and Standard Library | 0/TBD | Not started | - |

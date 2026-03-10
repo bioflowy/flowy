@@ -19,10 +19,10 @@
 
 ### Type System
 
-- [ ] **TYPE-01**: Primitive 型（Boolean, Int, Float, String, File）を実装し、型タグ付きの Value 構造体を持つ
-- [ ] **TYPE-02**: Directory 型（WDL 1.2 新機能）を実装する
-- [ ] **TYPE-03**: Compound 型（Array[T], Map[K,V], Pair[L,R], Struct）を実装する（型パラメータ付き）
-- [ ] **TYPE-04**: Optional 型（T?）を実装し、None リテラルの型推論を正しく処理する
+- [x] **TYPE-01**: Primitive 型（Boolean, Int, Float, String, File）を実装し、型タグ付きの Value 構造体を持つ
+- [x] **TYPE-02**: Directory 型（WDL 1.2 新機能）を実装する
+- [x] **TYPE-03**: Compound 型（Array[T], Map[K,V], Pair[L,R], Struct）を実装する（型パラメータ付き）
+- [x] **TYPE-04**: Optional 型（T?）を実装し、None リテラルの型推論を正しく処理する
 - [ ] **TYPE-05**: WDL 1.2 の型強制ルール 6 種（Int→Float, T→T?, String↔File, T→Array[T]等）を shallow かつ非再帰的に実装する
 - [ ] **TYPE-06**: 型チェッカーが task および workflow のすべての宣言を前方参照を含めて解決できる
 - [ ] **TYPE-07**: scatter ブロック出力を `Array[T]` に昇格し、if ブロック出力を `T?` に昇格する（冪等）
@@ -112,10 +112,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TYPE-01 | Phase 1: Type Data Structures | Pending |
-| TYPE-02 | Phase 1: Type Data Structures | Pending |
-| TYPE-03 | Phase 1: Type Data Structures | Pending |
-| TYPE-04 | Phase 1: Type Data Structures | Pending |
+| TYPE-01 | Phase 1: Type Data Structures | Complete |
+| TYPE-02 | Phase 1: Type Data Structures | Complete |
+| TYPE-03 | Phase 1: Type Data Structures | Complete |
+| TYPE-04 | Phase 1: Type Data Structures | Complete |
 | PARSE-01 | Phase 2: Lexer, Parser, and AST | Pending |
 | PARSE-02 | Phase 2: Lexer, Parser, and AST | Pending |
 | PARSE-03 | Phase 2: Lexer, Parser, and AST | Pending |
