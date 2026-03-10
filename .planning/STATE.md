@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-lexer-parser-and-ast-02-01-PLAN.md
-last_updated: "2026-03-10T06:45:55.342Z"
+stopped_at: Completed 02-lexer-parser-and-ast-02-02-PLAN.md
+last_updated: "2026-03-10T06:51:52.529Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-type-data-structures P01 | 15min | 2 tasks | 5 files |
 | Phase 02-lexer-parser-and-ast P01 | 3min | 2 tasks | 7 files |
+| Phase 02-lexer-parser-and-ast P02 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase 02-lexer-parser-and-ast]: TokenType = int alias in wdl/ast/expr.go avoids circular import between ast and lexer packages
 - [Phase 02-lexer-parser-and-ast]: Pos embedded as plain struct field (not pointer) in every AST node for zero-allocation direct field access
 - [Phase 02-lexer-parser-and-ast]: WorkflowNode, StringPart, Expr use unexported marker methods to prevent unintended external implementations
+- [Phase 02-lexer-parser-and-ast]: Pull-model Next() lexer API with auto command-mode detection after 'command' keyword — parser does not need SetCommandMode call
+- [Phase 02-lexer-parser-and-ast]: TokXxx exported naming for all token constants enables external lexer_test package to reference them directly
 
 ### Pending Todos
 
@@ -82,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T06:45:55.338Z
-Stopped at: Completed 02-lexer-parser-and-ast-02-01-PLAN.md
+Last session: 2026-03-10T06:51:52.525Z
+Stopped at: Completed 02-lexer-parser-and-ast-02-02-PLAN.md
 Resume file: None
