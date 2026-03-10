@@ -587,12 +587,7 @@ func TestEvalApply(t *testing.T) {
 
 // TestEvalCommand tests command template expansion (EXPR-06).
 // Covers: placeholder interpolation within command blocks.
+// Implementation in command_test.go and eval_test.go (see Task 2).
 func TestEvalCommand(t *testing.T) {
-	t.Skip("not yet implemented")
-}
-
-// TestCommandDedent tests the sentinel-before-indent dedent algorithm (EXPR-07).
-// Covers: leading whitespace removal from command block content.
-func TestCommandDedent(t *testing.T) {
 	t.Skip("not yet implemented")
 }
