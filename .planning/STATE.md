@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 5 context gathered
-last_updated: "2026-03-10T12:37:03.035Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-03-10T13:02:51.444Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 19
+  completed_plans: 17
   percent: 0
 ---
 
@@ -66,6 +66,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-expression-evaluator-and-standard-library P04 | 5min | 2 tasks | 2 files |
 | Phase 04-expression-evaluator-and-standard-library P05 | 4min | 2 tasks | 4 files |
 | Phase 04-expression-evaluator-and-standard-library P06 | 3min | 2 tasks | 3 files |
+| Phase 05-task-execution P01 | 4min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Recent decisions affecting current work:
 - [Phase 04-expression-evaluator-and-standard-library]: stdMatches anchors pattern with ^$  to enforce whole-string match (partial match returns false)
 - [Phase 04-expression-evaluator-and-standard-library]: MapValue.Type is a concrete types.MapType struct (no type assertion needed) — plan action suggested .(types.MapType) which is a compile error
 - [Phase 04-expression-evaluator-and-standard-library]: collect_by_key uses linear scan with primitiveEqual() for insertion-order-preserving key deduplication
+- [Phase 05-task-execution]: PathMap collision strategy: 8 hex chars from SHA-256 of host path as prefix — deterministic, compact
+- [Phase 05-task-execution]: BindInputs/ParseMemoryString/ParseRuntime exported — external test package (task_test) requires exported symbols
+- [Phase 05-task-execution]: jsonToValueUntyped duplicated from eval package — eval.jsonToValue is unexported, cannot cross package boundary
 
 ### Pending Todos
 
@@ -130,6 +134,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T12:37:03.031Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-task-execution/05-CONTEXT.md
+Last session: 2026-03-10T13:02:51.440Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None

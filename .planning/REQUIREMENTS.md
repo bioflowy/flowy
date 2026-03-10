@@ -49,14 +49,14 @@
 
 ### Task Execution
 
-- [ ] **TASK-01**: task の input セクションを解析し、JSON入力から値をバインドできる
-- [ ] **TASK-02**: task の runtime/requirements セクション（container, cpu, memory）を解析して Docker 実行に反映できる
+- [x] **TASK-01**: task の input セクションを解析し、JSON入力から値をバインドできる
+- [x] **TASK-02**: task の runtime/requirements セクション（container, cpu, memory）を解析して Docker 実行に反映できる
 - [ ] **TASK-03**: コマンドテンプレートを展開してコンテナに渡す文字列を生成できる
-- [ ] **TASK-04**: 入力ファイルをコンテナ内パスにマウントする双方向パスマップを構築できる
+- [x] **TASK-04**: 入力ファイルをコンテナ内パスにマウントする双方向パスマップを構築できる
 - [ ] **TASK-05**: Docker イメージの pull → コンテナ作成 → 実行 → stdout/stderr キャプチャ → 削除のライフサイクルを実装する
 - [ ] **TASK-06**: task の output セクションを評価してホストパスに出力を収集できる
-- [ ] **TASK-07**: `ContainerRunner` インターフェース経由で Docker を呼び出し、単体テストでモック可能にする
-- [ ] **TASK-08**: タスク失敗時に exit code、stderr を含むエラー情報を返す
+- [x] **TASK-07**: `ContainerRunner` インターフェース経由で Docker を呼び出し、単体テストでモック可能にする
+- [x] **TASK-08**: タスク失敗時に exit code、stderr を含むエラー情報を返す
 
 ### Workflow Execution
 
@@ -142,14 +142,14 @@
 | STDLIB-04 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-05 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-06 | Phase 4: Expression Evaluator and Standard Library | Complete |
-| TASK-01 | Phase 5: Task Execution | Pending |
-| TASK-02 | Phase 5: Task Execution | Pending |
+| TASK-01 | Phase 5: Task Execution | Complete |
+| TASK-02 | Phase 5: Task Execution | Complete |
 | TASK-03 | Phase 5: Task Execution | Pending |
-| TASK-04 | Phase 5: Task Execution | Pending |
+| TASK-04 | Phase 5: Task Execution | Complete |
 | TASK-05 | Phase 5: Task Execution | Pending |
 | TASK-06 | Phase 5: Task Execution | Pending |
-| TASK-07 | Phase 5: Task Execution | Pending |
-| TASK-08 | Phase 5: Task Execution | Pending |
+| TASK-07 | Phase 5: Task Execution | Complete |
+| TASK-08 | Phase 5: Task Execution | Complete |
 | WF-01 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
 | WF-02 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
 | WF-03 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
