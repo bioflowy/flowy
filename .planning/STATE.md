@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-10T17:51:35.622Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-03-10T18:04:07.197Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
   percent: 0
 ---
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05-task-execution P02 | 4min | 2 tasks | 6 files |
 | Phase 05-task-execution P03 | 10min | 2 tasks | 4 files |
 | Phase 06-workflow-execution-dag-scheduler P01 | 2min | 2 tasks | 5 files |
+| Phase 06-workflow-execution-dag-scheduler P02 | 9min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,9 @@ Recent decisions affecting current work:
 - [Phase 06-workflow-execution-dag-scheduler]: dagNode tracks top-level workflow elements (call, scatter, conditional); nested calls inside scatter/conditional are NOT separate DAG nodes
 - [Phase 06-workflow-execution-dag-scheduler]: callID() returns alias if set, else last callee element — matches WDL spec call references
 - [Phase 06-workflow-execution-dag-scheduler]: topoSort uses Kahn's algorithm with sorted queue for deterministic ordering of independent nodes
+- [Phase 06-workflow-execution-dag-scheduler]: Call outputs bound as StructValue under call alias — enables GetExpr alias.field resolution via eval.evalGet
+- [Phase 06-workflow-execution-dag-scheduler]: taskRunner field on scheduler propagates to child schedulers — avoids global runTaskFn races in executeBody/scatter/conditional
+- [Phase 06-workflow-execution-dag-scheduler]: injectDeclNodes() two-pointer merge inserts Decl nodes into topo order at original body positions
 
 ### Pending Todos
 
@@ -144,6 +148,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T17:51:35.618Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-10T18:04:07.193Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
