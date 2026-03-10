@@ -138,7 +138,11 @@ Plans:
   3. `flowy run <file.wdl> --task <name>` runs only the named task from the WDL file, ignoring the workflow definition
   4. `--path <dir>` extends the import search path and `--dir <dir>` sets the working directory for execution; both flags are accepted by `flowy run` and `flowy check`
   5. `--verbose` causes task stdout and stderr to be printed to the terminal during execution
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Extend parser with search paths, create CLI skeleton with check subcommand
+- [ ] 07-02-PLAN.md — Implement run subcommand with all flags (--input, --task, --dir, --verbose)
 
 ## Progress
 
@@ -153,4 +157,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Expression Evaluator and Standard Library | 6/6 | Complete   | 2026-03-10 |
 | 5. Task Execution | 2/3 | In Progress|  |
 | 6. Workflow Execution (DAG Scheduler) | 3/3 | Complete   | 2026-03-10 |
-| 7. CLI and Integration | 0/TBD | Not started | - |
+| 7. CLI and Integration | 0/2 | Not started | - |
