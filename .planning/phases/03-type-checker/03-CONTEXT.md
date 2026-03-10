@@ -6,53 +6,53 @@
 <domain>
 ## Phase Boundary
 
-WDL 1.2 ドキュメントの全型宣言を検証・解決する。前方参照解決、scatter/if 出力の型昇格、6種の型強制ルール（shallow）、struct フィールド検証を実装し、`flowy check` が型エラーを行番号付きで報告できるようにする。式の評価（値の計算）は Phase 4 のスコープ。
+Validate and resolve all type declarations in a WDL 1.2 document: forward reference resolution, scatter/if output type promotion, 6 shallow coercion rules, and struct field validation. Enables `flowy check` to report type errors with source locations. Expression evaluation (computing values) is Phase 4 scope.
 
 </domain>
 
 <decisions>
 ## Implementation Decisions
 
-### パッケージ構造・API
-- 新規パッケージ `wdl/checker` を作成
-- 公開 API: `checker.Check(doc *ast.Document) (TypeEnv, []error)`
-- `TypeEnv` は `map[string]types.Type`（キーは宣言名文字列、スコープはネスト構造で管理）
-- 複数の型エラーを一括収集して返す（`flowy check` で全エラーを一度に報告）
-- AST は変更しない（不変を維持）
+### Package structure and API
+- New package `wdl/checker`
+- Public API: `checker.Check(doc *ast.Document) (TypeEnv, []error)`
+- `TypeEnv` is `map[string]types.Type` (keyed by declaration name string; scopes managed via nested structure)
+- Collect all type errors before returning — `flowy check` reports all errors at once
+- AST is not mutated (remains immutable)
 
-### 前方参照解決アルゴリズム
-- **Two-pass 方式**:
-  - Pass 1: 全宣言をスキャンしてシンボルテーブル（TypeEnv）を事前構築
-  - Pass 2: 構築済み TypeEnv に対して型検証を実行
-- **cycle detection**: toposort（Kahn's algorithm）で循環依存を検出してエラー報告
-- scatter/if 内の未定義変数参照はサイクルではなく「スコープルール違反エラー」として扱う
+### Forward reference resolution algorithm
+- **Two-pass approach**:
+  - Pass 1: Scan all declarations and pre-populate the symbol table (TypeEnv)
+  - Pass 2: Validate types against the fully-populated TypeEnv
+- **Cycle detection**: toposort (Kahn's algorithm) detects circular dependencies and reports them as errors
+- Undefined variable references inside scatter/if scopes are treated as **scope rule violation errors**, not cycle errors
 
-### scatter/if 型昇格
-- Pass 2 中にリアルタイムで昇格（scatter ボディ解析時に内部宣言を外部スコープへ登録する際に自動適用）
-- `arrayize(T) → Array[T]`、`optionalize(T) → T?` のヘルパー関数を用意
-- **冪等チェック必須**: `optionalize` 内で `IsOptional()==true` なら昇格しない（T?? は生成しない）
-- scatter 内に if がネストした場合: T → T? (if) → Array[T?] (scatter) と順次適用
+### scatter/if type promotion
+- Promoted in real-time during Pass 2 (when inner declarations are registered into the outer scope)
+- Helper functions: `arrayize(T) → Array[T]`, `optionalize(T) → T?`
+- **Idempotency check required**: `optionalize` must check `IsOptional()==true` and skip promotion (never produce `T??`)
+- Nested scatter-inside-if: T → T? (if) → Array[T?] (scatter), applied in order
 
-### 型検証スコープ（Phase 3 で行うこと）
-- input/output セクションの宣言型検証
-- input 型ミスマッチ検出（例: Int 宣言に String を渡す → Phase 3 でエラー）
-- struct フィールド型の検証・struct リテラルとフィールドアクセスの型付け
-- プリミティブ型リテラル（Int リテラル、String リテラル等）の型を返す（式の超幅 literal）
-- WDL 1.2 型強制ルール 6 種を shallow（複合型パラメータへの再帰なし）で実装
-- 複雑な式ノード（関数呼び出し、演算子式など）の型推論は Phase 4 へ委譲
+### Type validation scope (Phase 3)
+- Validate declared types in input/output sections
+- Detect input type mismatches (e.g., String passed to Int declaration) — reported in Phase 3
+- Validate struct field types; type struct literals and field access expressions
+- Return types for primitive literals (Int, String, etc.) — "shallow literal" typing
+- Implement all 6 WDL 1.2 coercion rules **shallowly** (no recursion into compound type parameters)
+- Complex expression type inference (function calls, operator expressions) deferred to Phase 4
 
-### WDL 1.2 型強制ルール（6種、shallow 実装）
+### WDL 1.2 coercion rules (6 rules, shallow)
 - `Int → Float`
 - `T → T?`
 - `String ↔ File`
 - `T → Array[T]`
-- その他 WDL 1.2 spec 規定の残り 2 種
-- shallow: 複合型パラメータへの再帰適用はしない
+- Remaining 2 rules per WDL 1.2 spec
+- Shallow only: no recursive application into compound type parameters
 
 ### Claude's Discretion
-- TypeEnv のネストスコープの具体的なデータ構造（linked list of maps vs. stack など）
-- エラー型の具体的な struct 定義（既存 ParseError と統一するか新規 TypeError か）
-- toposort の具体的な実装詳細
+- Concrete data structure for nested scope in TypeEnv (linked list of maps vs. stack, etc.)
+- Error struct design for TypeError (reuse existing ParseError or define new type)
+- Implementation details of the toposort
 
 </decisions>
 
@@ -60,26 +60,26 @@ WDL 1.2 ドキュメントの全型宣言を検証・解決する。前方参照
 ## Existing Code Insights
 
 ### Reusable Assets
-- `wdl/types` パッケージ: `Type` インターフェース、全プリミティブ型・複合型・Optional 型が実装済み。`WithOptional(bool)` で冪等チェックしやすい設計。
-- `wdl/ast` パッケージ: 全 AST ノードに `Pos`（File, Line, Col）が埋め込み済み。型エラーに正確なソース位置を付与できる。
-- `wdl/parser` パッケージ: `ParseError` 構造体（行番号・列番号付き）が既に定義済み。TypeError の設計参考にできる。
+- `wdl/types` package: `Type` interface, all primitive/compound/Optional types implemented. `WithOptional(bool)` makes idempotency checks straightforward.
+- `wdl/ast` package: Every AST node embeds `Pos` (File, Line, Col) — precise source locations available for all type errors.
+- `wdl/parser` package: `ParseError` struct (with line/col) already defined — reference design for TypeError.
 
 ### Established Patterns
-- エラーは行番号・ファイルパス付きで報告（`Pos` 埋め込みパターンは全 AST ノードで統一）
-- パッケージ間は interface 経由（`Type` interface、`ContainerRunner` interface）— checker も同様に interface 境界で設計
+- Errors include file path and line number (`Pos` embedded in every AST node)
+- Cross-package boundaries use interfaces (`Type` interface, `ContainerRunner` interface) — checker should follow the same pattern
 
 ### Integration Points
-- `checker.Check()` の入力は `parser.Parse()` が返す `*ast.Document`
-- `checker.Check()` の出力 `TypeEnv` は Phase 4 の `evaluator` パッケージが入力として受け取る
-- Phase 7 の `flowy check` CLI コマンドが `checker.Check()` を直接呼び出す
+- `checker.Check()` input: `*ast.Document` returned by `parser.Parse()`
+- `checker.Check()` output: `TypeEnv` consumed by Phase 4 `evaluator` package
+- Phase 7 `flowy check` CLI command calls `checker.Check()` directly
 
 </code_context>
 
 <specifics>
 ## Specific Ideas
 
-- miniwdl の方針を踏襲: Two-pass + toposort による cycle detection（miniwdl は `_detect_cycles()` で Kahn's algorithm を使用）
-- miniwdl の `arrayize`/`optionalize` ヘルパー関数の設計をそのまま Go に移植する
+- Follow miniwdl's approach: two-pass + toposort for cycle detection (miniwdl uses Kahn's algorithm in `_detect_cycles()`)
+- Port miniwdl's `arrayize`/`optionalize` helper design directly to Go
 
 </specifics>
 
