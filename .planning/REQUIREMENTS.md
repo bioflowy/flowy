@@ -71,12 +71,12 @@
 
 ### CLI
 
-- [ ] **CLI-01**: `flowy check <file.wdl>` でパース + 型チェックのみを実行し、エラーを行番号付きで出力する
+- [x] **CLI-01**: `flowy check <file.wdl>` でパース + 型チェックのみを実行し、エラーを行番号付きで出力する
 - [ ] **CLI-02**: `flowy run <file.wdl>` でワークフローを実行し、`--input` フラグで JSON 入力ファイルを受け取る
 - [ ] **CLI-03**: `--task <name>` フラグで WDL 内の特定タスクのみを単独実行できる
-- [ ] **CLI-04**: `--path <dir>` フラグで import 検索パスを追加できる
+- [x] **CLI-04**: `--path <dir>` フラグで import 検索パスを追加できる
 - [ ] **CLI-05**: `--dir <dir>` フラグで実行ディレクトリを指定できる
-- [ ] **CLI-06**: 成功時は exit code 0、失敗時は非ゼロで終了する
+- [x] **CLI-06**: 成功時は exit code 0、失敗時は非ゼロで終了する
 - [ ] **CLI-07**: `--verbose` フラグでタスク stdout/stderr をターミナルに表示できる
 
 ## v2 Requirements
@@ -158,12 +158,12 @@
 | WF-06 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | WF-07 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | WF-08 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
-| CLI-01 | Phase 7: CLI and Integration | Pending |
+| CLI-01 | Phase 7: CLI and Integration | Complete |
 | CLI-02 | Phase 7: CLI and Integration | Pending |
 | CLI-03 | Phase 7: CLI and Integration | Pending |
-| CLI-04 | Phase 7: CLI and Integration | Pending |
+| CLI-04 | Phase 7: CLI and Integration | Complete |
 | CLI-05 | Phase 7: CLI and Integration | Pending |
-| CLI-06 | Phase 7: CLI and Integration | Pending |
+| CLI-06 | Phase 7: CLI and Integration | Complete |
 | CLI-07 | Phase 7: CLI and Integration | Pending |
 
 **Coverage:**

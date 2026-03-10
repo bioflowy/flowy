@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 7 context gathered
-last_updated: "2026-03-10T22:45:08.709Z"
+stopped_at: Completed 07-cli-and-integration 07-01-PLAN.md
+last_updated: "2026-03-10T23:59:21.446Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 22
-  completed_plans: 22
+  total_plans: 24
+  completed_plans: 23
   percent: 0
 ---
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06-workflow-execution-dag-scheduler P01 | 2min | 2 tasks | 5 files |
 | Phase 06-workflow-execution-dag-scheduler P02 | 9min | 2 tasks | 7 files |
 | Phase 06-workflow-execution-dag-scheduler P03 | 3min | 2 tasks | 4 files |
+| Phase 07-cli-and-integration P01 | 3min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,9 @@ Recent decisions affecting current work:
 - [Phase 06-workflow-execution-dag-scheduler]: taskRunner field on scheduler propagates to child schedulers — avoids global runTaskFn races in executeBody/scatter/conditional
 - [Phase 06-workflow-execution-dag-scheduler]: injectDeclNodes() two-pointer merge inserts Decl nodes into topo order at original body positions
 - [Phase 06-workflow-execution-dag-scheduler]: outputs.json not written on any task failure; writeErrorJSON uses errors.As for TaskError extraction from wrapped error chains; valueToJSONOutput relativizes File/Directory paths via filepath.Rel
+- [Phase 07-cli-and-integration]: ParseWithSearchPaths delegates to parseFileWithPaths with nil searchPaths for parseFile backward compat
+- [Phase 07-cli-and-integration]: run(args, stdout, stderr) testable-main pattern with no subprocess needed in CLI tests
+- [Phase 07-cli-and-integration]: TypeError rustc-style formatting in main.go readSourceLine+printRustcError — checker TypeError.Error() lacks source line
 
 ### Pending Todos
 
@@ -150,6 +154,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T22:45:08.704Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-cli-and-integration/07-CONTEXT.md
+Last session: 2026-03-10T23:59:21.441Z
+Stopped at: Completed 07-cli-and-integration 07-01-PLAN.md
+Resume file: None
