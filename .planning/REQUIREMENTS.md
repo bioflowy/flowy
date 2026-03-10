@@ -110,23 +110,67 @@
 
 ## Traceability
 
-*ロードマップ作成後に更新されます*
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PARSE-01〜09 | Phase 1 | Pending |
-| TYPE-01〜08 | Phase 2 | Pending |
-| EXPR-01〜07 | Phase 3 | Pending |
-| STDLIB-01〜06 | Phase 3 | Pending |
-| TASK-01〜08 | Phase 4 | Pending |
-| WF-01〜08 | Phase 5 | Pending |
-| CLI-01〜07 | Phase 6 | Pending |
+| PARSE-01 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-02 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-03 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-04 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-05 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-06 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-07 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-08 | Phase 1: Lexer, Parser, and AST | Pending |
+| PARSE-09 | Phase 1: Lexer, Parser, and AST | Pending |
+| TYPE-01 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-02 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-03 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-04 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-05 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-06 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-07 | Phase 2: Type System and Type Checker | Pending |
+| TYPE-08 | Phase 2: Type System and Type Checker | Pending |
+| EXPR-01 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| EXPR-02 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| EXPR-03 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| EXPR-04 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| EXPR-05 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| EXPR-06 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| EXPR-07 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| STDLIB-01 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| STDLIB-02 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| STDLIB-03 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| STDLIB-04 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| STDLIB-05 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| STDLIB-06 | Phase 3: Expression Evaluator and Standard Library | Pending |
+| TASK-01 | Phase 4: Task Execution | Pending |
+| TASK-02 | Phase 4: Task Execution | Pending |
+| TASK-03 | Phase 4: Task Execution | Pending |
+| TASK-04 | Phase 4: Task Execution | Pending |
+| TASK-05 | Phase 4: Task Execution | Pending |
+| TASK-06 | Phase 4: Task Execution | Pending |
+| TASK-07 | Phase 4: Task Execution | Pending |
+| TASK-08 | Phase 4: Task Execution | Pending |
+| WF-01 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-02 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-03 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-04 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-05 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-06 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-07 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| WF-08 | Phase 5: Workflow Execution (DAG Scheduler) | Pending |
+| CLI-01 | Phase 6: CLI and Integration | Pending |
+| CLI-02 | Phase 6: CLI and Integration | Pending |
+| CLI-03 | Phase 6: CLI and Integration | Pending |
+| CLI-04 | Phase 6: CLI and Integration | Pending |
+| CLI-05 | Phase 6: CLI and Integration | Pending |
+| CLI-06 | Phase 6: CLI and Integration | Pending |
+| CLI-07 | Phase 6: CLI and Integration | Pending |
 
 **Coverage:**
 - v1 requirements: 57 total
 - Mapped to phases: 57
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Last updated: 2026-03-10 after roadmap creation*
