@@ -1028,9 +1028,249 @@ func TestStdlibString(t *testing.T) {
 }
 
 // TestStdlibUtility tests utility standard library functions (STDLIB-05).
-// Covers: defined, select_first, select_all, basename, flatten.
+// Covers: defined, keys, values, as_map, as_pairs, collect_by_key, contains, contains_key.
 func TestStdlibUtility(t *testing.T) {
-	t.Skip("not yet implemented")
+	ctx := ExecContext{}
+
+	intVal := func(n int64) values.IntValue {
+		return values.IntValue{Type: types.IntType{}, Value: n}
+	}
+	strVal := func(s string) values.StringValue {
+		return values.StringValue{Type: types.StringType{}, Value: s}
+	}
+	pairVal := func(l, r values.Value) values.PairValue {
+		return values.PairValue{
+			Type:  types.PairType{LeftType: l.ValueType(), RightType: r.ValueType()},
+			Left:  l,
+			Right: r,
+		}
+	}
+
+	// --- defined ---
+	t.Run("defined non-null returns true", func(t *testing.T) {
+		got, err := callStdlib(t, "defined", []values.Value{strVal("x")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if !bv.Value {
+			t.Error("expected true for non-null value")
+		}
+	})
+	t.Run("defined null returns false", func(t *testing.T) {
+		got, err := callStdlib(t, "defined", []values.Value{values.NullValue{}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if bv.Value {
+			t.Error("expected false for NullValue")
+		}
+	})
+
+	// --- keys ---
+	t.Run("keys preserves insertion order", func(t *testing.T) {
+		mv := values.MapValue{
+			Type: types.MapType{KeyType: types.StringType{}, ValType: types.IntType{}},
+			Entries: []values.MapEntry{
+				{Key: strVal("b"), Value: intVal(2)},
+				{Key: strVal("a"), Value: intVal(1)},
+			},
+		}
+		got, err := callStdlib(t, "keys", []values.Value{mv}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 keys, got %d", len(av.Items))
+		}
+		if av.Items[0].(values.StringValue).Value != "b" {
+			t.Errorf("keys[0] = %v, want b", av.Items[0])
+		}
+		if av.Items[1].(values.StringValue).Value != "a" {
+			t.Errorf("keys[1] = %v, want a", av.Items[1])
+		}
+	})
+
+	// --- values ---
+	t.Run("values preserves insertion order", func(t *testing.T) {
+		mv := values.MapValue{
+			Type: types.MapType{KeyType: types.StringType{}, ValType: types.IntType{}},
+			Entries: []values.MapEntry{
+				{Key: strVal("b"), Value: intVal(2)},
+				{Key: strVal("a"), Value: intVal(1)},
+			},
+		}
+		got, err := callStdlib(t, "values", []values.Value{mv}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 values, got %d", len(av.Items))
+		}
+		if av.Items[0].(values.IntValue).Value != 2 {
+			t.Errorf("values[0] = %v, want 2", av.Items[0])
+		}
+		if av.Items[1].(values.IntValue).Value != 1 {
+			t.Errorf("values[1] = %v, want 1", av.Items[1])
+		}
+	})
+
+	// --- as_map ---
+	t.Run("as_map builds map from pairs", func(t *testing.T) {
+		p1 := pairVal(strVal("k1"), intVal(1))
+		p2 := pairVal(strVal("k2"), intVal(2))
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: p1.ValueType()},
+			Items: []values.Value{p1, p2},
+		}
+		got, err := callStdlib(t, "as_map", []values.Value{arr}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		mv := got.(values.MapValue)
+		if len(mv.Entries) != 2 {
+			t.Fatalf("expected 2 entries, got %d", len(mv.Entries))
+		}
+		if mv.Entries[0].Key.(values.StringValue).Value != "k1" {
+			t.Errorf("entry[0].Key = %v, want k1", mv.Entries[0].Key)
+		}
+		if mv.Entries[1].Value.(values.IntValue).Value != 2 {
+			t.Errorf("entry[1].Value = %v, want 2", mv.Entries[1].Value)
+		}
+	})
+
+	// --- as_pairs ---
+	t.Run("as_pairs builds pairs from map", func(t *testing.T) {
+		mv := values.MapValue{
+			Type: types.MapType{KeyType: types.StringType{}, ValType: types.IntType{}},
+			Entries: []values.MapEntry{
+				{Key: strVal("x"), Value: intVal(10)},
+				{Key: strVal("y"), Value: intVal(20)},
+			},
+		}
+		got, err := callStdlib(t, "as_pairs", []values.Value{mv}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 pairs, got %d", len(av.Items))
+		}
+		p0 := av.Items[0].(values.PairValue)
+		if p0.Left.(values.StringValue).Value != "x" {
+			t.Errorf("pair[0].Left = %v, want x", p0.Left)
+		}
+		if p0.Right.(values.IntValue).Value != 10 {
+			t.Errorf("pair[0].Right = %v, want 10", p0.Right)
+		}
+	})
+
+	// --- collect_by_key ---
+	t.Run("collect_by_key groups values by key", func(t *testing.T) {
+		// [Pair("a",1), Pair("b",2), Pair("a",3)] -> Map{"a": [1,3], "b": [2]}
+		pairs := values.ArrayValue{
+			Type: types.ArrayType{ItemType: pairVal(strVal(""), intVal(0)).ValueType()},
+			Items: []values.Value{
+				pairVal(strVal("a"), intVal(1)),
+				pairVal(strVal("b"), intVal(2)),
+				pairVal(strVal("a"), intVal(3)),
+			},
+		}
+		got, err := callStdlib(t, "collect_by_key", []values.Value{pairs}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		mv := got.(values.MapValue)
+		if len(mv.Entries) != 2 {
+			t.Fatalf("expected 2 entries, got %d", len(mv.Entries))
+		}
+		// first entry should be "a" -> [1, 3]
+		e0 := mv.Entries[0]
+		if e0.Key.(values.StringValue).Value != "a" {
+			t.Errorf("entry[0].Key = %v, want a", e0.Key)
+		}
+		aVals := e0.Value.(values.ArrayValue)
+		if len(aVals.Items) != 2 {
+			t.Fatalf("entry[0].Value: expected 2 items, got %d", len(aVals.Items))
+		}
+		if aVals.Items[0].(values.IntValue).Value != 1 || aVals.Items[1].(values.IntValue).Value != 3 {
+			t.Errorf("entry[0].Value = %v, want [1,3]", aVals.Items)
+		}
+		// second entry should be "b" -> [2]
+		e1 := mv.Entries[1]
+		if e1.Key.(values.StringValue).Value != "b" {
+			t.Errorf("entry[1].Key = %v, want b", e1.Key)
+		}
+		bVals := e1.Value.(values.ArrayValue)
+		if len(bVals.Items) != 1 || bVals.Items[0].(values.IntValue).Value != 2 {
+			t.Errorf("entry[1].Value = %v, want [2]", bVals.Items)
+		}
+	})
+
+	// --- contains ---
+	t.Run("contains found", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{intVal(1), intVal(2), intVal(3)},
+		}
+		got, err := callStdlib(t, "contains", []values.Value{arr, intVal(2)}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if !bv.Value {
+			t.Error("expected true for found element")
+		}
+	})
+	t.Run("contains not found", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{intVal(1), intVal(2)},
+		}
+		got, err := callStdlib(t, "contains", []values.Value{arr, intVal(5)}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if bv.Value {
+			t.Error("expected false for missing element")
+		}
+	})
+
+	// --- contains_key ---
+	t.Run("contains_key found", func(t *testing.T) {
+		mv := values.MapValue{
+			Type: types.MapType{KeyType: types.StringType{}, ValType: types.IntType{}},
+			Entries: []values.MapEntry{
+				{Key: strVal("x"), Value: intVal(1)},
+			},
+		}
+		got, err := callStdlib(t, "contains_key", []values.Value{mv, strVal("x")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if !bv.Value {
+			t.Error("expected true for existing key")
+		}
+	})
+	t.Run("contains_key not found", func(t *testing.T) {
+		mv := values.MapValue{
+			Type:    types.MapType{KeyType: types.StringType{}, ValType: types.IntType{}},
+			Entries: []values.MapEntry{},
+		}
+		got, err := callStdlib(t, "contains_key", []values.Value{mv, strVal("missing")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if bv.Value {
+			t.Error("expected false for missing key")
+		}
+	})
 }
 
 // TestStdlibNumeric tests numeric standard library functions (STDLIB-06).
