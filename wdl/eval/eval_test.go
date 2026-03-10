@@ -580,9 +580,104 @@ func TestEvalIndexExpr(t *testing.T) {
 }
 
 // TestEvalApply tests function call expression evaluation (EXPR-05).
-// Calls a registered stub function to verify dispatch mechanism.
+// Verifies the full dispatch chain: Eval() -> evalApply() -> stdlibFuncs[name] -> implementation.
 func TestEvalApply(t *testing.T) {
-	t.Skip("not yet implemented")
+	env := NewEnv(nil)
+	ctx := ExecContext{}
+
+	// length([1, 2, 3]) -> IntValue{3}
+	t.Run("length via Eval", func(t *testing.T) {
+		expr := &ast.ApplyExpr{
+			Name: "length",
+			Args: []ast.Expr{
+				&ast.ArrayExpr{
+					Items: []ast.Expr{
+						&ast.IntLit{Value: 1},
+						&ast.IntLit{Value: 2},
+						&ast.IntLit{Value: 3},
+					},
+				},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv, ok := got.(values.IntValue)
+		if !ok {
+			t.Fatalf("expected IntValue, got %T", got)
+		}
+		if iv.Value != 3 {
+			t.Errorf("got %d, want 3", iv.Value)
+		}
+	})
+
+	// defined(null) -> BooleanValue{false}
+	t.Run("defined(null) via Eval", func(t *testing.T) {
+		expr := &ast.ApplyExpr{
+			Name: "defined",
+			Args: []ast.Expr{&ast.NullLit{}},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv, ok := got.(values.BooleanValue)
+		if !ok {
+			t.Fatalf("expected BooleanValue, got %T", got)
+		}
+		if bv.Value {
+			t.Error("expected false for defined(null)")
+		}
+	})
+
+	// ceil(1.7) -> IntValue{2}
+	t.Run("ceil(1.7) via Eval", func(t *testing.T) {
+		expr := &ast.ApplyExpr{
+			Name: "ceil",
+			Args: []ast.Expr{&ast.FloatLit{Value: 1.7}},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv, ok := got.(values.IntValue)
+		if !ok {
+			t.Fatalf("expected IntValue, got %T", got)
+		}
+		if iv.Value != 2 {
+			t.Errorf("got %d, want 2", iv.Value)
+		}
+	})
+
+	// unknown_fn() -> EvalError (not panic)
+	t.Run("unknown function returns EvalError", func(t *testing.T) {
+		expr := &ast.ApplyExpr{
+			Name: "unknown_fn",
+			Args: []ast.Expr{},
+		}
+		_, err := Eval(expr, env, ctx)
+		if err == nil {
+			t.Fatal("expected error for unknown function, got nil")
+		}
+		evalErr, ok := err.(*EvalError)
+		if !ok {
+			t.Fatalf("expected *EvalError, got %T", err)
+		}
+		if evalErr.Message == "" {
+			t.Error("expected non-empty error message")
+		}
+	})
+}
+
+// TestStdlibCount verifies the total number of registered stdlib functions as a regression guard.
+func TestStdlibCount(t *testing.T) {
+	const minExpected = 30
+	got := len(stdlibFuncs)
+	if got < minExpected {
+		t.Errorf("stdlibFuncs has %d functions, want >= %d", got, minExpected)
+	}
+	t.Logf("stdlibFuncs has %d registered functions", got)
 }
 
 // TestEvalCommand tests command template expansion (EXPR-06) and string interpolation.
