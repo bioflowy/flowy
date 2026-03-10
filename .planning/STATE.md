@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-lexer-parser-and-ast-02-04-PLAN.md
-last_updated: "2026-03-10T07:13:06.479Z"
+stopped_at: Completed 02-lexer-parser-and-ast-02-05-PLAN.md
+last_updated: "2026-03-10T07:19:48.702Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-lexer-parser-and-ast P02 | 3min | 2 tasks | 3 files |
 | Phase 02-lexer-parser-and-ast P03 | 8min | 2 tasks | 4 files |
 | Phase 02-lexer-parser-and-ast P04 | 9min | 2 tasks | 4 files |
+| Phase 02-lexer-parser-and-ast P05 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase 02-lexer-parser-and-ast]: ** right-associativity: rightBP=59 < leftBP=60 with loop condition leftBP<=minBP — unambiguously right-associative for 2**3**2→2**(3**2)
 - [Phase 02-lexer-parser-and-ast]: Unary minus/not rightBP=55 (between */ at 50 and ** at 60): -x**2→-(x**2) matching Python/math convention
 - [Phase 02-lexer-parser-and-ast]: isNameToken expanded with TokEnv — 'env' keyword valid as variable reference in expression context (needed for ${env} in command blocks)
+- [Phase 02-lexer-parser-and-ast]: parseFile takes optional src []byte: non-nil for root, nil for imported files (read from disk via os.ReadFile)
+- [Phase 02-lexer-parser-and-ast]: Circular import chain reconstructed via chain []string alongside visited map — O(1) detection plus human-readable error messages
+- [Phase 02-lexer-parser-and-ast]: Workflow input declarations use parseDecl(true) to allow optional default values per WDL 1.2 spec
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T07:13:06.475Z
-Stopped at: Completed 02-lexer-parser-and-ast-02-04-PLAN.md
+Last session: 2026-03-10T07:19:48.698Z
+Stopped at: Completed 02-lexer-parser-and-ast-02-05-PLAN.md
 Resume file: None
