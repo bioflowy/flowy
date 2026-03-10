@@ -196,8 +196,6 @@ func TestIfPromotion(t *testing.T) {
 // TestStructLiteral checks that the checker validates a struct literal where
 // all fields match the declared struct type.
 func TestStructLiteral(t *testing.T) {
-	t.Fatal("not implemented")
-
 	doc := parseFixture(t, "wdl/testdata/struct_literal.wdl")
 	_, errs := Check(doc)
 	if len(errs) != 0 {
@@ -208,8 +206,6 @@ func TestStructLiteral(t *testing.T) {
 // TestStructFieldAccess checks that the checker resolves a field access
 // expression (p.x) to the correct type in the TypeEnv.
 func TestStructFieldAccess(t *testing.T) {
-	t.Fatal("not implemented")
-
 	doc := parseFixture(t, "wdl/testdata/struct_literal.wdl")
 	env, errs := Check(doc)
 	if len(errs) != 0 {
@@ -228,8 +224,6 @@ func TestStructFieldAccess(t *testing.T) {
 // TestStructUndefined checks that the checker reports an error when a struct
 // literal references a struct name that is not defined in the document.
 func TestStructUndefined(t *testing.T) {
-	t.Fatal("not implemented")
-
 	// Build an in-memory Document with a StructExpr referencing non-existent "Bogus".
 	doc := &ast.Document{
 		Tasks: []*ast.Task{

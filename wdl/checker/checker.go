@@ -61,15 +61,23 @@ func (s *Scope) define(name string, t types.Type) {
 //
 // Pass 1 (collectDecls): registers every declaration into its scope with its
 // declared type, applying arrayize/optionalize for scatter/if bodies.
+// Pass 1 also builds structDefs from doc.Structs for use in struct validation.
 // Pass 2 (validateDecls): runs Kahn's toposort per scope for cycle detection,
 // then validates literal and ident initializer types using Coerces().
 func Check(doc *ast.Document) (TypeEnv, []error) {
 	env := make(TypeEnv)
 	var errs []error
 
+	// Pass 1: build structDefs map from the document's struct definitions.
+	// This map is passed to task/workflow checking for struct literal and field access validation.
+	structDefs := make(map[string]*ast.StructDef, len(doc.Structs))
+	for _, s := range doc.Structs {
+		structDefs[s.Name] = s
+	}
+
 	// Process each task independently.
 	for _, task := range doc.Tasks {
-		scope, taskErrs := checkTask(task)
+		scope, taskErrs := checkTask(task, structDefs)
 		errs = append(errs, taskErrs...)
 		// Merge task declarations into the top-level env.
 		for name, t := range scope.decls {
@@ -79,7 +87,7 @@ func Check(doc *ast.Document) (TypeEnv, []error) {
 
 	// Process each workflow independently.
 	for _, wf := range doc.Workflows {
-		scope, wfErrs := checkWorkflow(wf)
+		scope, wfErrs := checkWorkflow(wf, structDefs)
 		errs = append(errs, wfErrs...)
 		// Merge workflow declarations into the top-level env.
 		for name, t := range scope.decls {
@@ -91,8 +99,8 @@ func Check(doc *ast.Document) (TypeEnv, []error) {
 }
 
 // checkTask runs both passes for a single task and returns the resulting scope
-// plus any errors found.
-func checkTask(task *ast.Task) (*Scope, []error) {
+// plus any errors found. structDefs is the document-level struct definition map.
+func checkTask(task *ast.Task, structDefs map[string]*ast.StructDef) (*Scope, []error) {
 	scope := newScope(nil)
 
 	// Pass 1: collect all declarations (inputs, private decls, outputs).
@@ -112,7 +120,7 @@ func checkTask(task *ast.Task) (*Scope, []error) {
 	}
 
 	// Pass 2: validate declarations in topological order.
-	errs := validateGroups(scope, groups)
+	errs := validateGroups(scope, groups, structDefs)
 	return scope, errs
 }
 
@@ -126,8 +134,8 @@ type declGroup struct {
 }
 
 // checkWorkflow runs both passes for a single workflow and returns the resulting
-// scope plus any errors found.
-func checkWorkflow(wf *ast.Workflow) (*Scope, []error) {
+// scope plus any errors found. structDefs is the document-level struct definition map.
+func checkWorkflow(wf *ast.Workflow, structDefs map[string]*ast.StructDef) (*Scope, []error) {
 	outerScope := newScope(nil)
 	var groups []declGroup
 
@@ -148,7 +156,7 @@ func checkWorkflow(wf *ast.Workflow) (*Scope, []error) {
 	}
 
 	// Pass 2: validate all declarations in topological order.
-	errs := validateGroups(outerScope, groups)
+	errs := validateGroups(outerScope, groups, structDefs)
 	return outerScope, errs
 }
 
@@ -261,8 +269,9 @@ func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope,
 // validateGroups runs Kahn's topological sort on the declarations visible in
 // outerScope, then validates each declaration's initializer type using the
 // scope bundled in each declGroup (which may be an inner scope for scatter bodies).
+// structDefs is passed through for struct literal and field access validation.
 // All errors are collected; processing does not stop at the first error.
-func validateGroups(outerScope *Scope, groups []declGroup) []error {
+func validateGroups(outerScope *Scope, groups []declGroup, structDefs map[string]*ast.StructDef) []error {
 	var errs []error
 
 	// Build the dependency graph from ident references.
@@ -307,7 +316,7 @@ func validateGroups(outerScope *Scope, groups []declGroup) []error {
 		if g.decl.Expr == nil {
 			continue // unbound declaration (e.g., input stub), no initializer to check
 		}
-		exprErrs := checkExprType(g.decl, g.scope)
+		exprErrs := checkExprType(g.decl, g.scope, structDefs)
 		errs = append(errs, exprErrs...)
 	}
 
@@ -330,9 +339,10 @@ func scatterVarElementType(expr ast.Expr, scope *Scope) types.Type {
 }
 
 // checkExprType checks whether decl's initializer expression is compatible with
-// decl.Type. Only literal types and IdentExpr are validated; all other
-// expression types (BinaryExpr, ApplyExpr, etc.) are skipped per the plan.
-func checkExprType(decl *ast.Decl, scope *Scope) []error {
+// decl.Type. Only literal types, IdentExpr, StructExpr, and GetExpr are
+// validated; all other expression types (BinaryExpr, ApplyExpr, etc.) are
+// skipped per the plan. structDefs is used for struct literal and field access validation.
+func checkExprType(decl *ast.Decl, scope *Scope, structDefs map[string]*ast.StructDef) []error {
 	var errs []error
 
 	var fromType types.Type
@@ -355,6 +365,20 @@ func checkExprType(decl *ast.Decl, scope *Scope) []error {
 				Pos:     decl.Pos,
 				Message: fmt.Sprintf("undefined name %q", e.Name),
 			})
+			return errs
+		}
+		fromType = t
+	case *ast.StructExpr:
+		structErrs, t := checkStructExpr(e, decl.Pos, scope, structDefs)
+		errs = append(errs, structErrs...)
+		if len(structErrs) > 0 {
+			return errs
+		}
+		fromType = t
+	case *ast.GetExpr:
+		getErr, t := checkGetExpr(e, decl.Pos, scope, structDefs)
+		if getErr != nil {
+			errs = append(errs, getErr)
 			return errs
 		}
 		fromType = t
