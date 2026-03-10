@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 1 — Lexer, Parser, and AST
+**Current focus:** Phase 1 — Type Data Structures
 
 ## Current Position
 
