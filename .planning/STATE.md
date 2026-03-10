@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-lexer-parser-and-ast-02-02-PLAN.md
-last_updated: "2026-03-10T06:51:52.529Z"
+stopped_at: Completed 02-lexer-parser-and-ast-02-03-PLAN.md
+last_updated: "2026-03-10T07:01:17.777Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-type-data-structures P01 | 15min | 2 tasks | 5 files |
 | Phase 02-lexer-parser-and-ast P01 | 3min | 2 tasks | 7 files |
 | Phase 02-lexer-parser-and-ast P02 | 3min | 2 tasks | 3 files |
+| Phase 02-lexer-parser-and-ast P03 | 8min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Phase 02-lexer-parser-and-ast]: WorkflowNode, StringPart, Expr use unexported marker methods to prevent unintended external implementations
 - [Phase 02-lexer-parser-and-ast]: Pull-model Next() lexer API with auto command-mode detection after 'command' keyword — parser does not need SetCommandMode call
 - [Phase 02-lexer-parser-and-ast]: TokXxx exported naming for all token constants enables external lexer_test package to reference them directly
+- [Phase 02-lexer-parser-and-ast]: parseExpr stub propagates TokError as ParseError; expectName() accepts type-keywords as struct/task/workflow names
+- [Phase 02-lexer-parser-and-ast]: Workflow input/output sections parsed directly in parseWorkflow loop; body-only elements use parseWorkflowBodyElement
 
 ### Pending Todos
 
@@ -85,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T06:51:52.525Z
-Stopped at: Completed 02-lexer-parser-and-ast-02-02-PLAN.md
+Last session: 2026-03-10T07:01:17.773Z
+Stopped at: Completed 02-lexer-parser-and-ast-02-03-PLAN.md
 Resume file: None
