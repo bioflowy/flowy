@@ -27,3 +27,18 @@ func (e *Env) Lookup(name string) (values.Value, bool) {
 	}
 	return nil, false
 }
+
+// Parent returns the parent scope of this Env (nil for top-level).
+// Used by code that needs to reconstruct a scope chain with translated bindings.
+func (e *Env) Parent() *Env {
+	return e.parent
+}
+
+// ForEach calls fn for each name/value pair in the current (innermost) scope only.
+// It does NOT walk parent scopes. This is useful for copying or transforming the
+// current scope's bindings without exposing the underlying map.
+func (e *Env) ForEach(fn func(name string, v values.Value)) {
+	for name, v := range e.bindings {
+		fn(name, v)
+	}
+}
