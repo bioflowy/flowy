@@ -66,7 +66,13 @@ Plans:
   3. A WDL file with a type mismatch (e.g., assigning a String to an Int input) produces a type error with the source location and a description of the mismatch
   4. All 6 WDL 1.2 coercion rules (Int→Float, T→T?, String↔File, T→Array[T], etc.) are applied shallowly and never recursively into compound type parameters
   5. Struct field types are validated; struct literal and field access expressions are correctly typed
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Create wdl/checker package skeleton, test stubs, and WDL fixtures (Wave 0)
+- [ ] 03-02-PLAN.md — Implement Coerces() and arrayize/optionalize helpers (TYPE-05, TYPE-07 helpers)
+- [ ] 03-03-PLAN.md — Implement two-pass Check(), Kahn toposort, scatter/if promotion (TYPE-06, TYPE-07)
+- [ ] 03-04-PLAN.md — Implement struct literal and field access validation (TYPE-08)
 
 ### Phase 4: Expression Evaluator and Standard Library
 **Goal**: Any WDL 1.2 expression can be evaluated to a typed Value, and all ~30 WDL 1.2 stdlib functions return correct results without requiring a running Docker daemon
@@ -125,7 +131,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Type Data Structures | 1/1 | Complete   | 2026-03-10 |
 | 2. Lexer, Parser, and AST | 5/5 | Complete   | 2026-03-10 |
-| 3. Type Checker | 0/TBD | Not started | - |
+| 3. Type Checker | 0/4 | Not started | - |
 | 4. Expression Evaluator and Standard Library | 0/TBD | Not started | - |
 | 5. Task Execution | 0/TBD | Not started | - |
 | 6. Workflow Execution (DAG Scheduler) | 0/TBD | Not started | - |
