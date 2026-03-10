@@ -884,9 +884,147 @@ func TestStdlibArray(t *testing.T) {
 }
 
 // TestStdlibString tests string standard library functions (STDLIB-04).
-// Covers: sub, sep, find, matches, quote, squote.
+// Covers: sub, find, matches, join_paths.
 func TestStdlibString(t *testing.T) {
-	t.Skip("not yet implemented")
+	ctx := ExecContext{}
+
+	// --- sub ---
+	t.Run("sub replaces all occurrences", func(t *testing.T) {
+		got, err := callStdlib(t, "sub", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "hello world"},
+			values.StringValue{Type: types.StringType{}, Value: "o"},
+			values.StringValue{Type: types.StringType{}, Value: "0"},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sv := got.(values.StringValue)
+		if sv.Value != "hell0 w0rld" {
+			t.Errorf("got %q, want %q", sv.Value, "hell0 w0rld")
+		}
+	})
+	t.Run("sub no match unchanged", func(t *testing.T) {
+		got, err := callStdlib(t, "sub", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "abc"},
+			values.StringValue{Type: types.StringType{}, Value: "x"},
+			values.StringValue{Type: types.StringType{}, Value: "y"},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sv := got.(values.StringValue)
+		if sv.Value != "abc" {
+			t.Errorf("got %q, want %q", sv.Value, "abc")
+		}
+	})
+
+	// --- find ---
+	t.Run("find returns first match", func(t *testing.T) {
+		got, err := callStdlib(t, "find", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "hello world"},
+			values.StringValue{Type: types.StringType{}, Value: "w.rld"},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sv := got.(values.StringValue)
+		if sv.Value != "world" {
+			t.Errorf("got %q, want %q", sv.Value, "world")
+		}
+	})
+	t.Run("find no match returns NullValue", func(t *testing.T) {
+		got, err := callStdlib(t, "find", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "hello"},
+			values.StringValue{Type: types.StringType{}, Value: "xyz"},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := got.(values.NullValue); !ok {
+			t.Errorf("expected NullValue, got %T", got)
+		}
+	})
+
+	// --- matches ---
+	t.Run("matches whole string", func(t *testing.T) {
+		got, err := callStdlib(t, "matches", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "hello"},
+			values.StringValue{Type: types.StringType{}, Value: "hell."},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if !bv.Value {
+			t.Error("expected true")
+		}
+	})
+	t.Run("matches partial match returns false", func(t *testing.T) {
+		got, err := callStdlib(t, "matches", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "hello"},
+			values.StringValue{Type: types.StringType{}, Value: "ell"},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		bv := got.(values.BooleanValue)
+		if bv.Value {
+			t.Error("expected false for partial match")
+		}
+	})
+
+	// --- join_paths ---
+	t.Run("join_paths File+String", func(t *testing.T) {
+		got, err := callStdlib(t, "join_paths", []values.Value{
+			values.FileValue{Type: types.FileType{}, Value: "/a/b"},
+			values.StringValue{Type: types.StringType{}, Value: "c.txt"},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fv := got.(values.FileValue)
+		if fv.Value != "/a/b/c.txt" {
+			t.Errorf("got %q, want %q", fv.Value, "/a/b/c.txt")
+		}
+	})
+	t.Run("join_paths File+Array", func(t *testing.T) {
+		got, err := callStdlib(t, "join_paths", []values.Value{
+			values.FileValue{Type: types.FileType{}, Value: "/a"},
+			values.ArrayValue{
+				Type: types.ArrayType{ItemType: types.StringType{}},
+				Items: []values.Value{
+					values.StringValue{Type: types.StringType{}, Value: "b"},
+					values.StringValue{Type: types.StringType{}, Value: "c.txt"},
+				},
+			},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fv := got.(values.FileValue)
+		if fv.Value != "/a/b/c.txt" {
+			t.Errorf("got %q, want %q", fv.Value, "/a/b/c.txt")
+		}
+	})
+	t.Run("join_paths Array only", func(t *testing.T) {
+		got, err := callStdlib(t, "join_paths", []values.Value{
+			values.ArrayValue{
+				Type: types.ArrayType{ItemType: types.StringType{}},
+				Items: []values.Value{
+					values.StringValue{Type: types.StringType{}, Value: "/a"},
+					values.StringValue{Type: types.StringType{}, Value: "b"},
+					values.StringValue{Type: types.StringType{}, Value: "c.txt"},
+				},
+			},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fv := got.(values.FileValue)
+		if fv.Value != "/a/b/c.txt" {
+			t.Errorf("got %q, want %q", fv.Value, "/a/b/c.txt")
+		}
+	})
 }
 
 // TestStdlibUtility tests utility standard library functions (STDLIB-05).
@@ -898,11 +1036,156 @@ func TestStdlibUtility(t *testing.T) {
 // TestStdlibNumeric tests numeric standard library functions (STDLIB-06).
 // Covers: floor, ceil, round, min, max.
 func TestStdlibNumeric(t *testing.T) {
-	t.Skip("not yet implemented")
+	ctx := ExecContext{}
+
+	// --- ceil ---
+	t.Run("ceil 1.1", func(t *testing.T) {
+		got, err := callStdlib(t, "ceil", []values.Value{values.FloatValue{Type: types.FloatType{}, Value: 1.1}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 2 {
+			t.Errorf("got %d, want 2", iv.Value)
+		}
+	})
+	t.Run("ceil -1.1", func(t *testing.T) {
+		got, err := callStdlib(t, "ceil", []values.Value{values.FloatValue{Type: types.FloatType{}, Value: -1.1}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != -1 {
+			t.Errorf("got %d, want -1", iv.Value)
+		}
+	})
+
+	// --- floor ---
+	t.Run("floor 1.9", func(t *testing.T) {
+		got, err := callStdlib(t, "floor", []values.Value{values.FloatValue{Type: types.FloatType{}, Value: 1.9}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 1 {
+			t.Errorf("got %d, want 1", iv.Value)
+		}
+	})
+	t.Run("floor -1.1", func(t *testing.T) {
+		got, err := callStdlib(t, "floor", []values.Value{values.FloatValue{Type: types.FloatType{}, Value: -1.1}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != -2 {
+			t.Errorf("got %d, want -2", iv.Value)
+		}
+	})
+
+	// --- round ---
+	t.Run("round 2.4", func(t *testing.T) {
+		got, err := callStdlib(t, "round", []values.Value{values.FloatValue{Type: types.FloatType{}, Value: 2.4}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 2 {
+			t.Errorf("got %d, want 2", iv.Value)
+		}
+	})
+	t.Run("round 2.5", func(t *testing.T) {
+		got, err := callStdlib(t, "round", []values.Value{values.FloatValue{Type: types.FloatType{}, Value: 2.5}}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 3 {
+			t.Errorf("got %d, want 3 (half-up)", iv.Value)
+		}
+	})
+
+	// --- min ---
+	t.Run("min Int Int", func(t *testing.T) {
+		got, err := callStdlib(t, "min", []values.Value{
+			values.IntValue{Type: types.IntType{}, Value: 3},
+			values.IntValue{Type: types.IntType{}, Value: 5},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 3 {
+			t.Errorf("got %d, want 3", iv.Value)
+		}
+	})
+	t.Run("min Float Float", func(t *testing.T) {
+		got, err := callStdlib(t, "min", []values.Value{
+			values.FloatValue{Type: types.FloatType{}, Value: 1.5},
+			values.FloatValue{Type: types.FloatType{}, Value: 2.5},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fv := got.(values.FloatValue)
+		if fv.Value != 1.5 {
+			t.Errorf("got %v, want 1.5", fv.Value)
+		}
+	})
+	t.Run("min Int Float promotes to Float", func(t *testing.T) {
+		got, err := callStdlib(t, "min", []values.Value{
+			values.IntValue{Type: types.IntType{}, Value: 3},
+			values.FloatValue{Type: types.FloatType{}, Value: 2.5},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fv := got.(values.FloatValue)
+		if fv.Value != 2.5 {
+			t.Errorf("got %v, want 2.5", fv.Value)
+		}
+	})
+
+	// --- max ---
+	t.Run("max Int Int", func(t *testing.T) {
+		got, err := callStdlib(t, "max", []values.Value{
+			values.IntValue{Type: types.IntType{}, Value: 3},
+			values.IntValue{Type: types.IntType{}, Value: 5},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 5 {
+			t.Errorf("got %d, want 5", iv.Value)
+		}
+	})
 }
 
 // TestRoundHalfUp tests the round() function's half-up semantics (STDLIB-06).
 // Spec requirement: round(-2.5) must return -2 (round half away from zero), not -3.
 func TestRoundHalfUp(t *testing.T) {
-	t.Skip("not yet implemented")
+	ctx := ExecContext{}
+	cases := []struct {
+		input float64
+		want  int64
+	}{
+		{2.5, 3},
+		{-2.5, -2},  // CRITICAL: half-up, NOT -3
+		{2.4, 2},
+		{-2.4, -2},
+		{0.5, 1},
+		{-0.5, 0},
+	}
+	for _, tc := range cases {
+		got, err := callStdlib(t, "round", []values.Value{
+			values.FloatValue{Type: types.FloatType{}, Value: tc.input},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("round(%v): unexpected error: %v", tc.input, err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != tc.want {
+			t.Errorf("round(%v) = %d, want %d", tc.input, iv.Value, tc.want)
+		}
+	}
 }
