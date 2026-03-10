@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-10T18:04:07.197Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-10T18:09:57.680Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
   percent: 0
 ---
 
@@ -71,6 +71,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05-task-execution P03 | 10min | 2 tasks | 4 files |
 | Phase 06-workflow-execution-dag-scheduler P01 | 2min | 2 tasks | 5 files |
 | Phase 06-workflow-execution-dag-scheduler P02 | 9min | 2 tasks | 7 files |
+| Phase 06-workflow-execution-dag-scheduler P03 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,7 @@ Recent decisions affecting current work:
 - [Phase 06-workflow-execution-dag-scheduler]: Call outputs bound as StructValue under call alias — enables GetExpr alias.field resolution via eval.evalGet
 - [Phase 06-workflow-execution-dag-scheduler]: taskRunner field on scheduler propagates to child schedulers — avoids global runTaskFn races in executeBody/scatter/conditional
 - [Phase 06-workflow-execution-dag-scheduler]: injectDeclNodes() two-pointer merge inserts Decl nodes into topo order at original body positions
+- [Phase 06-workflow-execution-dag-scheduler]: outputs.json not written on any task failure; writeErrorJSON uses errors.As for TaskError extraction from wrapped error chains; valueToJSONOutput relativizes File/Directory paths via filepath.Rel
 
 ### Pending Todos
 
@@ -148,6 +150,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T18:04:07.193Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-03-10T18:09:57.675Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None

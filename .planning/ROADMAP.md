@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Type Checker** - Validate AST types with full forward-reference resolution, coercion rules, and scatter/if promotion; `flowy check` becomes usable
 - [x] **Phase 4: Expression Evaluator and Standard Library** - Evaluate all WDL 1.2 expressions and implement all ~30 stdlib functions (completed 2026-03-10)
 - [ ] **Phase 5: Task Execution** - Run a single WDL task end-to-end in Docker with input staging and output collection
-- [ ] **Phase 6: Workflow Execution (DAG Scheduler)** - Execute multi-task workflows with scatter parallelism, conditionals, and outputs.json
+- [x] **Phase 6: Workflow Execution (DAG Scheduler)** - Execute multi-task workflows with scatter parallelism, conditionals, and outputs.json (completed 2026-03-10)
 - [ ] **Phase 7: CLI and Integration** - Ship `flowy run` and `flowy check` as usable CLI tools with all flags and exit codes
 
 ## Phase Details
@@ -152,5 +152,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Type Checker | 2/4 | In Progress|  |
 | 4. Expression Evaluator and Standard Library | 6/6 | Complete   | 2026-03-10 |
 | 5. Task Execution | 2/3 | In Progress|  |
-| 6. Workflow Execution (DAG Scheduler) | 2/3 | In Progress|  |
+| 6. Workflow Execution (DAG Scheduler) | 3/3 | Complete   | 2026-03-10 |
 | 7. CLI and Integration | 0/TBD | Not started | - |

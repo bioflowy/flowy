@@ -66,8 +66,8 @@
 - [x] **WF-04**: `if` ブロックを評価し、条件が偽の場合の出力を `None`（Optional）として扱える
 - [x] **WF-05**: `after` キーワードによる明示的な実行順序依存を尊重できる
 - [x] **WF-06**: 並列実行に `errgroup.WithContext` + `SetLimit` を使い、goroutine リークを防止する
-- [ ] **WF-07**: ワークフロー完了後に `outputs.json` を出力ディレクトリに書き出す
-- [ ] **WF-08**: いずれかのタスクが失敗した場合、実行中のタスクをキャンセルして `error.json` を書き出す
+- [x] **WF-07**: ワークフロー完了後に `outputs.json` を出力ディレクトリに書き出す
+- [x] **WF-08**: いずれかのタスクが失敗した場合、実行中のタスクをキャンセルして `error.json` を書き出す
 
 ### CLI
 
@@ -156,8 +156,8 @@
 | WF-04 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | WF-05 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | WF-06 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
-| WF-07 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
-| WF-08 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
+| WF-07 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
+| WF-08 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | CLI-01 | Phase 7: CLI and Integration | Pending |
 | CLI-02 | Phase 7: CLI and Integration | Pending |
 | CLI-03 | Phase 7: CLI and Integration | Pending |
