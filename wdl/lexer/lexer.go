@@ -758,20 +758,6 @@ func lexString(l *Lexer) stateFn {
 	return nil
 }
 
-// tokenizeAll is a helper (for use in tests) that drains the lexer to EOF.
-func tokenizeAll(file string, src []byte) []Token {
-	l := NewLexer(file, src)
-	var tokens []Token
-	for {
-		tok := l.Next()
-		tokens = append(tokens, tok)
-		if tok.Type == TokEOF || tok.Type == TokError {
-			break
-		}
-	}
-	return tokens
-}
-
 // HasTokenOfType is a helper that reports whether a token slice contains
 // a token of the given type with the given value.
 // val == "" matches any value.
