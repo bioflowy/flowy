@@ -32,7 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All compound types (Array[T], Map[K,V], Pair[L,R], Struct) are defined with type parameters and implement the `Type` interface
   4. Optional type (T?) is defined; the None literal has a representable type
   5. Every concrete `Value` struct carries an embedded WDL `Type` field so an empty `ArrayValue` can distinguish `Array[Int]` from `Array[String]`
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 01-01-PLAN.md — Initialize go module, implement wdl/types and wdl/values packages
 
 ### Phase 2: Lexer, Parser, and AST
 **Goal**: Any valid WDL 1.2 source file can be parsed into a typed, traversable AST; parse errors are reported with precise source locations
@@ -113,7 +116,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Type Data Structures | 0/TBD | Not started | - |
+| 1. Type Data Structures | 0/1 | Not started | - |
 | 2. Lexer, Parser, and AST | 0/TBD | Not started | - |
 | 3. Type Checker | 0/TBD | Not started | - |
 | 4. Expression Evaluator and Standard Library | 0/TBD | Not started | - |
