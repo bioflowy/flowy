@@ -7,15 +7,15 @@
 
 ### Parser
 
-- [ ] **PARSE-01**: WDL 1.2 文書（version宣言、task、workflow、struct、import）をパースしてASTを生成できる
-- [ ] **PARSE-02**: レキサーが `command {}` スタイルと `command <<<>>>` スタイルを別々のモードで処理できる
-- [ ] **PARSE-03**: `command {}` ブロック内で `~{}` および `${}` プレースホルダを認識できる
-- [ ] **PARSE-04**: `command <<<>>>` ブロック内で `~{}` のみをプレースホルダとして認識し、`${}` はbashリテラルとして通過させる
-- [ ] **PARSE-05**: 文字列リテラル内での式補間（`~{}` / `${}`）をネスト含めて正しく処理できる
-- [ ] **PARSE-06**: Pratt式パーサが `**`（指数）含む全演算子を正しい優先順位でパースできる
-- [ ] **PARSE-07**: ローカルファイルの import 文を解決して複数ファイルにまたがるドキュメントをパースできる
-- [ ] **PARSE-08**: パースエラーを行番号・列番号付きで報告できる
-- [ ] **PARSE-09**: struct 定義をパースしてネスト struct を含む AST ノードを生成できる
+- [x] **PARSE-01**: WDL 1.2 文書（version宣言、task、workflow、struct、import）をパースしてASTを生成できる
+- [x] **PARSE-02**: レキサーが `command {}` スタイルと `command <<<>>>` スタイルを別々のモードで処理できる
+- [x] **PARSE-03**: `command {}` ブロック内で `~{}` および `${}` プレースホルダを認識できる
+- [x] **PARSE-04**: `command <<<>>>` ブロック内で `~{}` のみをプレースホルダとして認識し、`${}` はbashリテラルとして通過させる
+- [x] **PARSE-05**: 文字列リテラル内での式補間（`~{}` / `${}`）をネスト含めて正しく処理できる
+- [x] **PARSE-06**: Pratt式パーサが `**`（指数）含む全演算子を正しい優先順位でパースできる
+- [x] **PARSE-07**: ローカルファイルの import 文を解決して複数ファイルにまたがるドキュメントをパースできる
+- [x] **PARSE-08**: パースエラーを行番号・列番号付きで報告できる
+- [x] **PARSE-09**: struct 定義をパースしてネスト struct を含む AST ノードを生成できる
 
 ### Type System
 
@@ -116,15 +116,15 @@
 | TYPE-02 | Phase 1: Type Data Structures | Complete |
 | TYPE-03 | Phase 1: Type Data Structures | Complete |
 | TYPE-04 | Phase 1: Type Data Structures | Complete |
-| PARSE-01 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-02 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-03 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-04 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-05 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-06 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-07 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-08 | Phase 2: Lexer, Parser, and AST | Pending |
-| PARSE-09 | Phase 2: Lexer, Parser, and AST | Pending |
+| PARSE-01 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-02 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-03 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-04 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-05 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-06 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-07 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-08 | Phase 2: Lexer, Parser, and AST | Complete |
+| PARSE-09 | Phase 2: Lexer, Parser, and AST | Complete |
 | TYPE-05 | Phase 3: Type Checker | Pending |
 | TYPE-06 | Phase 3: Type Checker | Pending |
 | TYPE-07 | Phase 3: Type Checker | Pending |
