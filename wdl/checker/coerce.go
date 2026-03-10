@@ -29,14 +29,14 @@ func Coerces(from, to types.Type) bool {
 	switch f := from.(type) {
 	case types.IntType:
 		// Rule 2: Int → Float
-		// Strip optional from `to` for comparison because Rule 1 already
-		// handled T→T?; at this point both sides should have matching optional flags.
+		_ = f
 		if _, ok := to.(types.FloatType); ok {
 			return true
 		}
 
 	case types.StringType:
 		// Rule 3a: String → File
+		_ = f
 		if _, ok := to.(types.FileType); ok {
 			return true
 		}
@@ -44,14 +44,13 @@ func Coerces(from, to types.Type) bool {
 		if _, ok := to.(types.DirectoryType); ok {
 			return true
 		}
-		_ = f // silence unused variable warning
 
 	case types.FileType:
 		// Rule 4: File → String
+		_ = f
 		if _, ok := to.(types.StringType); ok {
 			return true
 		}
-		_ = f // silence unused variable warning
 
 	case types.ArrayType:
 		// Rule 5: Array[T]+ → Array[T]
