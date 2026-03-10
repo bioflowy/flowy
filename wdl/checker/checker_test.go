@@ -27,35 +27,79 @@ func parseFixture(t *testing.T, path string) *ast.Document {
 	return doc
 }
 
-// TestCoerces checks that Coerces() implements WDL coercion rules.
+// TestCoerces checks that Coerces() implements WDL 1.2 shallow coercion rules.
 func TestCoerces(t *testing.T) {
-	t.Fatal("not implemented")
+	cases := []struct {
+		name string
+		from types.Type
+		to   types.Type
+		want bool
+	}{
+		// Rule 2: Int -> Float
+		{"Int->Float", types.IntType{}, types.FloatType{}, true},
+		// Rule 3a: String -> File
+		{"String->File", types.StringType{}, types.FileType{}, true},
+		// Rule 3b: String -> Directory
+		{"String->Directory", types.StringType{}, types.DirectoryType{}, true},
+		// Rule 4: File -> String
+		{"File->String", types.FileType{}, types.StringType{}, true},
+		// Rule 1: T -> T? (same base type, target is optional)
+		{"Int->Int?", types.IntType{}, types.IntType{Optional: true}, true},
+		// Rule 5: Array[T]+ -> Array[T] (nonempty drop, shallow item check)
+		{
+			"Array[Int]+->Array[Int]",
+			types.ArrayType{ItemType: types.IntType{}, Nonempty: true},
+			types.ArrayType{ItemType: types.IntType{}, Nonempty: false},
+			true,
+		},
+		// False: unrelated types
+		{"String->Int", types.StringType{}, types.IntType{}, false},
+		// False: Array item types differ (shallow only, no item coercion)
+		{
+			"Array[String]->Array[File] (shallow, false)",
+			types.ArrayType{ItemType: types.StringType{}},
+			types.ArrayType{ItemType: types.FileType{}},
+			false,
+		},
+	}
 
-	// WDL coercion rules (reference only — not executed yet):
-	// Coerces(IntType{}, FloatType{}) == true
-	// Coerces(StringType{}, FileType{}) == true
-	// Coerces(StringType{}, DirectoryType{}) == true
-	// Coerces(FileType{}, StringType{}) == true
-	// Coerces(IntType{}, IntType{Optional:true}) == true  // T → T?
-	// Coerces(ArrayType{ItemType:IntType{},Nonempty:true}, ArrayType{ItemType:IntType{},Nonempty:false}) == true  // Array[T]+ → Array[T]
-	// Coerces(StringType{}, IntType{}) == false
-	// Coerces(ArrayType{ItemType:StringType{}}, ArrayType{ItemType:FileType{}}) == false  // no item coercion
-	_ = Coerces(types.IntType{}, types.FloatType{})
-	_ = Coerces(types.StringType{}, types.FileType{})
-	_ = Coerces(types.StringType{}, types.DirectoryType{})
-	_ = Coerces(types.FileType{}, types.StringType{})
-	_ = Coerces(types.IntType{}, types.IntType{Optional: true})
-	_ = Coerces(types.ArrayType{ItemType: types.IntType{}, Nonempty: true}, types.ArrayType{ItemType: types.IntType{}, Nonempty: false})
-	_ = Coerces(types.StringType{}, types.IntType{})
-	_ = Coerces(types.ArrayType{ItemType: types.StringType{}}, types.ArrayType{ItemType: types.FileType{}})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Coerces(tc.from, tc.to)
+			if got != tc.want {
+				t.Errorf("Coerces(%v, %v) = %v; want %v", tc.from, tc.to, got, tc.want)
+			}
+		})
+	}
 }
 
-// TestOptionalizeIdempotent checks that optionalize does not double-wrap T? to T??.
+// TestOptionalizeIdempotent checks that optionalize does not double-wrap T? to T??,
+// and that calling optionalize twice is the same as calling it once.
 func TestOptionalizeIdempotent(t *testing.T) {
-	t.Fatal("not implemented")
+	// optionalize of a non-optional type must make it optional
+	result := optionalize(types.IntType{})
+	if !result.IsOptional() {
+		t.Errorf("optionalize(IntType{}) must be optional; got IsOptional()=false")
+	}
+	if result.TypeName() != "Int?" {
+		t.Errorf("optionalize(IntType{}).TypeName() = %q; want %q", result.TypeName(), "Int?")
+	}
 
-	// optionalize(IntType{Optional:true}) must remain Int? (not Int??)
-	_ = optionalize(types.IntType{Optional: true})
+	// optionalize on already-optional type must be a no-op (idempotency guard)
+	alreadyOpt := types.IntType{Optional: true}
+	result2 := optionalize(alreadyOpt)
+	if result2.TypeName() != "Int?" {
+		t.Errorf("optionalize(IntType{Optional:true}).TypeName() = %q; want %q (must not double-wrap)",
+			result2.TypeName(), "Int?")
+	}
+
+	// Applying optionalize twice must equal applying it once
+	once := optionalize(types.IntType{})
+	twice := optionalize(optionalize(types.IntType{}))
+	if once.TypeName() != twice.TypeName() {
+		t.Errorf("optionalize applied twice = %q; want %q (idempotent)",
+			twice.TypeName(), once.TypeName())
+	}
 }
 
 // TestForwardRef checks that the checker accepts a task where a declaration
