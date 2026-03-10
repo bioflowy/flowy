@@ -5,6 +5,8 @@ package parser
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/bioflowy/flowy/wdl/ast"
@@ -62,11 +64,138 @@ func newParser(file string, src []byte) *Parser {
 	return p
 }
 
+// importAlias represents an "alias OldName as NewName" clause in an import statement.
+type importAlias struct {
+	OldName string
+	NewName string
+}
+
 // Parse parses a WDL document from src and returns the AST root.
 // file is used in error messages and Pos fields.
+// Import statements are recursively resolved: imported tasks, workflows, and
+// structs are merged into the returned Document. Circular imports and
+// duplicate names produce a *ParseError.
 func Parse(file string, src []byte) (*ast.Document, error) {
-	p := newParser(file, src)
-	return p.parseDocument()
+	abs, err := filepath.Abs(file)
+	if err != nil {
+		return nil, &ParseError{File: file, Line: 1, Col: 1, Message: fmt.Sprintf("cannot resolve path: %v", err)}
+	}
+	return parseFile(abs, src, map[string]bool{}, []string{})
+}
+
+// parseFile parses a WDL file and recursively resolves imports.
+// path must be an absolute path. src, if non-nil, is used as the file content
+// (for the root file); otherwise the file is read from disk.
+// visited tracks absolute paths already being parsed (cycle detection).
+// chain is the import chain of absolute paths for error messages.
+func parseFile(path string, src []byte, visited map[string]bool, chain []string) (*ast.Document, error) {
+	if visited[path] {
+		// Build cycle message: chain[0] → chain[1] → ... → path
+		chainStr := strings.Join(chain, " → ") + " → " + path
+		return nil, &ParseError{
+			File:    path,
+			Line:    1,
+			Col:     1,
+			Message: "circular import: " + chainStr,
+		}
+	}
+	visited[path] = true
+	defer func() { delete(visited, path) }()
+
+	var content []byte
+	if src != nil {
+		content = src
+	} else {
+		var err error
+		content, err = os.ReadFile(path)
+		if err != nil {
+			return nil, &ParseError{File: path, Line: 1, Col: 1, Message: fmt.Sprintf("cannot read file: %v", err)}
+		}
+	}
+
+	p := newParser(path, content)
+	doc, importStmts, err := p.parseDocumentWithImports()
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve imports
+	dir := filepath.Dir(path)
+	for _, imp := range importStmts {
+		importedPath := filepath.Join(dir, imp.path)
+		importedAbs, err := filepath.Abs(importedPath)
+		if err != nil {
+			return nil, &ParseError{File: path, Line: 1, Col: 1, Message: fmt.Sprintf("cannot resolve import path %q: %v", imp.path, err)}
+		}
+
+		importedDoc, err := parseFile(importedAbs, nil, visited, append(chain, path))
+		if err != nil {
+			return nil, err
+		}
+
+		// Apply aliases: rename structs in imported doc before merging
+		for _, alias := range imp.aliases {
+			for _, s := range importedDoc.Structs {
+				if s.Name == alias.OldName {
+					s.Name = alias.NewName
+				}
+			}
+		}
+
+		// Merge tasks
+		for _, task := range importedDoc.Tasks {
+			for _, existing := range doc.Tasks {
+				if existing.Name == task.Name {
+					return nil, &ParseError{
+						File:    path,
+						Line:    1,
+						Col:     1,
+						Message: fmt.Sprintf("duplicate task name: %s (imported from %s)", task.Name, importedAbs),
+					}
+				}
+			}
+			doc.Tasks = append(doc.Tasks, task)
+		}
+
+		// Merge workflows
+		for _, wf := range importedDoc.Workflows {
+			for _, existing := range doc.Workflows {
+				if existing.Name == wf.Name {
+					return nil, &ParseError{
+						File:    path,
+						Line:    1,
+						Col:     1,
+						Message: fmt.Sprintf("duplicate workflow name: %s (imported from %s)", wf.Name, importedAbs),
+					}
+				}
+			}
+			doc.Workflows = append(doc.Workflows, wf)
+		}
+
+		// Merge structs
+		for _, s := range importedDoc.Structs {
+			for _, existing := range doc.Structs {
+				if existing.Name == s.Name {
+					return nil, &ParseError{
+						File:    path,
+						Line:    1,
+						Col:     1,
+						Message: fmt.Sprintf("duplicate struct name: %s (imported from %s)", s.Name, importedAbs),
+					}
+				}
+			}
+			doc.Structs = append(doc.Structs, s)
+		}
+	}
+
+	return doc, nil
+}
+
+// importStatement holds the parsed data from a single import statement.
+type importStatement struct {
+	path      string        // relative file path from string literal
+	namespace string        // optional "as" namespace
+	aliases   []importAlias // optional "alias X as Y" clauses
 }
 
 // peek returns the next token without consuming it.
@@ -144,16 +273,26 @@ func (p *Parser) errorf(pos ast.Pos, format string, args ...any) *ParseError {
 }
 
 // parseDocument parses the top-level WDL document.
+// Import statements are left unresolved (returned as stubs with error).
+// Use parseDocumentWithImports for full import-aware parsing.
 func (p *Parser) parseDocument() (*ast.Document, error) {
+	doc, _, err := p.parseDocumentWithImports()
+	return doc, err
+}
+
+// parseDocumentWithImports parses the top-level WDL document and returns
+// both the document and the list of import statements found (unresolved).
+func (p *Parser) parseDocumentWithImports() (*ast.Document, []importStatement, error) {
 	doc := &ast.Document{
 		Pos: ast.Pos{File: p.file, Line: 1, Col: 1},
 	}
+	var imports []importStatement
 
 	// Parse optional version declaration
 	if p.peek().Type == lexer.TokVersion {
 		version, err := p.parseVersion()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		doc.Version = version
 	}
@@ -165,33 +304,95 @@ func (p *Parser) parseDocument() (*ast.Document, error) {
 		case lexer.TokTask:
 			task, err := p.parseTask()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			doc.Tasks = append(doc.Tasks, task)
 		case lexer.TokWorkflow:
 			wf, err := p.parseWorkflow()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			doc.Workflows = append(doc.Workflows, wf)
 		case lexer.TokStruct:
 			sd, err := p.parseStruct()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			doc.Structs = append(doc.Structs, sd)
 		case lexer.TokImport:
-			return nil, p.errorf(tok.Pos, "imports not yet supported")
+			imp, err := p.parseImport()
+			if err != nil {
+				return nil, nil, err
+			}
+			imports = append(imports, imp)
 		case lexer.TokError:
 			p.advance()
-			return nil, p.errorf(tok.Pos, "lexer error: %s", tok.Val)
+			return nil, nil, p.errorf(tok.Pos, "lexer error: %s", tok.Val)
 		default:
 			p.advance()
-			return nil, p.errorf(tok.Pos, "unexpected token %q at top level", tok.Val)
+			return nil, nil, p.errorf(tok.Pos, "unexpected token %q at top level", tok.Val)
 		}
 	}
 
-	return doc, nil
+	return doc, imports, nil
+}
+
+// parseImport parses an import statement:
+//
+//	"import" STRING_LITERAL ["as" CNAME] ("alias" CNAME "as" CNAME)*
+func (p *Parser) parseImport() (importStatement, error) {
+	_, err := p.expect(lexer.TokImport)
+	if err != nil {
+		return importStatement{}, err
+	}
+
+	// Parse the string literal (import path)
+	// String is tokenized as TokStringOpen [TokCommandContent]* TokStringClose
+	_, err = p.expect(lexer.TokStringOpen)
+	if err != nil {
+		return importStatement{}, err
+	}
+	var sb strings.Builder
+	for p.peek().Type == lexer.TokCommandContent {
+		sb.WriteString(p.advance().Val)
+	}
+	_, err = p.expect(lexer.TokStringClose)
+	if err != nil {
+		return importStatement{}, err
+	}
+	importPath := sb.String()
+
+	imp := importStatement{path: importPath}
+
+	// Optional "as namespace"
+	if p.peek().Type == lexer.TokAs {
+		p.advance()
+		nsTok, err := p.expectName()
+		if err != nil {
+			return importStatement{}, err
+		}
+		imp.namespace = nsTok.Val
+	}
+
+	// Zero or more "alias OldName as NewName"
+	for p.peek().Type == lexer.TokAlias {
+		p.advance()
+		oldTok, err := p.expectName()
+		if err != nil {
+			return importStatement{}, err
+		}
+		_, err = p.expect(lexer.TokAs)
+		if err != nil {
+			return importStatement{}, err
+		}
+		newTok, err := p.expectName()
+		if err != nil {
+			return importStatement{}, err
+		}
+		imp.aliases = append(imp.aliases, importAlias{OldName: oldTok.Val, NewName: newTok.Val})
+	}
+
+	return imp, nil
 }
 
 // parseVersion parses "version 1.2" and returns the version string.

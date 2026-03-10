@@ -1,6 +1,8 @@
 package parser_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -526,5 +528,99 @@ func TestStringInterpolation(t *testing.T) {
 // TestImportResolution verifies that import statements are recursively resolved,
 // with circular import detection and duplicate name checking. (PARSE-07)
 func TestImportResolution(t *testing.T) {
-	t.Skip("not implemented: PARSE-07")
+	t.Run("merge_imported_tasks", func(t *testing.T) {
+		// Create a temp dir with lib.wdl and main.wdl
+		dir := t.TempDir()
+
+		libSrc := []byte("version 1.2\ntask greet {\n  input { String person }\n  command { echo \"Hi ~{person}\" }\n  output { String message = read_string(stdout()) }\n}\n")
+		mainSrc := []byte("version 1.2\nimport \"lib.wdl\"\nworkflow main {\n  call greet { input: person = \"Alice\" }\n}\n")
+
+		libPath := filepath.Join(dir, "lib.wdl")
+		mainPath := filepath.Join(dir, "main.wdl")
+
+		if err := os.WriteFile(libPath, libSrc, 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(mainPath, mainSrc, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		doc, err := parser.Parse(mainPath, mainSrc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// doc.Tasks should include greet (merged from lib.wdl)
+		if len(doc.Tasks) != 1 {
+			t.Errorf("expected 1 task (greet from lib.wdl), got %d", len(doc.Tasks))
+		} else if doc.Tasks[0].Name != "greet" {
+			t.Errorf("expected task name 'greet', got %q", doc.Tasks[0].Name)
+		}
+
+		if len(doc.Workflows) != 1 {
+			t.Errorf("expected 1 workflow, got %d", len(doc.Workflows))
+		}
+	})
+
+	t.Run("circular_import_detection", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// a.wdl imports b.wdl, b.wdl imports a.wdl → circular
+		aSrc := []byte("version 1.2\nimport \"b.wdl\"\ntask taskA { command { echo \"a\" } }\n")
+		bSrc := []byte("version 1.2\nimport \"a.wdl\"\ntask taskB { command { echo \"b\" } }\n")
+
+		aPath := filepath.Join(dir, "a.wdl")
+		bPath := filepath.Join(dir, "b.wdl")
+
+		if err := os.WriteFile(aPath, aSrc, 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(bPath, bSrc, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := parser.Parse(aPath, aSrc)
+		if err == nil {
+			t.Fatal("expected ParseError for circular import, got nil")
+		}
+
+		pe, ok := err.(*parser.ParseError)
+		if !ok {
+			t.Fatalf("expected *parser.ParseError, got %T: %v", err, err)
+		}
+		if !strings.Contains(pe.Message, "circular") {
+			t.Errorf("expected 'circular' in error message, got %q", pe.Message)
+		}
+	})
+
+	t.Run("duplicate_task_name_detection", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// lib.wdl has task greet; main.wdl also has task greet AND imports lib.wdl
+		libSrc := []byte("version 1.2\ntask greet { command { echo \"hi\" } }\n")
+		mainSrc := []byte("version 1.2\nimport \"lib.wdl\"\ntask greet { command { echo \"dup\" } }\n")
+
+		libPath := filepath.Join(dir, "lib.wdl")
+		mainPath := filepath.Join(dir, "main.wdl")
+
+		if err := os.WriteFile(libPath, libSrc, 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(mainPath, mainSrc, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := parser.Parse(mainPath, mainSrc)
+		if err == nil {
+			t.Fatal("expected ParseError for duplicate task name, got nil")
+		}
+
+		pe, ok := err.(*parser.ParseError)
+		if !ok {
+			t.Fatalf("expected *parser.ParseError, got %T: %v", err, err)
+		}
+		if !strings.Contains(pe.Message, "duplicate") {
+			t.Errorf("expected 'duplicate' in error message, got %q", pe.Message)
+		}
+	})
 }
