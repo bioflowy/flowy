@@ -60,11 +60,11 @@
 
 ### Workflow Execution
 
-- [ ] **WF-01**: ワークフローの呼び出しグラフを解析して実行順序を決定する DAG を構築できる
+- [x] **WF-01**: ワークフローの呼び出しグラフを解析して実行順序を決定する DAG を構築できる
 - [ ] **WF-02**: `call` ブロックを実行して出力を環境に束縛できる
 - [ ] **WF-03**: `scatter` ブロックを展開してタスクを並列実行し、出力を `Array[T]` に収集できる（errgroup + SetLimit）
 - [ ] **WF-04**: `if` ブロックを評価し、条件が偽の場合の出力を `None`（Optional）として扱える
-- [ ] **WF-05**: `after` キーワードによる明示的な実行順序依存を尊重できる
+- [x] **WF-05**: `after` キーワードによる明示的な実行順序依存を尊重できる
 - [ ] **WF-06**: 並列実行に `errgroup.WithContext` + `SetLimit` を使い、goroutine リークを防止する
 - [ ] **WF-07**: ワークフロー完了後に `outputs.json` を出力ディレクトリに書き出す
 - [ ] **WF-08**: いずれかのタスクが失敗した場合、実行中のタスクをキャンセルして `error.json` を書き出す
@@ -150,11 +150,11 @@
 | TASK-06 | Phase 5: Task Execution | Complete |
 | TASK-07 | Phase 5: Task Execution | Complete |
 | TASK-08 | Phase 5: Task Execution | Complete |
-| WF-01 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
+| WF-01 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | WF-02 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
 | WF-03 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
 | WF-04 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
-| WF-05 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
+| WF-05 | Phase 6: Workflow Execution (DAG Scheduler) | Complete |
 | WF-06 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
 | WF-07 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
 | WF-08 | Phase 6: Workflow Execution (DAG Scheduler) | Pending |
