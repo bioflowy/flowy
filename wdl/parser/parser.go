@@ -118,7 +118,9 @@ func isNameToken(tt lexer.TokenType) bool {
 		// Type keywords that are valid as user-defined names in declaration context
 		lexer.TokBoolean, lexer.TokIntType, lexer.TokFloatType, lexer.TokStringType,
 		lexer.TokFileType, lexer.TokDirectoryType,
-		lexer.TokArray, lexer.TokMap, lexer.TokPair, lexer.TokObject:
+		lexer.TokArray, lexer.TokMap, lexer.TokPair, lexer.TokObject,
+		// Other keywords usable as variable names in expression context
+		lexer.TokEnv:
 		return true
 	}
 	return false

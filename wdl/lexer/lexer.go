@@ -390,7 +390,7 @@ func lexNormal(l *Lexer) stateFn {
 	}
 
 	// Numeric literals
-	if isDigit(b) || (b == '-' && l.pos+1 < len(l.src) && isDigit(l.src[l.pos+1])) {
+	if isDigit(b) {
 		return lexNumber(l)
 	}
 

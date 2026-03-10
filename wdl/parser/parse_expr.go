@@ -65,7 +65,12 @@ func (p *Parser) prattExpr(minBP int) (ast.Expr, error) {
 		}
 	}
 
-	// Binary operator loop
+	// Binary operator loop.
+	// Break condition: leftBP <= minBP.
+	// Left-associative: leftBP < rightBP, so recursive call with rightBP causes next
+	//   same-priority op to break (leftBP <= rightBP is true).
+	// Right-associative (**): leftBP=60, rightBP=59. Recursive call uses minBP=59.
+	//   Next ** has leftBP=60. 60 <= 59 is false → loop continues → right-assoc.
 	for {
 		op, leftBP, rightBP, ok := p.peekInfix()
 		if !ok || leftBP <= minBP {
@@ -131,20 +136,12 @@ func (p *Parser) peekInfix() (op lexer.TokenType, leftBP, rightBP int, ok bool) 
 	case lexer.TokStar, lexer.TokSlash, lexer.TokPercent:
 		return tt, 50, 51, true
 	case lexer.TokStarStar:
-		// Right-associative: leftBP == rightBP == 60
-		// The loop condition is leftBP <= minBP (strict), so when another **
-		// is seen at the same level, leftBP=60 > current minBP (which would be
-		// the rightBP=60 from the outer call), triggering right-associativity.
-		// Wait — actually: left=60, right=60. The loop condition `leftBP <= minBP`
-		// breaks when leftBP <= minBP. For right-assoc: recursive call uses rightBP=60,
-		// and the next ** has leftBP=60. 60 <= 60 is true so we BREAK — that makes it
-		// LEFT-associative. For right-assoc we need rightBP < leftBP (one less).
-		// But RESEARCH.md says leftBP=60, rightBP=60. Let's check the loop condition:
-		// "if leftBP <= minBP, break" — for ** with leftBP=rightBP=60:
-		// outer call: minBP=0, sees **, leftBP=60 > 0, proceed, recurse with minBP=60
-		// inner call: minBP=60, sees **, leftBP=60 <= 60 → BREAK → right-assoc! ✓
-		// So leftBP=60, rightBP=60 with condition `leftBP <= minBP` IS right-associative.
-		return tt, 60, 60, true
+		// Right-associative exponentiation.
+		// leftBP=60, rightBP=59: the recursive call uses minBP=59.
+		// The next ** has leftBP=60. 60 <= 59 is false → loop continues → right-assoc.
+		// For left-assoc operators: leftBP=N, rightBP=N+1 so recursive minBP=N+1;
+		//   next same op has leftBP=N; N <= N+1 → break → left-assoc.
+		return tt, 60, 59, true
 	}
 	return 0, 0, 0, false
 }
@@ -229,7 +226,9 @@ func (p *Parser) parsePrefixExpr() (ast.Expr, error) {
 
 	case lexer.TokNot:
 		p.advance()
-		operand, err := p.prattExpr(70)
+		// rightBP=55: lower than ** leftBP=60 so unary ! binds less tightly than **
+		// i.e., !x**2 → !(x**2). Higher than *, /, % (leftBP=50) so !x*y → (!x)*y.
+		operand, err := p.prattExpr(55)
 		if err != nil {
 			return nil, err
 		}
@@ -237,7 +236,9 @@ func (p *Parser) parsePrefixExpr() (ast.Expr, error) {
 
 	case lexer.TokMinus:
 		p.advance()
-		operand, err := p.prattExpr(70)
+		// rightBP=55: lower than ** leftBP=60 so unary - binds less tightly than **
+		// i.e., -x**2 → -(x**2). This matches Python/math convention.
+		operand, err := p.prattExpr(55)
 		if err != nil {
 			return nil, err
 		}
@@ -250,6 +251,12 @@ func (p *Parser) parsePrefixExpr() (ast.Expr, error) {
 		return p.parseIfThenElse()
 
 	default:
+		// Handle keyword tokens that are valid as identifiers in expression context.
+		// For example, "env" is TokEnv but may appear as a variable name.
+		if isNameToken(tok.Type) {
+			p.advance()
+			return &ast.IdentExpr{Pos: tok.Pos, Name: tok.Val}, nil
+		}
 		p.advance()
 		return nil, p.errorf(tok.Pos, "unexpected token %q in expression", tok.Val)
 	}
