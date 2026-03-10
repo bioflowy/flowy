@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-10T13:02:51.444Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-03-10T13:09:41.607Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 0
 ---
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-expression-evaluator-and-standard-library P05 | 4min | 2 tasks | 4 files |
 | Phase 04-expression-evaluator-and-standard-library P06 | 3min | 2 tasks | 3 files |
 | Phase 05-task-execution P01 | 4min | 2 tasks | 10 files |
+| Phase 05-task-execution P02 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,9 @@ Recent decisions affecting current work:
 - [Phase 05-task-execution]: PathMap collision strategy: 8 hex chars from SHA-256 of host path as prefix — deterministic, compact
 - [Phase 05-task-execution]: BindInputs/ParseMemoryString/ParseRuntime exported — external test package (task_test) requires exported symbols
 - [Phase 05-task-execution]: jsonToValueUntyped duplicated from eval package — eval.jsonToValue is unexported, cannot cross package boundary
+- [Phase 05-task-execution]: ForEach(fn) and Parent() added to eval.Env — minimal exports for translateEnv in task/command.go; preserves encapsulation
+- [Phase 05-task-execution]: coerceOutputValue converts StringValue to FileValue/DirectoryValue for File/Directory output decls — eval.Eval returns StringValue for string interpolation
+- [Phase 05-task-execution]: BuildCommand/CollectOutputs exported (capital B/C) — task_test external test package requires exported symbols
 
 ### Pending Todos
 
@@ -134,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T13:02:51.440Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-03-10T13:09:41.603Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
