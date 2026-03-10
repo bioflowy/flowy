@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 03-type-checker-02-PLAN.md
-last_updated: "2026-03-10T08:22:39.048Z"
+stopped_at: Completed 03-type-checker-03-PLAN.md
+last_updated: "2026-03-10T08:28:49.462Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-lexer-parser-and-ast P05 | 4min | 2 tasks | 6 files |
 | Phase 03-type-checker P01 | 2 | 2 tasks | 8 files |
 | Phase 03-type-checker P02 | 3 | 1 tasks | 3 files |
+| Phase 03-type-checker P03 | 8min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,9 @@ Recent decisions affecting current work:
 - [Phase 03-type-checker]: Rule 1 T->T? applied recursively in Coerces(): strip optional from , recurse — rules 2-6 never see mismatched optional flags
 - [Phase 03-type-checker]: Rule 5 Array[T]+->Array[T] compares item types by TypeName() only (shallow), not via recursive Coerces()
 - [Phase 03-type-checker]: optionalize() uses IsOptional() guard before WithOptional(true) to ensure idempotency (T? not double-wrapped)
+- [Phase 03-type-checker]: declGroup struct pairs ast.Decl with validation Scope for scatter body inner scope resolution
+- [Phase 03-type-checker]: Toposort edges limited to outerScope.decls peers only — prevents cross-scope false cycle detection
+- [Phase 03-type-checker]: checkExprType skips complex expressions (BinaryExpr, ApplyExpr) — deferred to Phase 4
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T08:22:39.044Z
-Stopped at: Completed 03-type-checker-02-PLAN.md
+Last session: 2026-03-10T08:28:49.457Z
+Stopped at: Completed 03-type-checker-03-PLAN.md
 Resume file: None
