@@ -40,8 +40,8 @@
 
 ### Standard Library
 
-- [ ] **STDLIB-01**: ファイル I/O 関数を実装する: `read_lines`, `read_tsv`, `read_map`, `read_json`, `read_boolean`, `read_int`, `read_float`, `read_string`, `write_lines`, `write_tsv`, `write_map`, `write_json`
-- [ ] **STDLIB-02**: ファイルシステム関数を実装する: `glob`, `basename`, `dirname`, `size`, `stdout`, `stderr`
+- [x] **STDLIB-01**: ファイル I/O 関数を実装する: `read_lines`, `read_tsv`, `read_map`, `read_json`, `read_boolean`, `read_int`, `read_float`, `read_string`, `write_lines`, `write_tsv`, `write_map`, `write_json`
+- [x] **STDLIB-02**: ファイルシステム関数を実装する: `glob`, `basename`, `dirname`, `size`, `stdout`, `stderr`
 - [ ] **STDLIB-03**: 配列関数を実装する: `length`, `flatten`, `transpose`, `zip`, `cross`, `prefix`, `suffix`, `quote`, `squote`, `unzip`, `select_all`, `select_first`, `chunk` (1.2新機能)
 - [ ] **STDLIB-04**: 文字列関数を実装する: `sub`, `find` (1.2新機能), `matches` (1.2新機能), `join_paths` (1.2新機能)
 - [ ] **STDLIB-05**: 型変換・ユーティリティ関数を実装する: `defined`, `keys`, `values` (1.2新機能), `as_map`, `as_pairs`, `collect_by_key`, `contains` (1.2新機能), `contains_key` (1.2新機能)
@@ -136,8 +136,8 @@
 | EXPR-05 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | EXPR-06 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | EXPR-07 | Phase 4: Expression Evaluator and Standard Library | Complete |
-| STDLIB-01 | Phase 4: Expression Evaluator and Standard Library | Pending |
-| STDLIB-02 | Phase 4: Expression Evaluator and Standard Library | Pending |
+| STDLIB-01 | Phase 4: Expression Evaluator and Standard Library | Complete |
+| STDLIB-02 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-03 | Phase 4: Expression Evaluator and Standard Library | Pending |
 | STDLIB-04 | Phase 4: Expression Evaluator and Standard Library | Pending |
 | STDLIB-05 | Phase 4: Expression Evaluator and Standard Library | Pending |

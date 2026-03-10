@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 04-expression-evaluator-and-standard-library-03-PLAN.md
-last_updated: "2026-03-10T10:21:45.541Z"
+stopped_at: Completed 04-expression-evaluator-and-standard-library-04-PLAN.md
+last_updated: "2026-03-10T10:26:50.212Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-expression-evaluator-and-standard-library P01 | 2 | 2 tasks | 8 files |
 | Phase 04-expression-evaluator-and-standard-library P02 | 8min | 2 tasks | 2 files |
 | Phase 04-expression-evaluator-and-standard-library P03 | 2min | 2 tasks | 4 files |
+| Phase 04-expression-evaluator-and-standard-library P04 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,8 @@ Recent decisions affecting current work:
 - [Phase 04-expression-evaluator-and-standard-library]: TokBangEq in plan maps to TokNotEq in lexer; TokBang maps to TokNot — corrected during implementation
 - [Phase 04-expression-evaluator-and-standard-library]: GetExpr uses Object/Member field names; IndexExpr uses Collection field name — plan docs were aspirational
 - [Phase 04-expression-evaluator-and-standard-library]: partOpts slice removed from evalCommand: options applied in valueToString before sentinel substitution — no need to store separately
+- [Phase 04-expression-evaluator-and-standard-library]: Both tasks implemented in single TDD cycle: tests and implementation committed together since they cover the same file (stdlib_fileio.go)
+- [Phase 04-expression-evaluator-and-standard-library]: jsonToValue integer detection: math.Trunc(x)==x guards whole-number float64 -> IntValue promotion
 
 ### Pending Todos
 
@@ -120,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T10:21:45.537Z
-Stopped at: Completed 04-expression-evaluator-and-standard-library-03-PLAN.md
+Last session: 2026-03-10T10:26:50.208Z
+Stopped at: Completed 04-expression-evaluator-and-standard-library-04-PLAN.md
 Resume file: None
