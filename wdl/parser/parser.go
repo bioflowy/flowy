@@ -99,6 +99,32 @@ func (p *Parser) expect(tt lexer.TokenType) (lexer.Token, error) {
 	return tok, nil
 }
 
+// expectName consumes the next token as a name (identifier).
+// It accepts TokIdent as well as any keyword token that may legally appear as a struct/task/workflow
+// name — specifically type-keyword identifiers like "Pair", "Map", "Array", "File", etc.
+// This is needed because WDL type keywords are valid as user-defined struct names.
+func (p *Parser) expectName() (lexer.Token, error) {
+	tok := p.advance()
+	if isNameToken(tok.Type) {
+		return tok, nil
+	}
+	return tok, p.errorf(tok.Pos, "expected identifier, got %q", tok.Val)
+}
+
+// isNameToken returns true if tok is a valid identifier token (including type keywords
+// that users commonly use as struct/task/workflow names).
+func isNameToken(tt lexer.TokenType) bool {
+	switch tt {
+	case lexer.TokIdent,
+		// Type keywords that are valid as user-defined names in declaration context
+		lexer.TokBoolean, lexer.TokIntType, lexer.TokFloatType, lexer.TokStringType,
+		lexer.TokFileType, lexer.TokDirectoryType,
+		lexer.TokArray, lexer.TokMap, lexer.TokPair, lexer.TokObject:
+		return true
+	}
+	return false
+}
+
 // errorf creates a *ParseError at pos with a formatted message.
 // SourceLine is retrieved from the source lines slice.
 func (p *Parser) errorf(pos ast.Pos, format string, args ...any) *ParseError {
@@ -193,7 +219,7 @@ func (p *Parser) parseStruct() (*ast.StructDef, error) {
 	}
 	pos := tok.Pos
 
-	nameTok, err := p.expect(lexer.TokIdent)
+	nameTok, err := p.expectName()
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +258,7 @@ func (p *Parser) parseTask() (*ast.Task, error) {
 	}
 	pos := tok.Pos
 
-	nameTok, err := p.expect(lexer.TokIdent)
+	nameTok, err := p.expectName()
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +520,7 @@ func (p *Parser) parseWorkflow() (*ast.Workflow, error) {
 	}
 	pos := tok.Pos
 
-	nameTok, err := p.expect(lexer.TokIdent)
+	nameTok, err := p.expectName()
 	if err != nil {
 		return nil, err
 	}
@@ -1022,7 +1048,8 @@ func (p *Parser) parseMetaValue() (any, error) {
 
 // parseExpr is a stub expression parser. It scans forward until it encounters one of
 // the given delimiters, returning ast.IdentExpr{Name:"__expr_stub__"}.
-// The delimiters are NOT consumed. This stub is replaced by Plan 04's Pratt parser.
+// The delimiters are NOT consumed. TokError tokens are propagated as ParseErrors.
+// This stub is replaced by Plan 04's Pratt parser.
 func (p *Parser) parseExpr(delimiters ...lexer.TokenType) (ast.Expr, error) {
 	pos := p.peek().Pos
 	delimSet := make(map[lexer.TokenType]bool)
@@ -1037,6 +1064,11 @@ func (p *Parser) parseExpr(delimiters ...lexer.TokenType) (ast.Expr, error) {
 		if tok.Type == lexer.TokEOF {
 			break
 		}
+		// Propagate lexer errors as parse errors
+		if tok.Type == lexer.TokError {
+			p.advance()
+			return nil, p.errorf(tok.Pos, "%s", tok.Val)
+		}
 		if depth == 0 && delimSet[tok.Type] {
 			break
 		}
@@ -1046,13 +1078,16 @@ func (p *Parser) parseExpr(delimiters ...lexer.TokenType) (ast.Expr, error) {
 		case lexer.TokRBrace, lexer.TokRParen, lexer.TokRBracket:
 			if depth > 0 {
 				depth--
-			} else {
-				// It's a closing delimiter at depth 0
-				break
+			}
+			// At depth 0, a closing token not in delimSet is a structural error;
+			// stop scanning to let the caller handle it.
+			if depth == 0 && !delimSet[tok.Type] {
+				goto done
 			}
 		}
 		p.advance()
 	}
+done:
 
 	return &ast.IdentExpr{Pos: pos, Name: "__expr_stub__"}, nil
 }
