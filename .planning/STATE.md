@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 03-type-checker-01-PLAN.md
-last_updated: "2026-03-10T08:21:23.057Z"
+stopped_at: Completed 03-type-checker-02-PLAN.md
+last_updated: "2026-03-10T08:22:39.048Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-lexer-parser-and-ast P04 | 9min | 2 tasks | 4 files |
 | Phase 02-lexer-parser-and-ast P05 | 4min | 2 tasks | 6 files |
 | Phase 03-type-checker P01 | 2 | 2 tasks | 8 files |
+| Phase 03-type-checker P02 | 3 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - [Phase 03-type-checker]: checker_test uses package checker (not checker_test) to test unexported optionalize() — plan specifies checker_test but internal access required
 - [Phase 03-type-checker]: Coerces() implements 6 WDL coercion rules shallow (no recursive item coercion for Array items) — matches spec intent
 - [Phase 03-type-checker]: optionalize() has idempotency guard (T? stays T?, not T??) — prevents double-wrapping in scatter/if promotion
+- [Phase 03-type-checker]: Rule 1 T->T? applied recursively in Coerces(): strip optional from , recurse — rules 2-6 never see mismatched optional flags
+- [Phase 03-type-checker]: Rule 5 Array[T]+->Array[T] compares item types by TypeName() only (shallow), not via recursive Coerces()
+- [Phase 03-type-checker]: optionalize() uses IsOptional() guard before WithOptional(true) to ensure idempotency (T? not double-wrapped)
 
 ### Pending Todos
 
@@ -100,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T08:21:23.053Z
-Stopped at: Completed 03-type-checker-01-PLAN.md
+Last session: 2026-03-10T08:22:39.044Z
+Stopped at: Completed 03-type-checker-02-PLAN.md
 Resume file: None
