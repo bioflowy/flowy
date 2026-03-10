@@ -23,10 +23,10 @@
 - [x] **TYPE-02**: Directory 型（WDL 1.2 新機能）を実装する
 - [x] **TYPE-03**: Compound 型（Array[T], Map[K,V], Pair[L,R], Struct）を実装する（型パラメータ付き）
 - [x] **TYPE-04**: Optional 型（T?）を実装し、None リテラルの型推論を正しく処理する
-- [ ] **TYPE-05**: WDL 1.2 の型強制ルール 6 種（Int→Float, T→T?, String↔File, T→Array[T]等）を shallow かつ非再帰的に実装する
-- [ ] **TYPE-06**: 型チェッカーが task および workflow のすべての宣言を前方参照を含めて解決できる
-- [ ] **TYPE-07**: scatter ブロック出力を `Array[T]` に昇格し、if ブロック出力を `T?` に昇格する（冪等）
-- [ ] **TYPE-08**: Struct 型チェッカーがフィールド型を検証し、構造体リテラルとアクセスを型付けできる
+- [x] **TYPE-05**: WDL 1.2 の型強制ルール 6 種（Int→Float, T→T?, String↔File, T→Array[T]等）を shallow かつ非再帰的に実装する
+- [x] **TYPE-06**: 型チェッカーが task および workflow のすべての宣言を前方参照を含めて解決できる
+- [x] **TYPE-07**: scatter ブロック出力を `Array[T]` に昇格し、if ブロック出力を `T?` に昇格する（冪等）
+- [x] **TYPE-08**: Struct 型チェッカーがフィールド型を検証し、構造体リテラルとアクセスを型付けできる
 
 ### Expression Evaluator
 
@@ -125,10 +125,10 @@
 | PARSE-07 | Phase 2: Lexer, Parser, and AST | Complete |
 | PARSE-08 | Phase 2: Lexer, Parser, and AST | Complete |
 | PARSE-09 | Phase 2: Lexer, Parser, and AST | Complete |
-| TYPE-05 | Phase 3: Type Checker | Pending |
-| TYPE-06 | Phase 3: Type Checker | Pending |
-| TYPE-07 | Phase 3: Type Checker | Pending |
-| TYPE-08 | Phase 3: Type Checker | Pending |
+| TYPE-05 | Phase 3: Type Checker | Complete |
+| TYPE-06 | Phase 3: Type Checker | Complete |
+| TYPE-07 | Phase 3: Type Checker | Complete |
+| TYPE-08 | Phase 3: Type Checker | Complete |
 | EXPR-01 | Phase 4: Expression Evaluator and Standard Library | Pending |
 | EXPR-02 | Phase 4: Expression Evaluator and Standard Library | Pending |
 | EXPR-03 | Phase 4: Expression Evaluator and Standard Library | Pending |
