@@ -104,7 +104,12 @@ Plans:
   3. The Docker lifecycle (image pull → container create → start → wait → stdout/stderr capture → remove) completes successfully for a simple task, and the task's output files are collected to the host execution directory
   4. A task that exits with a non-zero exit code returns an error value containing the exit code and captured stderr text
   5. The `ContainerRunner` interface can be replaced with a mock in unit tests, running task logic without a live Docker daemon
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Create wdl/task package: ContainerRunner interface, PathMap, input binding, runtime parsing
+- [ ] 05-02-PLAN.md — Implement command building, output collection, RunTask orchestrator with ShellRunner mock
+- [ ] 05-03-PLAN.md — Implement DockerRunner with full Docker lifecycle and integration test
 
 ### Phase 6: Workflow Execution (DAG Scheduler)
 **Goal**: A multi-task WDL workflow executes in correct dependency order with scatter parallelism, conditional optional wrapping, and structured JSON output
@@ -141,6 +146,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Lexer, Parser, and AST | 5/5 | Complete   | 2026-03-10 |
 | 3. Type Checker | 2/4 | In Progress|  |
 | 4. Expression Evaluator and Standard Library | 6/6 | Complete   | 2026-03-10 |
-| 5. Task Execution | 0/TBD | Not started | - |
+| 5. Task Execution | 0/3 | Not started | - |
 | 6. Workflow Execution (DAG Scheduler) | 0/TBD | Not started | - |
 | 7. CLI and Integration | 0/TBD | Not started | - |
