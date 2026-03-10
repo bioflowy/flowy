@@ -47,7 +47,14 @@ Plans:
   3. All operators including `**` (exponentiation) are parsed with correct precedence by the Pratt sub-parser
   4. A WDL file that imports another local WDL file produces a merged AST spanning both files
   5. A file with a syntax error produces an error message containing the line number and column of the first bad token, with the source line displayed (rustc-style)
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Define wdl/ast node structs (Document, Task, Workflow, Expr types) and Wave 0 test stubs
+- [ ] 02-02-PLAN.md — Implement wdl/lexer with Rob Pike state-function pattern and all command modes
+- [ ] 02-03-PLAN.md — Implement parser scaffolding: ParseError, type parsing, top-level statement parsing
+- [ ] 02-04-PLAN.md — Implement Pratt expression sub-parser with operator precedence and string interpolation
+- [ ] 02-05-PLAN.md — Implement import resolution, public Parse() entry point, and integration fixtures
 
 ### Phase 3: Type Checker
 **Goal**: Every type in a WDL 1.2 document is resolved and validated, including forward references, scatter/if promotion, and struct fields; `flowy check` reports precise type errors
@@ -117,7 +124,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Type Data Structures | 1/1 | Complete   | 2026-03-10 |
-| 2. Lexer, Parser, and AST | 0/TBD | Not started | - |
+| 2. Lexer, Parser, and AST | 0/5 | Not started | - |
 | 3. Type Checker | 0/TBD | Not started | - |
 | 4. Expression Evaluator and Standard Library | 0/TBD | Not started | - |
 | 5. Task Execution | 0/TBD | Not started | - |
