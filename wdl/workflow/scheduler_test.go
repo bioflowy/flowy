@@ -2,7 +2,10 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -730,5 +733,263 @@ func TestRunWorkflow_TaskNotFound(t *testing.T) {
 	_, err := RunWorkflow(context.Background(), doc, "wf", nil, &noopRunner{}, "/tmp")
 	if err == nil {
 		t.Error("expected error for missing task")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Output/Error JSON writing tests (Task 2 — Plan 06-03)
+// ---------------------------------------------------------------------------
+
+// readJSONFileStr reads and parses a JSON file, returning map[string]interface{}.
+func readJSONFileStr(t *testing.T, path string) map[string]interface{} {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading JSON file %q: %v", path, err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("parsing JSON file %q: %v", path, err)
+	}
+	return result
+}
+
+// TestRunWorkflow_OutputsJSON: successful workflow -> outputs.json written in execRoot.
+func TestRunWorkflow_OutputsJSON(t *testing.T) {
+	execRoot := t.TempDir()
+
+	origFn := runTaskFn
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+		return map[string]values.Value{"result": values.IntValue{Value: 99}}, nil
+	}
+	defer func() { runTaskFn = origFn }()
+
+	myTask := makeSimpleTask("compute", "x", "result")
+	call := makeCallNode("compute", "c", nil)
+	wfOutputs := []*ast.Decl{
+		{
+			Name: "answer",
+			Type: types.IntType{},
+			Expr: memberExpr("c", "result"),
+		},
+	}
+	doc := makeDoc("myWf", []ast.WorkflowNode{call}, wfOutputs, myTask)
+
+	outputs, err := RunWorkflow(context.Background(), doc, "myWf", nil, &noopRunner{}, execRoot)
+	if err != nil {
+		t.Fatalf("RunWorkflow: %v", err)
+	}
+	if outputs == nil {
+		t.Fatal("expected non-nil outputs map")
+	}
+
+	// outputs.json must exist.
+	outPath := filepath.Join(execRoot, "outputs.json")
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Fatal("outputs.json not written")
+	}
+
+	got := readJSONFileStr(t, outPath)
+	v, ok := got["myWf.answer"]
+	if !ok {
+		t.Fatal("expected key 'myWf.answer' in outputs.json")
+	}
+	if v.(float64) != 99 {
+		t.Errorf("expected 99, got %v", v)
+	}
+}
+
+// TestRunWorkflow_FailFast_ErrorJSON: task fails -> error.json written, outputs.json absent.
+func TestRunWorkflow_FailFast_ErrorJSON(t *testing.T) {
+	execRoot := t.TempDir()
+
+	origFn := runTaskFn
+	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+		return nil, &task.TaskError{TaskName: tsk.Name, ExitCode: 2, Stderr: []byte("boom")}
+	}
+	defer func() { runTaskFn = origFn }()
+
+	myTask := makeSimpleTask("fail_task", "x", "result")
+	call := makeCallNode("fail_task", "f", nil)
+	doc := makeDoc("wf", []ast.WorkflowNode{call}, nil, myTask)
+
+	_, err := RunWorkflow(context.Background(), doc, "wf", nil, &noopRunner{}, execRoot)
+	if err == nil {
+		t.Fatal("expected error from RunWorkflow when task fails")
+	}
+
+	// error.json must exist.
+	errPath := filepath.Join(execRoot, "error.json")
+	if _, err := os.Stat(errPath); os.IsNotExist(err) {
+		t.Fatal("error.json not written")
+	}
+
+	got := readJSONFileStr(t, errPath)
+	if got["task"].(string) != "fail_task" {
+		t.Errorf("expected task='fail_task', got %v", got["task"])
+	}
+	if got["exit_code"].(float64) != 2 {
+		t.Errorf("expected exit_code=2, got %v", got["exit_code"])
+	}
+
+	// outputs.json must NOT exist.
+	outPath := filepath.Join(execRoot, "outputs.json")
+	if _, statErr := os.Stat(outPath); !os.IsNotExist(statErr) {
+		t.Error("outputs.json should NOT be written when task fails")
+	}
+}
+
+// TestRunWorkflow_FailFast_CancelsOthers: task A fails quickly while task B is running
+// -> B receives context cancellation (or completes before cancellation signal arrives,
+// but at minimum the workflow returns an error).
+func TestRunWorkflow_FailFast_CancelsOthers(t *testing.T) {
+	execRoot := t.TempDir()
+
+	// taskA fails immediately; taskB blocks until context cancelled.
+	startedB := make(chan struct{})
+	cancelledB := make(chan struct{})
+
+	origFn := runTaskFn
+	runTaskFn = func(ctx context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+		if tsk.Name == "task_a" {
+			return nil, &task.TaskError{TaskName: "task_a", ExitCode: 1, Stderr: []byte("fail")}
+		}
+		// task_b: signal started, then wait for cancellation.
+		close(startedB)
+		<-ctx.Done()
+		close(cancelledB)
+		return nil, ctx.Err()
+	}
+	defer func() { runTaskFn = origFn }()
+
+	taskA := makeSimpleTask("task_a", "x", "result")
+	taskB := makeSimpleTask("task_b", "x", "result")
+	callA := makeCallNode("task_a", "a", nil)
+	callB := makeCallNode("task_b", "b", nil)
+
+	doc := makeDoc("wf", []ast.WorkflowNode{callA, callB}, nil, taskA, taskB)
+
+	_, err := RunWorkflow(context.Background(), doc, "wf", nil, &noopRunner{}, execRoot)
+	if err == nil {
+		t.Fatal("expected error from RunWorkflow when task fails")
+	}
+}
+
+// TestRunWorkflow_WorkflowOutputs_JSON: workflow with output section ->
+// outputs.json has 'wfName.outputName' key.
+func TestRunWorkflow_WorkflowOutputs_JSON(t *testing.T) {
+	execRoot := t.TempDir()
+
+	origFn := runTaskFn
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+		return map[string]values.Value{"value": values.IntValue{Value: 42}}, nil
+	}
+	defer func() { runTaskFn = origFn }()
+
+	myTask := makeSimpleTask("my_task", "x", "value")
+	call := makeCallNode("my_task", "my_call", nil)
+	wfOutputs := []*ast.Decl{
+		{
+			Name: "result",
+			Type: types.IntType{},
+			Expr: memberExpr("my_call", "value"),
+		},
+	}
+	doc := makeDoc("pipeline", []ast.WorkflowNode{call}, wfOutputs, myTask)
+
+	_, err := RunWorkflow(context.Background(), doc, "pipeline", nil, &noopRunner{}, execRoot)
+	if err != nil {
+		t.Fatalf("RunWorkflow: %v", err)
+	}
+
+	outPath := filepath.Join(execRoot, "outputs.json")
+	got := readJSONFileStr(t, outPath)
+	v, ok := got["pipeline.result"]
+	if !ok {
+		t.Fatal("expected key 'pipeline.result' in outputs.json")
+	}
+	if v.(float64) != 42 {
+		t.Errorf("expected 42, got %v", v)
+	}
+}
+
+// TestRunWorkflow_EndToEnd: multi-call workflow with scatter and workflow outputs ->
+// correct outputs.json written.
+func TestRunWorkflow_EndToEnd(t *testing.T) {
+	execRoot := t.TempDir()
+
+	origFn := runTaskFn
+	runTaskFn = func(_ context.Context, tsk *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+		if tsk.Name == "doubler" {
+			v, _ := inputs["n"].(int64)
+			return map[string]values.Value{"out": values.IntValue{Value: v * 2}}, nil
+		}
+		return map[string]values.Value{"out": values.IntValue{Value: 0}}, nil
+	}
+	defer func() { runTaskFn = origFn }()
+
+	doublerTask := &ast.Task{
+		Name:    "doubler",
+		Inputs:  []*ast.Decl{{Name: "n", Type: types.IntType{}}},
+		Outputs: []*ast.Decl{{Name: "out", Type: types.IntType{}}},
+	}
+
+	// scatter (n in [1, 2, 3]) { call doubler { input: n = n } }
+	scatter := &ast.Scatter{
+		Variable: "n",
+		Expr:     &ast.ArrayExpr{Items: []ast.Expr{intLit(1), intLit(2), intLit(3)}},
+		Body: []ast.WorkflowNode{
+			makeCallNode("doubler", "d", map[string]ast.Expr{"n": identExpr("n")}),
+		},
+	}
+
+	wfOutputs := []*ast.Decl{
+		{
+			Name: "results",
+			Type: types.ArrayType{ItemType: types.IntType{}},
+			Expr: memberExpr("d", "out"),
+		},
+	}
+
+	doc := makeDoc("e2e_wf", []ast.WorkflowNode{scatter}, wfOutputs, doublerTask)
+
+	outputs, err := RunWorkflow(context.Background(), doc, "e2e_wf", nil, &noopRunner{}, execRoot)
+	if err != nil {
+		t.Fatalf("RunWorkflow: %v", err)
+	}
+
+	// Check returned outputs map.
+	results, ok := outputs["results"]
+	if !ok {
+		t.Fatal("expected 'results' in workflow outputs")
+	}
+	arr, ok := results.(values.ArrayValue)
+	if !ok {
+		t.Fatalf("expected ArrayValue, got %T", results)
+	}
+	if len(arr.Items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(arr.Items))
+	}
+
+	// Check outputs.json file.
+	outPath := filepath.Join(execRoot, "outputs.json")
+	got := readJSONFileStr(t, outPath)
+	jsonArr, ok := got["e2e_wf.results"]
+	if !ok {
+		t.Fatal("expected key 'e2e_wf.results' in outputs.json")
+	}
+	jsonItems, ok := jsonArr.([]interface{})
+	if !ok {
+		t.Fatalf("expected array for 'e2e_wf.results', got %T", jsonArr)
+	}
+	if len(jsonItems) != 3 {
+		t.Fatalf("expected 3 items in outputs.json array, got %d", len(jsonItems))
+	}
+	// Expected doubled values: [2, 4, 6].
+	want := []float64{2, 4, 6}
+	for i, item := range jsonItems {
+		if item.(float64) != want[i] {
+			t.Errorf("item[%d]: expected %v, got %v", i, want[i], item)
+		}
 	}
 }
