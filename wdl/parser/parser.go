@@ -1,7 +1,6 @@
 // Package parser implements a WDL 1.2 hand-written parser.
 // Entry point: Parse(filename string, src []byte) (*ast.Document, error)
-// Expressions inside task/workflow bodies are stubs (ast.IdentExpr{Name:"__expr_stub__"})
-// until Plan 04 adds the Pratt sub-parser.
+// Expression parsing is handled by the Pratt sub-parser in parse_expr.go.
 package parser
 
 import (
@@ -1046,50 +1045,5 @@ func (p *Parser) parseMetaValue() (any, error) {
 	}
 }
 
-// parseExpr is a stub expression parser. It scans forward until it encounters one of
-// the given delimiters, returning ast.IdentExpr{Name:"__expr_stub__"}.
-// The delimiters are NOT consumed. TokError tokens are propagated as ParseErrors.
-// This stub is replaced by Plan 04's Pratt parser.
-func (p *Parser) parseExpr(delimiters ...lexer.TokenType) (ast.Expr, error) {
-	pos := p.peek().Pos
-	delimSet := make(map[lexer.TokenType]bool)
-	for _, d := range delimiters {
-		delimSet[d] = true
-	}
-
-	// Consume tokens until we hit a delimiter or EOF, tracking brace/bracket/paren depth
-	depth := 0
-	for {
-		tok := p.peek()
-		if tok.Type == lexer.TokEOF {
-			break
-		}
-		// Propagate lexer errors as parse errors
-		if tok.Type == lexer.TokError {
-			p.advance()
-			return nil, p.errorf(tok.Pos, "%s", tok.Val)
-		}
-		if depth == 0 && delimSet[tok.Type] {
-			break
-		}
-		switch tok.Type {
-		case lexer.TokLBrace, lexer.TokLParen, lexer.TokLBracket:
-			depth++
-		case lexer.TokRBrace, lexer.TokRParen, lexer.TokRBracket:
-			if depth > 0 {
-				depth--
-			}
-			// At depth 0, a closing token not in delimSet is a structural error;
-			// stop scanning to let the caller handle it.
-			if depth == 0 && !delimSet[tok.Type] {
-				goto done
-			}
-		}
-		p.advance()
-	}
-done:
-
-	return &ast.IdentExpr{Pos: pos, Name: "__expr_stub__"}, nil
-}
-
 // parseType is defined in parse_types.go.
+// parseExpr is defined in parse_expr.go (Pratt expression parser).
