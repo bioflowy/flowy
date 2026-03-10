@@ -17,6 +17,13 @@ func parseWDL(src string) (*ast.Document, error) {
 	return parser.Parse("test.wdl", []byte(src))
 }
 
+// testdataPath returns the absolute path to a file in wdl/testdata/.
+// In Go tests, the working directory is set to the package directory (wdl/parser/),
+// so testdata is at ../testdata relative to the test working directory.
+func testdataPath(name string) string {
+	return filepath.Join("..", "testdata", name)
+}
+
 // parseTypeStr is a helper that parses a WDL type expression string
 // by wrapping it in a minimal struct declaration and extracting the member type.
 func parseTypeStr(typeExpr string) (types.Type, error) {
@@ -28,21 +35,95 @@ func parseTypeStr(typeExpr string) (types.Type, error) {
 	return doc.Structs[0].Members[0].Type, nil
 }
 
-// TestParseDocument verifies that a minimal WDL document is parsed correctly. (PARSE-01 partial)
-// Full PARSE-01 coverage (imports, multi-element documents) is completed in Plan 05.
+// TestParseDocument verifies that a WDL document is parsed correctly. (PARSE-01)
+// Uses the wdl/testdata/hello.wdl fixture for a full round-trip test.
 func TestParseDocument(t *testing.T) {
-	doc, err := parseWDL("version 1.2\ntask hello {}\n")
+	t.Run("inline_minimal", func(t *testing.T) {
+		doc, err := parseWDL("version 1.2\ntask hello {}\n")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if doc.Version != "1.2" {
+			t.Errorf("expected version 1.2, got %q", doc.Version)
+		}
+		if len(doc.Tasks) != 1 {
+			t.Errorf("expected 1 task, got %d", len(doc.Tasks))
+		}
+		if doc.Tasks[0].Name != "hello" {
+			t.Errorf("expected task name 'hello', got %q", doc.Tasks[0].Name)
+		}
+	})
+
+	t.Run("hello_wdl_fixture", func(t *testing.T) {
+		path := testdataPath("hello.wdl")
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("cannot read hello.wdl: %v", err)
+		}
+		abspath, _ := filepath.Abs(path)
+		doc, err := parser.Parse(abspath, src)
+		if err != nil {
+			t.Fatalf("unexpected parse error: %v", err)
+		}
+		if doc.Version != "1.2" {
+			t.Errorf("expected version 1.2, got %q", doc.Version)
+		}
+		if len(doc.Tasks) != 1 {
+			t.Errorf("expected 1 task, got %d", len(doc.Tasks))
+		}
+		if len(doc.Workflows) != 1 {
+			t.Errorf("expected 1 workflow, got %d", len(doc.Workflows))
+		}
+		if doc.Tasks[0].Command == nil {
+			t.Error("expected task Command to be non-nil")
+		}
+		if len(doc.Workflows[0].Body) == 0 {
+			t.Error("expected workflow Body to be non-empty")
+		}
+	})
+}
+
+// TestImportFromFixture verifies parsing main.wdl which imports lib.wdl. (PARSE-07)
+func TestImportFromFixture(t *testing.T) {
+	path := testdataPath("main.wdl")
+	src, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("cannot read main.wdl: %v", err)
 	}
-	if doc.Version != "1.2" {
-		t.Errorf("expected version 1.2, got %q", doc.Version)
+	abspath, _ := filepath.Abs(path)
+	doc, err := parser.Parse(abspath, src)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
 	}
+	// main.wdl imports lib.wdl which has task greet
 	if len(doc.Tasks) != 1 {
-		t.Errorf("expected 1 task, got %d", len(doc.Tasks))
+		t.Errorf("expected 1 task (greet from lib.wdl), got %d", len(doc.Tasks))
+	} else if doc.Tasks[0].Name != "greet" {
+		t.Errorf("expected task 'greet', got %q", doc.Tasks[0].Name)
 	}
-	if doc.Tasks[0].Name != "hello" {
-		t.Errorf("expected task name 'hello', got %q", doc.Tasks[0].Name)
+	if len(doc.Workflows) != 1 {
+		t.Errorf("expected 1 workflow, got %d", len(doc.Workflows))
+	}
+}
+
+// TestTypesWDLFixture verifies that types.wdl parses without error and
+// contains the expected structs and type declarations. (PARSE-01 extended)
+func TestTypesWDLFixture(t *testing.T) {
+	path := testdataPath("types.wdl")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("cannot read types.wdl: %v", err)
+	}
+	abspath, _ := filepath.Abs(path)
+	doc, err := parser.Parse(abspath, src)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(doc.Structs) < 2 {
+		t.Errorf("expected at least 2 structs, got %d", len(doc.Structs))
+	}
+	if len(doc.Tasks) < 1 {
+		t.Errorf("expected at least 1 task, got %d", len(doc.Tasks))
 	}
 }
 

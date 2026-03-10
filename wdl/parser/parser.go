@@ -749,7 +749,8 @@ func (p *Parser) parseWorkflow() (*ast.Workflow, error) {
 				return nil, err
 			}
 			for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
-				decl, err := p.parseDecl(false)
+				// WDL 1.2: workflow inputs may have optional default values (bound=true)
+				decl, err := p.parseDecl(true)
 				if err != nil {
 					return nil, err
 				}
