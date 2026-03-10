@@ -80,7 +80,19 @@ func Parse(file string, src []byte) (*ast.Document, error) {
 	if err != nil {
 		return nil, &ParseError{File: file, Line: 1, Col: 1, Message: fmt.Sprintf("cannot resolve path: %v", err)}
 	}
-	return parseFile(abs, src, map[string]bool{}, []string{})
+	return parseFileWithPaths(abs, src, map[string]bool{}, []string{}, nil)
+}
+
+// ParseWithSearchPaths parses a WDL document with additional import search directories.
+// When resolving imports, it first tries filepath.Dir(file) (same as Parse), then
+// iterates through searchPaths in order, using the first directory where the import exists.
+// If searchPaths is nil or empty, behavior is identical to Parse.
+func ParseWithSearchPaths(file string, src []byte, searchPaths []string) (*ast.Document, error) {
+	abs, err := filepath.Abs(file)
+	if err != nil {
+		return nil, &ParseError{File: file, Line: 1, Col: 1, Message: fmt.Sprintf("cannot resolve path: %v", err)}
+	}
+	return parseFileWithPaths(abs, src, map[string]bool{}, []string{}, searchPaths)
 }
 
 // parseFile parses a WDL file and recursively resolves imports.
@@ -89,6 +101,12 @@ func Parse(file string, src []byte) (*ast.Document, error) {
 // visited tracks absolute paths already being parsed (cycle detection).
 // chain is the import chain of absolute paths for error messages.
 func parseFile(path string, src []byte, visited map[string]bool, chain []string) (*ast.Document, error) {
+	return parseFileWithPaths(path, src, visited, chain, nil)
+}
+
+// parseFileWithPaths parses a WDL file with optional extra import search paths.
+// searchPaths are tried (in order) after filepath.Dir(path) when resolving imports.
+func parseFileWithPaths(path string, src []byte, visited map[string]bool, chain []string, searchPaths []string) (*ast.Document, error) {
 	if visited[path] {
 		// Build cycle message: chain[0] → chain[1] → ... → path
 		chainStr := strings.Join(chain, " → ") + " → " + path
@@ -119,16 +137,40 @@ func parseFile(path string, src []byte, visited map[string]bool, chain []string)
 		return nil, err
 	}
 
-	// Resolve imports
+	// Resolve imports: try primary dir first, then searchPaths.
 	dir := filepath.Dir(path)
 	for _, imp := range importStmts {
-		importedPath := filepath.Join(dir, imp.path)
-		importedAbs, err := filepath.Abs(importedPath)
+		// Resolve the import path: try primary directory, then search paths.
+		primaryPath := filepath.Join(dir, imp.path)
+		importedAbs := primaryPath
+		if _, statErr := os.Stat(primaryPath); statErr != nil {
+			// Primary dir failed; try each search path in order.
+			found := false
+			for _, sp := range searchPaths {
+				candidate := filepath.Join(sp, imp.path)
+				if _, statErr2 := os.Stat(candidate); statErr2 == nil {
+					importedAbs = candidate
+					found = true
+					break
+				}
+			}
+			if !found {
+				// No search path worked; return error pointing to primary path.
+				return nil, &ParseError{
+					File:    path,
+					Line:    1,
+					Col:     1,
+					Message: fmt.Sprintf("cannot read file: %s: no such file or directory", primaryPath),
+				}
+			}
+		}
+
+		absPath, err := filepath.Abs(importedAbs)
 		if err != nil {
 			return nil, &ParseError{File: path, Line: 1, Col: 1, Message: fmt.Sprintf("cannot resolve import path %q: %v", imp.path, err)}
 		}
 
-		importedDoc, err := parseFile(importedAbs, nil, visited, append(chain, path))
+		importedDoc, err := parseFileWithPaths(absPath, nil, visited, append(chain, path), searchPaths)
 		if err != nil {
 			return nil, err
 		}
