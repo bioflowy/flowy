@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 04-expression-evaluator-and-standard-library-05-PLAN.md
-last_updated: "2026-03-10T10:32:42.056Z"
+stopped_at: Completed 04-expression-evaluator-and-standard-library-06-PLAN.md
+last_updated: "2026-03-10T10:36:40.889Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
   percent: 0
 ---
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-expression-evaluator-and-standard-library P03 | 2min | 2 tasks | 4 files |
 | Phase 04-expression-evaluator-and-standard-library P04 | 5min | 2 tasks | 2 files |
 | Phase 04-expression-evaluator-and-standard-library P05 | 4min | 2 tasks | 4 files |
+| Phase 04-expression-evaluator-and-standard-library P06 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,8 @@ Recent decisions affecting current work:
 - [Phase 04-expression-evaluator-and-standard-library]: valueToStr helper in stdlib_array.go avoids name collision with valueToString(v, opts) in command.go
 - [Phase 04-expression-evaluator-and-standard-library]: stdRound uses math.Floor(x+0.5) for WDL half-up semantics — round(-2.5)==-2, NOT math.Round which gives -3
 - [Phase 04-expression-evaluator-and-standard-library]: stdMatches anchors pattern with ^$  to enforce whole-string match (partial match returns false)
+- [Phase 04-expression-evaluator-and-standard-library]: MapValue.Type is a concrete types.MapType struct (no type assertion needed) — plan action suggested .(types.MapType) which is a compile error
+- [Phase 04-expression-evaluator-and-standard-library]: collect_by_key uses linear scan with primitiveEqual() for insertion-order-preserving key deduplication
 
 ### Pending Todos
 
@@ -127,6 +130,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T10:32:42.051Z
-Stopped at: Completed 04-expression-evaluator-and-standard-library-05-PLAN.md
+Last session: 2026-03-10T10:36:40.885Z
+Stopped at: Completed 04-expression-evaluator-and-standard-library-06-PLAN.md
 Resume file: None

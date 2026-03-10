@@ -44,7 +44,7 @@
 - [x] **STDLIB-02**: ファイルシステム関数を実装する: `glob`, `basename`, `dirname`, `size`, `stdout`, `stderr`
 - [x] **STDLIB-03**: 配列関数を実装する: `length`, `flatten`, `transpose`, `zip`, `cross`, `prefix`, `suffix`, `quote`, `squote`, `unzip`, `select_all`, `select_first`, `chunk` (1.2新機能)
 - [x] **STDLIB-04**: 文字列関数を実装する: `sub`, `find` (1.2新機能), `matches` (1.2新機能), `join_paths` (1.2新機能)
-- [ ] **STDLIB-05**: 型変換・ユーティリティ関数を実装する: `defined`, `keys`, `values` (1.2新機能), `as_map`, `as_pairs`, `collect_by_key`, `contains` (1.2新機能), `contains_key` (1.2新機能)
+- [x] **STDLIB-05**: 型変換・ユーティリティ関数を実装する: `defined`, `keys`, `values` (1.2新機能), `as_map`, `as_pairs`, `collect_by_key`, `contains` (1.2新機能), `contains_key` (1.2新機能)
 - [x] **STDLIB-06**: 数値関数を実装する: `ceil`, `floor`, `round`（half-up丸め、bankers roundingではない）, `min`, `max`
 
 ### Task Execution
@@ -140,7 +140,7 @@
 | STDLIB-02 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-03 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-04 | Phase 4: Expression Evaluator and Standard Library | Complete |
-| STDLIB-05 | Phase 4: Expression Evaluator and Standard Library | Pending |
+| STDLIB-05 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | STDLIB-06 | Phase 4: Expression Evaluator and Standard Library | Complete |
 | TASK-01 | Phase 5: Task Execution | Pending |
 | TASK-02 | Phase 5: Task Execution | Pending |
