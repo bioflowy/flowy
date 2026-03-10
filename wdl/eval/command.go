@@ -170,7 +170,6 @@ func evalCommand(e *ast.CommandExpr, env *Env, ctx ExecContext) (values.Value, e
 	// Phase 1: build sentinel string and evaluate placeholder expressions
 	var sentinelBuf strings.Builder
 	var evaledParts []string
-	var partOpts []map[string]string
 
 	for _, part := range e.Parts {
 		switch p := part.(type) {
@@ -183,8 +182,8 @@ func evalCommand(e *ast.CommandExpr, env *Env, ctx ExecContext) (values.Value, e
 			}
 			// Write sentinel marker — the actual value will replace this after dedenting
 			sentinelBuf.WriteString("~{}")
+			// Options are applied before dedent: stringify with options now, substitute after
 			evaledParts = append(evaledParts, valueToString(v, p.Options))
-			partOpts = append(partOpts, p.Options)
 		}
 	}
 

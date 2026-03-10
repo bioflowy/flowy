@@ -25,9 +25,13 @@ func Eval(expr ast.Expr, env *Env, ctx ExecContext) (values.Value, error) {
 	case *ast.NullLit:
 		return values.NullValue{}, nil
 	case *ast.StringExpr:
-		return nil, &EvalError{Pos: e.Pos, Message: "not yet implemented"}
+		s, err := evalString(e.Parts, env, ctx)
+		if err != nil {
+			return nil, err
+		}
+		return values.StringValue{Type: types.StringType{}, Value: s}, nil
 	case *ast.CommandExpr:
-		return nil, &EvalError{Pos: e.Pos, Message: "not yet implemented"}
+		return evalCommand(e, env, ctx)
 	case *ast.ArrayExpr:
 		items := make([]values.Value, len(e.Items))
 		for i, item := range e.Items {

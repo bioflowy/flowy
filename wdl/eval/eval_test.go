@@ -585,9 +585,120 @@ func TestEvalApply(t *testing.T) {
 	t.Skip("not yet implemented")
 }
 
-// TestEvalCommand tests command template expansion (EXPR-06).
-// Covers: placeholder interpolation within command blocks.
-// Implementation in command_test.go and eval_test.go (see Task 2).
+// TestEvalCommand tests command template expansion (EXPR-06) and string interpolation.
+// Covers: StringExpr and CommandExpr evaluation through Eval().
 func TestEvalCommand(t *testing.T) {
-	t.Skip("not yet implemented")
+	ctx := ExecContext{}
+
+	t.Run("StringExpr: simple interpolation", func(t *testing.T) {
+		env := NewEnv(nil)
+		env.Define("name", values.StringValue{Type: types.StringType{}, Value: "world"})
+		expr := &ast.StringExpr{
+			Parts: []ast.StringPart{
+				&ast.RawStringPart{Val: "hello "},
+				&ast.PlaceholderPart{Expr: &ast.IdentExpr{Name: "name"}},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := values.StringValue{Type: types.StringType{}, Value: "hello world"}
+		if got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("StringExpr: NullValue placeholder emits empty string", func(t *testing.T) {
+		env := NewEnv(nil)
+		env.Define("x", values.NullValue{})
+		expr := &ast.StringExpr{
+			Parts: []ast.StringPart{
+				&ast.RawStringPart{Val: "prefix-"},
+				&ast.PlaceholderPart{Expr: &ast.IdentExpr{Name: "x"}},
+				&ast.RawStringPart{Val: "-suffix"},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := values.StringValue{Type: types.StringType{}, Value: "prefix--suffix"}
+		if got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("CommandExpr: leading indent stripped", func(t *testing.T) {
+		env := NewEnv(nil)
+		env.Define("name", values.StringValue{Type: types.StringType{}, Value: "alice"})
+		expr := &ast.CommandExpr{
+			Parts: []ast.StringPart{
+				&ast.RawStringPart{Val: "    echo "},
+				&ast.PlaceholderPart{Expr: &ast.IdentExpr{Name: "name"}},
+				&ast.RawStringPart{Val: "\n    echo done\n"},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sv, ok := got.(values.StringValue)
+		if !ok {
+			t.Fatalf("expected StringValue, got %T", got)
+		}
+		want := "echo alice\necho done\n"
+		if sv.Value != want {
+			t.Errorf("got %q, want %q", sv.Value, want)
+		}
+	})
+
+	t.Run("CommandExpr: empty parts returns empty string", func(t *testing.T) {
+		env := NewEnv(nil)
+		expr := &ast.CommandExpr{Parts: []ast.StringPart{}}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sv, ok := got.(values.StringValue)
+		if !ok {
+			t.Fatalf("expected StringValue, got %T", got)
+		}
+		if sv.Value != "" {
+			t.Errorf("got %q, want empty string", sv.Value)
+		}
+	})
+
+	t.Run("CommandExpr: Array placeholder with sep option", func(t *testing.T) {
+		env := NewEnv(nil)
+		env.Define("files", values.ArrayValue{
+			Type: types.ArrayType{ItemType: types.StringType{}},
+			Items: []values.Value{
+				values.StringValue{Type: types.StringType{}, Value: "a.txt"},
+				values.StringValue{Type: types.StringType{}, Value: "b.txt"},
+			},
+		})
+		expr := &ast.CommandExpr{
+			Parts: []ast.StringPart{
+				&ast.RawStringPart{Val: "    cat "},
+				&ast.PlaceholderPart{
+					Expr:    &ast.IdentExpr{Name: "files"},
+					Options: map[string]string{"sep": " "},
+				},
+				&ast.RawStringPart{Val: "\n"},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		sv, ok := got.(values.StringValue)
+		if !ok {
+			t.Fatalf("expected StringValue, got %T", got)
+		}
+		want := "cat a.txt b.txt\n"
+		if sv.Value != want {
+			t.Errorf("got %q, want %q", sv.Value, want)
+		}
+	})
 }
