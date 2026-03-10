@@ -8,9 +8,12 @@ func arrayize(t types.Type) types.Type {
 	return types.ArrayType{ItemType: t}
 }
 
-// optionalize wraps t as optional (T?).
-// The stub returns t unchanged; Plan 02 will add the idempotency guard to
-// prevent double-wrapping (T?? → T?).
+// optionalize returns t as an optional type (T?).
+// If t.IsOptional() is already true, returns t unchanged (idempotency guard)
+// to prevent double-wrapping (T? must not become T??).
 func optionalize(t types.Type) types.Type {
-	return t
+	if t.IsOptional() {
+		return t
+	}
+	return t.WithOptional(true)
 }
