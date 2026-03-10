@@ -84,7 +84,15 @@ Plans:
   3. A command template with `~{}` placeholders and leading whitespace is expanded by replacing placeholders with sentinel strings, computing the minimum indent, stripping it from every non-empty line, then substituting actual values (dedent-before-interpolation algorithm)
   4. All file I/O stdlib functions (`read_lines`, `write_lines`, `read_json`, etc.) read from and write to the filesystem and return correctly typed Values
   5. All array, string, numeric, and utility stdlib functions (`length`, `flatten`, `sub`, `defined`, `ceil`, `round` with half-up rounding, WDL 1.2 additions `chunk`, `find`, `matches`, `join_paths`, `values`, `contains`) return correct results on unit test inputs
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Create wdl/eval package scaffold: EvalError, Env, ExecContext, Eval() skeleton, stdlib dispatch map, test stubs
+- [ ] 04-02-PLAN.md — Implement core expression evaluation: literals, operators, if-then-else, ident, get, index (EXPR-01 to EXPR-04)
+- [ ] 04-03-PLAN.md — Implement command template expansion and string interpolation with sentinel-before-indent dedent (EXPR-06, EXPR-07)
+- [ ] 04-04-PLAN.md — Implement file I/O and filesystem stdlib functions (STDLIB-01, STDLIB-02)
+- [ ] 04-05-PLAN.md — Implement array, string, and numeric stdlib functions (STDLIB-03, STDLIB-04, STDLIB-06)
+- [ ] 04-06-PLAN.md — Implement utility stdlib functions and verify end-to-end ApplyExpr dispatch (STDLIB-05, EXPR-05)
 
 ### Phase 5: Task Execution
 **Goal**: A single WDL task can be executed end-to-end: inputs bound, command expanded, Docker container run, outputs collected on the host
@@ -132,7 +140,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Type Data Structures | 1/1 | Complete   | 2026-03-10 |
 | 2. Lexer, Parser, and AST | 5/5 | Complete   | 2026-03-10 |
 | 3. Type Checker | 2/4 | In Progress|  |
-| 4. Expression Evaluator and Standard Library | 0/TBD | Not started | - |
+| 4. Expression Evaluator and Standard Library | 0/6 | Not started | - |
 | 5. Task Execution | 0/TBD | Not started | - |
 | 6. Workflow Execution (DAG Scheduler) | 0/TBD | Not started | - |
 | 7. CLI and Integration | 0/TBD | Not started | - |
