@@ -105,8 +105,6 @@ func TestOptionalizeIdempotent(t *testing.T) {
 // TestForwardRef checks that the checker accepts a task where a declaration
 // references a name defined later in the same task body (forward reference).
 func TestForwardRef(t *testing.T) {
-	t.Fatal("not implemented")
-
 	doc := parseFixture(t, "wdl/testdata/forward_ref.wdl")
 	_, errs := Check(doc)
 	if len(errs) != 0 {
@@ -117,8 +115,6 @@ func TestForwardRef(t *testing.T) {
 // TestCycleDetection checks that the checker reports an error when two task
 // declarations form a mutual dependency cycle.
 func TestCycleDetection(t *testing.T) {
-	t.Fatal("not implemented")
-
 	// Build an in-memory Document: task with decl a = b and decl b = a.
 	doc := &ast.Document{
 		Tasks: []*ast.Task{
@@ -151,8 +147,6 @@ func TestCycleDetection(t *testing.T) {
 // TestTypeMismatch checks that the checker reports a type error when a String
 // variable is initialized from an Int-typed identifier.
 func TestTypeMismatch(t *testing.T) {
-	t.Fatal("not implemented")
-
 	doc := parseFixture(t, "wdl/testdata/type_mismatch.wdl")
 	_, errs := Check(doc)
 	if len(errs) == 0 {
@@ -166,8 +160,6 @@ func TestTypeMismatch(t *testing.T) {
 // TestScatterPromotion checks that the checker promotes a scatter body String
 // declaration to Array[String] in the enclosing scope.
 func TestScatterPromotion(t *testing.T) {
-	t.Fatal("not implemented")
-
 	doc := parseFixture(t, "wdl/testdata/scatter_if.wdl")
 	env, errs := Check(doc)
 	if len(errs) != 0 {
@@ -186,8 +178,6 @@ func TestScatterPromotion(t *testing.T) {
 // TestIfPromotion checks that the checker wraps an if-block output declaration
 // as optional (T?) in the enclosing scope.
 func TestIfPromotion(t *testing.T) {
-	t.Fatal("not implemented")
-
 	doc := parseFixture(t, "wdl/testdata/scatter_if.wdl")
 	env, errs := Check(doc)
 	if len(errs) != 0 {
