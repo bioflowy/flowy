@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 04-expression-evaluator-and-standard-library-04-PLAN.md
-last_updated: "2026-03-10T10:26:50.212Z"
+stopped_at: Completed 04-expression-evaluator-and-standard-library-05-PLAN.md
+last_updated: "2026-03-10T10:32:42.056Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-expression-evaluator-and-standard-library P02 | 8min | 2 tasks | 2 files |
 | Phase 04-expression-evaluator-and-standard-library P03 | 2min | 2 tasks | 4 files |
 | Phase 04-expression-evaluator-and-standard-library P04 | 5min | 2 tasks | 2 files |
+| Phase 04-expression-evaluator-and-standard-library P05 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,9 @@ Recent decisions affecting current work:
 - [Phase 04-expression-evaluator-and-standard-library]: partOpts slice removed from evalCommand: options applied in valueToString before sentinel substitution — no need to store separately
 - [Phase 04-expression-evaluator-and-standard-library]: Both tasks implemented in single TDD cycle: tests and implementation committed together since they cover the same file (stdlib_fileio.go)
 - [Phase 04-expression-evaluator-and-standard-library]: jsonToValue integer detection: math.Trunc(x)==x guards whole-number float64 -> IntValue promotion
+- [Phase 04-expression-evaluator-and-standard-library]: valueToStr helper in stdlib_array.go avoids name collision with valueToString(v, opts) in command.go
+- [Phase 04-expression-evaluator-and-standard-library]: stdRound uses math.Floor(x+0.5) for WDL half-up semantics — round(-2.5)==-2, NOT math.Round which gives -3
+- [Phase 04-expression-evaluator-and-standard-library]: stdMatches anchors pattern with ^$  to enforce whole-string match (partial match returns false)
 
 ### Pending Todos
 
@@ -123,6 +127,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T10:26:50.208Z
-Stopped at: Completed 04-expression-evaluator-and-standard-library-04-PLAN.md
+Last session: 2026-03-10T10:32:42.051Z
+Stopped at: Completed 04-expression-evaluator-and-standard-library-05-PLAN.md
 Resume file: None

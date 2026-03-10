@@ -140,7 +140,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Type Data Structures | 1/1 | Complete   | 2026-03-10 |
 | 2. Lexer, Parser, and AST | 5/5 | Complete   | 2026-03-10 |
 | 3. Type Checker | 2/4 | In Progress|  |
-| 4. Expression Evaluator and Standard Library | 3/6 | In Progress|  |
+| 4. Expression Evaluator and Standard Library | 5/6 | In Progress|  |
 | 5. Task Execution | 0/TBD | Not started | - |
 | 6. Workflow Execution (DAG Scheduler) | 0/TBD | Not started | - |
 | 7. CLI and Integration | 0/TBD | Not started | - |
