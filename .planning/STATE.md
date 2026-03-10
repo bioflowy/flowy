@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 04-expression-evaluator-and-standard-library-01-PLAN.md
-last_updated: "2026-03-10T10:12:41.176Z"
+stopped_at: Completed 04-expression-evaluator-and-standard-library-02-PLAN.md
+last_updated: "2026-03-10T10:17:53.071Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03-type-checker P03 | 8min | 1 tasks | 2 files |
 | Phase 03-type-checker P04 | 4min | 1 tasks | 3 files |
 | Phase 04-expression-evaluator-and-standard-library P01 | 2 | 2 tasks | 8 files |
+| Phase 04-expression-evaluator-and-standard-library P02 | 8min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,8 @@ Recent decisions affecting current work:
 - [Phase 04-expression-evaluator-and-standard-library]: exprPos() helper uses type-switch since ast.Expr interface has no ExprPos() method (only unexported exprNode() marker)
 - [Phase 04-expression-evaluator-and-standard-library]: ApplyExpr case in Eval() delegates to evalApply() immediately — stdlibFuncs dispatch works as soon as Wave 1 plans register functions
 - [Phase 04-expression-evaluator-and-standard-library]: stdlibFuncs map starts empty; downstream plans register implementations by assigning to the package-level var
+- [Phase 04-expression-evaluator-and-standard-library]: TokBangEq in plan maps to TokNotEq in lexer; TokBang maps to TokNot — corrected during implementation
+- [Phase 04-expression-evaluator-and-standard-library]: GetExpr uses Object/Member field names; IndexExpr uses Collection field name — plan docs were aspirational
 
 ### Pending Todos
 
@@ -115,6 +118,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T10:12:41.172Z
-Stopped at: Completed 04-expression-evaluator-and-standard-library-01-PLAN.md
+Last session: 2026-03-10T10:17:53.066Z
+Stopped at: Completed 04-expression-evaluator-and-standard-library-02-PLAN.md
 Resume file: None
