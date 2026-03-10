@@ -528,11 +528,359 @@ func TestStdlibFilesystem(t *testing.T) {
 }
 
 // TestStdlibArray tests array standard library functions (STDLIB-03).
-// Covers: length, range, flatten, transpose, zip, cross, prefix,
-// suffix, quote, squote, as_pairs, as_map, keys, collect_by_key,
-// select_first, select_all, defined.
+// Covers: length, flatten, transpose, zip, cross, prefix, suffix, quote,
+// squote, unzip, select_first, select_all, chunk.
 func TestStdlibArray(t *testing.T) {
-	t.Skip("not yet implemented")
+	ctx := ExecContext{}
+
+	intArr := func(vals ...int64) values.ArrayValue {
+		items := make([]values.Value, len(vals))
+		for i, v := range vals {
+			items[i] = values.IntValue{Type: types.IntType{}, Value: v}
+		}
+		return values.ArrayValue{Type: types.ArrayType{ItemType: types.IntType{}}, Items: items}
+	}
+	strArr := func(vals ...string) values.ArrayValue {
+		items := make([]values.Value, len(vals))
+		for i, v := range vals {
+			items[i] = values.StringValue{Type: types.StringType{}, Value: v}
+		}
+		return values.ArrayValue{Type: types.ArrayType{ItemType: types.StringType{}}, Items: items}
+	}
+	pairVal := func(l, r values.Value) values.PairValue {
+		return values.PairValue{
+			Type:  types.PairType{LeftType: l.ValueType(), RightType: r.ValueType()},
+			Left:  l,
+			Right: r,
+		}
+	}
+
+	// --- length ---
+	t.Run("length non-empty", func(t *testing.T) {
+		got, err := callStdlib(t, "length", []values.Value{intArr(1, 2, 3)}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 3 {
+			t.Errorf("got %d, want 3", iv.Value)
+		}
+	})
+	t.Run("length empty", func(t *testing.T) {
+		got, err := callStdlib(t, "length", []values.Value{intArr()}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 0 {
+			t.Errorf("got %d, want 0", iv.Value)
+		}
+	})
+
+	// --- flatten ---
+	t.Run("flatten [[1,2],[3,4]]", func(t *testing.T) {
+		inner1 := intArr(1, 2)
+		inner2 := intArr(3, 4)
+		outer := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.ArrayType{ItemType: types.IntType{}}},
+			Items: []values.Value{inner1, inner2},
+		}
+		got, err := callStdlib(t, "flatten", []values.Value{outer}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 4 {
+			t.Fatalf("expected 4 items, got %d", len(av.Items))
+		}
+		for i, want := range []int64{1, 2, 3, 4} {
+			if av.Items[i].(values.IntValue).Value != want {
+				t.Errorf("items[%d]=%d, want %d", i, av.Items[i].(values.IntValue).Value, want)
+			}
+		}
+	})
+	t.Run("flatten with empty sub-array", func(t *testing.T) {
+		outer := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.ArrayType{ItemType: types.IntType{}}},
+			Items: []values.Value{intArr(1), intArr(), intArr(2, 3)},
+		}
+		got, err := callStdlib(t, "flatten", []values.Value{outer}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(av.Items))
+		}
+	})
+
+	// --- transpose ---
+	t.Run("transpose [[1,2],[3,4]]", func(t *testing.T) {
+		outer := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.ArrayType{ItemType: types.IntType{}}},
+			Items: []values.Value{intArr(1, 2), intArr(3, 4)},
+		}
+		got, err := callStdlib(t, "transpose", []values.Value{outer}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 rows, got %d", len(av.Items))
+		}
+		row0 := av.Items[0].(values.ArrayValue)
+		row1 := av.Items[1].(values.ArrayValue)
+		if row0.Items[0].(values.IntValue).Value != 1 || row0.Items[1].(values.IntValue).Value != 3 {
+			t.Errorf("row0=%v, want [1,3]", row0.Items)
+		}
+		if row1.Items[0].(values.IntValue).Value != 2 || row1.Items[1].(values.IntValue).Value != 4 {
+			t.Errorf("row1=%v, want [2,4]", row1.Items)
+		}
+	})
+
+	// --- zip ---
+	t.Run("zip [1,2] [a,b]", func(t *testing.T) {
+		got, err := callStdlib(t, "zip", []values.Value{intArr(1, 2), strArr("a", "b")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(av.Items))
+		}
+		p0 := av.Items[0].(values.PairValue)
+		if p0.Left.(values.IntValue).Value != 1 || p0.Right.(values.StringValue).Value != "a" {
+			t.Errorf("pair[0]=%v, want (1,a)", p0)
+		}
+	})
+
+	// --- cross ---
+	t.Run("cross [1,2] [a,b]", func(t *testing.T) {
+		got, err := callStdlib(t, "cross", []values.Value{intArr(1, 2), strArr("a", "b")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 4 {
+			t.Fatalf("expected 4 items (Cartesian), got %d", len(av.Items))
+		}
+		// order: (1,a),(1,b),(2,a),(2,b)
+		expected := []struct{ l int64; r string }{{1, "a"}, {1, "b"}, {2, "a"}, {2, "b"}}
+		for i, e := range expected {
+			p := av.Items[i].(values.PairValue)
+			if p.Left.(values.IntValue).Value != e.l || p.Right.(values.StringValue).Value != e.r {
+				t.Errorf("item[%d]=(%v,%v), want (%d,%s)", i, p.Left, p.Right, e.l, e.r)
+			}
+		}
+	})
+
+	// --- prefix ---
+	t.Run("prefix", func(t *testing.T) {
+		got, err := callStdlib(t, "prefix", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: "--"},
+			strArr("a", "b"),
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(av.Items))
+		}
+		if av.Items[0].(values.StringValue).Value != "--a" {
+			t.Errorf("got %q, want %q", av.Items[0].(values.StringValue).Value, "--a")
+		}
+		if av.Items[1].(values.StringValue).Value != "--b" {
+			t.Errorf("got %q, want %q", av.Items[1].(values.StringValue).Value, "--b")
+		}
+	})
+
+	// --- suffix ---
+	t.Run("suffix", func(t *testing.T) {
+		got, err := callStdlib(t, "suffix", []values.Value{
+			values.StringValue{Type: types.StringType{}, Value: ".txt"},
+			strArr("a", "b"),
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if av.Items[0].(values.StringValue).Value != "a.txt" {
+			t.Errorf("got %q, want %q", av.Items[0].(values.StringValue).Value, "a.txt")
+		}
+	})
+
+	// --- quote ---
+	t.Run("quote", func(t *testing.T) {
+		got, err := callStdlib(t, "quote", []values.Value{strArr("a", "b")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if av.Items[0].(values.StringValue).Value != `"a"` {
+			t.Errorf("got %q, want %q", av.Items[0].(values.StringValue).Value, `"a"`)
+		}
+		if av.Items[1].(values.StringValue).Value != `"b"` {
+			t.Errorf("got %q, want %q", av.Items[1].(values.StringValue).Value, `"b"`)
+		}
+	})
+
+	// --- squote ---
+	t.Run("squote", func(t *testing.T) {
+		got, err := callStdlib(t, "squote", []values.Value{strArr("a", "b")}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if av.Items[0].(values.StringValue).Value != "'a'" {
+			t.Errorf("got %q, want 'a'", av.Items[0].(values.StringValue).Value)
+		}
+	})
+
+	// --- unzip ---
+	t.Run("unzip", func(t *testing.T) {
+		p1 := pairVal(values.IntValue{Type: types.IntType{}, Value: 1}, values.StringValue{Type: types.StringType{}, Value: "a"})
+		p2 := pairVal(values.IntValue{Type: types.IntType{}, Value: 2}, values.StringValue{Type: types.StringType{}, Value: "b"})
+		pairArr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: p1.ValueType()},
+			Items: []values.Value{p1, p2},
+		}
+		got, err := callStdlib(t, "unzip", []values.Value{pairArr}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		pv := got.(values.PairValue)
+		lefts := pv.Left.(values.ArrayValue)
+		rights := pv.Right.(values.ArrayValue)
+		if len(lefts.Items) != 2 || len(rights.Items) != 2 {
+			t.Fatalf("expected 2 lefts and 2 rights, got %d and %d", len(lefts.Items), len(rights.Items))
+		}
+		if lefts.Items[0].(values.IntValue).Value != 1 {
+			t.Errorf("lefts[0]=%v, want 1", lefts.Items[0])
+		}
+		if rights.Items[1].(values.StringValue).Value != "b" {
+			t.Errorf("rights[1]=%v, want b", rights.Items[1])
+		}
+	})
+
+	// --- select_all ---
+	t.Run("select_all filters nulls", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type: types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{
+				values.IntValue{Type: types.IntType{}, Value: 1},
+				values.NullValue{},
+				values.IntValue{Type: types.IntType{}, Value: 2},
+				values.NullValue{},
+			},
+		}
+		got, err := callStdlib(t, "select_all", []values.Value{arr}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(av.Items))
+		}
+		if av.Items[0].(values.IntValue).Value != 1 || av.Items[1].(values.IntValue).Value != 2 {
+			t.Errorf("got %v, want [1,2]", av.Items)
+		}
+	})
+
+	// --- select_first ---
+	t.Run("select_first returns first non-null", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type: types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{
+				values.NullValue{},
+				values.NullValue{},
+				values.IntValue{Type: types.IntType{}, Value: 3},
+			},
+		}
+		got, err := callStdlib(t, "select_first", []values.Value{arr}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 3 {
+			t.Errorf("got %d, want 3", iv.Value)
+		}
+	})
+	t.Run("select_first all null returns EvalError", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{values.NullValue{}, values.NullValue{}},
+		}
+		_, err := callStdlib(t, "select_first", []values.Value{arr}, ctx)
+		if err == nil {
+			t.Fatal("expected EvalError for all-null array")
+		}
+	})
+
+	// --- chunk ---
+	t.Run("chunk [1,2,3,4,5] by 2", func(t *testing.T) {
+		got, err := callStdlib(t, "chunk", []values.Value{
+			intArr(1, 2, 3, 4, 5),
+			values.IntValue{Type: types.IntType{}, Value: 2},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 3 {
+			t.Fatalf("expected 3 chunks, got %d", len(av.Items))
+		}
+		c0 := av.Items[0].(values.ArrayValue)
+		c1 := av.Items[1].(values.ArrayValue)
+		c2 := av.Items[2].(values.ArrayValue)
+		if len(c0.Items) != 2 || len(c1.Items) != 2 || len(c2.Items) != 1 {
+			t.Errorf("chunk sizes: got %d,%d,%d want 2,2,1", len(c0.Items), len(c1.Items), len(c2.Items))
+		}
+	})
+	t.Run("chunk exact fit", func(t *testing.T) {
+		got, err := callStdlib(t, "chunk", []values.Value{
+			intArr(1, 2, 3),
+			values.IntValue{Type: types.IntType{}, Value: 3},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 1 {
+			t.Fatalf("expected 1 chunk, got %d", len(av.Items))
+		}
+	})
+	t.Run("chunk empty array", func(t *testing.T) {
+		got, err := callStdlib(t, "chunk", []values.Value{
+			intArr(),
+			values.IntValue{Type: types.IntType{}, Value: 2},
+		}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		av := got.(values.ArrayValue)
+		if len(av.Items) != 0 {
+			t.Fatalf("expected 0 chunks, got %d", len(av.Items))
+		}
+	})
+	t.Run("chunk n=0 returns EvalError", func(t *testing.T) {
+		_, err := callStdlib(t, "chunk", []values.Value{
+			intArr(1, 2, 3),
+			values.IntValue{Type: types.IntType{}, Value: 0},
+		}, ctx)
+		if err == nil {
+			t.Fatal("expected EvalError for n=0")
+		}
+	})
+	t.Run("chunk n negative returns EvalError", func(t *testing.T) {
+		_, err := callStdlib(t, "chunk", []values.Value{
+			intArr(1, 2, 3),
+			values.IntValue{Type: types.IntType{}, Value: -1},
+		}, ctx)
+		if err == nil {
+			t.Fatal("expected EvalError for n<0")
+		}
+	})
 }
 
 // TestStdlibString tests string standard library functions (STDLIB-04).
