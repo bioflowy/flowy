@@ -121,7 +121,12 @@ Plans:
   3. An `if` block evaluates its condition; when true the task runs and its output is `T`; when false the output is `None` typed as `T?`
   4. An `after` keyword dependency between two calls is respected regardless of data flow order
   5. On successful completion `outputs.json` is written to the execution directory; on any task failure remaining tasks are cancelled and `error.json` is written with the failing task name and error
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Create wdl/workflow package: DAG construction, topological sort, value conversion helpers
+- [ ] 06-02-PLAN.md — Implement scheduler state machine: call execution, scatter fan-out, conditional handling
+- [ ] 06-03-PLAN.md — Implement outputs.json/error.json serialization, fail-fast cancellation, end-to-end wiring
 
 ### Phase 7: CLI and Integration
 **Goal**: `flowy run` and `flowy check` are usable CLI tools that accept all documented flags, produce structured output, and exit with correct codes
@@ -147,5 +152,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Type Checker | 2/4 | In Progress|  |
 | 4. Expression Evaluator and Standard Library | 6/6 | Complete   | 2026-03-10 |
 | 5. Task Execution | 2/3 | In Progress|  |
-| 6. Workflow Execution (DAG Scheduler) | 0/TBD | Not started | - |
+| 6. Workflow Execution (DAG Scheduler) | 0/3 | Not started | - |
 | 7. CLI and Integration | 0/TBD | Not started | - |
