@@ -2,6 +2,7 @@ package task
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
@@ -45,7 +46,7 @@ func CollectOutputs(task *ast.Task, env *eval.Env, ctx eval.ExecContext, pm *Pat
 		// Coerce StringValue to FileValue/DirectoryValue when the decl type requires it.
 		// Output expressions often evaluate to StringValue (e.g., string interpolation),
 		// but if the declared type is File or Directory the value should be typed accordingly.
-		v = coerceOutputValue(v, decl.Type)
+		v = coerceOutputValue(v, decl.Type, ctx.WorkDir)
 
 		result[decl.Name] = v
 		outEnv.Define(decl.Name, v)
@@ -56,17 +57,21 @@ func CollectOutputs(task *ast.Task, env *eval.Env, ctx eval.ExecContext, pm *Pat
 
 // coerceOutputValue coerces a value to match the declared output type.
 // WDL 1.2 allows String expressions to be assigned to File/Directory outputs —
-// the string is interpreted as a path. This function performs that coercion.
-func coerceOutputValue(v values.Value, declType types.Type) values.Value {
+// the string is interpreted as a path. Relative paths are resolved against workDir.
+func coerceOutputValue(v values.Value, declType types.Type, workDir string) values.Value {
 	sv, isString := v.(values.StringValue)
 	if !isString {
 		return v
 	}
+	path := sv.Value
+	if !filepath.IsAbs(path) && workDir != "" {
+		path = filepath.Join(workDir, path)
+	}
 	switch declType.(type) {
 	case types.FileType:
-		return values.FileValue{Type: types.FileType{}, Value: sv.Value}
+		return values.FileValue{Type: types.FileType{}, Value: path}
 	case types.DirectoryType:
-		return values.DirectoryValue{Type: types.DirectoryType{}, Value: sv.Value}
+		return values.DirectoryValue{Type: types.DirectoryType{}, Value: path}
 	default:
 		return v
 	}
