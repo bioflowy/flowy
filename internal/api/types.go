@@ -2,7 +2,7 @@
 // This is a leaf package with no internal imports — only stdlib is used.
 package api
 
-// SubmitRequest is the request body for POST /runs to submit a new workflow run.
+// SubmitRequest is the request body for POST /workflows to submit a new workflow run.
 type SubmitRequest struct {
 	// WDLPath is the absolute path to the WDL file on the shared filesystem.
 	WDLPath string `json:"wdl_path"`
@@ -11,13 +11,13 @@ type SubmitRequest struct {
 	InputsJSON map[string]interface{} `json:"inputs"`
 }
 
-// SubmitResponse is the response body for POST /runs.
+// SubmitResponse is the response body for POST /workflows.
 type SubmitResponse struct {
 	// RunID is the UUID v4 assigned to the newly submitted run.
 	RunID string `json:"run_id"`
 }
 
-// StatusResponse is the response body for GET /runs/{run_id}/status.
+// StatusResponse is the response body for GET /workflows/{run_id}/status.
 type StatusResponse struct {
 	// RunID is the UUID v4 of the run.
 	RunID string `json:"run_id"`
@@ -26,7 +26,7 @@ type StatusResponse struct {
 	State string `json:"state"`
 }
 
-// OutputsResponse is the response body for GET /runs/{run_id}/outputs.
+// OutputsResponse is the response body for GET /workflows/{run_id}/outputs.
 type OutputsResponse struct {
 	// RunID is the UUID v4 of the run.
 	RunID string `json:"run_id"`
@@ -35,7 +35,7 @@ type OutputsResponse struct {
 	Outputs map[string]interface{} `json:"outputs"`
 }
 
-// AbortResponse is the response body for POST /runs/{run_id}/abort.
+// AbortResponse is the response body for POST /workflows/{run_id}/abort.
 type AbortResponse struct {
 	// RunID is the UUID v4 of the aborted run.
 	RunID string `json:"run_id"`

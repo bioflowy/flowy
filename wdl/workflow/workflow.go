@@ -14,6 +14,13 @@ import (
 	"github.com/bioflowy/flowy/wdl/values"
 )
 
+// TaskDispatchFn is the signature for a custom task dispatch function.
+// It replaces Docker execution in distributed mode — the server uses it
+// to create task rows in the SQLite queue instead of running containers.
+type TaskDispatchFn func(ctx context.Context, t *ast.Task, inputs map[string]interface{},
+	runner task.ContainerRunner, execRoot string,
+	structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error)
+
 // RunWorkflow is the public entry point for executing a WDL workflow.
 // It looks up the named workflow in doc, builds the execution DAG,
 // binds inputs, and executes tasks in dependency order.
@@ -32,6 +39,39 @@ func RunWorkflow(
 	jsonInputs map[string]interface{},
 	runner task.ContainerRunner,
 	execRoot string,
+) (map[string]values.Value, error) {
+	return runWorkflowInternal(ctx, doc, wfName, jsonInputs, runner, execRoot, nil)
+}
+
+// RunWorkflowWithDispatch executes a workflow using a custom task dispatch
+// function instead of the default Docker runner. This is the extension seam
+// for flowy-server to enqueue tasks into the SQLite queue.
+//
+// dispatchFn is called for every task call in the workflow, replacing
+// container execution. It receives the same arguments as the default runner.
+func RunWorkflowWithDispatch(
+	ctx context.Context,
+	doc *ast.Document,
+	wfName string,
+	jsonInputs map[string]interface{},
+	runner task.ContainerRunner,
+	execRoot string,
+	dispatchFn TaskDispatchFn,
+) (map[string]values.Value, error) {
+	return runWorkflowInternal(ctx, doc, wfName, jsonInputs, runner, execRoot, dispatchFn)
+}
+
+// runWorkflowInternal is the shared implementation for RunWorkflow and
+// RunWorkflowWithDispatch. When dispatchFn is non-nil it is set as the
+// scheduler's taskRunner, overriding the default Docker runner.
+func runWorkflowInternal(
+	ctx context.Context,
+	doc *ast.Document,
+	wfName string,
+	jsonInputs map[string]interface{},
+	runner task.ContainerRunner,
+	execRoot string,
+	dispatchFn TaskDispatchFn,
 ) (map[string]values.Value, error) {
 	// Find the workflow definition.
 	var wf *ast.Workflow
@@ -82,14 +122,15 @@ func RunWorkflow(
 
 	// Create and run the scheduler.
 	s := &scheduler{
-		doc:       doc,
-		taskIndex: taskIndex,
-		runner:    runner,
-		execRoot:  execRoot,
-		env:       env,
-		nodes:     dagNodes,
-		order:     order,
-		done:      make(map[string]bool),
+		doc:        doc,
+		taskIndex:  taskIndex,
+		runner:     runner,
+		execRoot:   execRoot,
+		env:        env,
+		nodes:      dagNodes,
+		order:      order,
+		done:       make(map[string]bool),
+		taskRunner: dispatchFn,
 	}
 
 	if err := s.run(ctx); err != nil {

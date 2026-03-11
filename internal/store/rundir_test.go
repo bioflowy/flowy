@@ -49,6 +49,42 @@ func TestCreateRunDirs(t *testing.T) {
 	}
 }
 
+func TestTaskDir(t *testing.T) {
+	got := store.TaskDir("/data", "abc-123", "hello", 0)
+	want := filepath.Join("/data", "runs", "abc-123", "tasks", "hello_0")
+	if got != want {
+		t.Errorf("TaskDir() = %q, want %q", got, want)
+	}
+
+	// Verify scatter shard index is included.
+	got2 := store.TaskDir("/base", "run-42", "scatter_task", 3)
+	want2 := filepath.Join("/base", "runs", "run-42", "tasks", "scatter_task_3")
+	if got2 != want2 {
+		t.Errorf("TaskDir() scatter = %q, want %q", got2, want2)
+	}
+}
+
+func TestCreateTaskDirs(t *testing.T) {
+	baseDir := t.TempDir()
+	runID := "test-run-task-001"
+
+	if err := store.CreateTaskDirs(baseDir, runID, "my_task", 0); err != nil {
+		t.Fatalf("CreateTaskDirs() unexpected error: %v", err)
+	}
+
+	taskDir := store.TaskDir(baseDir, runID, "my_task", 0)
+	if info, err := os.Stat(taskDir); err != nil {
+		t.Errorf("task dir not created: %v", err)
+	} else if !info.IsDir() {
+		t.Errorf("task path is not a directory: %s", taskDir)
+	}
+
+	// Idempotent: second call must not error.
+	if err := store.CreateTaskDirs(baseDir, runID, "my_task", 0); err != nil {
+		t.Errorf("CreateTaskDirs() second call unexpected error: %v", err)
+	}
+}
+
 func TestCreateRunDirsIdempotent(t *testing.T) {
 	baseDir := t.TempDir()
 	runID := "test-run-idempotent"
