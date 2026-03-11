@@ -185,6 +185,22 @@ func evalBinary(e *ast.BinaryExpr, env *Env, ctx ExecContext) (values.Value, err
 
 // evalArith evaluates arithmetic operators +, -, *, /, % with WDL promotion rules.
 func evalArith(op int, left, right values.Value, pos ast.Pos) (values.Value, error) {
+	// WDL 1.2: + operator supports String concatenation.
+	// If either operand is a String (or one is String and the other is None),
+	// treat as string concatenation. None propagates: String + None = None.
+	if op == lexer.TokPlus {
+		_, leftIsNull := left.(values.NullValue)
+		_, rightIsNull := right.(values.NullValue)
+		ls, leftIsString := left.(values.StringValue)
+		rs, rightIsString := right.(values.StringValue)
+		if leftIsString && rightIsString {
+			return values.StringValue{Type: types.StringType{}, Value: ls.Value + rs.Value}, nil
+		}
+		if (leftIsString && rightIsNull) || (leftIsNull && rightIsString) {
+			return values.NullValue{}, nil
+		}
+	}
+
 	// Determine if either operand is Float (mixed arithmetic promotes to Float).
 	lf, leftIsFloat := asFloat(left)
 	rf, rightIsFloat := asFloat(right)
