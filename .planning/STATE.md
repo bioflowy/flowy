@@ -5,7 +5,7 @@ milestone_name: milestone
 status: planning
 stopped_at: Completed 07-cli-and-integration 07-02-PLAN.md
 last_updated: "2026-03-11T00:08:40.903Z"
-last_activity: 2026-03-11 - Completed quick task 4: Fix workflow input binding to support fully-qualified JSON keys
+last_activity: 2026-03-11 - Completed quick task 5: Fix relative path coercion in task File/Directory outputs
 progress:
   total_phases: 7
   completed_phases: 7
@@ -157,6 +157,7 @@ None yet.
 | 2 | Fix type checker to register call output in workflow scope | 2026-03-11 | 9d024c5 | [2-fix-type-checker-to-register-call-output](./quick/2-fix-type-checker-to-register-call-output/) |
 | 3 | Restore output blocks to all example WDL workflows | 2026-03-11 | 21e4be2 | [3-restore-output-blocks-to-all-example-wdl](./quick/3-restore-output-blocks-to-all-example-wdl/) |
 | 4 | Fix workflow input binding to support fully-qualified JSON keys | 2026-03-11 | 4b60e61 | [4-fix-workflow-input-binding-to-support-fu](./quick/4-fix-workflow-input-binding-to-support-fu/) |
+| 5 | Fix relative path coercion in task File/Directory outputs | 2026-03-11 | 2642dd2 | [5-fix-relative-path-coercion-in-task-file-](./quick/5-fix-relative-path-coercion-in-task-file-/) |
 
 ### Blockers/Concerns
 
