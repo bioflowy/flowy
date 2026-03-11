@@ -51,11 +51,11 @@ $(WDL_SPEC_DIR):
 spectool: $(FLOWY_BIN) $(SPECTOOL_BIN) $(WDL_SPEC_DIR)
 	$(eval EXCL := $(EXCLUDE_PATTERNS))
 	$(SPECTOOL_BIN) test \
-		"$(abspath $(FLOWY_BIN)) run ~{path} --input ~{input}" \
+		"$(abspath $(FLOWY_BIN)) run --input ~{input} ~{path}" \
 		--redirect-stdout \
 		--all-capabilities \
-		--workflow-target-args "" \
-		--task-target-args "--task ~{target}" \
+		--workflow-target-args="" \
+		--task-target-args="--task ~{target}" \
 		-s $(WDL_SPEC_DIR) \
 		$(if $(EXCL),--exclude "$(EXCL)",)
 
