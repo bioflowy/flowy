@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 08-02-PLAN.md Task 1; awaiting human-verify checkpoint Task 2
-last_updated: "2026-03-11T02:32:45.282Z"
+stopped_at: Completed 08-02-PLAN.md — Phase 8 complete
+last_updated: "2026-03-11T02:57:55.001Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 8
@@ -76,6 +76,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07-cli-and-integration P02 | 4min | 2 tasks | 6 files |
 | Phase 08-add-spectool-integration-for-wdl-specification-compliance-testing P01 | 3min | 2 tasks | 5 files |
 | Phase 08-add-spectool-integration-for-wdl-specification-compliance-testing P02 | 5min | 1 tasks | 3 files |
+| Phase 08-add-spectool-integration-for-wdl-specification-compliance-testing P02 | 45min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ Recent decisions affecting current work:
 - [Phase 08]: --output flag: JSON goes to file, stdout empty when flag is set
 - [Phase 08]: spectool --exclude takes comma-separated patterns (no --exclude-file); loaded from spectool-exclude.txt via shell expansion in Makefile
 - [Phase 08]: spectool --workflow-target-args/--task-target-args replace ~{target} in base command; workflow gets empty args, task gets --task ~{target}
+- [Phase Phase 08]: spectool conformance baseline: 45/160 passed (10 excluded: Object type + multiline string expressions)
+- [Phase Phase 08]: task/BindInputs: accept taskName.fieldName JSON key prefix to match spectool convention
+- [Phase Phase 08]: floor/ceil/round accept Int input (WDL coercion); float literal .14 supported; string escapes processed in parser
 
 ### Pending Todos
 
@@ -178,6 +182,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T02:32:45.275Z
-Stopped at: Completed 08-02-PLAN.md Task 1; awaiting human-verify checkpoint Task 2
+Last session: 2026-03-11T02:57:54.996Z
+Stopped at: Completed 08-02-PLAN.md — Phase 8 complete
 Resume file: None
