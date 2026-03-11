@@ -143,6 +143,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	dirFlag := fs.String("dir", "", "execution directory (must be empty if it exists)")
 	pathFlag := fs.String("path", "", "additional import search directory")
 	verboseFlag := fs.Bool("verbose", false, "print task stdout/stderr after execution")
+	outputFlag := fs.String("output", "", "write outputs JSON to specified file path instead of stdout")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -150,7 +151,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: run requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy run [--input <file>] [--task <name>] [--dir <dir>] [--path <dir>] [--verbose] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy run [--input <file>] [--task <name>] [--dir <dir>] [--path <dir>] [--verbose] [--output <file>] <file.wdl>")
 		return 2
 	}
 
@@ -214,6 +215,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 
 	// Execute.
+	var jsonBytes []byte
 	if *taskFlag != "" {
 		// Find the named task.
 		var taskDef *ast.Task
@@ -227,10 +229,22 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "error: task %q not found in %s\n", *taskFlag, file)
 			return 1
 		}
-		_, execErr := task.RunTask(ctx, taskDef, jsonInputs, runner, execRoot)
+		taskOutputs, execErr := task.RunTask(ctx, taskDef, jsonInputs, runner, execRoot)
 		if execErr != nil {
 			fmt.Fprintf(stderr, "error: %v\n", execErr)
 			fmt.Fprintf(stderr, "See %s/error.json for details\n", execRoot)
+			return 1
+		}
+		// Serialize task outputs with taskName.outputName keys.
+		var serErr error
+		jsonBytes, serErr = workflow.SerializeOutputs(*taskFlag, taskOutputs)
+		if serErr != nil {
+			fmt.Fprintf(stderr, "error: serializing task outputs: %v\n", serErr)
+			return 1
+		}
+		// Write outputs.json to execRoot for task runs.
+		if err := os.WriteFile(filepath.Join(execRoot, "outputs.json"), jsonBytes, 0644); err != nil {
+			fmt.Fprintf(stderr, "error: writing outputs.json: %v\n", err)
 			return 1
 		}
 	} else {
@@ -240,10 +254,18 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		wfName := doc.Workflows[0].Name
-		_, execErr := workflow.RunWorkflow(ctx, doc, wfName, jsonInputs, runner, execRoot)
+		wfOutputs, execErr := workflow.RunWorkflow(ctx, doc, wfName, jsonInputs, runner, execRoot)
 		if execErr != nil {
 			fmt.Fprintf(stderr, "error: %v\n", execErr)
 			fmt.Fprintf(stderr, "See %s/error.json for details\n", execRoot)
+			return 1
+		}
+		// Serialize workflow outputs with wfName.outputName keys.
+		// RunWorkflow already wrote outputs.json internally; we just need JSON for stdout.
+		var serErr error
+		jsonBytes, serErr = workflow.SerializeOutputs(wfName, wfOutputs)
+		if serErr != nil {
+			fmt.Fprintf(stderr, "error: serializing workflow outputs: %v\n", serErr)
 			return 1
 		}
 	}
@@ -253,8 +275,15 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		printVerboseOutput(execRoot, stderr)
 	}
 
-	// Success: print outputs.json path.
-	fmt.Fprintf(stdout, "Outputs written to %s/outputs.json\n", execRoot)
+	// Write outputs JSON to --output file or stdout.
+	if *outputFlag != "" {
+		if err := os.WriteFile(*outputFlag, jsonBytes, 0644); err != nil {
+			fmt.Fprintf(stderr, "error: writing output file %q: %v\n", *outputFlag, err)
+			return 1
+		}
+	} else {
+		fmt.Fprintf(stdout, "%s\n", jsonBytes)
+	}
 	return 0
 }
 

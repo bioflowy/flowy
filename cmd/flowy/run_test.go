@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,7 @@ func TestRunMissingWDLArg(t *testing.T) {
 }
 
 // TestRunWorkflow tests that "flowy run valid_workflow.wdl" with a mock runner
-// returns exit 0, stderr contains "Execution directory:", and stdout contains "outputs.json".
+// returns exit 0, stderr contains "Execution directory:", and stdout is valid JSON.
 func TestRunWorkflow(t *testing.T) {
 	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
 	code, stdout, stderr := runArgsWithRunner([]string{"run", wdlPath}, successMock())
@@ -62,12 +63,13 @@ func TestRunWorkflow(t *testing.T) {
 	if !strings.Contains(stderr, "Execution directory:") {
 		t.Errorf("expected stderr to contain 'Execution directory:', got %q", stderr)
 	}
-	if !strings.Contains(stdout, "outputs.json") {
-		t.Errorf("expected stdout to contain 'outputs.json', got %q", stdout)
+	if !json.Valid([]byte(strings.TrimSpace(stdout))) {
+		t.Errorf("expected stdout to be valid JSON, got %q", stdout)
 	}
 }
 
 // TestRunWithInput tests that --input loads JSON and passes inputs to RunWorkflow.
+// stdout must be valid JSON.
 func TestRunWithInput(t *testing.T) {
 	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
 	inputPath := filepath.Join(testdataDir(), "inputs.json")
@@ -78,12 +80,13 @@ func TestRunWithInput(t *testing.T) {
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q, stdout: %q)", code, stderr, stdout)
 	}
-	if !strings.Contains(stdout, "outputs.json") {
-		t.Errorf("expected stdout to contain 'outputs.json', got %q", stdout)
+	if !json.Valid([]byte(strings.TrimSpace(stdout))) {
+		t.Errorf("expected stdout to be valid JSON, got %q", stdout)
 	}
 }
 
 // TestRunTask tests that --task runs a single task instead of the workflow.
+// stdout must be valid JSON with taskName.outputName keys.
 func TestRunTask(t *testing.T) {
 	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
 	taskInputPath := filepath.Join(testdataDir(), "task_inputs.json")
@@ -94,8 +97,19 @@ func TestRunTask(t *testing.T) {
 	if code != 0 {
 		t.Errorf("expected exit 0 for --task, got %d (stderr: %q, stdout: %q)", code, stderr, stdout)
 	}
-	if !strings.Contains(stdout, "outputs.json") {
-		t.Errorf("expected stdout to contain 'outputs.json' for task run, got %q", stdout)
+	trimmed := strings.TrimSpace(stdout)
+	if !json.Valid([]byte(trimmed)) {
+		t.Errorf("expected stdout to be valid JSON for task run, got %q", stdout)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &got); err != nil {
+		t.Fatalf("unmarshal stdout: %v", err)
+	}
+	// Verify keys have say_hello. prefix.
+	for k := range got {
+		if !strings.HasPrefix(k, "say_hello.") {
+			t.Errorf("expected key to have 'say_hello.' prefix, got %q", k)
+		}
 	}
 }
 
@@ -155,5 +169,86 @@ func TestRunDefaultExecDir(t *testing.T) {
 	// Execution directory line should contain "flowy-" prefix.
 	if !strings.Contains(stderr, "flowy-") {
 		t.Errorf("expected stderr to contain 'flowy-' prefix in exec dir, got %q", stderr)
+	}
+}
+
+// TestRunWorkflowStdoutJSON: workflow run stdout is valid JSON with entityName.outputName keys.
+func TestRunWorkflowStdoutJSON(t *testing.T) {
+	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
+	code, stdout, stderr := runArgsWithRunner([]string{"run", wdlPath}, successMock())
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr: %q)", code, stderr)
+	}
+	trimmed := strings.TrimSpace(stdout)
+	var got map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &got); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %q", err, stdout)
+	}
+	// greet workflow has no output block so got should be empty map — that's still valid JSON.
+	// Verify stdout contains ONLY JSON: no "Outputs written to" text.
+	if strings.Contains(stdout, "Outputs written to") {
+		t.Errorf("stdout must not contain 'Outputs written to', got %q", stdout)
+	}
+}
+
+// TestRunStdoutIsValidJSON: json.Unmarshal(stdout) succeeds on workflow run.
+func TestRunStdoutIsValidJSON(t *testing.T) {
+	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
+	code, stdout, stderr := runArgsWithRunner([]string{"run", wdlPath}, successMock())
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr: %q)", code, stderr)
+	}
+	if !json.Valid([]byte(strings.TrimSpace(stdout))) {
+		t.Errorf("stdout is not valid JSON: %q", stdout)
+	}
+}
+
+// TestRunWithOutputFlag: --output /tmp/out.json writes JSON to that path; stdout is empty.
+func TestRunWithOutputFlag(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "out.json")
+	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
+	code, stdout, stderr := runArgsWithRunner(
+		[]string{"run", "--output", outPath, wdlPath},
+		successMock(),
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr: %q)", code, stderr)
+	}
+	// stdout should be empty when --output flag is used.
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("expected empty stdout with --output flag, got %q", stdout)
+	}
+	// The specified file should exist and contain valid JSON.
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("reading output file %q: %v", outPath, err)
+	}
+	if !json.Valid(data) {
+		t.Errorf("output file %q is not valid JSON: %q", outPath, data)
+	}
+}
+
+// TestRunTaskStdoutJSON: --task run stdout is valid JSON with taskName.outputName keys.
+func TestRunTaskStdoutJSON(t *testing.T) {
+	wdlPath := filepath.Join(testdataDir(), "valid_workflow.wdl")
+	taskInputPath := filepath.Join(testdataDir(), "task_inputs.json")
+	code, stdout, stderr := runArgsWithRunner(
+		[]string{"run", "--task", "say_hello", "--input", taskInputPath, wdlPath},
+		successMock(),
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0 for --task, got %d (stderr: %q)", code, stderr)
+	}
+	trimmed := strings.TrimSpace(stdout)
+	var got map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &got); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %q", err, stdout)
+	}
+	// Verify keys have say_hello. prefix.
+	for k := range got {
+		if !strings.HasPrefix(k, "say_hello.") {
+			t.Errorf("expected key prefix 'say_hello.', got %q", k)
+		}
 	}
 }
