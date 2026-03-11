@@ -26,12 +26,31 @@ write_objects_task
 
 
 # =============================================================================
-# Multiline string literals — WDL 1.2 expression-context heredoc syntax
+# Sub-workflow calls — out of scope for v1 (stabilize call/scatter/if first)
 # =============================================================================
-# WDL 1.2 supports multiline string literals using <<<...>>> in expression
-# context (outside of command blocks). This differs from heredoc command blocks
-# and is not yet implemented in flowy's parser.
-# Affects: multiline_strings1, multiline_strings2, multiline_strings3,
-#          multiline_strings4, multiline_string_placeholders.
-multiline_strings
-multiline_string_placeholders
+# Calling an imported workflow as a sub-workflow is not yet supported.
+# The checker only registers task call outputs, not workflow call outputs.
+# Affects: call_example, test_input_keyword, test_after, allow_nested,
+#          call_imported, and the sub-workflow "main" test.
+call_example
+test_input_keyword
+test_after
+allow_nested
+call_imported
+main
+
+# =============================================================================
+# Deferred input defaults — workflow inputs referencing call outputs
+# =============================================================================
+# WDL 1.2 allows input defaults like `Int y = d1.out` that reference call
+# outputs. Flowy evaluates input defaults eagerly before calls execute.
+# Fixing requires fundamentally changing input binding to support deferred
+# evaluation, which is invasive and the pattern is rarely used in practice.
+input_ref_call
+
+# =============================================================================
+# read_tsv with Object return type — Object type not implemented (deprecated)
+# =============================================================================
+# read_tsv_task uses read_tsv() returning Array[Object], which requires the
+# Object type. Object was deprecated in WDL 1.2.
+read_tsv_task

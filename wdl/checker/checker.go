@@ -103,6 +103,10 @@ func Check(doc *ast.Document) (TypeEnv, []error) {
 func checkTask(task *ast.Task, structDefs map[string]*ast.StructDef) (*Scope, []error) {
 	scope := newScope(nil)
 
+	// Register the WDL 1.2 implicit `task` variable as a StructType.
+	// This enables expressions like task.name, task.cpu, task.memory, etc.
+	scope.define("task", taskImplicitType(task))
+
 	// Pass 1: collect all declarations (inputs, private decls, outputs).
 	allDecls := make([]*ast.Decl, 0, len(task.Inputs)+len(task.Decls)+len(task.Outputs))
 	allDecls = append(allDecls, task.Inputs...)
@@ -686,4 +690,41 @@ func collectIdents(expr ast.Expr) []string {
 	}
 
 	return result
+}
+
+// taskImplicitType builds the StructType for the WDL 1.2 implicit `task` variable.
+// The task variable exposes runtime metadata: name, container, cpu, memory,
+// return_code (output-only), meta, and parameter_meta.
+func taskImplicitType(task *ast.Task) types.StructType {
+	// Build meta sub-struct from task.Meta keys.
+	metaMembers := make(map[string]types.Type, len(task.Meta))
+	for k := range task.Meta {
+		metaMembers[k] = types.AnyType{}
+	}
+
+	// Build parameter_meta sub-struct from task.ParamMeta keys.
+	paramMetaMembers := make(map[string]types.Type, len(task.ParamMeta))
+	for k := range task.ParamMeta {
+		paramMetaMembers[k] = types.AnyType{}
+	}
+
+	return types.StructType{
+		Name: "__task",
+		Members: map[string]types.Type{
+			"name":           types.StringType{},
+			"id":             types.StringType{},
+			"container":      types.StringType{},
+			"cpu":            types.FloatType{},
+			"memory":         types.IntType{},
+			"gpu":            types.BooleanType{},
+			"fpga":           types.BooleanType{},
+			"disks":          types.IntType{},
+			"max_retries":    types.IntType{},
+			"return_code":    types.IntType{Optional: true},
+			"end_time":       types.FloatType{},
+			"meta":           types.StructType{Name: "__task_meta", Members: metaMembers},
+			"parameter_meta": types.StructType{Name: "__task_parameter_meta", Members: paramMetaMembers},
+			"ext":            types.AnyType{},
+		},
+	}
 }

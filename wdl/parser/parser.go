@@ -291,7 +291,9 @@ func isNameToken(tt lexer.TokenType) bool {
 		lexer.TokFileType, lexer.TokDirectoryType,
 		lexer.TokArray, lexer.TokMap, lexer.TokPair, lexer.TokObject,
 		// Other keywords usable as variable names in expression context
-		lexer.TokEnv, lexer.TokIn:
+		lexer.TokEnv, lexer.TokIn,
+		// WDL 1.2 implicit task variable (task.name, task.cpu, task.meta.*, etc.)
+		lexer.TokTask, lexer.TokMeta:
 		return true
 	}
 	return false

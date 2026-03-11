@@ -9,6 +9,7 @@ import (
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
+	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
 )
 
@@ -109,6 +110,12 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		return nil, fmt.Errorf("parsing runtime for task %q: %w", task.Name, err)
 	}
 
+	// Step 5b: inject WDL 1.2 implicit `task` variable into env.
+	// Available in command template and output section. return_code is only
+	// populated after container execution (set to NullValue here).
+	taskVar := buildTaskVariable(task, config)
+	env.Define("task", taskVar)
+
 	// Step 6: BuildCommand writes the command script (private decls already evaluated).
 	commandPath, err := BuildCommand(task, env, pm, execDir, workDir, sd)
 	if err != nil {
@@ -164,7 +171,11 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		}
 	}
 
-	// Step 10: collect and return output values.
+	// Step 10: update task.return_code now that execution is complete.
+	taskVar.Fields["return_code"] = values.IntValue{Value: int64(result.ExitCode)}
+	env.Define("task", taskVar)
+
+	// Step 11: collect and return output values.
 	execCtx := eval.ExecContext{
 		WorkDir:    workDir,
 		StdoutPath: stdoutPath,
@@ -177,4 +188,70 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 	}
 
 	return outputs, nil
+}
+
+// buildTaskVariable constructs the WDL 1.2 implicit `task` variable as a StructValue.
+// return_code is initially NullValue (only available in output section after execution).
+func buildTaskVariable(task *ast.Task, config DockerConfig) values.StructValue {
+	// Convert meta map to StructValue fields.
+	metaFields := make(map[string]values.Value, len(task.Meta))
+	for k, v := range task.Meta {
+		metaFields[k] = metaToValue(v)
+	}
+
+	// Convert parameter_meta map to StructValue fields.
+	paramMetaFields := make(map[string]values.Value, len(task.ParamMeta))
+	for k, v := range task.ParamMeta {
+		paramMetaFields[k] = metaToValue(v)
+	}
+
+	// CPU: convert NanoCPUs back to a Float. Default to 1.0 if unspecified.
+	cpuVal := float64(1)
+	if config.NanoCPUs > 0 {
+		cpuVal = float64(config.NanoCPUs) / 1e9
+	}
+
+	return values.StructValue{
+		Type: types.StructType{Name: "__task"},
+		Fields: map[string]values.Value{
+			"name":           values.StringValue{Value: task.Name},
+			"id":             values.StringValue{Value: task.Name},
+			"container":      values.StringValue{Value: config.Image},
+			"cpu":            values.FloatValue{Value: cpuVal},
+			"memory":         values.IntValue{Value: config.Memory},
+			"return_code":    values.NullValue{},
+			"meta":           values.StructValue{Type: types.StructType{Name: "__task_meta"}, Fields: metaFields},
+			"parameter_meta": values.StructValue{Type: types.StructType{Name: "__task_parameter_meta"}, Fields: paramMetaFields},
+		},
+	}
+}
+
+// metaToValue converts a meta/parameter_meta value (from AST map[string]any) to a WDL Value.
+func metaToValue(v any) values.Value {
+	switch val := v.(type) {
+	case string:
+		return values.StringValue{Value: val}
+	case int64:
+		return values.IntValue{Value: val}
+	case float64:
+		return values.FloatValue{Value: val}
+	case bool:
+		return values.BooleanValue{Value: val}
+	case nil:
+		return values.NullValue{}
+	case map[string]any:
+		fields := make(map[string]values.Value, len(val))
+		for k, item := range val {
+			fields[k] = metaToValue(item)
+		}
+		return values.StructValue{Type: types.StructType{Name: "__meta"}, Fields: fields}
+	case []any:
+		items := make([]values.Value, len(val))
+		for i, item := range val {
+			items[i] = metaToValue(item)
+		}
+		return values.ArrayValue{Items: items}
+	default:
+		return values.StringValue{Value: fmt.Sprintf("%v", v)}
+	}
 }

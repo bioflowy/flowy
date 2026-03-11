@@ -52,6 +52,9 @@ func (s *scheduler) collectFalseAliases(body []ast.WorkflowNode, result map[stri
 		case *ast.Call:
 			alias := callID(n)
 			result[alias] = values.NullValue{}
+		case *ast.Decl:
+			// Declarations inside a false conditional become None (Optional type).
+			result[n.Name] = values.NullValue{}
 		case *ast.Scatter:
 			// Scatter inside a false conditional — scatter alias becomes NullValue.
 			s.collectFalseAliases(n.Body, result)
