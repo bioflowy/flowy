@@ -88,7 +88,7 @@ func checkStructExpr(expr *ast.StructExpr, pos ast.Pos, scope *Scope, structDefs
 		}
 
 		// Validate field value type against declared field type.
-		if valueType.TypeName() != fieldType.TypeName() && !Coerces(valueType, fieldType) {
+		if valueType.TypeName() != fieldType.TypeName() && !CoercesWithStructs(valueType, fieldType, structDefs) {
 			errs = append(errs, &TypeError{
 				Pos:     pos,
 				Message: fmt.Sprintf("field %q: cannot use %s where %s is expected", m.Name, valueType.TypeName(), fieldType.TypeName()),

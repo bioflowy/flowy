@@ -1,6 +1,9 @@
 package checker
 
-import "github.com/bioflowy/flowy/wdl/types"
+import (
+	"github.com/bioflowy/flowy/wdl/ast"
+	"github.com/bioflowy/flowy/wdl/types"
+)
 
 // Coerces reports whether WDL coercion rules permit assigning a value of type
 // from to a variable of type to. Rules are applied shallowly (outermost type only).
@@ -84,4 +87,77 @@ func Coerces(from, to types.Type) bool {
 
 	// Rule 6: identity — same canonical type name (covers same-type T→T).
 	return from.TypeName() == to.TypeName()
+}
+
+// CoercesWithStructs extends Coerces with structural struct compatibility.
+// Two struct types are coercible if they have the same fields with compatible types.
+func CoercesWithStructs(from, to types.Type, structDefs map[string]*ast.StructDef) bool {
+	// Handle optional wrapping first.
+	if to.IsOptional() && !from.IsOptional() {
+		return CoercesWithStructs(from, to.WithOptional(false), structDefs)
+	}
+
+	// If non-struct types, delegate to basic Coerces.
+	ft, fromIsStruct := from.(types.StructType)
+	tt, toIsStruct := to.(types.StructType)
+
+	if !fromIsStruct || !toIsStruct {
+		// Handle compound types with potential struct elements.
+		switch f := from.(type) {
+		case types.ArrayType:
+			if t, ok := to.(types.ArrayType); ok {
+				return CoercesWithStructs(f.ItemType, t.ItemType, structDefs)
+			}
+		case types.MapType:
+			if t, ok := to.(types.MapType); ok {
+				return CoercesWithStructs(f.KeyType, t.KeyType, structDefs) &&
+					CoercesWithStructs(f.ValType, t.ValType, structDefs)
+			}
+		case types.PairType:
+			if t, ok := to.(types.PairType); ok {
+				return CoercesWithStructs(f.LeftType, t.LeftType, structDefs) &&
+					CoercesWithStructs(f.RightType, t.RightType, structDefs)
+			}
+		}
+		return Coerces(from, to)
+	}
+
+	// Same struct name: always compatible.
+	if ft.Name == tt.Name {
+		return true
+	}
+
+	// Different struct names: check structural compatibility.
+	if structDefs == nil {
+		return false
+	}
+	fromDef, ok1 := structDefs[ft.Name]
+	toDef, ok2 := structDefs[tt.Name]
+	if !ok1 || !ok2 {
+		return false
+	}
+
+	// Must have same number of members.
+	if len(fromDef.Members) != len(toDef.Members) {
+		return false
+	}
+
+	// Build a map from field name to type for the source struct.
+	fromFields := make(map[string]types.Type, len(fromDef.Members))
+	for _, m := range fromDef.Members {
+		fromFields[m.Name] = m.Type
+	}
+
+	// Check each target field has a matching source field with compatible type.
+	for _, m := range toDef.Members {
+		ft, exists := fromFields[m.Name]
+		if !exists {
+			return false
+		}
+		if !CoercesWithStructs(ft, m.Type, structDefs) {
+			return false
+		}
+	}
+
+	return true
 }

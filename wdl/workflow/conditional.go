@@ -99,7 +99,7 @@ func (s *scheduler) executeBody(ctx context.Context, body []ast.WorkflowNode, en
 			mergeOutputs(result, outputs)
 
 		case *ast.Decl:
-			v, err := eval.Eval(n.Expr, env, eval.ExecContext{})
+			v, err := eval.EvalDecl(n.Expr, env, eval.ExecContext{StructDefs: child.structDefs()}, n.Type)
 			if err != nil {
 				return nil, fmt.Errorf("decl %q: %w", n.Name, err)
 			}

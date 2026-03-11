@@ -112,12 +112,11 @@ func (s *scheduler) run(ctx context.Context) error {
 		case *ast.Decl:
 			// Decls are synchronous — evaluate and bind immediately.
 			decl := node.node.(*ast.Decl)
-			v, err := eval.Eval(decl.Expr, s.env, eval.ExecContext{StructDefs: s.structDefs()})
+			v, err := eval.EvalDecl(decl.Expr, s.env, eval.ExecContext{StructDefs: s.structDefs()}, decl.Type)
 			if err != nil {
 				_ = g.Wait()
 				return fmt.Errorf("decl %q: %w", decl.Name, err)
 			}
-			v = coerceToType(v, decl.Type)
 			s.env.Define(decl.Name, v)
 			s.done[id] = true
 

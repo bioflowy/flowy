@@ -534,7 +534,7 @@ func checkExprType(decl *ast.Decl, scope *Scope, structDefs map[string]*ast.Stru
 	}
 
 	// Check that fromType is assignable to decl.Type.
-	if fromType.TypeName() != decl.Type.TypeName() && !Coerces(fromType, decl.Type) {
+	if fromType.TypeName() != decl.Type.TypeName() && !CoercesWithStructs(fromType, decl.Type, structDefs) {
 		errs = append(errs, &TypeError{
 			Pos:     decl.Pos,
 			Message: fmt.Sprintf("cannot use %s where %s is expected", fromType.TypeName(), decl.Type.TypeName()),

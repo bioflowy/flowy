@@ -25,18 +25,33 @@ func stdDefined(args []values.Value, _ ExecContext) (values.Value, error) {
 	return values.BooleanValue{Type: types.BooleanType{}, Value: !isNull}, nil
 }
 
-// stdKeys returns an ArrayValue of map keys in insertion order.
-// WDL signature: Array[K] keys(Map[K,V])
-func stdKeys(args []values.Value, _ ExecContext) (values.Value, error) {
-	mv := args[0].(values.MapValue)
-	items := make([]values.Value, len(mv.Entries))
-	for i, e := range mv.Entries {
-		items[i] = e.Key
+// stdKeys returns an ArrayValue of map keys in insertion order,
+// or struct field names as Array[String].
+// WDL signature: Array[K] keys(Map[K,V]) | Array[String] keys(Struct)
+func stdKeys(args []values.Value, ctx ExecContext) (values.Value, error) {
+	switch v := args[0].(type) {
+	case values.MapValue:
+		items := make([]values.Value, len(v.Entries))
+		for i, e := range v.Entries {
+			items[i] = e.Key
+		}
+		return values.ArrayValue{
+			Type:  types.ArrayType{ItemType: v.Type.KeyType},
+			Items: items,
+		}, nil
+	case values.StructValue:
+		keys := StructKeys(v, ctx.StructDefs)
+		items := make([]values.Value, len(keys))
+		for i, k := range keys {
+			items[i] = values.StringValue{Type: types.StringType{}, Value: k}
+		}
+		return values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.StringType{}},
+			Items: items,
+		}, nil
+	default:
+		return nil, &EvalError{Message: fmt.Sprintf("keys() requires Map or Struct argument, got %T", args[0])}
 	}
-	return values.ArrayValue{
-		Type:  types.ArrayType{ItemType: mv.Type.KeyType},
-		Items: items,
-	}, nil
 }
 
 // stdValues returns an ArrayValue of map values in insertion order.

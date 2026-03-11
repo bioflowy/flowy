@@ -96,7 +96,7 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		if decl.Expr == nil {
 			continue
 		}
-		v, err := eval.Eval(decl.Expr, env, eval.ExecContext{StructDefs: sd, WorkDir: workDir})
+		v, err := eval.EvalDecl(decl.Expr, env, eval.ExecContext{StructDefs: sd, WorkDir: workDir}, decl.Type)
 		if err != nil {
 			return nil, fmt.Errorf("evaluating private decl %q for task %q: %w", decl.Name, task.Name, err)
 		}

@@ -398,6 +398,14 @@ func evalComparison(op int, left, right values.Value, pos ast.Pos) (values.Value
 		}
 	}
 
+	// WDL spec: File/Directory ↔ String comparison coerces to string.
+	if op == lexer.TokEqEq || op == lexer.TokNotEq {
+		cl, cr, coerced := CoerceForComparison(left, right)
+		if coerced {
+			return evalComparison(op, cl, cr, pos)
+		}
+	}
+
 	// Deep equality for compound types (Array, Map, Pair)
 	if op == lexer.TokEqEq || op == lexer.TokNotEq {
 		eq, err := valuesEqual(left, right)
@@ -607,6 +615,7 @@ func evalIndex(e *ast.IndexExpr, env *Env, ctx ExecContext) (values.Value, error
 
 // primitiveEqual compares two primitive WDL values by their concrete Value fields.
 // Returns false for compound types (not valid map keys per WDL spec).
+// Handles File↔String coercion: File and String values are compared by their string content.
 func primitiveEqual(a, b values.Value) bool {
 	switch av := a.(type) {
 	case values.BooleanValue:
@@ -617,16 +626,38 @@ func primitiveEqual(a, b values.Value) bool {
 		if bv, ok := b.(values.IntValue); ok {
 			return av.Value == bv.Value
 		}
+		if bv, ok := b.(values.FloatValue); ok {
+			return float64(av.Value) == bv.Value
+		}
 	case values.FloatValue:
 		if bv, ok := b.(values.FloatValue); ok {
 			return av.Value == bv.Value
+		}
+		if bv, ok := b.(values.IntValue); ok {
+			return av.Value == float64(bv.Value)
 		}
 	case values.StringValue:
 		if bv, ok := b.(values.StringValue); ok {
 			return av.Value == bv.Value
 		}
+		if bv, ok := b.(values.FileValue); ok {
+			return av.Value == bv.Value
+		}
+		if bv, ok := b.(values.DirectoryValue); ok {
+			return av.Value == bv.Value
+		}
 	case values.FileValue:
 		if bv, ok := b.(values.FileValue); ok {
+			return av.Value == bv.Value
+		}
+		if bv, ok := b.(values.StringValue); ok {
+			return av.Value == bv.Value
+		}
+	case values.DirectoryValue:
+		if bv, ok := b.(values.DirectoryValue); ok {
+			return av.Value == bv.Value
+		}
+		if bv, ok := b.(values.StringValue); ok {
 			return av.Value == bv.Value
 		}
 	}
