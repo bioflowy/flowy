@@ -148,6 +148,7 @@ var keywords = map[string]TokenType{
 	"Pair":       TokPair,
 	"Object":     TokObject,
 	"null":       TokNull,
+	"None":       TokNull,
 	"true":       TokTrue,
 	"false":      TokFalse,
 }

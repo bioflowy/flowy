@@ -18,6 +18,11 @@ import "github.com/bioflowy/flowy/wdl/types"
 //	                                Item types are compared by TypeName (shallow).
 //	Rule 6 (identity): if from.TypeName() == to.TypeName(), return true.
 func Coerces(from, to types.Type) bool {
+	// Rule 0: None → T? (null/None is assignable to any optional type)
+	if _, isAny := from.(types.AnyType); isAny && from.IsOptional() && to.IsOptional() {
+		return true
+	}
+
 	// Rule 1: T → T?
 	// If the target is optional and the source is not, strip the optional flag
 	// from the target and retry. This handles Int→Int?, String→String?, etc.
