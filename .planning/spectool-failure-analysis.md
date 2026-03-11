@@ -1,275 +1,179 @@
-# Spectool Conformance Test Failure Analysis
+# Spectool Failure Analysis
 
 **Date:** 2026-03-11
-**Baseline:** 45/160 tests passing
-**After fixes:** 79/160 tests passing (+34)
+**Baseline:** 124/160 passed (36 failures, 1 skipped)
 
-## Summary
+## Summary Table
 
-All 10 investigated failures are flowy bugs or missing features. None are spec-side issues.
+| # | Test | Category | Root Cause |
+|---|------|----------|------------|
+| 1 | hello.wdl | **flowy bug** | `FileValue` retains relative path; PathMap stores absolute path; container path translation fails |
+| 2 | struct_to_struct.wdl | **unsupported feature** | Struct-to-struct coercion not implemented in `Coerces()` |
+| 3 | nested_access.wdl | **flowy bug** | Workflow input binding uses untyped JSON conversion — struct inputs become `MapValue` |
+| 4 | file_directory_equality.wdl | **flowy bug** | `PathMap.AddFile/AddDir` don't canonicalize `..` or trailing slash before key lookup |
+| 5 | flags_task.wdl | **flowy bug** | Same relative path → container translation failure as test 1 |
+| 6 | test_placeholders_task.wdl | **flowy bug** | `read_lines(File)` in command template evaluated on host with container-translated path |
+| 7 | input_hint_task.wdl | **flowy bug** | Task struct inputs deserialized as `MapValue` (no `StructType` case in `jsonToWDLValue`) |
+| 8 | test_scatter.wdl | **flowy bug** | False cycle: scatter-local declarations create self-loop in DAG dependency tracking |
+| 9 | test_allow_nested_inputs.wdl | **unsupported feature** | `allow_nested_inputs` workflow hint not implemented |
+| 10 | read_string_task.wdl | **flowy bug** | Private decl evaluation missing `WorkDir` in `ExecContext`; `write_lines` temp file not container-accessible |
 
-| # | Test | Category | Root Cause | Impact | Status |
-|---|------|----------|------------|--------|--------|
-| 1 | hello.wdl | Missing feature | Shorthand call syntax not parsed | ~10+ tests | FIXED |
-| 2 | optionals.wdl | Missing feature | `None` keyword not recognized | ~8+ tests | FIXED |
-| 3 | test_pairs.wdl | Bug | Pair `.left`/`.right` rejected by type checker | ~2+ tests | FIXED |
-| 4 | nested_placeholders.wdl | Missing feature | Single-quoted strings not supported | ~1+ tests | FIXED |
-| 5 | test_struct.wdl | Bug | Output block can't reference earlier declarations in same block | ~1+ tests | FIXED |
-| 6 | if_else.wdl | Bug | Conditional call outputs not wrapped as Optional | ~3+ tests | FIXED |
-| 7 | test_map_ordering.wdl | Bug | False circular dependency in scatter | ~1+ tests | FIXED |
-| 8 | test_cross.wdl | Missing feature | Array equality comparison not implemented | ~2+ tests | FIXED |
-| 9 | test_length.wdl | Missing feature | `length()` only accepts Array, not Map/String | ~1+ tests | FIXED |
-| 10 | (all task tests) | Bug | CLI `--task` flag ignored after positional arg | ~30+ task tests | FIXED |
+## Detailed Analysis
 
----
+### 1. hello.wdl — "no output produced"
 
-## Issue 1: WDL 1.2 Shorthand Call Syntax
+**Category: flowy bug**
 
-**Tests:** hello.wdl, workflow_with_comments.wdl, test_scatter.wdl, test_conditional.wdl, ternary.wdl, test_range.wdl, is_defined.wdl, test_contains.wdl, etc.
+When spectool runs with `"hello.infile": "data/greetings.txt"` (relative path), the workflow's `bindWorkflowInputs` converts the JSON string using `jsonToValueUntyped()` — which produces a `StringValue`, not a `FileValue`. The `StringValue` is passed through to the task call. Task `BindInputs` then creates a `FileValue("data/greetings.txt")`. In `collectPaths`, `pm.AddFile("data/greetings.txt")` resolves the relative path to an absolute path (e.g. `/tmp/spectool-tests/data/greetings.txt`) and stores it in the PathMap under that absolute key. However, the `FileValue` in the environment retains the original relative path string `"data/greetings.txt"`. When `translateEnv` calls `pm.TranslateValue(FileValue("data/greetings.txt"))`, the lookup in `pm.hostToContainer` fails because the key was stored as the absolute path, not the relative one. As a result, the path is not translated to `/mnt/inputs/greetings.txt`, and the container command contains `grep -E 'hello.*' 'data/greetings.txt'` which fails.
 
-**Error:**
-```
-expected token type 70, got 3 ("infile")
-  --> hello.wdl:30:7
-   | call hello_task { infile, pattern }
-```
+**Fix location:** `wdl/task/inputs.go`, in `jsonToWDLValue` for `FileType`/`DirectoryType`: resolve the path to absolute when creating `FileValue`, not just during `collectPaths`. Alternatively, canonicalize paths in `PathMap.AddFile` and also canonicalize on lookup in `TranslateValue`.
 
-**Root Cause:** `wdl/parser/parser.go:1062-1095` (`parseCall()`)
-
-The parser requires `input:` keyword inside `{ }` blocks. WDL 1.2 allows shorthand: `call task { input1, input2 }` is equivalent to `call task { input: input1 = input1, input2 = input2 }`.
-
-Current code at line 1065 checks `if p.peek().Type == lexer.TokInput` and skips input parsing otherwise.
-
-**Category:** Missing feature
+**Affects:** hello.wdl, hello_parallel.wdl, flags_task.wdl (test 5)
 
 ---
 
-## Issue 2: `None` Keyword Not Supported
+### 2. struct_to_struct.wdl — "no output produced"
 
-**Tests:** optionals.wdl, non_empty_optional.wdl, test_select_first.wdl, compare_optionals.wdl, placeholder_coercion.wdl, placeholder_none.wdl, etc.
+**Category: unsupported feature**
 
-**Error:**
-```
-undefined name "None"
-  --> optionals.wdl:11:7
-   | String? also_maybe_five_but_is_not = None
-```
+The test assigns `D my_d = my_b` where `my_b` is of type `B` and `my_d` expects type `D`. According to WDL 1.2 spec, this coercion is legal if the structs have the same field names with compatible types (structural compatibility). `B` has fields `{a_struct: A, i: Int}` and `D` has `{a_struct: C, i: Int}`, where `A` and `C` are both `{s: String}`. The type checker in `wdl/checker/coerce.go` has no `StructType` case in the `Coerces()` function and therefore rejects the assignment as a type error.
 
-**Root Cause:** `wdl/lexer/lexer.go:116-153` (keywords map)
-
-The lexer has `TokNull` mapped to `"null"`, but no `TokNone` mapped to `"None"`. WDL 1.2 uses `None` as the explicit null literal for optional types. The lexer tokenizes `None` as `TokIdent`, so the evaluator treats it as an undefined variable.
-
-**Category:** Missing feature
-
-**Fix:** Add `TokNone` token, map `"None"` in keywords, handle in parser and evaluator to produce NullValue.
+**Error:** `cannot use B where D is expected`
 
 ---
 
-## Issue 3: Pair `.left`/`.right` Field Access Rejected by Type Checker
+### 3. nested_access.wdl — "no output produced"
 
-**Tests:** test_pairs.wdl
+**Category: flowy bug**
 
-**Error:**
-```
-field access on non-struct type Pair[Int,Array[String]]
-  --> test_pairs.wdl:8:5
-   | Int five = data.left
-```
+`bindWorkflowInputs` in `wdl/workflow/convert.go` uses `jsonToValueUntyped()` (line 115) regardless of the declared input type. This function converts JSON objects (`map[string]interface{}`) to `MapValue`, not `StructValue`. So the `Array[Experiment]+` input becomes an array of `MapValue` items. When the workflow output evaluates `first_experiment.variables[0]`, it calls `GetExpr` on a `MapValue`, which fails.
 
-**Root Cause:** `wdl/checker/struct_check.go:116-166` (`checkGetExpr()`)
+**Error:** `eval error: cannot access field "variables" on values.MapValue`
 
-The type checker only accepts `types.StructType` for field access (line 136). Pair field access `.left`/`.right` is rejected. However, the evaluator at `wdl/eval/eval.go:357-365` (`evalGet`) DOES correctly handle `values.PairValue` with "left" and "right" — the type checker blocks execution before reaching it.
-
-**Category:** Bug (type checker too restrictive)
-
-**Fix:** Extend `checkGetExpr` to accept `types.PairType` and validate "left"/"right" fields.
+**Fix location:** `wdl/workflow/convert.go` — `bindWorkflowInputs` should use typed JSON conversion that considers the declared input type, converting JSON objects to `StructValue` when the expected type is a struct.
 
 ---
 
-## Issue 4: Single-Quoted Strings Not Supported
+### 4. file_directory_equality.wdl — "boolean mismatch: expected true, got false"
 
-**Tests:** nested_placeholders.wdl, concat_optional.wdl, test_sep.wdl
+**Category: flowy bug**
 
-**Error:**
-```
-unexpected character: '
-  --> nested_placeholders.wdl:11:29
-   | String s = "~{if b then '~{1 + i}' else '0'}"
-```
+The spec test provides `file_a = "data/hello.txt"` and `file_b = "data/../data/hello.txt"` (different string representations of the same file), and `dir_a = "data/testdir/"` (trailing slash) vs `dir_b = "data/testdir"` (no slash).
 
-**Root Cause:** `wdl/lexer/lexer.go:379-385` (string handling)
+In `wdl/task/pathmap.go`, `AddFile` only resolves relative paths to absolute (by checking `!filepath.IsAbs()`). Since both paths are resolved to absolute, the `../` is NOT cleaned out. `AddFile("/tmp/.../data/../data/hello.txt")` gets stored as a new key because `"/tmp/.../data/../data/hello.txt"` ≠ `"/tmp/.../data/hello.txt"`, causing a hash-prefixed collision container path. Similarly, `AddDir("testdir/")` vs `AddDir("testdir")` gives different container paths because the key normalization doesn't strip the trailing slash before the first lookup. The container command then compares different paths and returns `false`.
 
-The lexer only recognizes `"` (double quote) as string delimiters. WDL 1.2 allows single-quoted strings (`'...'`), which are particularly useful inside string interpolations to avoid escaping.
-
-**Category:** Missing feature
-
-**Fix:** Add `case '\''` handling in `lexNormal` to enter string lexing mode with single-quote delimiter.
+**Fix location:** `wdl/task/pathmap.go` — apply `filepath.Clean()` to all paths (not just relative ones) before using them as map keys in `AddFile` and `AddDir`.
 
 ---
 
-## Issue 5: Output Block Cannot Reference Earlier Declarations
+### 5. flags_task.wdl — "number mismatch: expected 2, got 0"
 
-**Tests:** test_struct.wdl
+**Category: flowy bug**
 
-**Error:**
-```
-undefined variable "john"
-  --> test_struct.wdl:29:35
-   | Boolean has_account = defined(john.account)
-```
+Same relative file path → container path translation failure as test 1 (hello.wdl). Spectool runs with `"flags.infile": "data/greetings.txt"` (relative). The task's `FileValue` retains the relative path, which doesn't match the absolute path stored in `PathMap`. The container receives the literal relative path, which doesn't exist inside the container.
 
-**WDL code:**
+**Root cause is shared with tests 1 and hello_parallel.wdl.**
+
+---
+
+### 6. test_placeholders_task.wdl — "no output produced"
+
+**Category: flowy bug**
+
+The command template contains `~{sep(" ", read_lines(infile))}`. `BuildCommand` in `wdl/task/command.go` evaluates the command template using `translatedEnv`, where `infile` has already been replaced with its container path `/mnt/inputs/greetings.txt`. When `eval.Eval` encounters `read_lines(infile)`, it calls `stdReadLines` on the host, attempting to open `/mnt/inputs/greetings.txt` — a path that only exists inside the Docker container, not on the host filesystem.
+
+**Error:** `eval error: read_lines: cannot read file "/mnt/inputs/greetings.txt": open /mnt/inputs/greetings.txt: no such file or directory`
+
+**Fix:** `read_lines(infile)` (and other file-reading stdlib functions used in command templates) should be evaluated with the host path (pre-translation), and only the resulting string values should be embedded into the command. The command builder needs a two-phase approach: evaluate expressions with host paths, then translate file references in the final command string.
+
+---
+
+### 7. input_hint_task.wdl — "no output produced"
+
+**Category: flowy bug**
+
+In `wdl/task/inputs.go`, `jsonToWDLValue()` has no case for `types.StructType`. It falls through to the `default` branch which calls `jsonToValueUntyped()`, converting the JSON object `{"name": "Joe"}` into a `MapValue`. When the command template evaluates `~{defined(person.cv)}`, `person` is a `MapValue` and `GetExpr(person, "cv")` fails.
+
+**Error:** `eval error: cannot access field "cv" on values.MapValue`
+
+**Note:** `BindInputs` in `inputs.go` doesn't receive `structDefs` as a parameter, so even if a `StructType` case were added, it would need access to struct definitions to resolve field types recursively.
+
+**Related to test 3 (nested_access.wdl) — same underlying issue of untyped JSON deserialization.**
+
+---
+
+### 8. test_scatter.wdl — "no output produced"
+
+**Category: flowy bug**
+
+False cycle detection in workflow DAG when a scatter body contains a declaration that is referenced by a call within the same scatter block.
+
+The scatter body contains:
 ```wdl
-output {
-    Person john = Person { name: "John", account: BankAccount { ... } }
-    Boolean has_account = defined(john.account)  # references john above
-}
+String greeting = "~{salutation} ~{name}"
+call say_hello { greeting = greeting }
 ```
 
-**Root Cause:** `wdl/checker/checker.go` (output validation scope management)
+In `wdl/workflow/dag.go`, `collectBodyOutputNames` maps both the `greeting` declaration and `say_hello` call alias to the same owner ID `"scatter_1"`. This means `varToNodeID["greeting"] = "scatter_1"`. When `collectBodyDeps2` processes the call `say_hello`, it evaluates the input expression `IdentExpr("greeting")`. `collectExprDepsNode` finds `"greeting"` in `declVarToID`, returns `"scatter_1"` as a dependency — creating a self-loop: `scatter_1` depends on `scatter_1`.
 
-Declarations within the output block are not properly registered in scope for later declarations in the same block. The `validateGroups` function (lines 313-375) builds a dependency graph but doesn't make earlier output declarations visible to later ones.
+**Error:** `topological sort: workflow dependency graph contains a cycle`
 
-**Category:** Bug (scope management)
-
-**Fix:** Ensure output section declarations are added to the validation scope sequentially so later declarations can reference earlier ones.
+**Fix:** In `collectBodyDeps2`, filter out any dependency that maps to the current scatter/conditional node's own ID (self-dependencies within the same scatter/if block should not be considered DAG edges).
 
 ---
 
-## Issue 6: Conditional Call Outputs Not Wrapped as Optional
+### 9. test_allow_nested_inputs.wdl — "string mismatch: expected 'Hello John', got 'Hello Joe'"
 
-**Tests:** if_else.wdl, nested_if.wdl, test_conditional.wdl
+**Category: unsupported feature**
 
-**Error:**
-```
-cannot access field "greeting" on values.NullValue
-  --> if_else.wdl:34:44
-   | String greeting = select_first([morning.greeting, afternoon.greeting])
-```
-
-**WDL code:**
-```wdl
-if (is_morning) {
-    call greet as morning { input: time = "morning" }
-}
-if (!is_morning) {
-    call greet as afternoon { input: time = "afternoon" }
-}
-output {
-    String greeting = select_first([morning.greeting, afternoon.greeting])
-}
-```
-
-**Root Cause:** `wdl/eval/eval.go` (conditional evaluation)
-
-When a call is inside an unexecuted conditional branch, accessing its output (`morning.greeting`) should return a NullValue that can be placed in an array for `select_first()`. Instead, the field access `.greeting` on NullValue throws an error. The type checker at `checker.go:215-226` correctly promotes conditional call outputs to Optional type, but the evaluator doesn't handle field access on NullValue gracefully.
-
-**Category:** Bug (conditional execution semantics)
-
-**Fix:** `evalGet` should return NullValue when accessing a field on NullValue (propagate null), rather than throwing an error.
+When the `allow_nested_inputs: true` workflow hint is set, inputs with fully-qualified names like `"test_allow_nested_inputs.nested.name": "John"` should override the default value of the task input `nested.name`. flowy has no implementation of `allow_nested_inputs` (no references to `allow_nested` in the codebase). The default value `"Joe"` is used instead of the provided `"John"`.
 
 ---
 
-## Issue 7: False Circular Dependency in Scatter
+### 10. read_string_task.wdl — "no output produced"
 
-**Tests:** test_map_ordering.wdl
+**Category: flowy bug**
 
-**Error:**
+Private task declarations that call `write_*` functions don't have `WorkDir` set in `ExecContext`, causing temp files to be created in the OS temp directory instead of the task's work directory.
+
+In `wdl/task/task.go` line 99:
+```go
+v, err := eval.Eval(decl.Expr, env, eval.ExecContext{StructDefs: sd})
 ```
-cycle: circular dependency among declarations: [i ints]
-```
+`WorkDir` is not set. `write_lines(["this","file","has","five","lines"])` calls `writeTempDir("wdl-write-*", ctx)` which falls back to `os.MkdirTemp("", ...)` creating `/tmp/wdl-write-*/lines.txt`. This temp directory is not bind-mounted into the container. The command becomes `cat /tmp/wdl-write-971827486/lines.txt`, which fails inside the container.
 
-**WDL code:**
-```wdl
-scatter (ints in as_pairs(int_to_int)) {
-    Array[Int] i = [ints.left, ints.right]
-}
-output {
-    Array[Array[Int]] ints = i
-}
-```
+**Error:** `task "read_string" failed with exit code 1: cat: /tmp/wdl-write-.../lines.txt: No such file or directory`
 
-**Root Cause:** `wdl/checker/checker.go:313-352` (`validateGroups`)
-
-The dependency graph treats the scatter variable `ints` (from `scatter (ints in ...)`) and the output declaration `ints` as the same name, creating a false cycle. The scatter variable `ints` is a loop variable, not a declaration, and the output `ints = i` references `i` (the scatter body result), not the scatter variable `ints`.
-
-**Category:** Bug (incorrect cycle detection)
-
-**Fix:** Exclude scatter variables from peer declaration cycle detection, or use fully qualified names to distinguish scatter variables from output declarations.
+**Fix:** Change line 99 in `wdl/task/task.go` to include `WorkDir: workDir` in the `ExecContext`. This would cause `write_lines` to create files in `workDir` (which is mounted as `/mnt/outputs`), and the existing path substitution logic in `BuildCommand` would correctly translate the path for the container.
 
 ---
 
-## Issue 8: Array Equality Comparison Not Implemented
+## Failure Grouping by Root Cause
 
-**Tests:** test_cross.wdl, test_zip.wdl, test_flatten.wdl, array_map_equality.wdl
+### Group A: Relative path → container path translation (3 tests)
+- hello.wdl, hello_parallel.wdl, flags_task.wdl
+- `FileValue` retains relative path string, but `PathMap` stores absolute path as key
 
-**Error:**
-```
-cannot compare values.ArrayValue and values.ArrayValue
-```
+### Group B: Untyped JSON deserialization of struct inputs (3 tests)
+- nested_access.wdl, input_hint_task.wdl (+ likely others)
+- `jsonToValueUntyped()` creates `MapValue` instead of `StructValue` for struct-typed inputs
 
-**Root Cause:** `wdl/eval/eval.go:239-315` (`evalComparison`)
+### Group C: Command template evaluation with container paths (1 test)
+- test_placeholders_task.wdl
+- File-reading stdlib functions in command templates fail because paths are already container-translated
 
-The comparison function handles Int, Float, Boolean, and String, but not Array, Map, or Pair. WDL spec requires that compound types support equality comparison (element-wise for arrays, entry-wise for maps).
+### Group D: False cycle in DAG (1 test)
+- test_scatter.wdl
+- Scatter-internal declaration referenced by scatter-internal call creates false self-dependency
 
-**Category:** Missing feature
+### Group E: PathMap path canonicalization (1 test)
+- file_directory_equality.wdl
+- Missing `filepath.Clean()` and trailing slash normalization
 
-**Fix:** Add cases for `values.ArrayValue`, `values.MapValue`, and `values.PairValue` in `evalComparison` with recursive element-wise comparison.
+### Group F: Missing WorkDir in private decl evaluation (1 test)
+- read_string_task.wdl
+- `write_*` temp files created outside container-mounted directories
 
----
-
-## Issue 9: `length()` Only Accepts Array
-
-**Tests:** test_length.wdl
-
-**Error:**
-```
-length: expected ArrayValue, got values.MapValue
-```
-
-**Root Cause:** `wdl/eval/stdlib_array.go:48-58` (`stdLength`)
-
-The function type-asserts to `values.ArrayValue` only (line 53-54). WDL spec requires `length()` to work on:
-- `Array[X]` → number of elements
-- `Map[K,V]` → number of key-value pairs
-- `String` → number of characters (WDL 1.2)
-
-**Category:** Missing feature
-
-**Fix:** Add `case values.MapValue` (return `len(m.Entries)`) and `case values.StringValue` (return `len(s.Value)`) to `stdLength`.
-
----
-
-## Issue 10: CLI `--task` Flag Ignored After Positional Arg
-
-**Tests:** All spectool task-level tests (~30+ tests)
-
-**Error:**
-```
-no workflow defined in sum_task.wdl (use --task to run a task)
-```
-
-**Context:** spectool runs `flowy run --input inputs.json path.wdl --task taskname` — the `--task` flag comes AFTER the positional `path.wdl` argument.
-
-**Root Cause:** `cmd/flowy/main.go:137-158` (`runRun`)
-
-Go's `flag.FlagSet` stops parsing flags when it encounters a positional argument. Flags after the positional arg are silently ignored. The command line `flowy run --input inputs.json path.wdl --task taskname` parses `--input` correctly but treats `--task taskname` as additional positional args.
-
-**Category:** Bug (CLI argument parsing)
-
-**Fix:** Pre-process args to extract the WDL file path and re-order flags before positional args, or switch to a CLI library that supports mixed flag/positional ordering (e.g., pflag).
-
----
-
-## Priority Ranking by Test Impact
-
-1. **Issue 10 (CLI arg ordering)** — ~30+ task tests. Single fix, huge impact.
-2. **Issue 1 (Shorthand call syntax)** — ~10+ workflow tests. Parser enhancement.
-3. **Issue 2 (None keyword)** — ~8+ tests. Lexer/parser/evaluator change.
-4. **Issue 6 (Conditional call outputs)** — ~3+ tests. Evaluator fix.
-5. **Issue 8 (Array equality)** — ~2+ tests. Evaluator enhancement.
-6. **Issue 3 (Pair field access)** — ~2+ tests. Type checker fix.
-7. **Issue 4 (Single-quoted strings)** — ~1+ tests. Lexer enhancement.
-8. **Issue 9 (length on Map)** — ~1+ tests. Small stdlib fix.
-9. **Issue 5 (Output scope)** — ~1+ tests. Scope management fix.
-10. **Issue 7 (Scatter cycle)** — ~1+ tests. Cycle detection fix.
+### Group G: Unsupported features (2 tests)
+- struct_to_struct.wdl — struct-to-struct coercion
+- test_allow_nested_inputs.wdl — `allow_nested_inputs` hint
