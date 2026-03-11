@@ -153,7 +153,8 @@ func evalString(parts []ast.StringPart, env *Env, ctx ExecContext) (string, erro
 		case *ast.PlaceholderPart:
 			v, err := Eval(p.Expr, env, ctx)
 			if err != nil {
-				return "", err
+				// WDL 1.2: errors in string placeholders evaluate to empty string.
+				continue
 			}
 			sb.WriteString(valueToString(v, p.Options))
 		}
