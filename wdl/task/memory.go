@@ -23,6 +23,19 @@ var memUnits = map[string]float64{
 	"TiB":   1024 * 1024 * 1024 * 1024,
 }
 
+// splitNumberUnit splits a concatenated number+unit string like "1GB" into ("1", "GB").
+// Returns empty strings if the input doesn't match the expected pattern.
+func splitNumberUnit(s string) (string, string) {
+	// Find the first byte that is a letter (start of unit suffix).
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return s[:i], s[i:]
+		}
+	}
+	return "", ""
+}
+
 // ParseMemoryString converts a WDL memory string to an int64 byte count.
 // Supported formats:
 //   - "2 GiB"   -> 2147483648
@@ -40,12 +53,25 @@ func ParseMemoryString(s string) (int64, error) {
 	fields := strings.Fields(s)
 	switch len(fields) {
 	case 1:
-		// Bare integer (bytes) or a bare unit without a number — treat as integer
+		// Try bare integer (bytes) first.
 		n, err := strconv.ParseInt(fields[0], 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("parseMemoryString: cannot parse %q as integer bytes: %v", s, err)
+		if err == nil {
+			return n, nil
 		}
-		return n, nil
+		// Try concatenated number+unit (e.g. "1GB", "1.5GiB").
+		numStr, unit := splitNumberUnit(fields[0])
+		if numStr != "" && unit != "" {
+			num, err := strconv.ParseFloat(numStr, 64)
+			if err != nil {
+				return 0, fmt.Errorf("parseMemoryString: cannot parse numeric part %q: %v", numStr, err)
+			}
+			mult, ok := memUnits[unit]
+			if !ok {
+				return 0, fmt.Errorf("parseMemoryString: unknown memory unit %q", unit)
+			}
+			return int64(num * mult), nil
+		}
+		return 0, fmt.Errorf("parseMemoryString: cannot parse %q as integer bytes: %v", s, err)
 	case 2:
 		num, err := strconv.ParseFloat(fields[0], 64)
 		if err != nil {
