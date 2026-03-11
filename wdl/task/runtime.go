@@ -65,11 +65,20 @@ func ParseRuntime(task *ast.Task, env *eval.Env) (DockerConfig, error) {
 			if err != nil {
 				return cfg, fmt.Errorf("parseRuntime: evaluating %q: %w", key, err)
 			}
-			sv, ok := v.(values.StringValue)
-			if !ok {
-				return cfg, fmt.Errorf("parseRuntime: %q must evaluate to String, got %T", key, v)
+			switch cv := v.(type) {
+			case values.StringValue:
+				cfg.Image = cv.Value
+			case values.ArrayValue:
+				if len(cv.Items) > 0 {
+					if sv, ok := cv.Items[0].(values.StringValue); ok {
+						cfg.Image = sv.Value
+					} else {
+						return cfg, fmt.Errorf("parseRuntime: %q array items must be String, got %T", key, cv.Items[0])
+					}
+				}
+			default:
+				return cfg, fmt.Errorf("parseRuntime: %q must evaluate to String or Array[String], got %T", key, v)
 			}
-			cfg.Image = sv.Value
 			break // use the first key found
 		}
 	}
