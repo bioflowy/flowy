@@ -492,6 +492,10 @@ func evalGet(e *ast.GetExpr, env *Env, ctx ExecContext) (values.Value, error) {
 		return nil, err
 	}
 	switch v := obj.(type) {
+	case values.NullValue:
+		// Null propagation: field access on None returns None.
+		// This supports conditional call outputs (e.g. select_first([call.output])).
+		return values.NullValue{}, nil
 	case values.StructValue:
 		val, ok := v.Fields[e.Member]
 		if !ok {
