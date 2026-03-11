@@ -1,633 +1,585 @@
-# Architecture Patterns
+# Architecture Research
 
-**Domain:** WDL 1.2 Workflow Engine (Go port of miniwdl)
-**Researched:** 2026-03-10
-**Confidence:** HIGH (grounded in miniwdl source + Go ecosystem docs)
-
----
-
-## Recommended Architecture
-
-The engine is a classic interpreter pipeline — source text flows through successive transformations until it produces container executions. Each stage has a clean interface; stages communicate only through well-typed structs.
-
-```
-WDL source file(s)
-       |
-  [1. Lexer]          raw bytes → token stream
-       |
-  [2. Parser]         tokens → concrete syntax tree
-       |
-  [3. AST builder]    CST → typed AST nodes
-       |
-  [4. Type checker]   AST + env → validated AST (errors surfaced here)
-       |
-  [5. Evaluator]      expressions → WDL values (runtime)
-       |
-  [6. Workflow runner] DAG traversal → task dispatches
-       |
-  [7. Task runner]    inputs → Docker container → outputs
-       |
-  [8. Output collector] container results → WDL env bindings
-```
+**Domain:** Distributed WDL Workflow Engine — server/daemon/client integration with existing Go monolith
+**Researched:** 2026-03-11
+**Confidence:** HIGH (based on direct codebase analysis + GA4GH TES patterns + Go ecosystem)
 
 ---
 
-## Component Boundaries
+## Standard Architecture
 
-### Package Organization
+### System Overview
+
+```
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                        CLIENT LAYER                               │
+  │  ┌────────────────────────────────────────────────────────────┐  │
+  │  │  cmd/flowy  (CLI binary)                                    │  │
+  │  │  submit | status | outputs | run (sync mode)                │  │
+  │  └──────────────────────────┬─────────────────────────────────┘  │
+  └─────────────────────────────│────────────────────────────────────┘
+                                │ HTTP REST (JSON)
+  ┌─────────────────────────────▼────────────────────────────────────┐
+  │                        SERVER LAYER                               │
+  │  ┌────────────────────────────────────────────────────────────┐  │
+  │  │  cmd/flowy-server                                           │  │
+  │  │  ┌──────────────────┐  ┌──────────────────────────────┐   │  │
+  │  │  │  HTTP handler    │  │  Workflow orchestrator        │   │  │
+  │  │  │  (net/http)      │  │  (uses wdl/workflow directly) │   │  │
+  │  │  └──────────────────┘  └──────────────────────────────┘   │  │
+  │  │  ┌──────────────────────────────────────────────────────┐  │  │
+  │  │  │  internal/store  (SQLite via database/sql + CGo)     │  │  │
+  │  │  └──────────────────────────────────────────────────────┘  │  │
+  │  └────────────────────────────────────────────────────────────┘  │
+  └──────────────────────────────────────────────────────────────────┘
+           │ shared filesystem           │ HTTP long-poll
+           │ (NFS / local mount)         │
+  ┌────────▼────────────────────────────▼────────────────────────────┐
+  │                        DAEMON LAYER                               │
+  │  ┌────────────────────────────────────────────────────────────┐  │
+  │  │  cmd/flowy-daemon  (one process per worker host)           │  │
+  │  │  ┌──────────────────┐  ┌──────────────────────────────┐   │  │
+  │  │  │  Poll loop       │  │  Task executor                │   │  │
+  │  │  │  GET /tasks/next │  │  wraps wdl/task.RunTask()     │   │  │
+  │  │  └──────────────────┘  └──────────────────────────────┘   │  │
+  │  └────────────────────────────────────────────────────────────┘  │
+  │  [ daemon-A ]      [ daemon-B ]      [ daemon-C ]                 │
+  └──────────────────────────────────────────────────────────────────┘
+           │ reads inputs/  │ writes outputs/
+           │ shared storage │
+  ┌────────▼────────────────▼────────────────────────────────────────┐
+  │                       STORAGE LAYER                               │
+  │  shared_root/                                                     │
+  │    runs/<run_id>/                                                  │
+  │      inputs/          (client copies WDL inputs here)             │
+  │      outputs/         (daemon writes collected outputs here)       │
+  │      working/         (task-level MkdirTemp, same as execRoot)    │
+  │      outputs.json     (final workflow outputs)                    │
+  │      error.json       (failure details if any)                    │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+### Component Responsibilities
+
+| Component | Responsibility | Existing code it uses |
+|-----------|---------------|----------------------|
+| `cmd/flowy` (client) | CLI UX: submit, poll, display results | parser, checker (for `flowy check`); HTTP client for all run ops |
+| `cmd/flowy-server` | Accept submissions, orchestrate DAG, assign tasks to daemons | `wdl/workflow` (DAG build + topo sort), `wdl/parser`, `wdl/checker`, new `internal/store` |
+| `cmd/flowy-daemon` | Poll server for assigned tasks, execute them, report results | `wdl/task.RunTask` directly (unchanged interface) |
+| `internal/store` | SQLite persistence for runs and tasks | `database/sql` + `mattn/go-sqlite3` |
+| `internal/api` | Shared HTTP request/response types (DTOs) | Used by both client and server to avoid type drift |
+| shared filesystem | File exchange between client and daemon | OS filesystem; no new code needed |
+
+---
+
+## Recommended Project Structure
 
 ```
 flowy/
-  cmd/
-    flowy/
-      main.go           -- thin entry point, wires cobra + engine
-  internal/
-    parser/
-      lexer.go          -- stateful lexer, produces token stream
-      parser.go         -- hand-written recursive descent parser
-      ast/
-        nodes.go        -- all AST node types
-        pos.go          -- SourcePosition struct
-        walk.go         -- depth-first Walker (Visitor pattern)
-    typesystem/
-      types.go          -- WDL type hierarchy (Type interface + concrete types)
-      values.go         -- WDL value hierarchy (Value interface + concrete values)
-      checker.go        -- type-checking pass over validated AST
-    expr/
-      eval.go           -- expression evaluator (dispatches on node kind)
-      stdlib.go         -- WDL standard library functions
-    runtime/
-      workflow.go       -- workflow state machine (DAG scheduler)
-      task.go           -- task prep: input binding, command expansion
-      runner.go         -- Docker container lifecycle
-      env.go            -- Env.Bindings[Value] equivalent
-    cli/
-      run.go            -- "flowy run" command handler
-      check.go          -- "flowy check" command handler
+├── cmd/
+│   ├── flowy/           # existing client binary (extend with submit/status/outputs)
+│   │   └── main.go
+│   ├── flowy-server/    # NEW: server binary
+│   │   └── main.go
+│   └── flowy-daemon/    # NEW: daemon binary
+│       └── main.go
+├── internal/
+│   ├── api/             # NEW: shared HTTP DTO types (no business logic)
+│   │   ├── types.go     # RunSubmitRequest, RunStatusResponse, TaskAssignment, etc.
+│   │   └── errors.go    # shared error response shape
+│   ├── store/           # NEW: SQLite persistence layer
+│   │   ├── store.go     # Store interface + sqlite implementation
+│   │   ├── schema.sql   # embedded schema (go:embed)
+│   │   └── store_test.go
+│   ├── server/          # NEW: HTTP handler logic (separate from cmd for testability)
+│   │   ├── handler.go   # net/http handlers for all endpoints
+│   │   ├── orchestrator.go  # wraps wdl/workflow, dispatches tasks via store
+│   │   └── handler_test.go
+│   └── config/          # NEW: config file parsing
+│       └── config.go    # flowyconfig.toml / flowyconfig.yaml parsing
+├── wdl/                 # UNCHANGED: existing engine packages
+│   ├── ast/
+│   ├── lexer/
+│   ├── parser/
+│   ├── checker/
+│   ├── eval/
+│   ├── task/            # task.RunTask and task.ContainerRunner are the daemon integration point
+│   ├── types/
+│   ├── values/
+│   └── workflow/        # workflow.RunWorkflow is the server orchestration point
+└── go.mod
 ```
 
-**Rule:** nothing in `internal/parser` imports `internal/runtime`. The parser is pure syntax; it knows nothing about execution. The type checker knows about types and AST but not runtime values.
+### Structure Rationale
+
+- **`internal/api/`:** Shared DTO types live here so the client binary and server binary use identical wire formats. Prevents type drift between producer and consumer.
+- **`internal/store/`:** Pure persistence, no HTTP or business logic. Allows the orchestrator to be tested without a running HTTP server.
+- **`internal/server/`:** Handlers separated from `cmd/flowy-server/main.go` — enables `httptest.NewServer` in tests without spawning a real process.
+- **`wdl/` untouched:** All existing packages stay unchanged. The distributed layer wraps them — it does not modify them.
+- **`cmd/flowy-daemon/` imports `wdl/task`:** The daemon calls `task.RunTask()` exactly as the monolith did. No new interface needed.
 
 ---
 
-## Component Details
+## Architectural Patterns
 
-### Component 1: Lexer (`internal/parser/lexer.go`)
+### Pattern 1: Server-Side DAG Orchestration (Modified RunWorkflow)
 
-**Responsibility:** Convert raw WDL source bytes into a flat token stream. Track line/column positions. Handle WDL's two string interpolation styles (`~{...}` and `${...}`) using a stateful approach (push/pop interpolation context to avoid treating `}` as a string character when inside an expression).
+**What:** The server runs the DAG scheduler from `wdl/workflow` but replaces the `runTaskFn` variable with a function that persists task work to SQLite and blocks until a daemon picks it up and reports completion. The existing in-process goroutine model becomes a database-mediated async handoff.
 
-**Communicates with:** Parser (downstream only)
+**When to use:** Core pattern for server-side workflow orchestration.
 
-**Key design:** Handwritten stateful lexer, not a generated one. WDL string interpolation requires tracking nesting depth — participle's generated lexer cannot express this (confirmed limitation). The stateful lexer pattern from Rob Pike's talk ("Lexical Scanning in Go") is the correct approach: a `lexer` struct with a `state func(*lexer) state` field.
+**Trade-offs:** The scheduler goroutine in `wdl/workflow.scheduler.run()` blocks on a channel waiting for task completions. In the distributed model the channel message arrives via HTTP callback from the daemon rather than from an in-process goroutine. The scheduler loop itself doesn't change — only the `runTaskFn` changes.
+
+**How the hook works in the existing code:**
 
 ```go
-type TokenKind int
+// wdl/workflow/scheduler.go — already has this variable
+var runTaskFn = task.RunTask  // package-level, overridable
 
-const (
-    TokIdent TokenKind = iota
-    TokInt
-    TokFloat
-    TokString
-    TokStringInterp  // opens ~{ or ${
-    TokLBrace
-    TokRBrace
-    // ...
-)
+// server/orchestrator.go — override at server startup
+workflow.SetRunTaskFn(func(ctx context.Context, t *ast.Task, inputs map[string]interface{},
+    runner task.ContainerRunner, execRoot string,
+    structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 
-type Token struct {
-    Kind TokenKind
-    Text string
-    Pos  SourcePos
-}
+    taskID := store.InsertTask(runID, t, inputs, execRoot)
+    return waitForDaemonCompletion(ctx, taskID)  // blocks until daemon reports done
+})
 ```
 
-**Build order dependency:** None (leaf component). Build first.
+The existing `runTaskFn` is a package-level `var` — this is the correct injection point. No changes to `scheduler.go` are needed; a public setter function is added.
 
----
+**Alternative for scatter:** When scatter creates multiple `g.Go()` goroutines that each call `runTaskFn`, the distributed version creates multiple SQLite task rows simultaneously. Multiple daemons can pick these up in parallel naturally — scatter parallelism maps directly to daemon-level parallelism.
 
-### Component 2: AST Nodes (`internal/parser/ast/`)
+### Pattern 2: Daemon Long-Poll for Task Assignment
 
-**Responsibility:** Define all node types representing WDL constructs. Every node embeds `SourcePos` for error reporting. Nodes are structs; `Node` is a minimal interface used only for heterogeneous collections and the Walker.
+**What:** Daemons poll `GET /internal/tasks/next?daemon_id=X` with a long-poll timeout (30s). Server holds the request open until a task is available or the timeout expires. If a task is available, server immediately responds with the task assignment and marks it `ASSIGNED` in SQLite. Daemon executes, reports result via `POST /internal/tasks/{id}/complete`.
 
-**Communicates with:** Parser (produces nodes), Type checker (reads nodes), Evaluator (reads nodes), Workflow runner (reads nodes)
+**When to use:** Preferred over interval polling (simpler server state, no thundering herd at small scale) and push/websocket (no persistent connection management needed).
 
-**Key design decision — interface-based with struct embedding:**
+**Trade-offs:**
+- Long-poll requires the server to manage open HTTP connections per daemon (one goroutine per waiting daemon). At the scale this project targets (dozens of daemons), this is fine.
+- If the daemon crashes mid-task, the task row stays in `ASSIGNED` state. A reaper goroutine (runs every 60s) claims any task that has been `ASSIGNED` for longer than a configurable timeout and resets it to `QUEUED`.
+- Short interval polling (5s) is the fallback: simpler to implement, acceptable latency for bioinformatics tasks that take minutes.
 
-Use a `Node` interface with a single `nodePos() SourcePos` method. All node structs implement it by embedding `BaseNode`. Concrete types are used directly everywhere possible — type switches, not interface dispatch, drive the evaluator. This mirrors Go's own `go/ast` design.
+**Protocol:**
+
+```
+Daemon                                    Server
+  |                                          |
+  |--- GET /internal/tasks/next (hold 30s) ->|
+  |                                          | (waits, no task available)
+  |                       (new task arrives) |
+  |<-- 200 TaskAssignment{id, ast_json, ... }|
+  |                                          |
+  | [executes task.RunTask locally]          |
+  |                                          |
+  |--- POST /internal/tasks/{id}/complete -->|
+  |    {status: "success", outputs_json}     |
+  |                                          |
+  |<-- 200 OK                                |
+  |                                          |
+  | (immediately re-polls)                   |
+  |--- GET /internal/tasks/next (hold 30s) ->|
+```
+
+### Pattern 3: AST Serialization for Daemon Dispatch
+
+**What:** The server needs to send a WDL `*ast.Task` and its resolved inputs to a daemon. Since the AST is a rich Go struct tree, the cleanest approach is to serialize the task definition as JSON using `encoding/json` with the existing AST types, paired with the resolved inputs map.
+
+**When to use:** Task assignment payload.
+
+**Trade-offs:** The `ast` package types are not currently tagged for JSON serialization. Adding `json:` struct tags to `wdl/ast/ast.go` is the minimal change needed. Alternatively, the server can send the raw WDL source + task name + inputs JSON, and the daemon re-parses locally. Re-parsing is simpler (no AST tagging needed) and more robust — the daemon is guaranteed to have the same WDL source available via the shared filesystem.
+
+**Recommended approach: send WDL source path + task name + inputs JSON.**
 
 ```go
-// internal/parser/ast/nodes.go
-
-type SourcePos struct {
-    File      string
-    Line      int
-    Col       int
-    EndLine   int
-    EndCol    int
-}
-
-type BaseNode struct {
-    Pos SourcePos
-}
-
-func (b BaseNode) nodePos() SourcePos { return b.Pos }
-
-type Node interface {
-    nodePos() SourcePos
-}
-
-// --- AST node hierarchy ---
-
-type Document struct {
-    BaseNode
-    Version  string
-    Imports  []Import
-    Structs  []StructDef
-    Tasks    []Task
-    Workflow *Workflow  // nil if document has no workflow
-}
-
-type Task struct {
-    BaseNode
-    Name        string
-    Inputs      []Decl
-    Outputs     []Decl
-    Command     CommandTemplate
-    Runtime     map[string]Expr
-    Meta        map[string]any
-    ParameterMeta map[string]any
-}
-
-type Workflow struct {
-    BaseNode
-    Name    string
-    Inputs  []Decl
-    Body    []WorkflowNode  // Decl | Call | Scatter | Conditional
-    Outputs []Decl
-}
-
-// WorkflowNode is the discriminated union type for workflow body elements.
-type WorkflowNode interface {
-    Node
-    workflowNodeID() string
-    workflowNodeDeps() []string
+// internal/api/types.go
+type TaskAssignment struct {
+    TaskID      string          `json:"task_id"`
+    RunID       string          `json:"run_id"`
+    WDLPath     string          `json:"wdl_path"`     // absolute path on shared filesystem
+    TaskName    string          `json:"task_name"`    // which task to run in the file
+    InputsJSON  json.RawMessage `json:"inputs_json"`  // resolved inputs as JSON
+    ExecRoot    string          `json:"exec_root"`    // runs/<run_id>/working/ on shared fs
 }
 ```
 
-**Build order dependency:** Only `SourcePos`. Build second.
+The daemon re-parses `WDLPath`, extracts the named task, and calls `task.RunTask()`. This avoids all AST serialization complexity.
 
----
+### Pattern 4: `flowy run` Synchronous Mode (Spectool Compatibility)
 
-### Component 3: Parser (`internal/parser/parser.go`)
+**What:** `flowy run` in synchronous mode submits the workflow to the server, then polls `GET /v1/runs/{id}` every 2s, and exits with the same JSON outputs on stdout and the same exit code as the current monolithic implementation.
 
-**Responsibility:** Consume the token stream from the Lexer and produce an `ast.Document`. Report `SyntaxError` with source position on failure.
+**When to use:** Required for spectool conformance — the test harness calls `flowy run` and expects synchronous behavior.
 
-**Communicates with:** Lexer (upstream), AST nodes (output)
+**Implementation:** The client CLI either (a) detects the presence of a config file pointing to a server and uses HTTP, or (b) falls back to the existing in-process execution when no server is configured. This preserves backward compatibility without breaking spectool.
 
-**Key design:** Handwritten recursive descent. goyacc is not recommended for WDL because:
-1. WDL has string interpolation requiring lexer state — conflicts with YACC's fixed token interface.
-2. Error messages from generated parsers are notoriously poor.
-3. Production language parsers (Go compiler, TypeScript, Rust) are universally handwritten for these reasons.
-
-participle v2 is usable for simpler cases but its stateful lexer cannot handle arbitrarily nested expressions inside interpolation. Handwritten is safer for WDL 1.2 completeness.
-
-**Build order dependency:** Lexer, AST nodes.
-
----
-
-### Component 4: Type System (`internal/typesystem/`)
-
-**Responsibility:** Define the WDL type hierarchy (`Type` interface), value hierarchy (`Value` interface), and perform the type-checking pass over the AST. The type checker walks the AST and annotates each expression node with its resolved type; it returns validation errors with source positions.
-
-**Communicates with:** AST nodes (reads), Evaluator (provides type metadata), CLI (surfaces errors)
-
-**Key design:**
-
-```go
-// internal/typesystem/types.go
-
-type Type interface {
-    wdlType()         // marker
-    String() string
-    Optional() bool
-    Coerces(to Type) bool
-}
-
-// Concrete types
-type TBoolean struct{ optional bool }
-type TInt     struct{ optional bool }
-type TFloat   struct{ optional bool }
-type TString  struct{ optional bool }
-type TFile    struct{ optional bool }
-type TDirectory struct{ optional bool }
-type TArray   struct{ ItemType Type; NonEmpty bool; optional bool }
-type TMap     struct{ KeyType, ValueType Type; optional bool }
-type TPair    struct{ Left, Right Type; optional bool }
-type TObject  struct{ optional bool }
-type TStruct  struct{ Name string; Members map[string]Type; optional bool }
-type TNull    struct{}
 ```
-
-The type checker is a second pass over the AST (after parsing), not interleaved. It returns a `[]ValidationError` slice. Empty slice = success.
-
-**Build order dependency:** AST nodes. Build after parser is stable.
-
----
-
-### Component 5: Expression Evaluator (`internal/expr/`)
-
-**Responsibility:** Evaluate WDL expressions at runtime given an environment (variable bindings → values). Implements all WDL operators and dispatches to stdlib functions.
-
-**Communicates with:** Type system (uses types/values), Runtime env (reads bindings), Stdlib (delegates function calls)
-
-**Key design:** A single `Eval(expr ast.Expr, env *runtime.Env) (typesystem.Value, error)` function with a type switch over all expression node kinds. No visitor overhead — direct dispatch.
-
-```go
-func Eval(node ast.Expr, env *Env) (Value, error) {
-    switch n := node.(type) {
-    case *ast.IntLit:
-        return VInt{V: n.Value}, nil
-    case *ast.StringLit:
-        return evalString(n, env)
-    case *ast.Apply:
-        return evalFuncCall(n, env)
-    case *ast.BinaryOp:
-        return evalBinary(n, env)
-    // ...
-    }
+if config.ServerURL != "" {
+    runDistributed(...)  // submit → poll → print outputs
+} else {
+    runLocal(...)        // existing RunWorkflow directly
 }
 ```
-
-**Stdlib (`internal/expr/stdlib.go`):** WDL 1.2 standard library functions (`defined`, `length`, `flatten`, `select_first`, `zip`, `read_lines`, `write_lines`, etc.) are registered in a map keyed by function name. Each entry is a `func(args []Value) (Value, error)`. File I/O stdlib functions (`read_*`, `write_*`) operate on real filesystem paths.
-
-**Build order dependency:** Type system, AST nodes.
-
----
-
-### Component 6: Runtime Environment (`internal/runtime/env.go`)
-
-**Responsibility:** An immutable linked-list bindings map (mirrors miniwdl's `Env.Bindings`). Maps WDL identifier names to `Value` instances. Supports lexical scoping via a parent pointer — scatter sub-environments inherit from their parent.
-
-**Communicates with:** Evaluator, Workflow runner, Task runner
-
-**Key design:**
-
-```go
-type Env struct {
-    bindings map[string]Value
-    parent   *Env
-}
-
-func (e *Env) Lookup(name string) (Value, bool)
-func (e *Env) Bind(name string, val Value) *Env  // returns new child Env
-func (e *Env) Child() *Env
-```
-
-**Build order dependency:** Type system (Value types). Build alongside evaluator.
-
----
-
-### Component 7: Workflow Runner (`internal/runtime/workflow.go`)
-
-**Responsibility:** Traverse the workflow DAG. Maintain a state machine tracking which nodes are `waiting`, `ready`, `running`, and `finished`. Dispatch calls as goroutines. Collect outputs and propagate to dependent nodes.
-
-**Communicates with:** AST (reads workflow body), Evaluator (evaluates Decl expressions), Task runner (dispatches calls), Env (transmits values)
-
-**Key design — goroutine-per-ready-node with errgroup:**
-
-This is the most architecturally significant component. The pattern directly mirrors miniwdl's `StateMachine` but uses Go idioms instead of Python's `concurrent.futures`.
-
-```
-StateMachine state:
-  waiting  set[jobID]   -- dependencies not yet met
-  running  set[jobID]   -- goroutine launched
-  finished set[jobID]   -- outputs available
-  outputs  map[jobID]Env
-
-Main loop (runs in a single goroutine):
-  for len(finished) < len(jobs):
-      for each job in waiting where all deps in finished:
-          move job → running
-          go func(job):
-              result = dispatchJob(job)
-              resultCh <- result
-      select result from resultCh:
-          move job → finished
-          store outputs[job.id] = result.env
-```
-
-**Scatter handling:** When a `Scatter` node becomes ready, the runner evaluates the scatter array expression and spawns one sub-job per element. Each sub-job gets a child `Env` with the scatter variable bound. After all sub-jobs finish, a synthetic `Gather` job collects results into `Array[T]`. This matches miniwdl's Gather node concept.
-
-**Concurrency primitive:** `golang.org/x/sync/errgroup` with `SetLimit(N)` for bounded parallelism. Context cancellation propagates through all goroutines on first error. `golang.org/x/sync/semaphore` for optional CPU/memory limits.
-
-```go
-g, ctx := errgroup.WithContext(ctx)
-g.SetLimit(maxParallelTasks)
-
-for ready node in iteration:
-    node := node  // capture
-    g.Go(func() error {
-        return dispatchJob(ctx, node, inputEnv)
-    })
-
-err := g.Wait()
-```
-
-**Build order dependency:** Evaluator, Task runner, Env. This is the last internal component built.
-
----
-
-### Component 8: Task Runner (`internal/runtime/task.go` + `runner.go`)
-
-**Responsibility:** Given a `Task` AST node and bound input `Env`:
-1. Evaluate the `runtime{}` section (docker image, cpu, memory).
-2. Expand the command template (substitute `~{expr}` and `${expr}` placeholders).
-3. Stage input files into a temporary working directory.
-4. Call the Docker runner.
-5. Parse outputs by evaluating output declarations against the run directory.
-
-`task.go` — pure WDL logic (command expansion, input/output binding). No Docker imports.
-`runner.go` — Docker SDK interaction only.
-
-**Key design — file staging:**
-
-Input files are bind-mounted read-only into the container. The run directory (a temp dir per task invocation) is mounted at a fixed container path (`/cromwell_root` or similar). Output files must be within this directory.
-
-```go
-// Lifecycle of a single task run
-func RunTask(ctx context.Context, task *ast.Task, env *Env, cfg Config) (*Env, error) {
-    cmd, err := expandCommand(task.Command, env)
-    image, err := evalRuntimeAttr(task.Runtime["docker"], env)
-    runDir, err := os.MkdirTemp("", "flowy-task-*")
-
-    containerID, err := dockerCreate(ctx, image, cmd, runDir, inputMounts)
-    defer dockerRemove(ctx, containerID)
-
-    exitCode, err := dockerRun(ctx, containerID)
-    if exitCode != 0 {
-        return nil, &TaskFailedError{ExitCode: exitCode, ...}
-    }
-
-    return evalOutputs(task.Outputs, env, runDir)
-}
-```
-
-**Docker SDK usage (MEDIUM confidence — verified against pkg.go.dev v28):**
-- `client.ContainerCreate` — create container with mounts and env vars
-- `client.ContainerStart` — start
-- `client.ContainerWait` — block until exit, returns `<-chan WaitResponse`
-- `client.ContainerLogs` — stream stdout/stderr to log file
-- `client.ContainerRemove` — cleanup (defer pattern with `force: true`)
-
-**Build order dependency:** Type system, Evaluator, Env. Can be built in parallel with Workflow runner.
-
----
-
-### Component 9: CLI (`internal/cli/` + `cmd/flowy/`)
-
-**Responsibility:** Wire cobra commands to engine. Parse JSON/YAML input files, call the engine, print outputs.
-
-**Communicates with:** All of runtime (entry point)
-
-**Key design:** `cmd/flowy/main.go` contains only `main()` and a cobra root command. Actual command logic lives in `internal/cli/`. This follows the standard Go project layout where `cmd/` is thin.
-
-Commands:
-- `flowy run <wdl-file> [--input inputs.json]` — parse, typecheck, execute
-- `flowy check <wdl-file>` — parse + typecheck only (no execution)
-
-**Build order dependency:** All other components.
 
 ---
 
 ## Data Flow
 
-### Compile-time path (`flowy check`)
+### Workflow Submission Flow
 
 ```
-file path
-  → os.ReadFile
-  → lexer.Lex(source)          → []Token
-  → parser.Parse(tokens)        → *ast.Document
-  → typesystem.Check(doc)       → []ValidationError
-  → CLI prints errors or "OK"
+User: flowy run workflow.wdl --input inputs.json
+    |
+    | 1. Copy inputs.json + workflow.wdl to shared_root/runs/<id>/inputs/
+    |
+    v
+POST /v1/runs  {wdl_path, inputs_path, workflow_name}
+    |
+    | 2. Server: parse+typecheck WDL (wdl/parser + wdl/checker)
+    | 3. Server: insert run row (status=RUNNING)
+    | 4. Server: launch goroutine running modified workflow.RunWorkflow
+    |
+    v
+[Server goroutine: DAG scheduler]
+    | for each ready Call node:
+    | 5. insert task row (status=QUEUED, task_name, inputs_json, exec_root)
+    | 6. notify waiting long-poll listeners (via channel or cond)
+    | 7. block on completion channel for this task
+    |
+    v
+[Daemon polling loop]
+    | 8. GET /internal/tasks/next  → receives TaskAssignment
+    | 9. daemon: re-parse WDL from WDLPath, extract task
+    | 10. daemon: task.RunTask(ctx, taskDef, inputs, DockerRunner, execRoot)
+    |            writes outputs to shared_root/runs/<id>/working/<task-dir>/
+    | 11. daemon: POST /internal/tasks/{id}/complete  {outputs_json}
+    |
+    v
+[Server goroutine: scheduler unblocks]
+    | 12. update task row (status=COMPLETED, outputs_json)
+    | 13. send outputs back to blocking runTaskFn channel
+    | 14. scheduler binds outputs into workflow env, dispatches next ready nodes
+    |
+    v
+[Workflow completes]
+    | 15. server writes outputs.json to shared_root/runs/<id>/
+    | 16. update run row (status=COMPLETED, outputs_json)
+    |
+    v
+Client: GET /v1/runs/{id}  → {status: COMPLETED, outputs: {...}}
 ```
 
-### Execution path (`flowy run`)
+### State Transitions
 
 ```
-file path + inputs.json
-  → [compile-time path] → *ast.Document (validated)
-  → runtime.BindInputs(doc.Workflow.Inputs, jsonInputs) → *Env
-  → runtime.RunWorkflow(ctx, workflow, env)
-      for each ready WorkflowNode:
-        Decl  → expr.Eval(decl.Expr, env) → Value → extend Env
-        Call  → [task execution path] → output Env
-        Scatter → [spawn N sub-runs] → [Gather] → Array[T] Env
-        Conditional → [eval condition] → [0 or 1 sub-runs] → Optional[T] Env
-  → collect output Env
-  → serialize outputs to JSON → stdout
-```
-
-### Task execution path
-
-```
-*ast.Task + input Env
-  → expandCommand(task.Command, env)  → string
-  → evalRuntimeAttrs(task.Runtime, env) → {image, cpu, mem}
-  → stageInputFiles(env, runDir)
-  → docker.ContainerCreate(image, cmd, mounts)
-  → docker.ContainerStart
-  → docker.ContainerWait → exitCode
-  → docker.ContainerLogs → write to runDir/stderr, runDir/stdout
-  → evalOutputDecls(task.Outputs, env, runDir) → output Env
-  → docker.ContainerRemove
+Run:   SUBMITTED → RUNNING → COMPLETED | FAILED
+Task:  QUEUED → ASSIGNED → COMPLETED | FAILED
 ```
 
 ---
 
-## Build Order (Dependency Sequence)
+## SQLite Schema
 
-This order respects inter-package import constraints (no circular imports):
+```sql
+-- internal/store/schema.sql
 
+PRAGMA journal_mode=WAL;   -- required: concurrent readers + writer
+PRAGMA busy_timeout=5000;  -- retry for 5s on write contention
+
+CREATE TABLE IF NOT EXISTS runs (
+    id          TEXT PRIMARY KEY,           -- UUID v4
+    status      TEXT NOT NULL DEFAULT 'SUBMITTED',
+    wdl_path    TEXT NOT NULL,
+    inputs_json TEXT NOT NULL DEFAULT '{}',
+    outputs_json TEXT,
+    error_msg   TEXT,
+    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id           TEXT PRIMARY KEY,          -- UUID v4
+    run_id       TEXT NOT NULL REFERENCES runs(id),
+    task_name    TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'QUEUED',
+    daemon_id    TEXT,                      -- which daemon claimed this
+    inputs_json  TEXT NOT NULL DEFAULT '{}',
+    outputs_json TEXT,
+    error_msg    TEXT,
+    exec_root    TEXT NOT NULL,
+    assigned_at  DATETIME,                  -- for reaper timeout detection
+    created_at   DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_run_id ON tasks(run_id);
 ```
-1. internal/parser/ast/      (leaf — no internal imports)
-2. internal/parser/          (imports ast only)
-3. internal/typesystem/      (imports ast)
-4. internal/runtime/env.go   (imports typesystem)
-5. internal/expr/            (imports ast, typesystem, runtime/env)
-6. internal/runtime/task.go  (imports ast, typesystem, expr, env)
-7. internal/runtime/runner.go (imports task — Docker SDK isolated here)
-8. internal/runtime/workflow.go (imports all above)
-9. internal/cli/             (imports runtime/workflow, runtime/runner)
-10. cmd/flowy/               (imports cli)
-```
 
-Phases 4, 5, and 6 can be developed in parallel since they only depend on layers 1-3.
-
----
-
-## Patterns to Follow
-
-### Pattern 1: Source Position on Every Error
-
-Every error type carries a `SourcePos`. Errors are never bare `fmt.Errorf` strings — they are typed structs implementing `error`. This allows the CLI to print `file.wdl:12:5: error message` uniformly.
+**Go SQLite configuration (critical):**
 
 ```go
-// internal/parser/ast/pos.go
-type SourcePos struct {
-    File    string
-    Line    int
-    Col     int
-    EndLine int
-    EndCol  int
-}
-
-// Example error type
-type SyntaxError struct {
-    Pos SourcePos
-    Msg string
-}
-func (e *SyntaxError) Error() string {
-    return fmt.Sprintf("%s:%d:%d: syntax error: %s", e.Pos.File, e.Pos.Line, e.Pos.Col, e.Msg)
-}
+// internal/store/store.go
+db, err := sql.Open("sqlite3", dsn+"?_journal_mode=WAL&_busy_timeout=5000")
+db.SetMaxOpenConns(1)  // REQUIRED: SQLite allows only one writer; pool causes SQLITE_BUSY
 ```
 
-### Pattern 2: Typed Error Hierarchy
+The `SetMaxOpenConns(1)` requirement is a known Go+SQLite issue. WAL mode allows concurrent reads but serializes writes through a single connection. With `SetMaxOpenConns(1)` all operations serialize through one connection, which avoids `SQLITE_BUSY` errors without meaningful performance loss for this use case.
 
-Following miniwdl's pattern (SyntaxError, ValidationError subclasses, RuntimeError), use a custom error hierarchy:
+---
+
+## REST API Endpoints
+
+### Client-Facing (public)
 
 ```
-error (Go built-in)
-  WDLError (interface, adds Pos() SourcePos)
-    SyntaxError        -- lexer/parser failures
-    ValidationError    -- type check failures
-      InvalidType
-      NoSuchTask
-      UndefinedVariable
-    RuntimeError       -- execution failures
-      TaskFailed       -- non-zero container exit
-      EvalError        -- expression evaluation failure
-      InputError       -- missing/wrong type input
+POST   /v1/runs                     Submit workflow run
+GET    /v1/runs                     List runs (with pagination)
+GET    /v1/runs/{id}                Get run status and outputs
+DELETE /v1/runs/{id}                Cancel run (best-effort)
+GET    /v1/runs/{id}/outputs        Get final outputs JSON
 ```
 
-Use `errors.Is` / `errors.As` for error inspection in tests and the CLI layer.
+### Daemon-Facing (internal, no auth initially)
 
-### Pattern 3: Immutable Env (Linked Bindings)
+```
+GET    /internal/tasks/next         Long-poll for next assigned task (daemon)
+POST   /internal/tasks/{id}/complete  Report task completion or failure
+POST   /internal/daemons/register   (optional) daemon heartbeat / registration
+```
 
-Environments are immutable linked lists, not maps that get mutated. This eliminates data races in scatter goroutines — each scatter element gets its own `Env` child without copying the whole map.
+### Design notes:
+
+- All request/response bodies: `application/json`
+- Error responses: `{"error": "message", "code": "MACHINE_CODE"}`
+- Run and task IDs: UUID v4 (generated by server)
+- Pagination: `GET /v1/runs?limit=50&offset=0`
+- The `/internal/` prefix signals that these endpoints are for daemon use only and may have different auth or network ACL treatment later.
+
+### Response shapes (internal/api/types.go):
 
 ```go
-func (e *Env) With(name string, v Value) *Env {
-    child := &Env{parent: e, bindings: make(map[string]Value, 1)}
-    child.bindings[name] = v
-    return child
-}
-```
-
-### Pattern 4: Workflow State Machine with Channel-Based Completion
-
-The workflow runner is a single-goroutine state machine that dispatches goroutines and receives results. Do not share the state machine itself across goroutines.
-
-```go
-type completionMsg struct {
-    jobID  string
-    env    *Env
-    err    error
+type SubmitRunRequest struct {
+    WDLPath      string          `json:"wdl_path"`
+    InputsJSON   json.RawMessage `json:"inputs_json"`
+    WorkflowName string          `json:"workflow_name,omitempty"`
 }
 
-resultCh := make(chan completionMsg, len(jobs))
-```
-
-### Pattern 5: Docker Runner Behind an Interface
-
-Define a `ContainerRunner` interface even though only Docker is implemented in v1. This makes task runner tests possible without Docker.
-
-```go
-type ContainerRunner interface {
-    Run(ctx context.Context, spec ContainerSpec) (ContainerResult, error)
+type RunStatus struct {
+    ID          string          `json:"id"`
+    Status      string          `json:"status"`   // SUBMITTED|RUNNING|COMPLETED|FAILED
+    Outputs     json.RawMessage `json:"outputs,omitempty"`
+    ErrorMsg    string          `json:"error,omitempty"`
+    CreatedAt   time.Time       `json:"created_at"`
+    UpdatedAt   time.Time       `json:"updated_at"`
 }
 
-type ContainerSpec struct {
-    Image   string
-    Command []string
-    Mounts  []Mount
-    Env     map[string]string
+type TaskAssignment struct {
+    TaskID     string          `json:"task_id"`
+    RunID      string          `json:"run_id"`
+    WDLPath    string          `json:"wdl_path"`
+    TaskName   string          `json:"task_name"`
+    InputsJSON json.RawMessage `json:"inputs_json"`
+    ExecRoot   string          `json:"exec_root"`
+}
+
+type TaskCompleteRequest struct {
+    Status      string          `json:"status"`       // "success" | "failure"
+    OutputsJSON json.RawMessage `json:"outputs_json,omitempty"`
+    ErrorMsg    string          `json:"error,omitempty"`
+    ExitCode    int             `json:"exit_code,omitempty"`
 }
 ```
 
 ---
 
-## Anti-Patterns to Avoid
+## Configuration File Structure
 
-### Anti-Pattern 1: Global Mutable State in the Evaluator
+```toml
+# flowyconfig.toml (searched in: $CWD, $HOME/.flowy/, /etc/flowy/)
 
-**What goes wrong:** Storing evaluator state (variable bindings, current file path) in package-level variables.
-**Why bad:** Scatter runs multiple tasks concurrently. Any global state causes data races.
-**Instead:** Pass `*Env` and `context.Context` explicitly through every function that needs them.
+[server]
+listen        = "0.0.0.0:8080"   # server bind address
+shared_root   = "/mnt/shared"    # shared filesystem root for runs
+db_path       = "/var/lib/flowy/flowy.db"
 
-### Anti-Pattern 2: Interleaving Parsing and Type Checking
+[daemon]
+server_url    = "http://flowy-server:8080"
+daemon_id     = ""         # auto-generated UUID if empty (written back to config)
+shared_root   = "/mnt/shared"
+poll_interval = "30s"      # long-poll timeout; also fallback interval
+concurrency   = 4          # max parallel tasks this daemon executes
 
-**What goes wrong:** Performing type resolution during parsing (as some parser generators encourage).
-**Why bad:** The type checker needs the full AST to resolve forward references (WDL allows calling a task defined later in the file). Interleaving forces two-pass logic inside one messy phase.
-**Instead:** Two clean sequential phases: Parse → full AST, then TypeCheck → validated AST.
+[client]
+server_url    = "http://flowy-server:8080"
+shared_root   = "/mnt/shared"
+```
 
-### Anti-Pattern 3: Mixing Docker SDK calls into Task Logic
+**Config loading priority:** CLI flags > environment variables > config file > defaults.
 
-**What goes wrong:** Calling `client.ContainerCreate` directly inside command-expansion or output-evaluation code.
-**Why bad:** Unit tests for command expansion cannot run without a Docker daemon. It couples unrelated concerns.
-**Instead:** `task.go` builds `ContainerSpec` from pure WDL logic. `runner.go` (or a `ContainerRunner` implementation) owns all Docker SDK calls.
-
-### Anti-Pattern 4: Goroutine per Scatter Element with No Bound
-
-**What goes wrong:** Launching `go func()` for every element of a large scatter array (e.g., 10,000-element array).
-**Why bad:** Goroutines are cheap but not free. More importantly, this saturates the Docker daemon and the local disk with concurrent container activity.
-**Instead:** Use `errgroup.SetLimit(N)` where N is a configurable max parallel task count (default: `runtime.NumCPU()`).
-
-### Anti-Pattern 5: Panic-Based Error Propagation
-
-**What goes wrong:** Using `panic` to propagate errors through the evaluator or parser (sometimes done to avoid `if err != nil` boilerplate).
-**Why bad:** Panics escape goroutine boundaries poorly (must `recover` in every goroutine). Kills the process on any WDL file with a bad expression.
-**Instead:** Return `(Value, error)` consistently. Accept the verbosity — it is idiomatic Go.
+**Env var prefix:** `FLOWY_SERVER_LISTEN`, `FLOWY_DAEMON_SERVER_URL`, `FLOWY_CLIENT_SERVER_URL` etc.
 
 ---
 
-## Scalability Considerations
+## Shared Filesystem Layout
 
-| Concern | v1 (local, ~10 tasks) | Future (100+ parallel tasks) |
-|---------|----------------------|------------------------------|
-| Task parallelism | errgroup.SetLimit(N) default=NumCPU | Configurable via --max-concurrent flag |
-| File staging | Copy to tempdir | Hardlink when on same filesystem (os.Link) |
-| Docker socket | Single local daemon | Could swap ContainerRunner for remote daemon |
-| Memory (large arrays) | Values held in-memory | Stream-evaluate scatter; not needed for v1 |
-| Output JSON | Marshal full env | Size limit warnings; not needed for v1 |
+```
+<shared_root>/
+└── runs/
+    └── <run_id>/           # UUID for each workflow run
+        ├── inputs/         # client copies WDL file and input files here
+        │   ├── workflow.wdl
+        │   ├── inputs.json
+        │   └── ref.fasta   # any File inputs
+        ├── working/        # daemon-side task execution root (= execRoot)
+        │   ├── MyTask-a1b2c3/       # MkdirTemp result per task invocation
+        │   │   ├── work/            # container /mnt/outputs bind
+        │   │   ├── stdout.txt
+        │   │   ├── stderr.txt
+        │   │   └── rc
+        │   └── MyTask-d4e5f6/       # scatter produces multiple per-item dirs
+        ├── outputs/        # workflow-level outputs copied here
+        │   └── result.vcf
+        ├── outputs.json    # final workflow outputs (wdl/workflow writes this)
+        └── error.json      # written on failure
+```
+
+**Key constraint:** The `WDLPath` in `TaskAssignment` must be a path on the shared filesystem that all daemons can read. The client copies the WDL file to `runs/<id>/inputs/workflow.wdl` before submitting. The server records this path in the run row and passes it to every task assignment.
+
+**File input paths in inputs.json:** All `File` inputs must be absolute paths under `shared_root`. The client is responsible for copying local files to `runs/<id>/inputs/` and rewriting paths in the inputs JSON before submitting.
 
 ---
 
-## Key Architectural Decisions
+## Integration Points with Existing Packages
 
-| Decision | Choice | Rationale | Confidence |
-|----------|--------|-----------|------------|
-| Parser strategy | Handwritten recursive descent | String interpolation requires stateful lexer; better error messages; production standard | HIGH |
-| AST node design | Interface `Node` + concrete structs, type switch in evaluator | Mirrors Go's `go/ast`; avoids reflection; enables exhaustive type switches | HIGH |
-| Concurrency primitive | `golang.org/x/sync/errgroup` + `SetLimit` | Propagates first error + context cancel; bounded parallelism; idiomatic | HIGH |
-| Docker abstraction | `ContainerRunner` interface | Enables testing without daemon; isolates SDK dependency | HIGH |
-| Type/parse separation | Two sequential passes | Forward references require full AST before type checking | HIGH |
-| Error design | Typed struct hierarchy + SourcePos | Source-location errors are essential for a language tool | HIGH |
-| Env mutability | Immutable linked-list `*Env` | No copying needed; scatter goroutines share safely | MEDIUM |
+### What is unchanged
+
+| Package | Status | Notes |
+|---------|--------|-------|
+| `wdl/ast` | Unchanged | AST node types stay as-is |
+| `wdl/lexer` | Unchanged | |
+| `wdl/parser` | Unchanged | Daemon calls `parser.Parse()` directly |
+| `wdl/checker` | Unchanged | Server calls `checker.Check()` at submission time |
+| `wdl/eval` | Unchanged | |
+| `wdl/types` | Unchanged | |
+| `wdl/values` | Unchanged | |
+| `wdl/task` | Unchanged | Daemon calls `task.RunTask()` with same signature |
+
+### What is minimally modified
+
+| Package | Modification | Why |
+|---------|-------------|-----|
+| `wdl/workflow` | Add `SetRunTaskFn(fn)` public setter | Allows server to inject distributed task dispatch without changing internal logic |
+| `cmd/flowy/main.go` | Add `submit`, `status`, `outputs` subcommands; make `run` config-aware | Client UX extension |
+
+### New packages required
+
+| Package | Content | Dependencies |
+|---------|---------|-------------|
+| `internal/api` | HTTP DTO types shared between client and server | `encoding/json`, `time` only |
+| `internal/store` | SQLite persistence | `database/sql`, `mattn/go-sqlite3` (CGo) |
+| `internal/server` | HTTP handlers, orchestrator | `wdl/workflow`, `wdl/parser`, `wdl/checker`, `internal/store`, `internal/api` |
+| `internal/config` | Config file loading | `encoding/json` or `github.com/BurntSushi/toml` |
+| `cmd/flowy-server` | Server binary entry point | `internal/server`, `internal/config` |
+| `cmd/flowy-daemon` | Daemon binary entry point | `wdl/task`, `wdl/parser`, `internal/api`, `internal/config` |
+
+---
+
+## Build Order (dependency-respecting)
+
+The packages form a clear dependency graph with no circular dependencies. Build order for implementation:
+
+```
+Phase 1: Foundation (no external deps)
+  1. internal/api          — DTO types only, no logic
+  2. internal/config        — config file parsing
+
+Phase 2: Persistence
+  3. internal/store         — SQLite schema + CRUD; unit-testable without HTTP
+
+Phase 3: Server logic
+  4. wdl/workflow change    — add SetRunTaskFn() setter (1-line change)
+  5. internal/server        — HTTP handlers + orchestrator
+
+Phase 4: Binaries
+  6. cmd/flowy-server       — thin main() wiring server + store + config
+  7. cmd/flowy-daemon       — poll loop + task.RunTask() invocation
+  8. cmd/flowy (extend)     — add submit/status/outputs subcommands
+
+Phase 5: Integration
+  9. End-to-end test with real shared filesystem
+  10. flowy run sync mode (config-aware dispatch)
+```
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Modifying the DAG Scheduler Internals for Distribution
+
+**What people do:** Gut `wdl/workflow/scheduler.go` and rewrite it with HTTP calls and database state baked in.
+
+**Why it's wrong:** The scheduler is the most complex, most tested part of the codebase (scatter, conditional, errgroup, channel drain). Modifying it introduces regression risk across all existing spectool tests. The `runTaskFn` variable injection point already exists and is specifically designed for substitution.
+
+**Do this instead:** Use `SetRunTaskFn()` to inject a distributed task executor. The scheduler loop, errgroup concurrency, and channel protocol stay exactly as they are.
+
+### Anti-Pattern 2: Requiring CGo in the Daemon Binary
+
+**What people do:** Both `flowy-server` and `flowy-daemon` import `mattn/go-sqlite3` (CGo).
+
+**Why it's wrong:** The daemon does not need SQLite. It only needs the `internal/api` DTO types and `wdl/task`. Pulling in CGo increases binary size, complicates cross-compilation, and makes the daemon harder to deploy on worker nodes.
+
+**Do this instead:** Only `cmd/flowy-server` imports `internal/store` (and thus CGo). The daemon communicates state entirely through the REST API. The daemon build stays CGo-free.
+
+### Anti-Pattern 3: Embedded SQLite in the Daemon (for local caching)
+
+**What people do:** Each daemon maintains its own SQLite file for caching task state locally.
+
+**Why it's wrong:** Creates split-brain state when the server needs authoritative task status. The server cannot recover crashed daemon tasks if state is local to the daemon.
+
+**Do this instead:** All authoritative state lives in the server's SQLite database. Daemons are stateless workers — they poll, execute, and report. The reaper goroutine in the server handles crashed-daemon recovery.
+
+### Anti-Pattern 4: Sending the Full AST Over the Wire
+
+**What people do:** Serialize `*ast.Task` to JSON for the task assignment payload.
+
+**Why it's wrong:** The AST has complex nested types without JSON tags. Adding JSON tags to all AST nodes is a large change that bleeds distribution concerns into the parser/AST layer.
+
+**Do this instead:** Send `WDLPath` + `TaskName` in `TaskAssignment`. The daemon re-parses the WDL file from the shared filesystem. The WDL source is already available there (client copies it on submission). This reuse of the existing parser is correct behavior — same code path as local execution.
+
+### Anti-Pattern 5: Per-Run Goroutines Without Bounded Concurrency
+
+**What people do:** For each submitted workflow, start an uncontrolled goroutine that calls `workflow.RunWorkflow()`.
+
+**Why it's wrong:** Each active workflow holds a goroutine that blocks waiting for task completions. Many concurrent workflow submissions can exhaust memory.
+
+**Do this instead:** Limit active concurrent workflows with a semaphore (`make(chan struct{}, N)`). Default N = 10 (configurable). Submissions beyond the limit queue in SQLite as `SUBMITTED` status and are picked up as slots free.
+
+---
+
+## Scaling Considerations
+
+| Scale | Architecture notes |
+|-------|-------------------|
+| 1-4 daemons, single host | Single `flowy-server` + N `flowy-daemon` processes on one machine, `/tmp/flowy-shared` as shared root. SQLite is fully sufficient. |
+| 5-20 daemons, multi-host | NFS mount for shared_root. SQLite WAL handles the server-side write concurrency (one server writer at a time). No change to architecture. |
+| 20+ daemons | SQLite write serialization becomes a bottleneck only if task completion rate is very high (>100 completions/second). At that point, migrate `internal/store` to PostgreSQL behind the same Store interface. No other changes needed. |
+
+The architecture is designed so the Store interface is the only boundary that needs to change for database backend migration. The server, daemon, and client are unaffected.
 
 ---
 
 ## Sources
 
-- miniwdl source: `../miniwdl/WDL/runtime/workflow.py` (StateMachine design, Gather node pattern)
-- miniwdl source: `../miniwdl/WDL/Error.py` (error hierarchy with SourcePosition)
-- miniwdl source: `../miniwdl/WDL/Tree.py` (AST node design, WorkflowNode interface)
-- [golang-standards/project-layout](https://github.com/golang-standards/project-layout) — cmd/, internal/, pkg/ conventions
-- [go/ast package](https://pkg.go.dev/go/ast) — Node interface + Walk visitor pattern
-- [alecthomas/participle v2](https://pkg.go.dev/github.com/alecthomas/participle/v2) — stateful lexer limitation confirmed
-- [golang.org/x/sync/errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup) — errgroup.SetLimit, context cancellation
-- [golang.org/x/sync/semaphore](https://pkg.go.dev/golang.org/x/sync/semaphore) — weighted semaphore for resource limits
-- [docker/docker/client](https://pkg.go.dev/github.com/docker/docker/client) — ContainerCreate/Start/Wait/Logs/Remove API (v28)
-- [Handwritten parsers survey](https://lobste.rs/s/10pkib/parser_generators_vs_handwritten) — industry practice
-- [miniwdl Medium article](https://medium.com/czi-technology/miniwdl-17ecdaf40944) — architecture overview
-- [goyacc docs](https://pkg.go.dev/golang.org/x/tools/cmd/goyacc) — YACC-style parser for Go reference
+- Codebase analysis: `/home/uehara/flowy/wdl/task/runner.go`, `task/task.go`, `workflow/scheduler.go`, `workflow/workflow.go`, `workflow/dag.go`, `cmd/flowy/main.go`
+- GA4GH Task Execution Service OpenAPI spec: [ga4gh/task-execution-schemas](https://github.com/ga4gh/task-execution-schemas) — informed REST endpoint naming conventions
+- SQLite WAL concurrency in Go: [turso.tech/blog/something-you-probably-want-to-know-about-if-youre-using-sqlite-in-golang](https://turso.tech/blog/something-you-probably-want-to-know-about-if-youre-using-sqlite-in-golang-72547ad625f1) — WAL + SetMaxOpenConns(1) recommendation (HIGH confidence, verified against mattn/go-sqlite3 issue tracker)
+- Cromwell architecture reference: [cromwell.readthedocs.io](https://cromwell.readthedocs.io/en/stable/) — polling interval pattern, task lifecycle states (MEDIUM confidence, different tech stack but same domain)
+- goqite (SQLite queue for Go): [maragudk/goqite](https://github.com/maragudk/goqite) — confirms SQLite-backed task queue is viable pattern in Go
+- miniwdl distributed execution model: [miniwdl-cloud](https://github.com/mlin/miniwdl-cloud) — shared filesystem approach validated for WDL distribution
+
+---
+
+*Architecture research for: flowy v1.1 distributed WDL execution*
+*Researched: 2026-03-11*

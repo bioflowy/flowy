@@ -1,17 +1,17 @@
 # Project Research Summary
 
-**Project:** flowy — WDL 1.2 workflow engine in Go (port of miniwdl)
-**Domain:** Domain-specific language interpreter + container orchestrator (bioinformatics)
-**Researched:** 2026-03-10
+**Project:** flowy — WDL 1.2 workflow engine (Go), v1.1 distributed server/daemon/client milestone
+**Domain:** Distributed bioinformatics workflow orchestration
+**Researched:** 2026-03-11
 **Confidence:** HIGH
 
 ## Executive Summary
 
-flowy is a classic interpreter pipeline that transforms WDL 1.2 source files into Docker container executions. The architecture follows a well-trodden path — lexer → parser → AST → type checker → expression evaluator → workflow scheduler → task runner — where each stage communicates only through well-typed structs. The right approach is to hand-write every layer rather than rely on parser generators or general-purpose expression libraries: no maintained WDL 1.2 grammar exists for Go parser generators, no existing Go WDL parser is usable, and the type system is too domain-specific for cel-go or expr-lang. The reference implementation is miniwdl (Python), whose source files (`Expr.py`, `Type.py`, `Tree.py`, `_grammar.py`, `runtime/workflow.py`) are the authoritative ground truth for every non-obvious decision.
+flowy v1.1 extends a working v1.0 WDL engine (parser, type checker, evaluator, Docker executor, DAG scheduler, CLI) into a distributed three-process architecture: a persistent REST server (`flowy-server`), one or more polling worker daemons (`flowy-daemon`), and an extended CLI client (`flowy`). Research across Cromwell, Nextflow, Temporal, and direct codebase analysis shows this is a well-understood domain with established patterns. The key design insight is that the v1.0 engine already has the seam for this extension: `wdl/workflow/scheduler.go` exposes a `runTaskFn` package-level variable that can be swapped at server startup to replace in-process Docker execution with SQLite-backed async dispatch to daemons. This means the most complex, most tested engine code — DAG scheduling, scatter, errgroup concurrency — remains completely unchanged.
 
-The recommended stack is deliberately minimal: Go 1.24 standard library covers concurrency, logging, and testing; the only required external dependencies are the Docker moby client (v28.x), cobra (CLI), and testify (test assertions). The WDL 1.2 spec and miniwdl source are both HIGH-confidence, spec-grounded references, so feature scope is clear and non-speculative.
+The recommended approach is a polling-based daemon model backed by SQLite with WAL mode. Daemons poll `GET /internal/tasks/next` (long-poll, 30s timeout), claim tasks atomically via a single `UPDATE ... WHERE state='PENDING'` SQL statement, execute using the existing `task.RunTask()` function, and report completion via `POST /internal/tasks/{id}/complete`. A shared filesystem (NFS or local directory, config-driven) carries WDL files and task inputs/outputs between processes. The stack is deliberately minimal: chi v5 for routing, modernc.org/sqlite (CGO-free) for persistence, goose for migrations, gopkg.in/yaml.v3 for config, and standard library for everything else. No message queue, no JWT, no gRPC.
 
-The two highest risks are correctness traps in the type system and concurrency safety in the workflow scheduler. WDL's type coercion rules are asymmetric and shallow, scatter/conditional blocks apply different type promotions that must be idempotent, and Go's static type system requires every runtime `Value` to carry an explicit WDL type tag. On the concurrency side, scatter goroutines must flow through `errgroup.WithContext` with a bounded limit; any shared output state must be written from a single scheduler goroutine, not from scatter worker goroutines. Both risks have known prevention strategies documented in the pitfalls research.
+The primary risks are not architectural but operational: file path assumptions embedded in task records that break on multi-host deployments, task double-claim races without atomic SQL claiming, SQLite locking without WAL mode, and daemon crashes leaving tasks stuck in RUNNING state without a heartbeat mechanism. All four must be addressed in Phase 1 before any execution code is written. A secondary risk is `flowy run` backward compatibility for spectool — the synchronous CLI mode must survive the transition and is non-negotiable for conformance suite operation.
 
 ---
 
@@ -19,163 +19,130 @@ The two highest risks are correctness traps in the type system and concurrency s
 
 ### Recommended Stack
 
-The stack is intentionally lean. A hand-written stateful lexer (Rob Pike's state-function pattern) handles WDL's two command block styles and string interpolation nesting correctly — no generated lexer can express this. A hand-written recursive descent parser with a Pratt expression sub-parser handles WDL 1.2's full grammar, producing strongly typed AST nodes that mirror miniwdl's `Tree.py` / `Expr.py` model. A tree-walking evaluator over that AST implements all ~30 WDL 1.2 stdlib functions directly in Go. The Docker moby client (not subprocess) provides structured container lifecycle control. `golang.org/x/sync/errgroup` with `SetLimit` is the correct concurrency primitive for bounded scatter parallelism.
+The v1.0 stack (Go 1.25, hand-written recursive descent parser, Docker SDK, cobra CLI, testify, slog, errgroup) is unchanged. For v1.1, five libraries are added. The routing layer uses `chi/v5` (v5.2.5) rather than net/http ServeMux because v1.1 needs middleware grouping for daemon vs. client auth scopes — ServeMux cannot do this without manual wrapper boilerplate. SQLite uses `modernc.org/sqlite` (CGO-free) rather than `mattn/go-sqlite3` because the CI/CD pipeline and cross-compilation targets cannot rely on a C compiler; the 2x INSERT-heavy performance penalty is irrelevant for flowy's actual write volume (task status updates). Schema migrations use `goose/v3` with `go:embed` SQL files because the server is a single binary and external migration tools create deployment synchronization problems. Config parsing uses `gopkg.in/yaml.v3` directly because Viper's 15 transitive dependencies plus known goroutine-safety issues are unjustified for a 5-8 field config struct. Task dispatch uses stdlib `time.Ticker` polling — no Redis, no NATS — because HPC bioinformatics tasks run for minutes to hours and sub-second dispatch latency is irrelevant.
 
-**Core technologies:**
-- **Go 1.24** — core language; goroutines + channels cover all concurrency needs natively
-- **Hand-written lexer/parser + Pratt expressions** — no viable alternative for WDL 1.2 + Go; better error messages than any generator
-- **github.com/docker/docker v28.x** — moby client; structured container lifecycle API; the industry standard
-- **github.com/spf13/cobra v1.10.x** — subcommand CLI (`flowy run`, `flowy check`); universal Go CLI library
-- **github.com/stretchr/testify v1.11.1** — assertion library; required for readable AST comparison failures
-- **log/slog (stdlib)** — structured logging; zero external dependency
-- **golang.org/x/sync/errgroup** — bounded scatter goroutines with context cancellation propagation
+**Core technologies (v1.1 additions):**
+- `github.com/go-chi/chi/v5` v5.2.5 — REST API routing; middleware grouping per auth scope; 100% net/http compatible
+- `modernc.org/sqlite` v1.36.x — SQLite persistence; CGO-free; cross-compiles without a C toolchain
+- `github.com/pressly/goose/v3` v3.27.0 — DB migrations embedded in binary via `go:embed`; Go 1.25+ minimum
+- `gopkg.in/yaml.v3` v3.0.1 — config file parsing; zero dependencies; sufficient for flat struct
+- stdlib `time.Ticker` + `net/http` client — daemon polling; no external queue infrastructure needed
 
 See `.planning/research/STACK.md` for full rationale and what NOT to use.
 
 ### Expected Features
 
-WDL 1.2 compliance requires implementing the full language in dependency order: types → expressions → tasks → workflows → CLI. The feature set is well-specified by the OpenWDL spec and docs.openwdl.org; there is no ambiguity about what is table stakes vs. optional.
+The v1.1 MVP is a complete distributed execution layer. The `flowy run` synchronous mode (spectool compatibility) is the highest-priority non-negotiable feature beyond the core server/daemon/client split. Multi-daemon scatter distribution (different daemons claiming different scatter shards) is a P1 differentiator that requires shard-indexed task rows in the DB schema — this design decision must be made before schema definition.
 
 **Must have (table stakes):**
-- Complete WDL 1.2 type system: Boolean, Int, Float, String, File, Directory, Array[T], Map[K,V], Pair[X,Y], Struct, Object (deprecated but required), Optional (T?), NonEmpty (Array[T]+), plus all 6 coercion rules
-- Full expression evaluation: all operators including `**` (new in 1.2), both interpolation styles (`~{}` and `${}`), if-then-else, member access, index access
-- Task definition: all sections (input, command, output, runtime/requirements, hints, meta, parameter_meta); both command block delimiters
-- Workflow definition: call, scatter, if, nested scatter/if, sub-workflow calls, local imports, `after` dependency
-- All ~30 WDL 1.2 stdlib functions (file I/O, array, map, string, numeric)
-- Docker container execution: image pull, input file staging, command execution, stdout/stderr capture, output collection
-- Workflow DAG scheduler: parallel task execution, scatter fan-out/gather, conditional optional wrapping
-- CLI: `flowy run` and `flowy check`, JSON input files, `--task`, `--dir`, `--path`, exit codes
+- REST API: submit / status / outputs / abort / health endpoints — baseline workflow server contract (Cromwell model)
+- `flowy-server` binary: DAG orchestration + SQLite state + task dispatch queue
+- `flowy-daemon` binary: poll → atomic claim → execute → report, with heartbeat
+- SQLite schema: runs + tasks tables with WAL mode and status/run_id indexes
+- Atomic task claiming: single `UPDATE WHERE state='PENDING'`, check rows-affected == 1
+- Task + run state machines: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED
+- Shared filesystem file staging: config-driven base_dir, client inputs, daemon outputs
+- Stale task detection: server background reaper goroutine for tasks with expired heartbeat
+- `flowy run` synchronous mode: submit → poll → print outputs (spectool-compatible, backward-compatible)
+- `flowy submit` / `flowy status` / `flowy outputs` CLI commands
 
-**Should have (competitive differentiators):**
-- Native Go binary — zero-dependency install, no JVM or Python runtime required
-- Fast cold-start for CI/CD — sub-second vs. 10–30s for Cromwell/JVM
-- Informative static error messages from `flowy check` — precise line/column and type mismatch descriptions
-- Parallel scatter with configurable concurrency limit (default: NumCPU)
-- Structured JSON output by default (outputs.json, error.json)
-- Strict WDL 1.2-only focus — clean parser, no legacy version baggage
+**Should have (competitive):**
+- `flowy abort <run-id>` — after basic submit/run/status flow validated
+- `GET /workflows?status=Running` list endpoint — operational visibility
+- `GET /workflows/{id}/logs` endpoint — task log retrieval
+- Daemon auto-registration — diagnostics for multi-daemon deployments
 
 **Defer (v2+):**
-- HTTP/HTTPS import resolution — adds auth, caching, network error complexity
-- Call output caching — requires stable hashing; build correctness first
-- Non-Docker backends (Podman, Singularity) — single well-tested backend over 5 partial ones
-- WDL draft-2/1.0/1.1 support — separate grammar, high maintenance cost
-- REST API server / web UI — v2 milestone
-- Cloud backend execution (AWS Batch, GCP) — explicitly out of scope for v1
-- Workflow resumption / partial re-run — requires persistent state
+- Execution cache / call cache — complex input hashing and invalidation logic
+- Workflow resume / checkpoint restart — partial scatter completion is ambiguous
+- S3 / GCS storage backend — explicitly out of scope per PROJECT.md
+- Authentication (JWT, API keys) — not needed for single-team HPC use in v1.1
+- PostgreSQL backend — only needed at 20+ daemons or >100 completions per second
 
-See `.planning/research/FEATURES.md` for the complete spec compliance checklist.
+See `.planning/research/FEATURES.md` for the complete feature dependency graph and MVP checklist.
 
 ### Architecture Approach
 
-The engine is a classic interpreter pipeline with clean stage boundaries and no circular imports. The key structural rule is that nothing in the parser layer imports the runtime layer — the parser is pure syntax. The type checker operates as a separate second pass over the complete AST (required for forward reference resolution). The Docker SDK is isolated behind a `ContainerRunner` interface to enable unit testing without a live daemon. Workflow scheduling uses a single-goroutine state machine that dispatches worker goroutines and receives results over a channel — shared state never exists across goroutines.
+The architecture is a clean three-layer separation: client (HTTP REST consumer), server (DAG orchestrator + task queue + SQLite state), and daemon (stateless worker). The critical insight from direct codebase analysis is that the `runTaskFn` package-level variable in `wdl/workflow/scheduler.go` is already the designed injection point — adding a public `SetRunTaskFn()` setter (one-line change) allows the server to inject a distributed task dispatcher without touching any scheduler logic. The daemon reuses `wdl/task.RunTask()` unchanged. Task dispatch sends `WDLPath + TaskName + InputsJSON` (not a serialized AST) so the daemon re-parses locally from the shared filesystem — this avoids adding JSON tags to all AST node types. All daemons are stateless; authoritative state lives exclusively in the server's SQLite database. The `internal/store` interface is the only boundary that needs to change if a PostgreSQL backend is ever needed.
 
-**Major components (build order):**
-1. **`internal/parser/ast/`** — typed AST node structs with embedded SourcePos; leaf package, no internal imports
-2. **`internal/parser/`** — stateful lexer + recursive descent parser + Pratt expression parser
-3. **`internal/typesystem/`** — WDL type hierarchy (`Type` interface + concrete types), value hierarchy (`Value` interface + concrete values with embedded WDL type tags), type checker pass
-4. **`internal/runtime/env.go`** — immutable linked-list `*Env` (scatter-safe; no copying needed)
-5. **`internal/expr/`** — tree-walking expression evaluator + all stdlib function implementations
-6. **`internal/runtime/task.go`** — task input binding, command template expansion (pure WDL logic, no Docker imports)
-7. **`internal/runtime/runner.go`** — Docker SDK interaction only; implements `ContainerRunner` interface
-8. **`internal/runtime/workflow.go`** — DAG scheduler state machine; dispatches via errgroup; handles scatter/gather and conditional wrapping
-9. **`internal/cli/`** — cobra command handlers wiring all above
-10. **`cmd/flowy/main.go`** — thin entry point
+**Major components:**
+1. `internal/api` — shared HTTP DTO types (no business logic); imported by both client and server to prevent type drift; established in Phase 1
+2. `internal/store` — SQLite persistence via `database/sql` + goose migrations; pure persistence, no HTTP logic; unit-testable without a running server
+3. `internal/server` — HTTP handlers + workflow orchestrator; separated from `cmd/` for `httptest.NewServer` testability
+4. `internal/config` — YAML config loading with env var override support
+5. `cmd/flowy-server` — thin main() wiring server + store + config; runs DAG scheduler in-process with injected `runTaskFn`
+6. `cmd/flowy-daemon` — poll loop + `task.RunTask()` invocation + heartbeat goroutine; stateless worker; CGO-free
+7. `cmd/flowy` (extended) — add submit/status/outputs subcommands; make `run` config-aware with distributed/local fallback
 
-See `.planning/research/ARCHITECTURE.md` for complete data flow diagrams and interface signatures.
+See `.planning/research/ARCHITECTURE.md` for full component diagrams, REST API endpoint list, SQLite schema, and shared filesystem layout.
 
 ### Critical Pitfalls
 
-Seven pitfalls are rated CRITICAL (cause rewrites or silent correctness failures):
+1. **File path host assumptions** — Server creates task records with absolute paths. On multi-host deployments, daemon hosts receive paths that do not exist on their filesystems. Prevention: define a config-driven `shared_root` that is the same absolute path on all hosts; never embed server-local `/tmp` in task records; validate shared FS mount at daemon startup. Address in Phase 1 before any task record serialization.
 
-1. **Command block dedent computed incorrectly** — dedent must be calculated BEFORE interpolation using minimum-whitespace algorithm over pseudo-string with placeholder sentinels; applying it after expansion or using first-line indentation is wrong. Prevention: implement as a pre-pass over the `parts []` slice.
+2. **Task double-claim race** — Multiple daemons polling simultaneously both see the same PENDING task and both attempt to claim it. Prevention: implement claiming as a single atomic `UPDATE tasks SET state='CLAIMED' WHERE id=? AND state='PENDING'`; check rows-affected == 1; a SELECT + UPDATE is a TOCTOU race. Address in Phase 1 in the claim endpoint's first commit.
 
-2. **Scatter/conditional type promotion applied incorrectly** — scatter wraps output types in `Array[T]`; conditional wraps in `T?`; nesting compounds; multiple optionals must NOT stack (`T??` is illegal — stay singly optional). Prevention: implement as two separate idempotent functions `arrayize(t, nonempty)` and `optionalize(t)`.
+3. **SQLite locking without WAL mode** — The server runs multiple concurrent goroutines (HTTP handler, scheduler, reaper). Without WAL mode, write contention produces `database is locked` errors. Prevention: `PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;` at DB open; `db.SetMaxOpenConns(1)` for the write connection. Address in Phase 1 during store initialization.
 
-3. **WDL type coercion is shallow and asymmetric** — `Int` coerces to `Float` at the top level only; `Array[Int]` does NOT coerce to `Array[Float]`; `String`↔`File` is bidirectional but File must be preferred during type unification. Prevention: implement coercion as non-recursive; write a full coercion matrix test.
+4. **Daemon crash leaves tasks RUNNING forever** — Without a heartbeat mechanism, the server cannot distinguish an executing daemon from a crashed one. Prevention: daemon sends `POST /tasks/{id}/heartbeat` every 30s; server background goroutine reaps tasks with `last_heartbeat_at` older than 90s, marking them FAILED. Heartbeat is load-bearing for correctness, not a v1.x addition. Address in Phase 1.
 
-4. **Command block placeholder syntax differs between `{}` and `<<<>>>`** — `command {}` accepts both `~{}` and `${}`; `command <<<>>>` accepts ONLY `~{}`; `${}` inside `<<<>>>` must be treated as a literal bash variable. Prevention: two separate lexer states per command block style.
+5. **Orphaned Docker containers on daemon SIGTERM** — Daemon exits immediately on SIGTERM; Docker containers continue running on the host unconsumed. Prevention: trap SIGTERM via `signal.NotifyContext` and cancel root context, which propagates into `docker.go`'s existing `ctx.Done()` container cleanup path; wait on `sync.WaitGroup` with 30s deadline before exiting. Address in Phase 2 before any task execution code.
 
-5. **Docker file path mapping requires bidirectional host↔container map** — host paths must never be passed into containers directly; output path resolution must check the reverse map first; duplicate basenames need counter suffixes. Prevention: maintain `inputPathMap` and `inputPathMapRev` before container start.
-
-6. **Scatter goroutine leaks under cancellation** — `sync.WaitGroup` has no cancellation; goroutines blocked on Docker API calls will leak. Prevention: always use `errgroup.WithContext` + `SetLimit`; never close result channel from a goroutine; collect results into pre-allocated slice by scatter index.
-
-7. **WDL runtime values need explicit WDL type tags in Go structs** — empty `ArrayValue{items: []Value{}}` cannot distinguish `Array[Int]` from `Array[String]` without an embedded `wdlType ArrayType` field. Prevention: every concrete `Value` struct must store its WDL type as a field; `NullValue` carries `AnyOptional` type.
-
-See `.planning/research/PITFALLS.md` for 10 additional moderate/minor pitfalls with exact prevention strategies.
+See `.planning/research/PITFALLS.md` for 5 additional critical pitfalls (scatter fan-out throttling, error serialization, NFS metadata caching, configuration drift, `flowy run` poll loop termination) plus performance traps, security mistakes, and recovery strategies.
 
 ---
 
 ## Implications for Roadmap
 
-The feature dependency chain from FEATURES.md maps directly to a 6-phase build sequence. Each phase is a hard prerequisite for the next; there is no way to reorder. Phases 4, 5, and 6 have internal parallelism opportunities (task runner and workflow scheduler share the same foundation but can be developed concurrently).
+Based on combined research, four phases with a clear dependency chain:
 
-### Phase 1: Lexer, Parser, and AST
+### Phase 1: API Contract + Persistence Foundation
 
-**Rationale:** Everything depends on the parser. It is the leaf layer with no internal imports. This is also where the hardest correctness traps live (command block delimiter modes, string interpolation nesting, Pratt precedence) — get these right first while the project is small and tests are fast.
-**Delivers:** `ast.Document` from any valid WDL 1.2 source file; `flowy check` parse errors with line/column
-**Addresses:** All parser features from FEATURES.md Phase 1 checklist
-**Avoids:** Pitfall 4 (command block placeholder modes), Pitfall 16 (left recursion in expressions), Pitfall 9 (deprecated placeholder options must parse)
-**Research flag:** None — hand-written recursive descent with Pratt is a well-documented pattern; miniwdl `_grammar.py` is the reference grammar
+**Rationale:** All subsequent phases depend on the shared DTO types and SQLite schema being stable. Four critical pitfalls (path assumptions, double-claim, SQLite WAL, heartbeat schema) cannot be retrofitted — they must be correct from the first commit. The architecture research confirms `internal/api` and `internal/store` have no circular dependencies and can be built first. The DB schema decision for scatter shard indexing must be made here before Phase 2 creates task rows.
+**Delivers:** `internal/api` (shared DTO types), `internal/config` (YAML loading), `internal/store` (SQLite schema + CRUD with WAL + goose migrations), `last_heartbeat_at` column in tasks table, shard_index in tasks schema
+**Addresses:** REST API response shapes, SQLite schema for runs + tasks, task + run state machine definitions, shared type package preventing API drift
+**Avoids:** Type drift between client and server (shared `internal/api`), double-claim race (atomic UPDATE pattern locked in), SQLite locking (WAL configured at store init), NFS metadata cache (daemon-collects-outputs-before-reporting design locked in schema)
 
-### Phase 2: Type System and Type Checker
+### Phase 2: Server Binary + DAG Dispatch
 
-**Rationale:** Forward reference resolution in WDL requires the full AST before type checking begins. The type system is foundational to the evaluator and runtime — getting types wrong here causes cascading silent failures. All critical type-system pitfalls (coercion, value tagging, None literal, Map ordering) must be resolved before any code runs.
-**Delivers:** Validated AST with resolved types; `flowy check` type errors with precise messages; `flowy check` fully functional
-**Addresses:** FEATURES.md Phase 2 checklist; all type system table stakes
-**Avoids:** Pitfall 3 (shallow coercion), Pitfall 7 (value type tags), Pitfall 10 (File/String unification), Pitfall 11 (Map ordering), Pitfall 17 (None literal type), Pitfall 2 (scatter/conditional type promotion)
-**Research flag:** None — type rules are fully specified in the WDL 1.2 spec and miniwdl `Type.py`
+**Rationale:** `flowy-server` is the core of the distributed system; it must work before the daemon is useful. The server's orchestration logic (injecting `SetRunTaskFn` into the scheduler) is the most architecturally novel piece and should be validated early. Scatter fan-out throttling (Pitfall 6) must be designed here before scatter task creation is implemented.
+**Delivers:** `cmd/flowy-server` with full REST API, workflow submission + DAG scheduling with distributed `runTaskFn`, task queue with atomic claiming, heartbeat reaper goroutine, run concurrency semaphore (max concurrent workflows configurable)
+**Uses:** chi v5, modernc.org/sqlite, goose, `wdl/workflow` (via SetRunTaskFn), `wdl/parser`, `wdl/checker`, `internal/store`, `internal/api`
+**Implements:** `wdl/workflow.SetRunTaskFn()` addition (1-line change to existing package); server HTTP handler layer + orchestrator
+**Avoids:** Per-run uncontrolled goroutines exhausting memory (semaphore-gated), scatter fan-out overwhelming daemons (server-side task promotion throttling)
 
-### Phase 3: Expression Evaluator and Standard Library
+### Phase 3: Daemon Binary + Task Execution
 
-**Rationale:** Expression evaluation is required by both task execution (command expansion, output expressions) and workflow execution (declarations, scatter array expressions). Implementing all 30 stdlib functions here in isolation, before the runtime exists, allows thorough unit testing against known inputs/outputs with no Docker dependency.
-**Delivers:** Working expression evaluator; all stdlib functions; `Eval(expr, env) → Value` interface
-**Addresses:** FEATURES.md Phase 3 checklist; all stdlib function tables
-**Avoids:** Pitfall 1 (command block dedent algorithm), Pitfall 12 (read_boolean case sensitivity), Pitfall 13 (round() half-up rounding)
-**Research flag:** None — miniwdl `Expr.py` and `StdLib.py` are line-for-line references
+**Rationale:** Daemon depends on a working server API (Phase 2). Daemon is architecturally simpler but operationally critical. Graceful shutdown (SIGTERM → context cancel → Docker cleanup → WaitGroup drain) must be implemented before any task execution code to avoid orphaned containers on any daemon kill.
+**Delivers:** `cmd/flowy-daemon` with poll loop, atomic task claiming, `task.RunTask()` invocation, local output collection + value serialization before reporting completion, heartbeat goroutine, SIGTERM graceful shutdown with 30s deadline
+**Uses:** `wdl/task.RunTask()` (unchanged interface), `internal/api`, `internal/config`, stdlib `signal.NotifyContext`, `sync.WaitGroup`
+**Implements:** Daemon layer; output collection design (daemon pushes values via API, server does not read files directly — prevents NFS metadata cache issue)
+**Avoids:** Orphaned Docker containers (graceful shutdown), shared FS permissions issues (daemon-side collection before reporting), NFS metadata cache (daemon collects and serializes outputs locally)
 
-### Phase 4: Task Execution
+### Phase 4: Client CLI + Spectool Compatibility
 
-**Rationale:** Single-task execution (the innermost unit of the engine) can be built and tested before the workflow scheduler exists. This phase is the only place where Docker integration lives, and isolating it behind `ContainerRunner` interface makes testing tractable. Task execution is a prerequisite for workflow execution.
-**Delivers:** End-to-end single task runs via Docker; input file staging; stdout/stderr capture; output collection
-**Addresses:** FEATURES.md Phase 4 checklist; Docker container execution table stakes
-**Avoids:** Pitfall 5 (bidirectional path mapping), Pitfall 8 (optional vs required output files), Anti-Pattern 3 (mixing Docker calls into task logic)
-**Research flag:** Low concern — Docker moby client API is well-documented; bidirectional path map pattern is established from miniwdl
-
-### Phase 5: Workflow Execution (DAG Scheduler)
-
-**Rationale:** This is the most architecturally complex component — the single-goroutine state machine that dispatches parallel task goroutines, handles scatter fan-out/gather, conditional optional wrapping, and sub-workflow calls. Build after task execution is solid.
-**Delivers:** Full multi-task workflow execution; scatter parallelism; conditional blocks; sub-workflows; outputs.json
-**Addresses:** FEATURES.md Phase 5 checklist; parallel task execution, scatter/gather, conditional semantics
-**Avoids:** Pitfall 2 (scatter/conditional type wrapping), Pitfall 6 (goroutine leaks), Pitfall 14 (concurrent shared state), Anti-Pattern 4 (unbounded goroutine spawning)
-**Research flag:** RECOMMEND research-phase — the DAG scheduler with scatter/gather semantics and nested scatter-in-conditional combinations is the most complex novel logic. Worth reviewing miniwdl's StateMachine and errgroup patterns in detail before implementation planning.
-
-### Phase 6: CLI and Integration
-
-**Rationale:** The CLI layer is a thin cobra wrapper over the engine. It is last because it requires all other components. This phase also covers integration testing with real WDL files, structured output formatting, and error presentation polish.
-**Delivers:** `flowy run` and `flowy check` as usable CLI tools; JSON input parsing; colored terminal output; exit codes; `--task`, `--dir`, `--path` flags
-**Addresses:** FEATURES.md Phase 6 checklist; all CLI table stakes; differentiator features (single binary, fast startup, structured output)
-**Avoids:** Pitfall 15 (JSON scientific notation in inputs)
-**Research flag:** None — cobra patterns are well-established; input parsing uses standard `encoding/json`
+**Rationale:** Client depends on working server + daemon (Phases 2-3). `flowy run` synchronous mode is the highest-risk feature for regression — spectool conformance tests call it directly and expect specific exit codes and output formats. All terminal state transitions (COMPLETED, FAILED, ABORTED) must be verified before declaring spectool compatibility.
+**Delivers:** Extended `cmd/flowy` with `submit`/`status`/`outputs` subcommands; config-aware `flowy run` (distributed mode if server configured, local fallback otherwise); correct exit code mapping; run ID printed to stderr before polling; structured error output with task name + exit code + stderr snippet
+**Uses:** `internal/api`, `internal/config`, existing cobra CLI infrastructure
+**Implements:** `flowy run` poll loop with all terminal states, connection-error retry backoff, max timeout, backward-compatible local fallback
+**Avoids:** Poll loop that never terminates on FAILED state (all terminal states handled), spectool regression (local fallback preserves v1.0 behavior when no server configured)
 
 ### Phase Ordering Rationale
 
-- **Strict dependency chain:** Parser → Types → Evaluator → Task → Workflow → CLI is non-negotiable. Each layer's outputs are the inputs of the next. Attempting to build task execution without a validated type system leads to discovered type bugs during Docker testing.
-- **Types before evaluator:** WDL value types must be tagged in structs (Pitfall 7) before any evaluation code is written, or the evaluator will be built on the wrong abstraction.
-- **Task before workflow:** End-to-end single-task Docker tests provide a fast feedback loop. Workflow scheduler bugs are harder to diagnose when task execution is also uncertain.
-- **Scatter/gather is the hardest problem:** Isolating it in Phase 5 (not merged with task execution) keeps Phase 4 tractable and Phase 5 reviewable.
-- **`flowy check` emerges naturally at Phase 2:** The type checker completes the static analysis pipeline. This means a useful tool exists after Phase 2, not only after Phase 6.
+- **Phase 1 before everything:** The DTO types and SQLite schema are imported by all three binaries. Schema decisions (shard_index for scatter, heartbeat column) cannot be changed without migration overhead once Phases 2 and 3 are built.
+- **Server before daemon:** The daemon's poll API must exist before the daemon can function. Server-first also enables testing the claim atomicity logic independently before adding the execution layer.
+- **Daemon before client polish:** The end-to-end path (submit → execute → complete → outputs) must work before the client's synchronous mode can be validated against real executions.
+- **Spectool validation last:** Spectool runs the full pipeline. It is the integration test for all four phases combined, not a mid-development checkpoint.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 5 (Workflow DAG Scheduler):** The scatter-in-conditional and conditional-in-scatter nesting combinations produce complex type promotion rules; the errgroup-based state machine pattern needs careful planning to avoid the goroutine leak and shared-state pitfalls. Review miniwdl `runtime/workflow.py` StateMachine implementation line-by-line before implementation.
+- **Phase 2 (Server + DAG Dispatch):** The long-poll implementation (server holds open HTTP connection, notifies via channel or `sync.Cond` when task available) has multiple valid approaches; the choice affects server goroutine count under load. Recommend a brief research pass on Go long-poll patterns with `http.Flusher` vs. short-interval timeout polling before committing to an implementation.
+- **Phase 3 (Daemon output collection):** Output collection via `wdl/task` internals — specifically `outputs.go` and `CollectOutputs` — needs a code walkthrough to confirm the daemon can invoke it correctly with shared-FS absolute paths without triggering the PathMap `filepath.Abs()` pitfall documented in PITFALLS.md.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1 (Parser):** Hand-written recursive descent + Pratt is a standard, well-documented technique. miniwdl `_grammar.py` is the reference grammar. No ambiguity.
-- **Phase 2 (Type System):** WDL spec + miniwdl `Type.py` are complete references. Rules are explicit.
-- **Phase 3 (Evaluator + Stdlib):** miniwdl `Expr.py` + `StdLib.py` are line-for-line references for ~500–1000 lines of Go. Straightforward translation.
-- **Phase 4 (Task Execution):** Docker moby client API is well-documented. Path mapping pattern comes directly from miniwdl `task_container.py`. Established.
-- **Phase 6 (CLI):** Cobra patterns are universal Go practice.
+- **Phase 1 (API Contract + Persistence):** SQLite WAL + goose migrations + YAML config are fully documented, stable patterns. All library choices verified. No novel decisions.
+- **Phase 4 (Client CLI):** Cobra subcommands and HTTP poll loop are standard Go patterns. The spectool interface is defined by existing conformance tests.
 
 ---
 
@@ -183,44 +150,48 @@ Phases with standard patterns (skip research-phase):
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All library choices verified against pkg.go.dev; rejections have clear documented rationale; no viable alternatives exist for WDL 1.2 + Go |
-| Features | HIGH | Grounded directly in WDL 1.2 spec (SPEC.md), docs.openwdl.org, and miniwdl source code — all authoritative primary sources |
-| Architecture | HIGH | Component boundaries and patterns sourced from miniwdl source + golang-standards/project-layout + Go stdlib `go/ast` design; all architectural decisions have HIGH confidence rating in the research |
-| Pitfalls | HIGH | 7 of 17 pitfalls sourced from actual bugs in Toil, miniwdl, and the WDL spec changelog with specific issue references; others derived from direct source code review |
+| Stack | HIGH | All library choices verified via pkg.go.dev, GitHub releases, official docs. Version compatibility confirmed against go.mod (Go 1.25). Alternatives compared and rejected with documented rationale. |
+| Features | HIGH | Core features derived from direct Cromwell + Nextflow API analysis and live codebase inspection. Feature dependencies mapped with implementation code references (e.g., `scheduler.go` line 18 for `runTaskFn`). |
+| Architecture | HIGH | Based on direct codebase analysis of `scheduler.go`, `task.RunTask`, `dag.go`, `pathmap.go`, `docker.go`. The `runTaskFn` injection point confirmed present. GA4GH TES pattern validated. |
+| Pitfalls | HIGH | 10 pitfalls verified against Temporal, Cromwell, SQLite documentation, and Go distributed systems literature. Direct code paths in `pathmap.go` and `docker.go` inspected for pitfalls 1 and 5. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Docker `ContainerRunner` interface design:** The exact interface signature (ContainerSpec fields for env vars, resource limits, timeout) should be finalized before Phase 4 begins to avoid breaking the task/runner split.
-- **Sub-workflow call semantics in Phase 5:** The research notes sub-workflow calls as HIGH complexity. The exact mechanism for passing input Env across the workflow/sub-workflow boundary warrants a targeted review of miniwdl `Tree.py` `Call._add_to_type_env` before Phase 5 planning.
-- **`errgroup` vs. channel-based scheduler:** The architecture recommends a channel-based scheduler (single writer), but also references errgroup. The exact pattern for combining both without redundancy should be resolved during Phase 5 planning.
-- **Test strategy for Docker integration:** Phase 4 tests require a live Docker daemon. The CI/CD setup for this (Docker-in-Docker vs. socket mounting) is not addressed in the research and should be decided before Phase 4 begins.
+- **Long-poll vs. interval-poll production tradeoff:** Research recommends long-poll (30s timeout) but documents interval polling (5s) as a simpler fallback. The implementation choice should be validated once Phase 2 server is runnable — if server goroutine count under simultaneous daemon connections is higher than expected, fall back to interval polling with no other changes needed.
+- **Output collection code path:** The exact call sequence from daemon to `wdl/task` output collection (`outputs.go`) needs a walkthrough during Phase 3 planning to confirm shared-FS absolute paths thread through correctly without triggering `filepath.Abs()` in `pathmap.go`.
+- **`flowy run` local-vs-distributed dispatch edge case:** The config-detection logic (`if config.ServerURL != ""`) is simple but needs explicit test coverage for the case where a config file exists but the server is unreachable — should it fall back to local execution or fail fast with a clear error?
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [WDL 1.2 SPEC.md](https://github.com/openwdl/wdl/blob/wdl-1.2/SPEC.md) — authoritative language specification
-- [docs.openwdl.org](https://docs.openwdl.org) — stdlib function signatures, task/workflow reference
-- miniwdl source `../miniwdl/WDL/` — ground truth for grammar, type rules, expression AST, stdlib, container path mapping, workflow state machine (reviewed locally)
-- [docker/docker v28.x — pkg.go.dev](https://pkg.go.dev/github.com/docker/docker) — Docker moby client API
-- [spf13/cobra v1.10.x — pkg.go.dev](https://pkg.go.dev/github.com/spf13/cobra) — CLI library
-- [golang.org/x/sync/errgroup — pkg.go.dev](https://pkg.go.dev/golang.org/x/sync/errgroup) — bounded goroutine group
+- flowy codebase: `wdl/workflow/scheduler.go`, `wdl/task/task.go`, `wdl/task/pathmap.go`, `wdl/task/docker.go`, `cmd/flowy/main.go` — direct inspection
+- [go-chi/chi releases](https://github.com/go-chi/chi/releases) — v5.2.5 confirmed latest stable (February 2026)
+- [modernc.org/sqlite — pkg.go.dev](https://pkg.go.dev/modernc.org/sqlite) — CGO-free, 2562+ importers, SQLite 3.51.2
+- [goose releases](https://github.com/pressly/goose/releases) — v3.27.0, Go 1.25+ minimum confirmed
+- [SQLite WAL mode documentation](https://sqlite.org/wal.html) — concurrency semantics
+- [SQLite locking v3](https://sqlite.org/lockingv3.html) — write serialization model
+- [Temporal activity heartbeat documentation](https://docs.temporal.io/encyclopedia/detecting-activity-failures) — heartbeat pattern for daemon liveness
+- [SQLite atomic task claim — jasongorman.uk](https://jasongorman.uk/writing/sqlite-background-job-system/) — UPDATE WHERE pattern with rows-affected check
+- [Building a Durable Execution Engine with SQLite — morling.dev](https://www.morling.dev/blog/building-durable-execution-engine-with-sqlite/) — PENDING/WAITING/COMPLETE state model
+- [Cromwell Tools API Documentation](https://cromwell-tools.readthedocs.io/en/latest/API/) — endpoint list and workflow states
+- [GA4GH Task Execution Service OpenAPI spec](https://github.com/ga4gh/task-execution-schemas) — REST naming conventions
 
 ### Secondary (MEDIUM confidence)
-- [golang-standards/project-layout](https://github.com/golang-standards/project-layout) — package organization conventions
-- [go/ast package](https://pkg.go.dev/go/ast) — Node interface design reference
-- [stretchr/testify v1.11.1 — pkg.go.dev](https://pkg.go.dev/github.com/stretchr/testify) — test assertion library
-- [Announcing WDL 1.2.0 — OpenWDL](https://openwdl.org/wdl/bioinformatics/workflows/announcing-wdl-1-2-0/) — WDL 1.2 new features summary
+- [Nextflow Task Processing — deepwiki.com](https://deepwiki.com/nextflow-io/nextflow/3.3-task-processing-and-execution) — task state machine analysis (third-party source)
+- [Cromwell architecture reference](https://cromwell.readthedocs.io/en/stable/) — polling interval patterns (different tech stack, same domain)
+- [miniwdl-cloud](https://github.com/mlin/miniwdl-cloud) — shared filesystem approach for WDL distribution
+- [Abusing SQLite to Handle Concurrency — SkyPilot Blog](https://blog.skypilot.co/abusing-sqlite-to-handle-concurrency/) — practical Go + SQLite patterns
+- [Graceful Shutdown in Go — VictoriaMetrics](https://victoriametrics.com/blog/go-graceful-shutdown/) — signal handling for in-flight tasks
 
 ### Tertiary (supporting/cross-reference)
-- [miniwdl Medium article](https://medium.com/czi-technology/miniwdl-17ecdaf40944) — architecture overview context
-- [DataBiosphere/toil issue #4854](https://github.com/DataBiosphere/toil/issues/4854) — command block dedent bug (real-world pitfall evidence)
-- [miniwdl issue #701](https://github.com/chanzuckerberg/miniwdl/issues/701) — read_boolean whitespace bug (real-world pitfall evidence)
-- [DoltHub blog: goyacc tips and tricks](https://www.dolthub.com/blog/2023-07-28-goyacc-parser-tips-tricks/) — parser generator limitations documented
+- [goqite — maragudk/goqite](https://github.com/maragudk/goqite) — confirms SQLite-backed task queue is viable Go pattern
+- [Backpressure in Distributed Systems — DZone](https://dzone.com/articles/backpressure-in-distributed-systems) — scatter fan-out throttling patterns
+- [Go ServeMux vs Chi — calhoun.io](https://www.calhoun.io/go-servemux-vs-chi/) — middleware grouping gap analysis
 
 ---
-*Research completed: 2026-03-10*
+*Research completed: 2026-03-11*
 *Ready for roadmap: yes*

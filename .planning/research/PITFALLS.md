@@ -1,463 +1,465 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** WDL 1.2 workflow engine (Go port of miniwdl)
-**Researched:** 2026-03-10
+**Domain:** Distributed WDL workflow engine — splitting monolithic CLI into server/daemon/client
+**Researched:** 2026-03-11
+**Confidence:** HIGH (patterns verified against Cromwell, Temporal, and distributed systems literature; codebase reviewed directly)
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, spec non-compliance, or silent correctness failures.
-
----
-
-### Pitfall 1: Command Block Dedent Computed After Expression Interpolation
+### Pitfall 1: File Path Assumptions — Absolute Host Paths Embedded in Task Records
 
 **What goes wrong:**
-The WDL spec requires removing "common leading whitespace" from command blocks. An implementation that naively strips the indentation level of the opening line, or that strips whitespace after interpolating placeholders, will produce incorrect results.
+The monolithic engine uses `os.MkdirTemp(execRoot, task.Name+"-")` to create absolute paths like `/tmp/flowy-20260311-a1b2/task-abc123/work`, then passes those absolute paths through the entire execution pipeline. In the distributed architecture, the server creates these paths when scheduling, then sends them to a daemon running on a different host. The daemon receives `/tmp/flowy-.../work` — a path that does not exist on its filesystem.
+
+The existing `PathMap` in `wdl/task/pathmap.go` resolves relative paths to absolute at call time using the calling process's CWD. When this runs on the daemon host, `filepath.Abs()` resolves against the daemon's CWD, producing daemon-local absolute paths that are meaningless to the server.
 
 **Why it happens:**
-It is tempting to (a) evaluate all `~{}` placeholders first, then strip whitespace from the resulting string, or (b) strip only the indentation of the first non-blank line uniformly. Both are wrong.
+The in-process model never needs to distinguish "where was this path created" from "where will this path be used." Adding a network boundary makes this invisible assumption explicit and fatal. Developers typically discover this only when the first task runs on a remote daemon.
 
-The correct algorithm (confirmed from miniwdl `Expr._dedent`):
-1. Build a pseudo-string with `~{}` substituted for every placeholder (to avoid placeholders distorting line-start detection).
-2. Find the minimum indentation across all non-blank lines in that pseudo-string.
-3. Strip exactly that many leading characters from every non-blank line, interleaving placeholders unchanged.
-4. Dedent BEFORE interpolation — the placeholder content is not relevant to dedent calculation.
+**How to avoid:**
+Define a shared execution root as a config-driven directory that is the same absolute path on both the server and all daemons (NFS mount, e.g., `/mnt/flowy-shared/runs`). The server creates subdirectories under this root; daemons read files under the same root. Never embed the server's local `/tmp` in task records. The config must enforce this: daemon startup should validate the configured shared root is accessible and writable.
 
-Toil had a long-standing bug where it stripped based on the first line's indentation, breaking scripts whose lines varied in depth (GitHub issue #4854).
-
-**Consequences:**
-- Generated shell scripts have wrong indentation, causing subtle bash errors.
-- Heredoc-in-heredoc or multi-indent scripts silently misbehave.
-- Test cases with uniformly indented commands pass; mixed-indent cases fail.
-
-**Prevention:**
-Implement dedent as a separate pre-pass over the `parts []` slice (mix of raw strings and placeholder AST nodes). Use a sentinel to represent placeholders when computing the minimum whitespace prefix. Apply removal only to string parts, never to placeholder nodes. Add unit tests with mixed-indentation commands explicitly.
+Document the constraint explicitly: if server and daemon run on the same host (development mode), the shared root can be a local directory, but the code must not assume this.
 
 **Warning signs:**
-- `command <<<` tests pass but `command {}` tests behave differently.
-- Test commands that use bash `if/else` (which naturally have mixed indentation) fail.
+- First remote daemon run fails with "no such file or directory" on input file paths.
+- Works on single-host dev setup, breaks on any two-host deployment.
+- `filepath.Abs()` in `pathmap.go` resolves differently on daemon than on server.
 
-**Phase:** Parser / AST evaluation phase (command block expansion).
+**Phase to address:**
+Phase 1 (Server + Daemon foundation) — The shared filesystem design must be locked before any task record serialization is implemented.
 
 ---
 
-### Pitfall 2: Scatter Wraps Output Types in Array[T], Conditional Wraps in T?
+### Pitfall 2: Task State Transition Race — Double-Claim by Multiple Daemons
 
 **What goes wrong:**
-A scatter section takes every declaration or call output of type `T` inside it and presents that binding as `Array[T]` to the outside scope. A conditional (`if`) section takes every binding of type `T` and presents it as `T?` (optional).
+Multiple daemons polling the server simultaneously can both see a task in `PENDING` state and both attempt to claim it. Without an atomic compare-and-swap on the state transition, both daemons receive the task, run it in parallel, and both report completion. The server either accepts a duplicate result (corrupting outputs) or rejects one (causing spurious failure).
 
-Nesting these produces compounding: a declaration of type `Int` inside `scatter { if { ... } }` is seen as `Array[Int?]` outside. Critically, nested conditionals do NOT produce `Int??`; WDL 1.2 deliberately collapses multiple optional layers — the type remains singly optional (`T?` not `T??`).
+This is the most common race condition in polling-based distributed work queues.
 
 **Why it happens:**
-The type-environment promotion logic is easy to implement incorrectly. A common mistake is to apply optional-wrapping multiple times when conditionals are nested, or to forget that the `nonempty` quantifier on an array (i.e. `Array[T]+`) must propagate from the scatter expression's own static type.
+The naive implementation is: daemon polls → GET /tasks/pending → pick first → POST /tasks/{id}/claim. The GET and the POST are separate HTTP round trips. Between them, another daemon can execute the same sequence.
 
-From miniwdl `Tree.py` lines 883-895 and 942-961: scatter uses `Type.Array(binding.value, nonempty=nonempty)` where `nonempty` is derived from whether the scatter expression is itself `Array[T]+`. The conditional uses `binding.value.copy(optional=True)`.
+**How to avoid:**
+Implement claiming as a single atomic SQL UPDATE with a WHERE clause that checks the current state:
 
-**Consequences:**
-- Type-checking passes with wrong types; runtime coercion errors appear later.
-- `select_first` / `select_all` usage by the user will fail if the engine presents the wrong type.
-- Workflows with nested scatter-in-conditional or conditional-in-scatter silently produce wrong types.
-
-**Prevention:**
-- Implement type-env propagation as two clearly named functions: `arrayize(t, nonempty)` and `optionalize(t)`.
-- `optionalize` must be idempotent — calling it on an already-optional type must not add a second `?`.
-- `arrayize` must correctly inherit `nonempty` from the scatter expression's static array type.
-- Add tests for all four nesting combinations: scatter-in-scatter, conditional-in-scatter, scatter-in-conditional, conditional-in-conditional.
-
-**Warning signs:**
-- `Array[Int?]` showing up as `Array[Int]` or `Int??` in test output.
-- Failures only on nested scatter/conditional workflows.
-
-**Phase:** Type system and workflow dependency analysis phase.
-
----
-
-### Pitfall 3: WDL Type Coercion Rules Are Asymmetric and Context-Dependent
-
-**What goes wrong:**
-WDL 1.2 coercion rules are deceptively specific. The correct table (from miniwdl `Type.py` documentation):
-
-1. `Int` coerces to `Float`
-2. `Boolean`, `Int`, `Float`, `File` coerce to `String`
-3. `String` coerces to `File`, `Int`, `Float`
-4. `Array[T]` coerces to `String` only if `T` does as well
-5. `T` coerces to `T?` but NOT the reverse (statically)
-6. `Array[T]+` coerces to `Array[T]` but NOT the reverse (statically)
-
-Rule 1 applies only at the "top level" — Int/Float coercion does NOT propagate inside compound types. `Array[Int]` does NOT coerce to `Array[Float]`.
-
-The `check_quant=False` mode (used by miniwdl in some expression contexts) relaxes rules 5 and 6 at static check time but those reversed coercions can still fail at runtime.
-
-**Why it happens:**
-Developers model coercion as a simple `isAssignable(from, to)` predicate and accidentally allow deep coercion within compound types.
-
-**Consequences:**
-- `Array[Int]` silently treated as `Array[Float]`, causing runtime failures.
-- Optional stripping or promotion applied incorrectly, causing wrong type errors.
-- Spec-compliant WDL rejected; non-compliant WDL accepted.
-
-**Prevention:**
-- Implement coercion checks with a `checkQuant bool` parameter that mirrors miniwdl.
-- The `check` method should only apply numeric coercion at the immediate level, not recursively into the item type of Array or value type of Map.
-- String ↔ File coercion is allowed; String → Directory is NOT.
-- Write a matrix of all type-pair coercion tests; use the miniwdl test suite as ground truth.
-
-**Warning signs:**
-- `Array[Int]` passes where `Array[Float]` is expected.
-- Optional errors only appear at runtime, not at parse/check time.
-
-**Phase:** Type system implementation phase.
-
----
-
-### Pitfall 4: Command Block Placeholder Syntax Mismatch Between `command {}` and `command <<<>>>`
-
-**What goes wrong:**
-WDL 1.2 has two command block delimiters with different placeholder rules:
-
-- `command { ... }`: both `~{}` and `${}` are valid placeholders. The `${}` style is permitted for backwards compatibility but conflicts with bash `${VAR}` syntax, causing parser ambiguity.
-- `command <<< ... >>>`: ONLY `~{}` is valid. The `${}` is intentionally NOT a placeholder here, so bash variables can be written as-is without escaping.
-
-A parser that accepts `${}` inside `command <<<>>>` blocks will silently corrupt scripts that use bash variables. Conversely, a parser that rejects `${}` inside `command {}` breaks backwards-compatible WDL.
-
-The grammar (confirmed from miniwdl `_grammar.py` lines 218-222):
-```
-command1: "{" (COMMAND1_FRAGMENT? _EITHER_DELIM placeholder "}")* ...  // either ~{ or ${
-command2: "<<<" (COMMAND2_FRAGMENT? "~{" placeholder "}")* ...         // only ~{
+```sql
+UPDATE tasks
+SET state = 'RUNNING', daemon_id = ?, claimed_at = ?
+WHERE id = ? AND state = 'PENDING'
 ```
 
-**Consequences:**
-- Bash variables like `${HOME}` inside `command <<<>>>` are incorrectly interpolated as WDL expressions (parse error or wrong output).
-- WDL that mixes bash and WDL variables in `command {}` blocks is silently broken.
+Return the number of rows affected. If 0 rows were updated, the claim failed (another daemon won); the daemon must discard this task and poll again. Do not use a SELECT followed by an UPDATE — this is a TOCTOU race even within a single SQLite connection unless the entire sequence is wrapped in an exclusive transaction.
 
-**Prevention:**
-- Implement two separate lexer states or grammar rules for the two command block styles.
-- `command <<<>>>` lexer should treat `${` as an ordinary literal character sequence.
-- `command {}` lexer should treat both `~{` and `${` as placeholder starts.
-- Test with bash scripts that include `${variable}` literally inside `command <<<>>>`.
+In WAL mode, SQLite serializes all writes, so the atomic UPDATE is safe. With multiple daemons connecting over the network to the server (not directly to SQLite), this logic lives in the server and is naturally serialized.
 
 **Warning signs:**
-- Test command blocks containing bash `${PWD}` or `${1}` fail to parse correctly.
-- Placeholder detection tests pass but integration tests with real bash scripts fail.
+- The same task appears in `running` state twice in the database.
+- Duplicate output files with conflicting content.
+- Tasks that complete twice: server logs show two `COMPLETED` transitions for the same task ID.
 
-**Phase:** Lexer/parser implementation phase.
+**Phase to address:**
+Phase 1 (Server + Daemon foundation) — The claim endpoint must use this pattern from its first commit.
 
 ---
 
-### Pitfall 5: Docker File Path Mapping — Host Paths vs Container Paths
+### Pitfall 3: SQLite Concurrent Access — Server + Background Goroutines Without WAL Mode
 
 **What goes wrong:**
-WDL tasks run inside Docker containers. Input files live on the host filesystem. The engine must:
-1. Map every input `File`/`Directory` value to a stable in-container path.
-2. Pass the container path (not the host path) when expanding the task command.
-3. After the task exits, reverse-map output `File` paths from container back to host.
-4. Handle the case where a task output path refers to an input file (the engine must recognize it as an already-mapped path, not a new output).
+The server uses SQLite for workflow and task state persistence. The server runs multiple goroutines: the HTTP handler goroutine (serving daemon polls), the scheduler goroutine (advancing the DAG), and potentially a heartbeat-checker goroutine. These all write to SQLite concurrently. Without WAL mode, SQLite uses journal mode where a write blocks all readers. Under load, goroutines contend for the write lock, producing `SQLITE_BUSY` errors.
 
-A common mistake is to pass host paths directly into the container command, which either fails (path does not exist inside container) or is a security issue.
-
-From miniwdl `task_container.py`: the engine maintains `input_path_map: Dict[str, str]` (host → container) and `input_path_map_rev: Dict[str, str]` (container → host). Output delocalization checks `container_path in input_path_map_rev` first to handle output-equals-input cases.
-
-**Consequences:**
-- Task commands receive host paths, fail inside container.
-- Output files that are the same as inputs cause duplicate-copy or "file not found" errors.
-- Path collisions: two different input files with the same basename get overwritten.
-
-**Prevention:**
-- Maintain bidirectional maps (host↔container) built before container start.
-- Assign container paths under a known prefix (e.g. `/mnt/flowy_task/inputs/`); use a counter suffix to deduplicate identical basenames.
-- During output collection, first check whether the container path is in the reverse map before treating it as a new host file.
-- Input files must be mounted read-only by default (bind-mount with `:ro`); document that tasks needing to rename/move inputs require a copy step.
-
-**Warning signs:**
-- Tasks with two input files of the same name fail.
-- Output files that are processed versions of inputs (same name, different path) are not found.
-
-**Phase:** Docker task execution phase.
-
----
-
-### Pitfall 6: Goroutine Leaks in Scatter Execution
-
-**What goes wrong:**
-Scatter launches N goroutines in parallel. If one goroutine panics or the scatter is cancelled, the remaining goroutines must be cleaned up. Using a raw `sync.WaitGroup` makes this hard: the WaitGroup has no cancellation channel, so goroutines that are blocked on Docker API calls or channel sends will leak indefinitely.
-
-Additionally, sending on a closed result channel (e.g. when the scatter is cancelled before all goroutines finish) causes a panic.
+The Go `database/sql` connection pool also causes problems: if multiple goroutines hold connections from the pool and one begins a write transaction, others may get `database is locked` even in WAL mode if the connection pool size exceeds SQLite's single-writer limit.
 
 **Why it happens:**
-The natural first pass uses `sync.WaitGroup` + a shared error variable + a results slice. Under cancellation, goroutines that haven't been checked by the scheduler continue running after the caller has moved on.
+SQLite WAL mode is not the default. Using `database/sql` with the default pool size of N allows N concurrent open transactions, which exceeds SQLite's concurrency model for writers.
 
-**Consequences:**
-- Docker containers accumulate without cleanup on workflow cancellation or error.
-- Memory/goroutine leaks grow with scatter width.
-- "send on closed channel" panics in error paths.
+**How to avoid:**
+Enable WAL mode at database open time:
+```sql
+PRAGMA journal_mode=WAL;
+PRAGMA busy_timeout=5000;
+```
 
-**Prevention:**
-Use `golang.org/x/sync/errgroup` with `errgroup.WithContext`. Pattern:
+Set `db.SetMaxOpenConns(1)` for the write connection (or use a single-connection pool for writes). Reads can use a separate read-only connection pool. Alternatively, use a single goroutine as the database actor (all DB writes go through a channel to this goroutine), which eliminates concurrency entirely.
+
+For the v1.1 milestone with a single server process and a handful of daemons, the simple approach is sufficient: `SetMaxOpenConns(1)`, WAL mode, `busy_timeout=5000ms`.
+
+**Warning signs:**
+- `database is locked` errors under any concurrent load.
+- Flaky integration tests that pass alone but fail when run in parallel.
+- Server hangs when multiple daemons poll simultaneously.
+
+**Phase to address:**
+Phase 1 (Server + Daemon foundation) — Configure at database initialization; not something to retrofit.
+
+---
+
+### Pitfall 4: Daemon Crash Leaves Tasks in RUNNING State Forever (No Heartbeat)
+
+**What goes wrong:**
+A daemon claims a task, starts the Docker container, and then crashes (OOM, host reboot, network partition). The task remains in `RUNNING` state in the server's database indefinitely. The server's DAG scheduler waits for this task to complete before advancing, so the entire workflow hangs.
+
+Without a heartbeat mechanism, the server cannot distinguish "daemon is running this task" from "daemon crashed 20 minutes ago."
+
+**Why it happens:**
+In the monolithic model, process death = engine death = clean state. Adding a daemon introduces a separate process whose liveness must be tracked independently.
+
+**How to avoid:**
+Implement a two-level timeout system modeled on Temporal's heartbeat pattern:
+
+1. **Daemon heartbeat**: Daemon sends `POST /tasks/{id}/heartbeat` every N seconds while the task runs. The server records `last_heartbeat_at` on the task row.
+
+2. **Server reaper**: A background goroutine on the server runs every M seconds (M > N) and marks any `RUNNING` task where `last_heartbeat_at < now - timeout` as `FAILED` with reason `daemon_timeout`. This makes the task available for retry or marks the workflow failed.
+
+3. **Task claimed_at safety net**: Even if the heartbeat goroutine is never started, any task stuck in `RUNNING` for more than `max_task_duration` should be reaped.
+
+Timeout values must be configurable (not hardcoded). Reasonable defaults: heartbeat interval 30s, reaper interval 60s, timeout 3x heartbeat interval (90s).
+
+The daemon must send heartbeats from a goroutine separate from the Docker execution goroutine — not after the container exits.
+
+**Warning signs:**
+- Workflows hang indefinitely after a daemon is killed.
+- Tasks remain in `RUNNING` state after daemon process is gone.
+- No `last_heartbeat_at` column in the tasks table.
+
+**Phase to address:**
+Phase 1 (Server + Daemon foundation) — The heartbeat mechanism is load-bearing for correctness; cannot be deferred.
+
+---
+
+### Pitfall 5: Orphaned Docker Containers When Daemon Receives SIGTERM
+
+**What goes wrong:**
+The daemon is executing a Docker container when it receives SIGTERM (graceful shutdown signal). If the daemon exits immediately, the Docker container continues running on the host — there is no parent process to reap it. The container accumulates, consuming resources, and its output is never collected. The server marks the task as timed out (via heartbeat reaper), but the container may run for hours.
+
+**Why it happens:**
+Graceful shutdown in Go requires explicit signal handling. The default Go behavior on SIGTERM is to terminate immediately. The Docker SDK `Run` method in `docker.go` starts a container and waits on channels — interrupting this mid-flight leaves the container running.
+
+**How to avoid:**
+The daemon must:
+
+1. Trap `SIGTERM` / `SIGINT` via `signal.NotifyContext` and cancel the root context.
+
+2. The context cancellation propagates into the Docker `runner.Run(ctx, req)` call, which already handles `ctx.Done()` by calling `cli.ContainerRemove(context.Background(), resp.ID, container.RemoveOptions{Force: true})` (this path is already implemented in `docker.go`).
+
+3. The daemon must wait for all in-flight task goroutines to complete (via `sync.WaitGroup` or `errgroup.Wait()`) before exiting. The shutdown must have a deadline (e.g., 30s) after which the daemon force-exits and relies on the server's heartbeat reaper to clean up state.
+
+4. Before exiting, report task failures to the server for any tasks that were cancelled due to shutdown.
+
+The key insight: `docker.go` already has the cleanup path on `ctx.Done()`. The daemon just needs to (a) pass a cancellable context and (b) wait for that path to execute before the process exits.
+
+**Warning signs:**
+- `docker ps` shows lingering containers after daemon is stopped.
+- Daemon exits instantly when killed; no log message about waiting for in-flight tasks.
+- No `signal.NotifyContext` or `signal.Notify` call in daemon main.
+
+**Phase to address:**
+Phase 2 (Daemon execution) — Implement signal handling before any task execution code.
+
+---
+
+### Pitfall 6: Scatter Fan-Out Overwhelming Daemons — No Global Concurrency Limit
+
+**What goes wrong:**
+A WDL scatter over 10,000 items creates 10,000 tasks in `PENDING` state simultaneously. All daemons start claiming tasks as fast as they can poll. Each daemon runs up to its local concurrency limit (currently hardcoded to 8 in the scheduler). With 5 daemons, 40 Docker containers start simultaneously. The host runs out of memory, Docker OOMs containers, and the entire workflow fails.
+
+The current in-process scheduler has `g.SetLimit(8)` as a global limit. In the distributed model, this limit only applies per-daemon and is no longer a system-wide constraint.
+
+**Why it happens:**
+The monolithic scheduler controls total parallelism. The distributed model replaces that single limit with N daemon-local limits that are not coordinated. The server creates all scatter tasks at once with no throttling.
+
+**How to avoid:**
+The server must implement scatter task emission as a rate-limited or semaphore-controlled process rather than creating all N tasks atomically.
+
+Options (in order of implementation complexity):
+1. **Server-side concurrency limit**: The server tracks how many tasks are in `RUNNING` state for a given workflow and only promotes tasks from `QUEUED` to `PENDING` when the running count is below a configured limit. This is the simplest approach and matches how Cromwell handles scatter parallelism.
+
+2. **Per-daemon capacity signaling**: Daemons report their available capacity in the poll response, and the server only marks tasks pending when a daemon has capacity. More complex but more accurate.
+
+For v1.1, option 1 is sufficient. The limit should be configurable per-workflow with a server-wide default.
+
+**Warning signs:**
+- All scatter tasks transition to `PENDING` simultaneously regardless of daemon capacity.
+- Host memory exhaustion when running large scatter workflows.
+- Docker containers being OOM-killed.
+- No concept of "max concurrent tasks" in the server configuration.
+
+**Phase to address:**
+Phase 2 (Daemon execution + scatter) — Must be designed before scatter task creation is implemented.
+
+---
+
+### Pitfall 7: Error Serialization Loses Detail Across Network Boundary
+
+**What goes wrong:**
+The existing engine uses Go's `error` interface and `fmt.Errorf("...%w", err)` chains. `TaskError` carries `TaskName`, `ExitCode`, and `Stderr` as structured fields. When a daemon executes a task and it fails, this error must cross the HTTP boundary from daemon to server, and then from server to client.
+
+If the daemon serializes the error as a plain string (JSON `"error": "task X failed: exit 1"`) the server loses the exit code and stderr. The client cannot distinguish "task failed with exit 127 (command not found)" from "task failed with exit 1 (user error)" from "daemon crashed." Spectool conformance tests may fail because they check for specific error semantics.
+
+**Why it happens:**
+Go's `error` interface has no standard JSON serialization. Developers tend to serialize `err.Error()` as a string, losing structure.
+
+**How to avoid:**
+Define an explicit `TaskResult` struct for the daemon → server API response:
 
 ```go
-g, ctx := errgroup.WithContext(parentCtx)
-g.SetLimit(maxParallel)          // bound concurrency
-for _, item := range scatterItems {
-    item := item                 // capture loop variable
-    g.Go(func() error {
-        return runTask(ctx, item)
-    })
-}
-if err := g.Wait(); err != nil { ... }
-```
-
-When `ctx` is cancelled (first error), all subsequent `runTask` calls see `ctx.Done()` and exit early. Never close a results channel from inside a goroutine; collect results into a pre-allocated slice indexed by scatter position instead.
-
-Run `go test -race` on all scatter tests. Use `goleak` in tests to detect goroutine leaks.
-
-**Warning signs:**
-- `go test -race` reports data races on the error variable or results slice.
-- Workflow cancellation leaves orphaned Docker containers (`docker ps` shows lingering containers).
-- Test suite takes longer than expected when error cases are exercised.
-
-**Phase:** Scatter/workflow execution phase.
-
----
-
-### Pitfall 7: Modeling WDL's Dynamic Type System in Go's Static Type System
-
-**What goes wrong:**
-miniwdl uses Python's dynamic typing: a WDL `Value` is a Python object; its `type` attribute is set at construction and checked at runtime. In Go, this becomes an interface (e.g. `type Value interface { Type() WDLType; ... }`) with concrete structs per WDL type.
-
-The pitfall is modeling WDL's `Any` type (used for empty arrays, None literals) or compound values like `Map[String, Int]` where the Go struct must carry a runtime `WDLType` descriptor. Without that descriptor, two different `Array` values cannot know whether they are `Array[Int]` or `Array[String]` at runtime — the Go type system cannot distinguish them because both are `ArrayValue{items: []Value{}}`.
-
-**Consequences:**
-- Empty array `[]` cannot be type-unified with a non-empty array.
-- Map/Pair iteration fails when the Go struct has no runtime type tag.
-- Type assertions (`v.(*ArrayValue)`) succeed but `v.Type()` returns wrong element type for coercion checks.
-
-**Prevention:**
-Every concrete `Value` struct must store its WDL type as a field, not infer it from the Go concrete type:
-```go
-type ArrayValue struct {
-    wdlType ArrayType  // carries item type, nonempty flag
-    Items   []Value
+type TaskResult struct {
+    State    string `json:"state"`     // "completed" | "failed" | "error"
+    ExitCode int    `json:"exit_code"` // container exit code
+    Stderr   string `json:"stderr"`    // last N bytes of stderr
+    Error    string `json:"error"`     // daemon-level error message (not task failure)
 }
 ```
-This mirrors miniwdl's `Value.Array` which carries `type: Type.Array(item_type)`. For `None` literals, use a `NullValue` struct carrying `WDLType = Any(optional=true)` so coercion checks can treat it correctly.
 
-Type-switch (`switch v := val.(type)`) should dispatch on Go concrete type for structural access, but always use `.Type()` for WDL-level type decisions.
+The server reconstructs a `TaskError` from this payload and stores it in the database. The client receives structured failure information via the status API.
 
-**Warning signs:**
-- Empty array literals `[]` cause panic or wrong-type errors in type unification.
-- Map operations on `Map[String, Any]` produce wrong element types.
-
-**Phase:** Type system and value representation phase (foundational — do this first).
-
----
-
-## Moderate Pitfalls
-
----
-
-### Pitfall 8: Optional Output Files Must Be Distinguishable from Required Missing Files
-
-**What goes wrong:**
-When a task declares an output like `File? out = "result.txt"`, if `result.txt` does not exist in the container work directory, the output value must be `None` (not an error). But if a non-optional `File out = "result.txt"` is declared and the file is missing, the task must fail.
-
-Implementations frequently unify these two cases incorrectly, either failing both or succeeding both.
-
-**Consequences:**
-- Optional outputs that are conditionally produced cause spurious task failures.
-- Required outputs that are missing are silently treated as null.
-
-**Prevention:**
-During output collection, resolve each declared output expression. If the resulting `File` path does not exist on the host:
-- If the declared type has `optional=true`, substitute `NullValue`.
-- Otherwise, raise a runtime error: "required output file not found."
-Extend this to `Array[File?]` where individual elements may be null.
+Define error categories: task failure (container exited non-zero), infrastructure failure (daemon couldn't start Docker), and system failure (daemon crashed / heartbeat timeout). Clients need to distinguish these to provide useful diagnostics.
 
 **Warning signs:**
-- Tasks with `if (condition) then file_path else None` output patterns fail unconditionally.
+- Client outputs "task failed" with no exit code or stderr.
+- All failure types look identical from the client's perspective.
+- Daemon response body contains only `{"error": "some string"}`.
 
-**Phase:** Docker task execution / output collection phase.
-
----
-
-### Pitfall 9: `sep`, `true/false`, `default` Placeholder Options Are Deprecated But Must Still Parse
-
-**What goes wrong:**
-WDL 1.2 marks expression placeholder options (`sep=`, `true=`, `false=`, `default=`) as deprecated (to be removed in WDL 2.0). However, they are still valid in WDL 1.2 and must be parsed and evaluated correctly.
-
-Example: `~{sep=", " array_val}` is legal WDL 1.2 even though users should migrate to `~{sep(", ", array_val)}`.
-
-A parser that omits these options will reject a large proportion of real-world WDL 1.2 files.
-
-**Prevention:**
-Include placeholder option parsing (`sep`, `true`, `false`, `default`) in the grammar. Emit a lint warning but not an error. Validate that `sep` is only used with `Array` expressions, and `true`/`false` only with `Boolean` expressions (miniwdl enforces this at type-check time in `Expr.Placeholder._infer_type`).
-
-**Phase:** Parser phase.
+**Phase to address:**
+Phase 1 (Server + Daemon API design) — Define the API contract before implementing either side.
 
 ---
 
-### Pitfall 10: `String.coerces(File)` and `File.coerces(String)` Are Both True — Use Carefully
+### Pitfall 8: Shared Filesystem Permissions and File Visibility Timing
 
 **What goes wrong:**
-WDL 1.2 allows `String` to coerce to `File` (a string literal path becomes a file reference) and `File` to coerce to `String`. This bidirectional coercion means a type-unification algorithm that simply finds a common supertype may incorrectly unify `[some_file, some_string]` as `Array[String]` when `Array[File]` was intended (or vice versa).
+Two subtle problems with NFS or shared directories:
 
-miniwdl's `Type.unify` has explicit logic to prefer `File` over `String` when both are candidates, but the exact behavior is subtle.
+**Problem A — Permissions**: The daemon runs Docker containers as root (or as the image's default user). The container writes output files to `/mnt/outputs` (which is bind-mounted to a shared directory). These files may be created with ownership `root:root` and permissions `0600`, making them unreadable by the server process running as a different user.
 
-**Consequences:**
-- `read_string(some_file)` stops working because the file path was coerced to a plain string.
-- Output file paths become string values that are not tracked for output collection.
+**Problem B — NFS metadata caching**: NFS clients cache directory metadata. A daemon writes a file to the shared filesystem, then reports completion to the server. The server immediately tries to read the file for output collection. The server's NFS client has stale cache and reports "file not found." This is the NFS close-to-open coherency window.
 
-**Prevention:**
-Implement type unification with explicit File/String precedence: when unifying `[File, String]`, the result must be `File`, not `String`, because losing file-tracking semantics is always wrong. Add a test that unifies a heterogeneous array literal `[some_file, "literal"]` and verifies the resulting type is `Array[File]`.
+**Why it happens:**
+Problem A: Docker container UID/GID does not match host service UIDs.
+Problem B: NFS attribute cache TTL is typically 3-30 seconds by default. The server queries the filesystem before the cache refreshes.
 
-**Phase:** Type system phase.
+**How to avoid:**
+For Problem A: Configure Docker to run containers with explicit UID/GID matching the service user (`--user $(id -u):$(id -g)`), or use `chmod`/`chown` as a post-execution step in the daemon before reporting completion.
 
----
+For Problem B: Either (a) the daemon collects and parses outputs locally before reporting completion (pushing output values rather than having the server pull them), or (b) the server retries file existence checks with exponential backoff. Option (a) is architecturally cleaner and matches miniwdl's design where the runner (daemon) collects outputs and returns values.
 
-### Pitfall 11: Map and Pair Key/Value Ordering and Equality Semantics
-
-**What goes wrong:**
-WDL `Map` is defined in the spec as having insertion-order semantics (iteration order equals insertion order). Go's built-in `map` is unordered. Using `map[string]Value` directly will produce non-deterministic output from `write_map`, `read_map`, and any stdlib function that iterates map keys.
-
-Additionally, `Map` keys must be comparable primitive types. Attempting to use `Map[Array[String], Int]` or other compound key types must be rejected at type-check time.
-
-**Consequences:**
-- `write_map` produces different file content on different runs, breaking reproducibility.
-- Downstream tools that parse map outputs get non-deterministic key order.
-
-**Prevention:**
-Implement WDL `Map` as an ordered structure (e.g., a slice of key-value pairs backed by a map for O(1) lookup). This is confirmed by the WDL 1.2 spec's requirement for deterministic map ordering. Reject non-primitive map key types during type checking.
-
-**Phase:** Type system / stdlib implementation phase.
-
----
-
-### Pitfall 12: `read_bool` Case and Whitespace Sensitivity
-
-**What goes wrong:**
-The WDL 1.2 spec states `read_boolean` is case-insensitive and whitespace-insensitive (e.g., `" True\n"` must return `true`). miniwdl had a bug (Issue #701, July 2024) where non-lowercase boolean values with whitespace were rejected.
-
-**Prevention:**
-Implement `read_boolean` with `strings.TrimSpace` + `strings.ToLower` before comparing to `"true"` / `"false"`. Add test cases: `"true\n"`, `"  False  "`, `"TRUE"`.
-
-**Phase:** Stdlib implementation phase.
-
----
-
-### Pitfall 13: `round()` Must Use "Half Up" Not "Half to Even" (Banker's Rounding)
-
-**What goes wrong:**
-Go's `math.Round` uses "half away from zero" (which is equivalent to "half up" for positive numbers), which matches WDL's spec. However, if an implementation uses Python-style `round()` as reference, Python uses "round half to even" (banker's rounding), which differs for midpoint values: `round(2.5)` is `2` in Python but `3` in WDL.
-
-miniwdl v1.13.0 explicitly changed `round()` to use "half up" to align with the WDL spec.
-
-**Prevention:**
-Use `math.Round` from Go's standard library (half-away-from-zero = half-up for positive values). Do not use `math.RoundToEven`. Add test: `round(2.5) == 3`, `round(3.5) == 4`, `round(-2.5) == -3`.
-
-**Phase:** Stdlib implementation phase.
-
----
-
-### Pitfall 14: Concurrent Access to Shared State in the Workflow Evaluator
-
-**What goes wrong:**
-A workflow evaluator maintains a dependency graph and a set of "ready nodes" (nodes whose inputs are all resolved). As scatter goroutines complete and resolve outputs, they concurrently write into the shared output environment. Using a plain `map` for the output environment with no synchronization causes `fatal error: concurrent map writes` — a process-terminating panic, not a recoverable error.
-
-**Consequences:**
-- Workflow engine crashes on any workflow with parallel tasks.
-- The crash is non-deterministic (appears only when two goroutines write simultaneously).
-
-**Prevention:**
-Protect the shared output environment with a `sync.Mutex` or use `sync.Map`. A cleaner design is to have scatter goroutines send completed outputs over a channel, with a single goroutine ("scheduler loop") that reads from the channel and updates the dependency graph. This avoids shared-state entirely. Use `go test -race` on all workflow integration tests from day one.
+Document in deployment notes: `noac` NFS mount option disables attribute caching but hurts performance. Prefer the architectural fix (option a) over NFS tuning.
 
 **Warning signs:**
-- Tests pass in isolation but fail under `go test -race`.
-- Larger workflow tests are flaky.
+- "Permission denied" when server reads task output files.
+- "File not found" immediately after daemon reports task completion, then file appears 5 seconds later.
+- Works on single-host (local filesystem) but breaks on NFS.
 
-**Phase:** Scatter/workflow execution phase.
-
----
-
-## Minor Pitfalls
+**Phase to address:**
+Phase 2 (Daemon execution) — Output collection design must be decided before implementation.
 
 ---
 
-### Pitfall 15: Exponential Notation in JSON/YAML Input Files
+### Pitfall 9: Configuration Drift Between Server and Daemon Versions
 
 **What goes wrong:**
-JSON input files for WDL workflows may contain scientific notation like `1.5e-10`. Standard JSON parsers handle this, but a custom JSON-to-WDL-value converter that only handles plain decimals will fail silently or reject valid input.
+Server v1.1 is deployed. A daemon running v1.0 (from before the distributed refactor) polls the server. The daemon's API client expects a different JSON schema for task records. Alternatively, a new field is added to the server's task assignment response, and old daemons silently ignore it — but that field is required for correct execution (e.g., a new `env_vars` field for task environment variables).
 
-**Prevention:**
-Use Go's `encoding/json` with `json.Number` type to preserve numeric representations, then parse via `strconv.ParseFloat`. Add test inputs with values like `1e6`, `1.5e-10`, `-3.2E+4`.
+This is a particularly insidious problem because it produces incorrect silent behavior, not a visible error.
 
-**Phase:** Input parsing / CLI phase.
+**Why it happens:**
+In the monolithic model, all code runs in one binary — version mismatch is impossible. Adding separate binaries makes independent deployment possible and therefore version drift possible.
+
+**How to avoid:**
+1. The server must include a `version` field in all API responses. Daemons must reject connections to servers with incompatible versions and log a clear error message.
+
+2. Define the API contract as Go structs with `json:"..."` tags shared in a common package (e.g., `pkg/api/types.go`). Both server and daemon import this package. API changes require updating the shared struct and both callers simultaneously.
+
+3. Use explicit versioning in the API path (`/api/v1/tasks/poll`) so future breaking changes can be introduced as `/api/v2/` without breaking existing daemons.
+
+4. Add the daemon's version to every heartbeat and poll request. The server can log version mismatches for visibility.
+
+**Warning signs:**
+- Server and daemon compile independently with no shared API type package.
+- API types defined inline in each binary rather than in a shared package.
+- No version handshake at daemon startup.
+
+**Phase to address:**
+Phase 1 (API design) — Shared types package must be established before either binary is implemented.
 
 ---
 
-### Pitfall 16: Parser Grammar Left Recursion in Expression Rules
+### Pitfall 10: `flowy run` Synchronous Mode — Poll Loop That Never Terminates
 
 **What goes wrong:**
-WDL expression grammar includes left-recursive patterns (e.g., member access `expr.field`, indexing `expr[idx]`, function calls `expr(args)`). Participle (Go parser library) does not support left recursion. Goyacc requires explicit precedence declarations and has shift/reduce conflicts by default for common expression patterns.
+The `flowy run` command must remain synchronous for spectool compatibility: submit a workflow, poll for completion, print outputs. The naive implementation is a tight `for` loop polling the server every N milliseconds. Two failure modes:
 
-If the grammar is naively copied from miniwdl's lark grammar (which handles left recursion via PEG), it will not compile in goyacc or will produce incorrect parse trees in participle without restructuring.
+**Mode A**: The workflow fails, the server sets workflow state to `FAILED`, but the client's poll loop only checks for `COMPLETED` and loops forever (100% CPU, no output).
 
-**Prevention:**
-Use goyacc with explicit `%left` / `%right` precedence declarations for all binary operators. Or use a hand-written Pratt parser for expressions (recommended: simpler to get precedence correct, no conflicts). The WDL expression grammar has 15+ operator precedence levels; encode them explicitly.
+**Mode B**: The server becomes temporarily unreachable (restart, network blip). The poll loop returns a connection error, and the client exits with error — abandoning a workflow that is still running on the server.
 
-**Phase:** Parser implementation phase.
+**Why it happens:**
+Mode A: Incomplete terminal state handling.
+Mode B: Conflating "server unreachable" (transient) with "workflow failed" (permanent).
+
+**How to avoid:**
+The poll loop must:
+1. Treat `COMPLETED`, `FAILED`, and `ABORTED` as terminal states that exit the loop.
+2. Distinguish connection errors (retry with backoff) from application errors (exit immediately).
+3. Have a maximum total timeout with a clear error message ("timed out waiting for workflow; run ID: X").
+4. Print the workflow run ID to stderr immediately after submit, so the user can reattach if the client is killed.
+
+For spectool compatibility, the synchronous mode must map workflow terminal states to exit codes matching the original `flowy run` behavior (exit 0 for success, exit 1 for task failure).
+
+**Warning signs:**
+- `flowy run` spins at 100% CPU when a workflow fails.
+- Client exits when server is restarted mid-workflow.
+- No run ID printed before polling begins.
+- Poll loop only handles `state == "completed"`.
+
+**Phase to address:**
+Phase 3 (Client CLI + spectool compatibility) — Test all terminal state transitions before declaring spectool compatibility.
 
 ---
 
-### Pitfall 17: WDL `None` Literal Has Type `Any(optional=true)`, Not `T?` for Any Specific T
+## Technical Debt Patterns
 
-**What goes wrong:**
-The `None` literal in WDL is the only value of type `Any?` (or `Null`). It can be assigned to any optional type. An implementation that assigns it a specific type (e.g., `Int?`) at the point of the literal will fail when it is used in a context requiring `String?` or `File?`.
+Shortcuts that seem reasonable but create long-term problems.
 
-**Prevention:**
-Represent `None` as a `NullValue` carrying `WDLType = AnyOptional`. During type-checking, `AnyOptional.coerces(T?)` returns true for any `T?`. At runtime, coercion of `NullValue` to any optional type returns `NullValue` unchanged.
-
-**Phase:** Type system / expression evaluator phase.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Hardcode shared filesystem path in source | Avoids config complexity | Breaks any non-standard deployment; breaks tests on CI without that path | Never — use config from day one |
+| Skip heartbeat, rely on task timeout only | Simpler daemon | Stuck tasks take `max_task_duration` to be reaped (could be hours for genomics) | Never — heartbeat is the correct primitive |
+| Serialize errors as plain strings | Faster to implement | Clients cannot distinguish failure types; spectool test failures are opaque | Never for task results; acceptable for internal logs |
+| Single SQLite connection pool without WAL | Simpler setup | `database is locked` under any concurrent load | Only in single-goroutine server (no concurrent handlers) |
+| Store Docker container ID in memory (not DB) | Simpler daemon state | Container cannot be cleaned up after daemon restart | Only in MVP where daemon restart = workflow restart |
+| Copy all scatter tasks to PENDING at once | Simpler DAG advancement | OOM on large scatters | Only if scatter size is bounded (< 100 items) |
 
 ---
 
-## Phase-Specific Warnings
+## Integration Gotchas
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| Lexer/Parser | `command <<<>>>` must not treat `${}` as placeholder | Separate lexer modes per command block style |
-| Parser | Left-recursive expression grammar | Use Pratt parser or explicit goyacc precedence |
-| Parser | Placeholder option parsing (`sep=`, `true=`) | Include in grammar; mark deprecated at lint level |
-| Type system | `Array[Int]` incorrectly coerces to `Array[Float]` | Coercion is shallow — no recursion into compound types |
-| Type system | Empty array `[]` type | Carry runtime WDL type in every `ArrayValue` struct |
-| Type system | `File`/`String` unification | Prefer `File` in unify when both are candidates |
-| Type system | `None` literal | Use `AnyOptional` type, not a specific `T?` |
-| Type system | `Map` ordering | Use ordered map (slice + map), not `map[K]V` |
-| Workflow analysis | Scatter/conditional type wrapping | `arrayize` and `optionalize` must be separate, idempotent |
-| Expression eval | Command block dedent | Dedent before interpolation; use min-whitespace algorithm |
-| Expression eval | `round()` rounding mode | Use half-up (Go `math.Round`), not banker's rounding |
-| Expression eval | `read_boolean` sensitivity | Case-insensitive + whitespace-trim |
-| Docker execution | Input file path mapping | Maintain bidirectional host↔container map; use `:ro` mounts |
-| Docker execution | Optional vs required output files | Check optional flag before raising missing-file error |
-| Concurrency | Scatter goroutine leak | Use `errgroup.WithContext` + `SetLimit`; never close result channel from goroutine |
-| Concurrency | Shared output environment | Single-writer pattern or `sync.Mutex`; `go test -race` from day one |
+Common mistakes when connecting the new distributed components to the existing engine code.
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| `task.RunTask` reuse in daemon | Call `RunTask` with daemon's local `execRoot`; paths in task record point to shared FS | Daemon must reconstruct `execRoot` from the task's shared-FS execution directory, not from daemon's local temp |
+| PathMap reuse | `PathMap.AddFile` calls `filepath.Abs()` with daemon's CWD — produces daemon-local path | Input files on shared FS are already absolute shared-FS paths; pass them as-is, skip `filepath.Abs()` |
+| `workflow.RunWorkflow` reuse in server | Server calls the existing in-process scheduler, bypassing distributed dispatch | Server scheduler must be replaced or wrapped to dispatch to daemon via HTTP rather than calling `runTaskFn` directly |
+| `docker.go` DockerRunner reuse | Works unchanged on daemon host — Docker SDK uses `DOCKER_HOST` from env | Correct: DockerRunner is already host-agnostic via env config. Document that `DOCKER_HOST` must be set on daemon host. |
+| `outputs.go` output collection | Server calls `CollectOutputs` assuming files are on server's local FS | Daemon must call `CollectOutputs` (files are on daemon host's shared FS mount) and return values via API |
+| SQLite open in multiple goroutines | `sql.Open()` called in each handler; multiple connection objects created | Single `*sql.DB` created at server startup; shared across all handlers via dependency injection |
+| WDL AST parsing | Server parses WDL once at submit time; daemon re-parses at execution time (wasted work, drift risk) | Server parses and serializes the evaluated task inputs as JSON; daemon receives inputs as data, not WDL source |
+
+---
+
+## Performance Traps
+
+Patterns that work at small scale but fail as scatter width or workflow count grows.
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Polling all PENDING tasks per daemon request | Works fine; at 10K tasks, each poll returns 10K rows | Limit poll response to `min(daemon_capacity, N)` tasks per request | > 1000 pending tasks |
+| Loading full workflow state for each status request | Fast for 1 workflow; slow for 100 concurrent | Index tasks by workflow_id; use aggregated counts not full row scans | > 50 concurrent workflows |
+| Storing full stderr in task row | Convenient; at 1MB stderr × 1000 tasks, SQLite file grows 1GB | Cap stored stderr at 8KB; write full logs to shared FS file | > 100 tasks with verbose output |
+| Scatter tasks all in one SQL INSERT transaction | Fast for 100; at 10K items, single transaction holds write lock for seconds | Batch inserts in chunks of 500 | Scatter width > 500 |
+| Heartbeat reaper scans all RUNNING tasks every N seconds | Fine for 10 running tasks; at 1000, full table scan every 60s | Index `state` and `last_heartbeat_at`; reaper scans only the index | > 100 concurrently running tasks |
+
+---
+
+## Security Mistakes
+
+Domain-specific security issues for a multi-host execution system.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| No authentication on server REST API | Any process on the network can submit arbitrary WDL workflows and execute Docker containers | Add shared-secret token auth (header: `Authorization: Bearer <token>`) even for v1.1; this is minimal but sufficient for trusted-network HPC |
+| Daemon runs Docker with `--privileged` implicitly | Container escape from task code | Never pass `--privileged`; the existing `docker.go` does not, but any new bind mount helpers must not add it |
+| Task stderr/stdout logged to shared FS world-readable | Workflow data exposed to other users on shared filesystem | Create per-workflow directories with `0700` permissions; daemon must be the only writer |
+| Daemon trusts `task_id` in poll response without validation | Malicious server (or man-in-the-middle) sends daemon a task with crafted file paths that escape shared FS | Validate that all paths in task records are under the configured shared root before executing |
+| Configuration file contains shared secret in plaintext | Secret exposed in logs or version control | Use env variable for secret; document clearly; add shared secret to `.gitignore` template |
+
+---
+
+## UX Pitfalls
+
+Common user experience mistakes specific to distributed workflow execution.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| No run ID printed at submit time | User kills `flowy run`, cannot reattach to running workflow | Print run ID to stderr immediately after submit, before polling starts |
+| Opaque "workflow failed" with no task details | User must grep server logs to find which task failed and why | Client status command must show failed task name, exit code, stderr snippet |
+| Daemon startup silently succeeds but shared FS is not mounted | Tasks fail with "file not found" hours later | Daemon startup must validate shared FS access and fail fast with clear error |
+| Server port already in use gives Go default error | "bind: address already in use" is not actionable | Wrap net.Listen error to say "port 8080 is already in use; is flowy-server already running?" |
+| Daemon not running when workflow is submitted | Workflow queued but never executes; user waits forever | Server should warn (not block) when no daemons are registered at submit time |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+Things that appear complete but are missing critical pieces.
+
+- [ ] **Task claiming**: Endpoint exists and returns task — verify the claim is atomic (single UPDATE WHERE state='PENDING'; check rows-affected == 1)
+- [ ] **Heartbeat reaper**: Heartbeat endpoint exists — verify the server background goroutine is actually checking `last_heartbeat_at` and marking timed-out tasks FAILED
+- [ ] **Graceful shutdown**: Daemon handles SIGTERM — verify Docker containers are actually stopped (not orphaned) when daemon is killed mid-task
+- [ ] **Output collection location**: Daemon "reports completion" — verify it has already collected and serialized output values before reporting (server must not re-read files from shared FS)
+- [ ] **`flowy run` spectool mode**: Exits 0 on success — verify exits 1 on task failure, not 0 with empty outputs
+- [ ] **Scatter throttling**: Server creates scatter tasks — verify tasks are throttled (not all created PENDING simultaneously for large scatters)
+- [ ] **Shared FS path validation**: Config accepts `shared_root` — verify daemon validates it is mounted and writable at startup
+- [ ] **Error structure**: Daemon returns task result — verify `exit_code` and `stderr` are present as structured fields, not inside a string message
+
+---
+
+## Recovery Strategies
+
+When pitfalls occur despite prevention, how to recover.
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Tasks stuck RUNNING after daemon crash | LOW (if heartbeat reaper exists) | Wait for reaper timeout; or admin endpoint `POST /admin/tasks/{id}/requeue` |
+| Duplicate task execution (double-claim) | MEDIUM | Mark duplicate run FAILED; re-run workflow or resume from last checkpoint (v2 feature) |
+| Shared FS full (large scatter outputs) | HIGH | Pause server, move/delete old runs from shared FS, resume; requires manual intervention |
+| SQLite database locked under load | MEDIUM | Restart server; WAL mode means no corruption; investigate connection pool size |
+| Orphaned Docker containers on daemon host | LOW | `docker rm -f $(docker ps -aq --filter label=flowy-run)` — requires containers to be labeled at creation |
+| Config drift causing API mismatch | MEDIUM | Version check at daemon startup catches this before any work runs; upgrade daemon binary |
+| NFS metadata cache causing "file not found" | LOW (if daemon collects outputs) | Architectural fix (daemon pushes values); retry with backoff as fallback |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+How roadmap phases should address these pitfalls.
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| File path host assumptions | Phase 1: Shared filesystem design | Integration test: server and daemon run in separate directories; task inputs resolve correctly |
+| Task double-claim race | Phase 1: Claim endpoint implementation | Concurrent claim test: 10 goroutines claim same task simultaneously; exactly 1 succeeds |
+| SQLite locking under load | Phase 1: Database initialization | Load test: 10 concurrent daemon polls; no `database is locked` errors |
+| No heartbeat / orphaned tasks | Phase 1: Heartbeat mechanism | Kill daemon mid-task; verify server marks task FAILED within 3x heartbeat interval |
+| Orphaned Docker containers | Phase 2: Daemon graceful shutdown | SIGTERM daemon during task; verify `docker ps` shows container removed |
+| Scatter fan-out overwhelm | Phase 2: Scatter dispatch throttling | Submit scatter over 1000 items; verify max concurrent tasks matches configured limit |
+| Error serialization loss | Phase 1: API contract definition | Daemon returns task with exit code 42 and stderr; client shows both values |
+| Shared FS permissions | Phase 2: Daemon output collection | Container writes root-owned file; server can read it |
+| NFS metadata cache | Phase 2: Output collection design | Daemon collects outputs locally and pushes values; server does not read files directly |
+| Configuration drift | Phase 1: Shared API types package | Both binaries import same `pkg/api` package; compile error if API diverges |
+| `flowy run` poll loop | Phase 3: Client CLI + spectool | Workflow fails mid-run; client exits 1 with task failure details within 5 seconds |
 
 ---
 
 ## Sources
 
-- [WDL 1.2 Specification (openwdl/wdl)](https://github.com/openwdl/wdl/blob/wdl-1.2/SPEC.md)
-- [miniwdl releases changelog (chanzuckerberg/miniwdl)](https://github.com/chanzuckerberg/miniwdl/releases)
-- [Automatic Coercions Considered Harmful — openwdl issue #373](https://github.com/openwdl/wdl/issues/373)
-- [Handle leading whitespace in WDL command blocks more correctly — DataBiosphere/toil issue #4854](https://github.com/DataBiosphere/toil/issues/4854)
-- [miniwdl Expr.py — _dedent implementation](https://github.com/chanzuckerberg/miniwdl/blob/main/WDL/Expr.py) (reviewed locally at `../miniwdl/WDL/Expr.py`)
-- [miniwdl Tree.py — Scatter.add_to_type_env and Conditional.add_to_type_env](https://github.com/chanzuckerberg/miniwdl/blob/main/WDL/Tree.py) (reviewed locally)
-- [miniwdl Type.py — coercion rules documentation](https://github.com/chanzuckerberg/miniwdl/blob/main/WDL/Type.py) (reviewed locally)
-- [miniwdl task_container.py — input_path_map design](https://github.com/chanzuckerberg/miniwdl/blob/main/WDL/runtime/task_container.py) (reviewed locally)
-- [miniwdl _grammar.py — command1/command2 lexer rules](https://github.com/chanzuckerberg/miniwdl/blob/main/WDL/_grammar.py) (reviewed locally)
-- [read_bool whitespace/capitalization issue — miniwdl #701](https://github.com/chanzuckerberg/miniwdl/issues/701)
-- [miniwdl runner advanced documentation](https://miniwdl.readthedocs.io/en/latest/runner_advanced.html)
-- [errgroup package — golang.org/x/sync](https://pkg.go.dev/golang.org/x/sync/errgroup)
-- [Go Data Race Detector](https://go.dev/doc/articles/race_detector)
-- [Faster interpreters in Go — PlanetScale](https://planetscale.com/blog/faster-interpreters-in-go-catching-up-with-cpp)
-- [Writing yacc parsers with golang — DoltHub](https://www.dolthub.com/blog/2023-07-28-goyacc-parser-tips-tricks/)
+- [Temporal activity heartbeat and timeout documentation](https://docs.temporal.io/encyclopedia/detecting-activity-failures) — heartbeat pattern for daemon liveness
+- [Temporal error handling in distributed systems](https://temporal.io/blog/error-handling-in-distributed-systems) — structured error propagation
+- [SQLite WAL mode documentation](https://sqlite.org/wal.html) — concurrency semantics for server use
+- [SQLite locking and concurrency v3](https://sqlite.org/lockingv3.html) — write serialization model
+- [Abusing SQLite to Handle Concurrency — SkyPilot Blog](https://blog.skypilot.co/abusing-sqlite-to-handle-concurrency/) — practical patterns for Go + SQLite
+- [Graceful Shutdown in Go: Practical Patterns — VictoriaMetrics](https://victoriametrics.com/blog/go-graceful-shutdown/) — signal handling for in-flight tasks
+- [Implementing Graceful Shutdown in Go — RudderStack](https://www.rudderstack.com/blog/implementing-graceful-shutdown-in-go/) — WaitGroup + context cancel pattern
+- [Cromwell backend documentation: file localization](https://cromwell.readthedocs.io/en/stable/backends/HPC/) — how Cromwell handles file staging across hosts
+- [Cromwell task localization: symlink limitation](https://cromwell.readthedocs.io/en/develop/optimizations/FileLocalization/) — NFS hard-link pitfalls
+- [Backpressure in Distributed Systems — DZone](https://dzone.com/articles/backpressure-in-distributed-systems) — scatter fan-out throttling patterns
+- [Building a distributed workflow engine from scratch — DEV Community](https://dev.to/acoh3n/building-a-distributed-workflow-engine-from-scratch-22kl) — polling daemon architecture
+- [QCon SF: Database-Backed Workflow Orchestration — InfoQ](https://www.infoq.com/news/2025/11/database-backed-workflow/) — SQLite-backed workflow engine patterns
+- flowy codebase: `wdl/task/task.go`, `wdl/task/pathmap.go`, `wdl/task/docker.go`, `wdl/workflow/scheduler.go` — existing in-process execution model
+
+---
+*Pitfalls research for: distributed WDL workflow execution (flowy v1.1 server/daemon/client split)*
+*Researched: 2026-03-11*

@@ -1,393 +1,238 @@
-# Features Research: WDL Workflow Engine (flowy)
+# Feature Research
 
-**Domain:** WDL 1.2 workflow engine (CLI tool, Go port of miniwdl)
-**Researched:** 2026-03-10
-**Sources:** OpenWDL spec, docs.openwdl.org, miniwdl source (../miniwdl/WDL/), miniwdl readthedocs
-
----
-
-## Table Stakes
-
-Features without which the engine cannot execute real WDL 1.2 files. Missing any one = users cannot run their workflows.
-
-### Type System
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Primitive types: Boolean, Int, Float, String, File | Core types used in every WDL file | Low | Required since WDL 1.0 |
-| Directory type | Added in WDL 1.2; bioinformatics tools produce directories | Medium | `Directory` is first-class in 1.2 |
-| Optional types (T?) | Workflow inputs are routinely optional | Low | `?` postfix quantifier |
-| Non-empty arrays (Array[T]+) | Frequently used in function signatures | Low | `+` quantifier |
-| Compound types: Array[T], Map[K,V], Pair[X,Y] | Essential for scatter/gather and data passing | Medium | Parametric types |
-| Struct types | User-defined record types; widely used in modern WDL | Medium | Declared at document level; can have meta/parameter_meta in 1.2 |
-| Object type (read-only, deprecated) | Legacy code uses it; read_object/read_objects return it | Medium | Deprecated in 1.2 but still required for spec compliance |
-| Type coercion rules | Int→Float, Boolean/Int/Float/File→String, String→File/Int/Float | Medium | 6 coercion rules; check_quant flag controls optional leniency |
-
-### Expression Evaluation
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Arithmetic operators: +, -, *, /, % | Every command template uses these | Low | `/` is integer division for Int operands |
-| Exponentiation operator: ** | New in WDL 1.2 | Low | Int**Int → Int, Float**Float → Float |
-| Comparison operators: ==, !=, <, <=, >, >= | Conditional expressions | Low | |
-| Logical operators: &&, \|\|, ! | if/conditional blocks | Low | |
-| String interpolation: ~{} and ${} | Both syntaxes appear in real WDL; ~{} preferred in 1.2 | Medium | ${}  is legacy but still valid |
-| Multi-line strings | New in WDL 1.2; same whitespace rules as command block | Medium | Task command uses multi-line string under the hood |
-| If-then-else expression | Inline conditional values | Low | `if cond then val else val` |
-| Array/Map/Pair literal expressions | Construction of compound values inline | Medium | `[1,2,3]`, `{"k": v}`, `(a, b)` |
-| Struct literal construction | Creating struct values | Medium | `MyStruct { field: value }` |
-| Member access (`.`) | Struct field access, call output access | Low | `call_name.output_name` |
-| Array index (`[]`) | Array and Map element access | Low | |
-| Null / None handling | Optional value handling | Medium | `select_first`, `defined()` |
-| Identifier resolution (scoped) | Variables from enclosing scope | Medium | Scatter variable, call outputs |
-
-### Task Definition
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `input {}` section | Standard task structure | Low | Declares task parameters |
-| Private (post-input) declarations | Intermediate computed values | Low | Declarations outside input block |
-| `command {}` section | Core of every task; executes shell script | Medium | Template expansion with ~{} |
-| `output {}` section | Captures task results | Low | Expressions evaluated after command runs |
-| `runtime {}` section | Specifies docker image, cpu, memory | Medium | Maps to `requirements` in WDL 1.2 |
-| `requirements {}` section | WDL 1.2 replacement for runtime | Medium | Aliases to same dict as runtime |
-| `hints {}` section | Optional resource hints in WDL 1.2 | Low | gpu, fpga, disks hints |
-| `meta {}` section | Task-level documentation | Low | Key-value pairs, no evaluation |
-| `parameter_meta {}` section | Per-parameter documentation | Low | Keys must match input/output names |
-| Runtime keys: container/docker | Specifies the OCI image | Medium | Both `container` and `docker` accepted |
-| Runtime keys: cpu, memory | Resource declarations | Low | Memory parsed with units (GiB, MiB, etc.) |
-| Runtime keys: disks | Storage allocation | Low | |
-| Runtime keys: maxRetries | Retry on failure | Medium | miniwdl implements this |
-| Runtime keys: returnCodes | Treat specific exit codes as success | Medium | `returnCodes: [0, 1]` or `"*"` |
-| Environment variable inputs | WDL 1.2 task inputs as env vars | Medium | New in 1.2; env var mode |
-| Implicit `task` variable | Runtime introspection in WDL 1.2 | Medium | Access to name, meta at runtime |
-
-### Workflow Definition
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `input {}` section | Workflow parameters | Low | |
-| `output {}` section | Final workflow outputs | Low | |
-| Declarations (intermediate values) | Computed workflow-level values | Low | |
-| `call task_name` | Invoke a task | Low | Core workflow primitive |
-| `call task_name as alias` | Call aliasing for multiple invocations | Low | |
-| `call` with `input:` block | Pass inputs to a task call | Low | `input:` keyword is optional in WDL 1.2 |
-| `after` dependency in call | Explicit ordering without data dependency | Medium | `call B after A {}` — confirmed in miniwdl Tree.py |
-| `scatter (x in array) {}` | Parallel fan-out over array | High | Core bioinformatics pattern |
-| `if (condition) {}` | Conditional execution of call block | Medium | Results are Optional[T] outside the block |
-| Nested scatter/if | Scatter inside scatter; if inside scatter | High | Multi-dimensional results |
-| Gather semantics | Collecting scatter outputs into arrays | High | Implicit; synthesized by engine |
-| Sub-workflow calls | Calling another workflow as a task | High | Imported document's workflow |
-| Local imports | `import "path/to/file.wdl"` with namespacing | Medium | HTTP imports deferred to v2 |
-| Struct type imports | Structs re-exported across import boundaries | Medium | |
-| `meta {}` and `parameter_meta {}` | Workflow-level docs | Low | |
-| `hints {}` section | Workflow-level hints in WDL 1.2 | Low | |
-
-### Standard Library — File/IO Functions
-
-| Function | Signature | Complexity | Notes |
-|----------|-----------|------------|-------|
-| `stdout()` | `() → File` | Low | Only valid in task output section |
-| `stderr()` | `() → File` | Low | Only valid in task output section |
-| `glob(pattern)` | `String → Array[File]` | Medium | Shell glob inside task working dir |
-| `basename(path[, suffix])` | `File\|Directory[, String] → String` | Low | |
-| `size(f[, unit])` | `File\|File?\|Directory\|... → Float` | Medium | WDL 1.2: accepts compound values |
-| `join_paths(a, b)` | Various overloads → File | Low | New in WDL 1.2; preferred over string concat |
-| `read_string(f)` | `File → String` | Low | Strips trailing newline |
-| `read_int(f)` | `File → Int` | Low | |
-| `read_float(f)` | `File → Float` | Low | |
-| `read_boolean(f)` | `File → Boolean` | Low | Parses "true"/"false" |
-| `read_lines(f)` | `File → Array[String]` | Low | One element per line |
-| `write_lines(arr)` | `Array[String] → File` | Low | |
-| `read_tsv(f[, header[, cols]])` | Multiple overloads | Medium | WDL 1.2 adds header + Array[Object] variant |
-| `write_tsv(arr[, header])` | `Array[Array[String]]\|Array[Struct] → File` | Medium | WDL 1.2 adds header support |
-| `read_map(f)` | `File → Map[String,String]` | Low | |
-| `write_map(m)` | `Map[String,String] → File` | Low | |
-| `read_json(f)` | `File → Union` | Medium | Returns typed WDL value |
-| `write_json(v)` | `X → File` | Medium | Serializes any WDL value |
-| `read_object(f)` | `File → Object` | Low | |
-| `read_objects(f)` | `File → Array[Object]` | Low | |
-| `write_object(v)` | `Struct\|Object → File` | Low | |
-| `write_objects(arr)` | `Array[Struct\|Object] → File` | Low | |
-
-### Standard Library — Array Functions
-
-| Function | Signature | Complexity | Notes |
-|----------|-----------|------------|-------|
-| `length(v)` | `Array\|Map\|Object\|String → Int` | Low | WDL 1.2: accepts Map, Object, String |
-| `range(n)` | `Int → Array[Int]` | Low | 0..n-1 |
-| `transpose(arr)` | `Array[Array[X]] → Array[Array[X]]` | Low | |
-| `cross(a, b)` | `Array[X], Array[Y] → Array[Pair[X,Y]]` | Low | Cartesian product |
-| `zip(a, b)` | `Array[X], Array[Y] → Array[Pair[X,Y]]` | Low | |
-| `unzip(arr)` | `Array[Pair[X,Y]] → Pair[Array[X],Array[Y]]` | Low | |
-| `contains(arr, v)` | `Array[P], P → Boolean` | Low | New in WDL 1.2 |
-| `chunk(arr, n)` | `Array[X], Int → Array[Array[X]]` | Low | New in WDL 1.2 |
-| `flatten(arr)` | `Array[Array[X]] → Array[X]` | Low | |
-| `select_first(arr[, default])` | `Array[X?][, X] → X` | Low | WDL 1.2 adds default parameter |
-| `select_all(arr)` | `Array[X?] → Array[X]` | Low | |
-| `prefix(s, arr)` | `String, Array[String] → Array[String]` | Low | |
-| `suffix(s, arr)` | `String, Array[String] → Array[String]` | Low | |
-| `quote(arr)` | `Array[String] → Array[String]` | Low | Wraps elements in double quotes |
-| `squote(arr)` | `Array[String] → Array[String]` | Low | Wraps elements in single quotes |
-| `sep(delim, arr)` | `String, Array[String] → String` | Low | |
-
-### Standard Library — Map/Object Functions
-
-| Function | Signature | Complexity | Notes |
-|----------|-----------|------------|-------|
-| `keys(m)` | `Map[P,Y]\|Struct\|Object → Array[P]\|Array[String]` | Low | WDL 1.2 adds Struct/Object variant |
-| `values(m)` | `Map[P,Y] → Array[Y]` | Low | New in WDL 1.2 |
-| `contains_key(m, k)` | Multiple overloads → Boolean | Low | New in WDL 1.2 |
-| `as_pairs(m)` | `Map[P,Y] → Array[Pair[P,Y]]` | Low | |
-| `as_map(arr)` | `Array[Pair[P,Y]] → Map[P,Y]` | Low | |
-| `collect_by_key(arr)` | `Array[Pair[P,Y]] → Map[P,Array[Y]]` | Low | |
-
-### Standard Library — String Functions
-
-| Function | Signature | Complexity | Notes |
-|----------|-----------|------------|-------|
-| `sub(s, pattern, replace)` | `String, String, String → String` | Low | POSIX ERE |
-| `find(s, pattern)` | `String, String → String?` | Low | New in WDL 1.2 |
-| `matches(s, pattern)` | `String, String → Boolean` | Low | New in WDL 1.2 |
-
-### Standard Library — Numeric Functions
-
-| Function | Signature | Complexity | Notes |
-|----------|-----------|------------|-------|
-| `floor(f)` | `Float → Int` | Low | |
-| `ceil(f)` | `Float → Int` | Low | |
-| `round(f)` | `Float → Int` | Low | Rounds half-up (not banker's rounding) |
-| `min(a, b)` | `Int\|Float, Int\|Float → Int\|Float` | Low | 4 overloads for Int/Float combinations |
-| `max(a, b)` | `Int\|Float, Int\|Float → Int\|Float` | Low | 4 overloads |
-
-### Other stdlib
-
-| Function | Signature | Complexity | Notes |
-|----------|-----------|------------|-------|
-| `defined(v)` | `X? → Boolean` | Low | |
-
-### Task Execution
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Docker container execution | Every real WDL task specifies a container | High | Docker SDK for Go |
-| Input file staging into container | Files passed to task must be visible inside container | High | Volume mount or copy strategy |
-| Output file collection | Files produced by command must be captured | High | Copy from container working dir |
-| Command template expansion | ~{} and ${} substitution with proper type rendering | Medium | Int/Float/Boolean/String/File formatting rules |
-| Working directory management | Per-task isolated working directory | Medium | |
-| stdout/stderr capture | Available via `stdout()` / `stderr()` in output section | Medium | |
-| Exit code handling | Non-zero exit = task failure (unless returnCodes) | Low | |
-| Task retry on failure | `maxRetries` runtime key | Medium | |
-
-### Workflow Execution
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Dependency graph construction | Determines execution order | High | DAG from call inputs/after dependencies |
-| Parallel task execution | Scatter shards, independent calls run concurrently | High | goroutines or worker pool |
-| Scatter fan-out and gather | Core bioinformatics primitive | High | Each shard is an independent task invocation |
-| Conditional block execution | `if` blocks produce Optional outputs | Medium | |
-| Output directory organization | Structured output with outputs.json | Medium | Per-call subdirectories |
-| outputs.json generation | Standard output format expected by tooling | Low | |
-| error.json / structured errors | Programmatic error inspection | Medium | |
-
-### CLI
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `flowy run <wdl> [inputs...]` | Primary use case: execute a workflow | Medium | Accepts key=value or -i JSON |
-| `flowy check <wdl>` | Static validation (parse + typecheck) | Low | Returns exit 0/non-zero |
-| Input JSON via `-i / --input` | Cromwell-style JSON input files | Low | Standard interoperability format |
-| `--task <name>` flag | Run a single task instead of workflow | Low | Useful for development |
-| `-d / --dir` output directory | User-specified run directory | Low | |
-| `-p / --path` import search path | Find imported WDL files | Low | |
-| `--verbose` / `--debug` logging | Development and troubleshooting | Low | |
-| Exit code reflects success/failure | Shell scripting integration | Low | |
+**Domain:** Distributed WDL workflow execution — server/daemon/client architecture
+**Researched:** 2026-03-11
+**Confidence:** HIGH (core patterns), MEDIUM (implementation details)
+**Scope:** v1.1 milestone only. v1.0 engine features (parser, type checker, evaluator, Docker executor, DAG scheduler, stdlib, CLI) are already built.
 
 ---
 
-## Differentiators
+## Feature Landscape
 
-Features that distinguish flowy from existing engines. Not baseline requirements, but competitive advantages worth building.
+### Table Stakes (Users Expect These)
+
+Features that any distributed workflow execution system must have. Missing any one makes the system incomplete or unusable for its intended purpose.
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| REST API: POST /workflows — submit workflow | Standard entry point in every workflow server (Cromwell, Nextflow API). Returns run ID for subsequent operations. | MEDIUM | Accepts WDL file path (shared FS) + inputs JSON. Returns `{run_id: "uuid"}`. |
+| REST API: GET /workflows/{id}/status — poll run state | Required for async submission model. Clients must be able to check whether a workflow is still running. | LOW | Returns `{status: "Running|Succeeded|Failed|Aborted"}`. Cromwell uses the same 6-state model. |
+| REST API: GET /workflows/{id}/outputs — fetch results | Run is useless without retrieving outputs. Must return structured paths after completion. | LOW | Returns `{outputs: {"task.output": "path"}}` matching WDL output variable names. |
+| REST API: GET /workflows/{id}/logs — fetch task logs | Essential for debugging failed tasks. Users need stdout/stderr per task call. | MEDIUM | Returns per-call-attempt stdout/stderr paths or inline content. |
+| REST API: POST /workflows/{id}/abort — cancel a run | Users need to stop runaway or mistaken workflows. | LOW | Transitions state to Aborting → Aborted; signals daemon to stop dispatching new tasks. |
+| REST API: GET /health — liveness probe | Required for operations: know if server is up before submitting. | LOW | Returns `{status: "ok"}` with 200. No auth needed. |
+| Daemon: poll server for ready tasks | Core of the worker model. Daemon continuously polls `GET /tasks/next` and claims an available task. | MEDIUM | Uses SQLite `BEGIN IMMEDIATE` to prevent double-claim. Poll interval configurable (default 5s). |
+| Daemon: report task result to server | Daemon must notify server when a task completes (exit code, output paths, stdout/stderr). | MEDIUM | `POST /tasks/{id}/complete` or `PATCH /tasks/{id}` with exit code + outputs map. |
+| Daemon: execute claimed task via existing Docker engine | Daemon reuses `wdl/task` package directly. No re-implementation of Docker logic. | LOW | Dependency on existing `task.RunTask`. |
+| Daemon: heartbeat to prevent task timeout | Without heartbeat, server cannot detect crashed daemon; task would stay Running forever. | MEDIUM | `POST /tasks/{id}/heartbeat` every N seconds; server marks tasks stale if no heartbeat for configurable timeout (default 60s). |
+| SQLite persistence: workflow run table | Stores run_id, status, WDL path, inputs JSON, submitted_at, completed_at. | LOW | WAL mode required for concurrent reader (daemon) + writer (server). |
+| SQLite persistence: task table | Stores task_id, run_id, call_name, shard_index, status, daemon_id, attempt, stdout_path, stderr_path, outputs_json. | MEDIUM | Status enum: PENDING, CLAIMED, RUNNING, COMPLETED, FAILED. |
+| Shared filesystem: config-driven base directory | Server and all daemons must see the same path. Config key `storage.base_dir`. | LOW | NFS/local share. Server writes input files; daemon reads them; daemon writes outputs; server reads them. |
+| Shared filesystem: input staging by client | Client uploads WDL inputs (File values) to shared dir before submitting run. Server references those paths in task records. | MEDIUM | Client `flowy submit` copies local files to `{base_dir}/runs/{run_id}/inputs/`. |
+| Shared filesystem: output collection by daemon | Daemon writes task outputs to `{base_dir}/runs/{run_id}/tasks/{task_id}/outputs/`. Server reads these paths to build the workflow outputs response. | MEDIUM | Consistent path convention required across server/daemon. |
+| Client CLI: `flowy submit <wdl> [inputs]` | Users need to submit workflows from the command line. | LOW | Stages input files, calls POST /workflows, prints run_id. |
+| Client CLI: `flowy status <run-id>` | Users need to check status of a submitted run. | LOW | Calls GET /workflows/{id}/status, prints status. |
+| Client CLI: `flowy outputs <run-id>` | Users need to retrieve output paths after completion. | LOW | Calls GET /workflows/{id}/outputs, prints JSON. |
+| Client CLI: `flowy run <wdl> [inputs]` (synchronous mode) | Required for spectool compatibility. `flowy run` must continue to work end-to-end. In distributed mode: submit → poll until terminal → print outputs. | HIGH | Spectool calls `flowy run` and expects outputs.json at completion. Must be backward-compatible with v1.0 behavior. |
+| Server binary: `flowy-server` | Separate process from client; runs persistently. Accepts REST requests, manages DAG scheduling, dispatches tasks to daemon queue. | HIGH | New binary at `cmd/flowy-server/`. |
+| Daemon binary: `flowy-daemon` | Separate process per worker node. Polls server, executes Docker tasks. Horizontally scalable. | HIGH | New binary at `cmd/flowy-daemon/`. |
+| Run state machine: Submitted → Running → Succeeded/Failed/Aborted | Standard workflow lifecycle. Server transitions states as tasks complete. | MEDIUM | Run enters Running when first task starts; Succeeded when all tasks complete; Failed when any task fails and no retries remain. |
+| Task state machine: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED | Standard task lifecycle for polling-based worker systems. | MEDIUM | CLAIMED state prevents double-dispatch. Daemon sets to RUNNING after Docker start. |
+
+### Differentiators (Competitive Advantage)
+
+Features that add value beyond the baseline distributed execution model.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Native Go binary (no JVM, no Python) | Zero-dependency install, fast startup, low memory | Medium | Cromwell requires JVM; miniwdl requires Python |
-| Single binary distribution | `brew install flowy` or download binary; no runtime deps | Low | Built-in during Go cross-compilation |
-| Fast cold-start for CI/CD | Bioinformatics pipelines run in automated pipelines; startup latency matters | Low | JVM Cromwell takes 10-30s to start |
-| Structured JSON output by default | Machine-readable results without extra flags | Low | outputs.json, error.json at run completion |
-| Strict WDL 1.2-only focus | No legacy version baggage; cleaner parser and type system | Low | Deliberate scope reduction = less code to maintain |
-| Informative static error messages | `flowy check` with precise line/column and type mismatch descriptions | Medium | Cromwell errors are notoriously opaque |
-| Parallel scatter with configurable concurrency | Limit number of concurrent shards to avoid resource exhaustion | Medium | miniwdl has this; Cromwell is harder to configure locally |
-| Deterministic output layout | Reproducible directory structure aids debugging | Low | |
+| `flowy run` backward compatibility (spectool mode) | Spectool runs `flowy run` directly. If distributed mode is transparent, the conformance suite keeps working without changes. | HIGH | Most WDL engines break CLI compatibility when adding server mode. This is a strong differentiator for CI/CD integration. |
+| Multi-daemon scatter distribution | Scatter shards are independent tasks; multiple daemons can claim different shards, achieving real parallelism across machines. | HIGH | Requires task table to store shard_index per task record. Daemon claims any PENDING task for the current run. |
+| Single config file for all three binaries | `flowy.toml` or `flowy.yaml` with `[server]`, `[daemon]`, `[client]` sections. Each binary reads its section. No per-binary config management. | LOW | Reduces operational friction vs. Cromwell's complex HOCON configuration. |
+| Daemon auto-registration with server | Daemon registers its host/ID on startup; server tracks active daemons. Useful for diagnostics and detecting stale daemons. | LOW | `POST /daemons/register` on startup; `DELETE /daemons/{id}` on shutdown. Low value in MVP but low cost. |
+| SQLite-only persistence (no external DB) | Cromwell requires MySQL for production; flowy uses SQLite with WAL mode. Zero external dependencies for the server. | LOW | Appropriate for single-server deployments. If multi-server is needed, defer to v2 with PostgreSQL. |
+| REST API: GET /workflows?status=Running — list/query runs | Operational visibility: see all running/completed runs without knowing their IDs. | LOW | Simple SQL query with status filter. Cromwell has this; it's expected in production use. |
 
----
+### Anti-Features (Commonly Requested, Often Problematic)
 
-## Anti-Features (Defer for v1)
-
-Features to explicitly NOT build in v1. Either too complex, low value, or out of project scope.
-
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| HTTP/HTTPS import resolution | Adds significant complexity (auth, caching, network errors); v1 is local tooling | Only support local file imports; error clearly if HTTP URI is used |
-| Call output caching / call cache | Requires stable hashing of inputs + WDL source; first build correctness, then performance | Document as v2 feature; users can reuse output directories manually |
-| WDL draft-2 / 1.0 / 1.1 support | Each version has grammar differences; maintaining multiple parsers is high cost | Parse `version` declaration first; emit clear error if not 1.2 |
-| Non-Docker backends (Podman, Singularity, udocker) | miniwdl supports 5 backends; v1 should focus on Docker correctness | Single well-tested backend is better than 5 partially-working ones |
-| REST API server / web UI | v2 milestone; requires auth, job persistence, multi-user concerns | v1 is a CLI tool only |
-| Multi-user / project management | v2 milestone with SQLite backend | Not needed for CLI tool |
-| `flowy zip` command | Useful but not critical; users can use zip manually | Defer to v1.x or v2 |
-| `flowy lint` / style checks | Separate concern from execution correctness | Defer; `flowy check` covers type errors |
-| Workflow resumption / partial re-run | Requires persistent state; complex to implement correctly | Users re-run from scratch in v1 |
-| Cloud backend execution (AWS Batch, GCP Life Sciences) | miniwdl-aws is a separate plugin; enormous scope | Explicitly out of scope; pure local Docker execution |
-| Download caching (S3/GCS URIs) | HTTP imports already deferred; URI downloads are downstream of that | Not applicable if imports are local-only |
-| GPU/FPGA runtime hints enforcement | Runtime hint is optional by spec; engines may ignore hints | Emit warning if gpu/fpga hint is present; don't fail |
-| `Object` type write support (write_object, write_objects) | Object is deprecated in 1.2; minimal real-world use | Implement read-only Object support for read_object/read_objects; defer write |
-
----
-
-## WDL 1.2 Spec Coverage
-
-Comprehensive checklist of language features that must be implemented for spec compliance. Ordered by logical build dependency.
-
-### Phase 1: Parser and AST
-
-- [ ] `version 1.2` declaration (reject other versions)
-- [ ] Import statement: `import "path.wdl" [as namespace]`
-- [ ] Struct type definition: `struct Name { Type field }`
-- [ ] Task definition with all sections (input, private decls, command, output, runtime/requirements, hints, meta, parameter_meta)
-- [ ] Workflow definition with all sections (input, output, decls, call, scatter, if, meta, parameter_meta, hints)
-- [ ] Command block: `command <<<...>>>` (heredoc) and `command {...}` (curly) with placeholder expansion
-- [ ] String literals: single-line, escaped characters
-- [ ] Multi-line string literals (WDL 1.2)
-- [ ] All primitive literal expressions: Boolean, Int (decimal/hex/octal), Float, String, None
-- [ ] All compound literal expressions: Array `[a,b,c]`, Map `{k:v}`, Pair `(a,b)`, Struct `Name{field:val}`
-- [ ] All binary operators: +, -, *, /, %, **, ==, !=, <, <=, >, >=, &&, ||
-- [ ] Unary operators: -, !
-- [ ] If-then-else expression
-- [ ] Function application: `func(arg1, arg2)`
-- [ ] Member access: `obj.field`
-- [ ] Array index: `arr[i]`
-- [ ] Call statement: `call task_name [as alias] [after dep] { input: k=v }`
-- [ ] Scatter statement: `scatter (var in array) { ... }`
-- [ ] Conditional statement: `if (expr) { ... }`
-- [ ] Decl with optional expression: `Type name [= expr]`
-
-### Phase 2: Type System and Type Checking
-
-- [ ] All primitive types: Boolean, Int, Float, String, File, Directory
-- [ ] Optional types: `T?`
-- [ ] Non-empty array type: `Array[T]+`
-- [ ] Compound types: `Array[T]`, `Map[K,V]`, `Pair[X,Y]`, `Object`, `StructInstance`
-- [ ] Type coercion rules (6 rules from miniwdl Type.py)
-- [ ] Quantifier check mode (check_quant flag for lenient mode)
-- [ ] Struct type definition resolution and member type checking
-- [ ] Struct coercion between compatible types (WDL 1.2)
-- [ ] Scope resolution: workflow-level, call output namespace, scatter variable
-- [ ] Type inference for all expression nodes
-- [ ] Implicit optionality: inputs with defaults are Optional (WDL 1.2)
-
-### Phase 3: Expression Evaluation
-
-- [ ] All arithmetic operators with type-appropriate semantics (integer vs float division)
-- [ ] Exponentiation (`**`) for WDL 1.2
-- [ ] String interpolation expansion (both `~{expr}` and `${expr}`)
-- [ ] String interpolation type rendering rules (Int no leading zeros, Float 6 decimal digits, Boolean → "true"/"false", File → string path, Directory → path without trailing slash)
-- [ ] If-then-else evaluation
-- [ ] Logical short-circuit evaluation for && and ||
-- [ ] Member access on Struct, Object, call output namespace
-- [ ] Array/Map index access
-- [ ] Null propagation for Optional types
-- [ ] All standard library function implementations (see table above)
-- [ ] `defined()` and `select_first()` / `select_all()` for optional handling
-
-### Phase 4: Task Execution
-
-- [ ] Input binding: match provided inputs to declared task inputs
-- [ ] Default value evaluation for missing optional inputs
-- [ ] Command template expansion: substitute all ~{} and ${} placeholders
-- [ ] Container image selection from `container`/`docker` runtime key
-- [ ] CPU and memory resource reservation (passed to Docker)
-- [ ] Docker container creation with working directory
-- [ ] Input file/directory staging into container (volume mounts)
-- [ ] Command execution inside container
-- [ ] stdout/stderr stream capture to files
-- [ ] Exit code evaluation (success vs failure)
-- [ ] `returnCodes` handling (list or `"*"`)
-- [ ] Output section evaluation (with access to task working dir)
-- [ ] `glob()` pattern matching against task output files
-- [ ] `stdout()` and `stderr()` file references in output section
-- [ ] Output file collection from container to host
-- [ ] `maxRetries` retry loop on task failure
-- [ ] Per-task run directory creation
-- [ ] Environment variable inputs (WDL 1.2)
-- [ ] Implicit `task` variable for runtime introspection (WDL 1.2)
-
-### Phase 5: Workflow Execution
-
-- [ ] Build call dependency graph (data dependencies + `after` dependencies)
-- [ ] Topological sort / async execution schedule
-- [ ] Independent calls executed concurrently (goroutine-based scheduler)
-- [ ] Scatter shard creation: one invocation per array element
-- [ ] Scatter variable binding in each shard's scope
-- [ ] Gather: collect shard outputs into `Array[T]` (or `Array[T?]` if conditional)
-- [ ] `if` block: evaluate condition; produce `T?` typed outputs
-- [ ] Nested scatter (scatter inside scatter → `Array[Array[T]]`)
-- [ ] Scatter inside if and if inside scatter
-- [ ] Sub-workflow calls (call an imported workflow)
-- [ ] Workflow output collection and outputs.json generation
-- [ ] Structured error reporting with call path context
-
-### Phase 6: CLI
-
-- [ ] `flowy run <wdl> [key=value...] [-i input.json]` — execute workflow or task
-- [ ] `flowy check <wdl>` — parse and typecheck, report errors
-- [ ] `--task <name>` to run a single task
-- [ ] `-d / --dir` for output directory
-- [ ] `-p / --path` for import search paths
-- [ ] `-v / --verbose`, `--debug` logging levels
-- [ ] Cromwell-style input JSON parsing
-- [ ] `key=value` and `key:=value` input syntax on command line
-- [ ] Colored terminal output (with `--no-color` opt-out)
-- [ ] Exit code 0 on success, non-zero on failure
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| Push-based task dispatch (server pushes to daemon) | Seems more efficient; no polling delay | Requires daemon to be reachable from server (reverse connectivity); NAT/firewall issues common in HPC clusters; much more complex server-side fan-out logic | Polling model: daemon only needs outbound access to server. Interval 2-5s is acceptable for batch workloads. |
+| WebSocket / Server-Sent Events for status | Real-time status updates in web UIs | First milestone has no web UI; adds dependencies (gorilla/websocket) and complexity; polling at 2s intervals is sufficient for batch workflows | Client polls GET /workflows/{id}/status in synchronous `flowy run` mode |
+| JWT / OAuth2 authentication | Secure multi-user access | Auth infrastructure is a project in itself; adds third-party dependencies; HPC clusters typically use network-level security | Run on trusted network (HPC), no auth in v1. Add basic auth or token header in v1.x if needed. |
+| Execution cache / call cache | Avoid re-running unchanged tasks (Cromwell call cache) | Requires stable hashing of inputs + WDL source + Docker image digest; complex invalidation logic; storage management | Not in v1.1. Document as v2 feature. |
+| Workflow resume / checkpoint restart | Re-start a failed workflow from last completed task | Requires careful state reconstruction; scatter partial completions are ambiguous | Not in v1.1. Full re-run is acceptable for initial distributed mode. |
+| S3 / GCS object storage as file backend | Cloud-native file staging | Requires signed URL handling, multipart upload, download caching; large surface area | Shared filesystem (NFS) first. S3 is explicitly deferred (see PROJECT.md). |
+| gRPC API instead of REST | Performance, type-safety, streaming | Not standard in bioinformatics tooling; spectool and community tools expect REST; adds code generation step | REST with JSON. Standard in the domain. |
+| Kubernetes / container orchestration integration | Cloud-native deployment | Enormous scope increase; out of v1.1 target | Docker daemon per node is sufficient for HPC environments. |
+| Distributed SQLite (Litestream, Turso) | SQLite replication across nodes | Only the server binary writes to SQLite; daemons talk to server via REST, never SQLite directly. Replication adds operational complexity for no benefit in single-server setup | Single-server SQLite is sufficient. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Phase 1: Parser/AST
-    └→ Phase 2: Type System
-         └→ Phase 3: Expression Evaluation
-              ├→ Phase 4: Task Execution (needs expression eval for command, runtime, output sections)
-              └→ Phase 5: Workflow Execution (needs expression eval + task execution)
-                   └→ Phase 6: CLI (wraps workflow execution)
+[Client CLI: flowy submit / status / outputs / run]
+    └──requires──> [REST API: submit / status / outputs endpoints]
+                       └──requires──> [Server: flowy-server binary]
+                                          └──requires──> [SQLite: runs + tasks tables]
+                                          └──requires──> [DAG Scheduler (existing, wdl/workflow)]
 
-Sub-dependencies:
-  scatter execution → gather semantics (array wrapping of outputs)
-  if execution → optional type wrapping of outputs
-  nested scatter → multi-dimensional Array types
-  call output access → scatter result collection (Gather nodes)
-  sub-workflow calls → local import resolution
-  glob() → Docker output file staging
-  stdout()/stderr() → per-task run directory + stream capture
+[Daemon: flowy-daemon binary]
+    └──requires──> [REST API: GET /tasks/next + POST /tasks/{id}/complete]
+    └──requires──> [Docker task executor (existing, wdl/task)]
+    └──requires──> [Shared filesystem: task input/output directories]
+
+[Multi-daemon scatter distribution]
+    └──requires──> [Task table: shard_index per task record]
+    └──requires──> [Daemon: claim any PENDING task (not just own run's tasks)]
+
+[flowy run (synchronous/spectool mode)]
+    └──requires──> [REST API: submit + status + outputs]
+    └──requires──> [Client: poll-until-terminal loop]
+
+[Shared filesystem file staging]
+    └──requires──> [Server: base_dir config]
+    └──requires──> [Daemon: writes outputs to convention path]
+    └──requires──> [Client: copies input File values to shared dir before submit]
+
+[Daemon heartbeat]
+    └──requires──> [SQLite: last_heartbeat_at column in tasks table]
+    └──requires──> [Server: background goroutine to detect stale tasks → reset to PENDING]
+
+[Task state machine: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED]
+    └──enhances──> [Daemon polling (prevents double-claim via atomic CLAIMED transition)]
+    └──enhances──> [Run state machine (server computes run status from task states)]
+
+[Run state machine: Submitted → Running → Succeeded/Failed/Aborted]
+    └──requires──> [All tasks in run have reached terminal state (COMPLETED or FAILED)]
 ```
+
+### Dependency Notes
+
+- **`flowy run` synchronous mode requires all REST endpoints**: The synchronous mode is a thin loop over submit + poll status + fetch outputs. All three server endpoints must work before this can be implemented.
+- **Multi-daemon scatter requires task-level granularity in DB**: The server must create one task record per scatter shard, not one record per scatter block. This decision affects the DB schema and must be made in Phase 1 of implementation.
+- **Daemon heartbeat requires server-side background goroutine**: A goroutine in flowy-server periodically queries for tasks with last_heartbeat_at older than timeout and resets them to PENDING. Must be part of server startup, not a separate process.
+- **Shared filesystem path convention must be consistent**: Server, daemon, and client must agree on the path layout for run directories. Define once in a shared `storage` package; import from all three binaries. Any drift causes silent data loss.
+- **Existing `wdl/workflow` scheduler is reused unchanged in server**: The server runs the DAG scheduler in-process, but instead of calling `task.RunTask` directly, it dispatches tasks to the SQLite queue and waits for daemon completions. The `runTaskFn` indirection already exists in `scheduler.go` (line 18) — this is the exact seam to exploit.
+
+---
+
+## MVP Definition
+
+### Launch With (v1.1)
+
+Minimum viable set for the distributed architecture milestone.
+
+- [ ] `flowy-server` binary: REST API (submit/status/outputs/abort/health), SQLite state, DAG dispatch to task queue — *core value delivery*
+- [ ] `flowy-daemon` binary: poll for tasks, claim atomically, run via Docker, report result, heartbeat — *enables distributed execution*
+- [ ] Shared filesystem: config-driven base_dir, client input staging, daemon output collection — *file passing between components*
+- [ ] SQLite schema: runs + tasks tables, WAL mode, proper indexes on (status, run_id) — *durable state*
+- [ ] Task state machine: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED with atomic claim — *prevents double-execution*
+- [ ] Run state machine: Submitted → Running → Succeeded/Failed — *visible lifecycle*
+- [ ] Client `flowy submit` / `flowy status` / `flowy outputs` commands — *user-facing operations*
+- [ ] `flowy run` synchronous mode: submit → poll → print outputs (spectool compatibility) — *backward compatibility, non-negotiable*
+- [ ] Stale task detection: server resets CLAIMED/RUNNING tasks with expired heartbeat to PENDING — *resilience against daemon crashes*
+
+### Add After Validation (v1.x)
+
+Features to add once core distributed execution is working.
+
+- [ ] `flowy abort <run-id>` — add after basic submit/run/status flow is stable
+- [ ] `GET /workflows?status=Running` list endpoint — once basic operations work, operational visibility becomes useful
+- [ ] Daemon auto-registration (`POST /daemons/register`) — useful for diagnostics once multi-daemon deployments are common
+- [ ] `GET /workflows/{id}/logs` — task log retrieval endpoint; defer until after core status/outputs work
+
+### Future Consideration (v2+)
+
+- [ ] Execution cache / call cache — complex hashing, invalidation; defer until v1.1 is stable
+- [ ] Workflow resume from checkpoint — requires careful partial-state reconstruction
+- [ ] S3 / GCS storage backend — explicitly out of scope per PROJECT.md
+- [ ] Authentication (JWT, API keys) — needed for multi-tenant deployment; not for single-team HPC use
+- [ ] PostgreSQL backend — if multi-server coordination is needed
+- [ ] Web UI for workflow monitoring
+
+---
+
+## Feature Prioritization Matrix
+
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| REST API: submit + status + outputs | HIGH | MEDIUM | P1 |
+| flowy-server binary | HIGH | HIGH | P1 |
+| flowy-daemon binary | HIGH | HIGH | P1 |
+| SQLite schema: runs + tasks | HIGH | LOW | P1 |
+| Task state machine + atomic claim | HIGH | MEDIUM | P1 |
+| Shared filesystem file staging | HIGH | MEDIUM | P1 |
+| flowy run synchronous mode (spectool) | HIGH | MEDIUM | P1 |
+| Stale task / heartbeat recovery | MEDIUM | MEDIUM | P1 |
+| flowy submit / status / outputs CLI | MEDIUM | LOW | P1 |
+| REST API: abort | MEDIUM | LOW | P2 |
+| REST API: GET /workflows list | LOW | LOW | P2 |
+| REST API: GET /workflows/{id}/logs | MEDIUM | LOW | P2 |
+| Daemon auto-registration | LOW | LOW | P3 |
+| Call cache / execution cache | HIGH | HIGH | P3 |
+| S3 storage backend | MEDIUM | HIGH | P3 |
+
+**Priority key:**
+- P1: Must have for v1.1 launch
+- P2: Should have, add in v1.x polish
+- P3: Nice to have, future consideration
+
+---
+
+## Competitor Feature Analysis
+
+How Cromwell, Nextflow, and Snakemake handle the same features:
+
+| Feature | Cromwell | Nextflow | Our Approach |
+|---------|----------|----------|--------------|
+| Workflow submission | POST /api/workflows/v1 (multipart: WDL file + inputs JSON + options) | `nextflow run <pipeline>` or NF-Tower API | POST /workflows with shared-FS WDL path + inputs JSON body. Simpler than Cromwell multipart. |
+| Run ID / handle | UUID returned at submit | Session hash | UUID v4. Standard and easy to pass around. |
+| Status endpoint | GET /api/workflows/v1/{id}/status → `{status: "Running"}` | Polled via NF-Tower or log file | GET /workflows/{id}/status → `{status: "Running"}`. Same model as Cromwell. |
+| Workflow states | Submitted, Running, Aborting, Aborted, Failed, Succeeded | queued, running, succeeded, failed, cancelled | Same 6 states as Cromwell. Industry standard. |
+| Worker model | Backend plugins (JES, PAPIv2, TES, local) polled from Cromwell | Executors (local, SLURM, Kubernetes) | Polling daemon model. Simpler than Cromwell backends. Daemon only needs outbound HTTP to server. |
+| Task claiming | Internal actor system (Akka) — not exposed | Internal channel/actor | SQLite `BEGIN IMMEDIATE` transaction. Go-native, no external queuing system. |
+| File staging | Options: `final_workflow_outputs_dir`; GCS/S3 for cloud backends | `stageInMode` (symlink/copy/link), `workDir` | Config-driven `base_dir` on shared FS. Client stages inputs explicitly; daemon writes outputs to convention path. |
+| Persistence | MySQL (production) or in-memory (dev) | In-process only (no server persistence in open-source) | SQLite with WAL mode. Zero external dependencies. |
+| Scatter distribution | Jobs dispatched to cloud batch or HPC scheduler | DataFlow queue (internal) | Multiple daemons claim different shard tasks from SQLite queue. |
+| Synchronous mode | `cromwell run` (run mode, single JVM) | `nextflow run` (blocking) | `flowy run` submits to server + polls until terminal. Spectool-compatible. |
+| Config format | HOCON (complex, JVM-specific) | Groovy DSL or YAML (`nextflow.config`) | TOML or YAML, single file, minimal sections. |
+| Binary separation | Single JAR (server+engine) | Single JAR / script | Three separate Go binaries: flowy, flowy-server, flowy-daemon. Clean process model. |
+
+---
+
+## Engine Reuse Map
+
+The v1.0 engine components that the distributed architecture reuses vs. replaces:
+
+| v1.0 Component | Package | v1.1 Reuse Pattern |
+|----------------|---------|-------------------|
+| Parser | `wdl/parser` | Server calls parser to validate WDL on submit |
+| Type checker | `wdl/checker` | Server type-checks WDL on submit (fail fast) |
+| DAG scheduler | `wdl/workflow` | Server runs scheduler in-process; replaces `runTaskFn` with SQLite dispatch |
+| Docker executor | `wdl/task` | Daemon calls `task.RunTask` directly |
+| Expression evaluator | `wdl/eval` | Unchanged; needed by both server (output binding) and daemon (command expansion) |
+| `flowy run` CLI logic | `cmd/flowy` | Refactored: add `--server` flag for distributed mode; defaults to local mode if no server configured |
+
+The `runTaskFn` variable in `wdl/workflow/scheduler.go` (line 18) is the exact injection point for replacing local Docker execution with server-side task dispatch. This is the architectural seam that makes the v1.1 refactor clean.
 
 ---
 
 ## Sources
 
-- [WDL 1.2 SPEC.md on GitHub](https://github.com/openwdl/wdl/blob/wdl-1.2/SPEC.md) — authoritative spec (HIGH confidence)
-- [Announcing WDL 1.2.0 — OpenWDL](https://openwdl.org/wdl/bioinformatics/workflows/announcing-wdl-1-2-0/) — official feature announcement (HIGH confidence)
-- [docs.openwdl.org — File Functions](https://docs.openwdl.org/reference/stdlib/file.html) — complete stdlib signatures (HIGH confidence)
-- [docs.openwdl.org — Array Functions](https://docs.openwdl.org/reference/stdlib/array.html) — complete stdlib signatures (HIGH confidence)
-- [docs.openwdl.org — String Functions](https://docs.openwdl.org/reference/stdlib/string.html) — (HIGH confidence)
-- [docs.openwdl.org — Map Functions](https://docs.openwdl.org/reference/stdlib/map) — (HIGH confidence)
-- [docs.openwdl.org — Numeric Functions](https://docs.openwdl.org/reference/stdlib/numeric.html) — (HIGH confidence)
-- [docs.openwdl.org — Tasks](https://docs.openwdl.org/language-guide/tasks.html) — task section reference (HIGH confidence)
-- [miniwdl runner CLI reference](https://miniwdl.readthedocs.io/en/latest/runner_cli.html) — CLI flags (HIGH confidence)
-- [miniwdl runner reference](https://miniwdl.readthedocs.io/en/latest/runner_reference.html) — caching, retry, execution model (HIGH confidence)
-- miniwdl source `../miniwdl/WDL/StdLib.py` — stdlib function implementations and signatures (HIGH confidence, ground truth)
-- miniwdl source `../miniwdl/WDL/Expr.py` — expression AST node classes (HIGH confidence, ground truth)
-- miniwdl source `../miniwdl/WDL/Type.py` — type classes and coercion rules (HIGH confidence, ground truth)
-- miniwdl source `../miniwdl/WDL/Tree.py` — Task, Workflow, Call (with `after`), Scatter, Conditional AST classes (HIGH confidence, ground truth)
-- [InfoQ: WDL 1.2.0 Enhancing Workflow Description Language](https://www.infoq.com/news/2024/06/workflow-description-language/) — feature summary (MEDIUM confidence)
+- [Cromwell Server Mode — cromwell.readthedocs.io](https://cromwell.readthedocs.io/en/stable/tutorials/ServerMode/) — REST API structure, workflow states (MEDIUM confidence — docs don't specify every endpoint format)
+- [Cromwell Tools API Documentation](https://cromwell-tools.readthedocs.io/en/latest/API/) — full endpoint list: submit, status, metadata, query, abort, health (HIGH confidence)
+- [Nextflow Task Processing and Execution — deepwiki.com](https://deepwiki.com/nextflow-io/nextflow/3.3-task-processing-and-execution) — TaskRun lifecycle, BashWrapperBuilder, task state machine (MEDIUM confidence — third-party analysis of NF source)
+- [SQLite Background Job System — jasongorman.uk](https://jasongorman.uk/writing/sqlite-background-job-system/) — atomic task claim with `BEGIN IMMEDIATE`, WAL pragmas, poll interval patterns (HIGH confidence — primary source with code examples)
+- [Building a Durable Execution Engine with SQLite — morling.dev](https://www.morling.dev/blog/building-durable-execution-engine-with-sqlite/) — PENDING/WAITING/COMPLETE state model, idempotency requirements (HIGH confidence)
+- [goqite — github.com/maragudk/goqite](https://github.com/maragudk/goqite) — Go SQLite-backed queue library, SQS-inspired (MEDIUM confidence)
+- [Temporal Workflow Engine Principles](https://temporal.io/blog/workflow-engine-principles) — task queue decoupling from workflow logic, worker polling patterns (HIGH confidence)
+- [Nextflow Working with Files](https://www.nextflow.io/docs/latest/working-with-files.html) — file staging into work directory, stageInMode patterns (HIGH confidence)
+- [AWS Prescriptive Guidance: Parallelization and scatter-gather patterns](https://docs.aws.amazon.com/prescriptive-guidance/latest/agentic-ai-patterns/parallelization-and-scatter-gather-patterns.html) — scatter-gather design pattern (MEDIUM confidence)
+- flowy source `wdl/workflow/scheduler.go` — `runTaskFn` injection point, existing errgroup concurrency model (HIGH confidence — direct code inspection)
+- flowy source `go.mod` — current dependencies: Go 1.25, Docker SDK, no HTTP router or SQLite yet (HIGH confidence)
+
+---
+
+*Feature research for: flowy v1.1 distributed WDL workflow execution*
+*Researched: 2026-03-11*
