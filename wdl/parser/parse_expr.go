@@ -13,10 +13,50 @@ package parser
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/lexer"
 )
+
+// unescapeString processes WDL string escape sequences.
+// WDL 1.2 supports: \n (newline), \t (tab), \r (CR), \\ (backslash), \" (double-quote).
+// Unknown escape sequences are preserved as-is (backslash + char).
+func unescapeString(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s // fast path: no escapes
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				sb.WriteByte('\n')
+			case 't':
+				sb.WriteByte('\t')
+			case 'r':
+				sb.WriteByte('\r')
+			case '\\':
+				sb.WriteByte('\\')
+			case '"':
+				sb.WriteByte('"')
+			case '\'':
+				sb.WriteByte('\'')
+			default:
+				// Unknown escape: preserve as-is
+				sb.WriteByte('\\')
+				sb.WriteByte(s[i+1])
+			}
+			i += 2
+		} else {
+			sb.WriteByte(s[i])
+			i++
+		}
+	}
+	return sb.String()
+}
 
 // parseExpr is the Pratt expression parser entry point.
 // minBP is the minimum binding power for this parse level.
@@ -348,7 +388,10 @@ func (p *Parser) parseStringExpr() (*ast.StringExpr, error) {
 		switch tok.Type {
 		case lexer.TokCommandContent:
 			p.advance()
-			parts = append(parts, &ast.RawStringPart{Val: tok.Val})
+			// Process WDL string escape sequences (\n, \t, \\, etc.).
+			// Command blocks (heredoc/brace) should NOT be unescaped here —
+			// they are processed only as raw shell text.
+			parts = append(parts, &ast.RawStringPart{Val: unescapeString(tok.Val)})
 		case lexer.TokPlaceholderOpen:
 			part, err := p.parsePlaceholderPart()
 			if err != nil {

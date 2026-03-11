@@ -17,45 +17,60 @@ func init() {
 	stdlibFuncs["max"]   = stdMax
 }
 
+// numericToFloat extracts a float64 from a FloatValue or IntValue (WDL coercion rule 3: Int -> Float).
+func numericToFloat(v values.Value, fname string) (float64, error) {
+	switch x := v.(type) {
+	case values.FloatValue:
+		return x.Value, nil
+	case values.IntValue:
+		return float64(x.Value), nil
+	default:
+		return 0, &EvalError{Message: fmt.Sprintf("%s: expected Float or Int, got %T", fname, v)}
+	}
+}
+
 // stdCeil implements ceil(Float) -> Int.
+// WDL spec coercion allows Int input (Int coerces to Float).
 // Returns the smallest integer >= x.
 func stdCeil(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
-		return nil, &EvalError{Message: "ceil: expected Float argument"}
+		return nil, &EvalError{Message: "ceil: expected numeric argument"}
 	}
-	fv, ok := args[0].(values.FloatValue)
-	if !ok {
-		return nil, &EvalError{Message: fmt.Sprintf("ceil: expected FloatValue, got %T", args[0])}
+	f, err := numericToFloat(args[0], "ceil")
+	if err != nil {
+		return nil, err
 	}
-	return values.IntValue{Type: types.IntType{}, Value: int64(math.Ceil(fv.Value))}, nil
+	return values.IntValue{Type: types.IntType{}, Value: int64(math.Ceil(f))}, nil
 }
 
 // stdFloor implements floor(Float) -> Int.
+// WDL spec coercion allows Int input (Int coerces to Float).
 // Returns the largest integer <= x.
 func stdFloor(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
-		return nil, &EvalError{Message: "floor: expected Float argument"}
+		return nil, &EvalError{Message: "floor: expected numeric argument"}
 	}
-	fv, ok := args[0].(values.FloatValue)
-	if !ok {
-		return nil, &EvalError{Message: fmt.Sprintf("floor: expected FloatValue, got %T", args[0])}
+	f, err := numericToFloat(args[0], "floor")
+	if err != nil {
+		return nil, err
 	}
-	return values.IntValue{Type: types.IntType{}, Value: int64(math.Floor(fv.Value))}, nil
+	return values.IntValue{Type: types.IntType{}, Value: int64(math.Floor(f))}, nil
 }
 
 // stdRound implements round(Float) -> Int.
+// WDL spec coercion allows Int input (Int coerces to Float).
 // Uses WDL half-up semantics: math.Floor(x + 0.5).
 // CRITICAL: Do NOT use math.Round — it gives wrong result for round(-2.5).
 // math.Round(-2.5) == -3, but WDL half-up requires round(-2.5) == -2.
 func stdRound(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
-		return nil, &EvalError{Message: "round: expected Float argument"}
+		return nil, &EvalError{Message: "round: expected numeric argument"}
 	}
-	fv, ok := args[0].(values.FloatValue)
-	if !ok {
-		return nil, &EvalError{Message: fmt.Sprintf("round: expected FloatValue, got %T", args[0])}
+	f, err := numericToFloat(args[0], "round")
+	if err != nil {
+		return nil, err
 	}
-	return values.IntValue{Type: types.IntType{}, Value: int64(math.Floor(fv.Value + 0.5))}, nil
+	return values.IntValue{Type: types.IntType{}, Value: int64(math.Floor(f + 0.5))}, nil
 }
 
 // numericArgs extracts float64 representations of two numeric args.

@@ -468,7 +468,17 @@ func lexNormal(l *Lexer) stateFn {
 			l.emit(TokError, "unexpected '|' (use '||')")
 		}
 	case '.':
-		l.emitCurrent(TokDot)
+		// Float literal with no leading digit (e.g. .14 == 0.14).
+		// WDL 1.2 allows this form: https://github.com/openwdl/wdl/blob/wdl-1.2/SPEC.md
+		if isDigit(l.peek(0)) {
+			l.advance() // consume first digit after '.'
+			for l.pos < len(l.src) && isDigit(l.src[l.pos]) {
+				l.advance()
+			}
+			l.emitCurrent(TokFloatLit)
+		} else {
+			l.emitCurrent(TokDot)
+		}
 	case '?':
 		l.emitCurrent(TokQuestion)
 	case '~':

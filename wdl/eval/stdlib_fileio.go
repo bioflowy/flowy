@@ -468,15 +468,28 @@ func stdGlob(args []values.Value, ctx ExecContext) (values.Value, error) {
 	}, nil
 }
 
-// stdBasename implements basename(File) -> String.
+// stdBasename implements basename(File, String?) -> String.
 // Returns the base name (final path element) of the file path.
-// Accepts FileValue or StringValue input.
+// If a second argument (suffix string) is provided, it is stripped from the result.
+// Accepts FileValue or StringValue for the first argument.
 func stdBasename(args []values.Value, ctx ExecContext) (values.Value, error) {
 	path, err := fileArg(args)
 	if err != nil {
 		return nil, &EvalError{Message: "basename: " + err.Error()}
 	}
-	return values.StringValue{Type: types.StringType{}, Value: filepath.Base(path)}, nil
+	base := filepath.Base(path)
+	// Optional second argument: suffix to strip.
+	if len(args) >= 2 {
+		var suffix string
+		switch s := args[1].(type) {
+		case values.StringValue:
+			suffix = s.Value
+		default:
+			return nil, &EvalError{Message: fmt.Sprintf("basename: second argument must be String, got %T", args[1])}
+		}
+		base = strings.TrimSuffix(base, suffix)
+	}
+	return values.StringValue{Type: types.StringType{}, Value: base}, nil
 }
 
 // stdDirname implements dirname(File) -> String.

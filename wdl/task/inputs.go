@@ -14,10 +14,13 @@ import (
 // the given PathMap with all File/Directory values found in the inputs.
 //
 // For each input declaration in task.Inputs:
-//   - If the JSON map contains the key: convert using jsonToWDLValue (type-aware)
+//   - If the JSON map contains the key (bare or "taskName.field"): convert using jsonToWDLValue (type-aware)
 //   - If absent and decl has a default expr: evaluate the default via eval.Eval
 //   - If absent, no default, and type is optional: bind NullValue{}
 //   - If absent, no default, and type is required: return error
+//
+// Key lookup follows the WDL convention: first try "taskName.fieldName" (as produced
+// by spectool and other conformance tools), then fall back to the bare field name.
 //
 // After binding a value, collectPaths walks it to register all File/Directory
 // paths in the PathMap.
@@ -30,7 +33,11 @@ func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap) 
 	for _, decl := range task.Inputs {
 		var val values.Value
 
-		raw, found := jsonInputs[decl.Name]
+		// Try "taskName.fieldName" first (spectool / WDL convention), then bare name.
+		raw, found := jsonInputs[task.Name+"."+decl.Name]
+		if !found {
+			raw, found = jsonInputs[decl.Name]
+		}
 		if found {
 			// Convert JSON value using declaration type for type-aware coercion
 			converted, err := jsonToWDLValue(raw, decl.Type)

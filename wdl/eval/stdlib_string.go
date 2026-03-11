@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
@@ -17,8 +18,36 @@ func init() {
 	stdlibFuncs["join_paths"] = stdJoinPaths
 }
 
+// wdlReplacementToGo converts a WDL replacement string to Go's regexp replacement syntax.
+// WDL uses \N (backslash + digit) for backreferences; Go uses ${N}.
+// A literal backslash in WDL replacement is written as \\ (already processed by unescapeString
+// into a single \). We convert remaining \N sequences to ${N}.
+func wdlReplacementToGo(repl string) string {
+	var sb strings.Builder
+	sb.Grow(len(repl))
+	i := 0
+	for i < len(repl) {
+		if repl[i] == '\\' && i+1 < len(repl) && repl[i+1] >= '0' && repl[i+1] <= '9' {
+			// \N → ${N}
+			sb.WriteString("${")
+			sb.WriteByte(repl[i+1])
+			sb.WriteByte('}')
+			i += 2
+		} else if repl[i] == '$' {
+			// Escape literal $ to avoid Go interpreting it as a group reference
+			sb.WriteString("$$")
+			i++
+		} else {
+			sb.WriteByte(repl[i])
+			i++
+		}
+	}
+	return sb.String()
+}
+
 // stdSub implements sub(String input, String pattern, String replacement) -> String.
 // Replaces all POSIX ERE matches of pattern in input with replacement.
+// WDL backreferences in replacement use \N syntax (e.g. \1, \2).
 func stdSub(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 3 {
 		return nil, &EvalError{Message: "sub: expected (String, String, String) arguments"}
@@ -33,7 +62,9 @@ func stdSub(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("sub: invalid pattern %q: %v", pattern.Value, err)}
 	}
-	result := re.ReplaceAllString(input.Value, replacement.Value)
+	// Convert WDL \N backreferences to Go ${N} syntax.
+	goRepl := wdlReplacementToGo(replacement.Value)
+	result := re.ReplaceAllString(input.Value, goRepl)
 	return values.StringValue{Type: types.StringType{}, Value: result}, nil
 }
 
