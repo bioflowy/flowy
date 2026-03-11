@@ -110,7 +110,7 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 	}
 
 	// Step 6: BuildCommand writes the command script (private decls already evaluated).
-	commandPath, err := BuildCommand(task, env, pm, execDir, workDir)
+	commandPath, err := BuildCommand(task, env, pm, execDir, workDir, sd)
 	if err != nil {
 		return nil, fmt.Errorf("building command for task %q: %w", task.Name, err)
 	}

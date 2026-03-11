@@ -23,7 +23,7 @@ import (
 //  3. Evaluate task.Command via eval.Eval with the translated env.
 //  4. Write the expanded command string to filepath.Join(execDir, "command") mode 0644.
 //  5. Return the path to the written file.
-func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string, workDir string) (string, error) {
+func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string, workDir string, structDefs ...map[string]*ast.StructDef) (string, error) {
 	// Private declarations are already evaluated into env by RunTask before
 	// BuildCommand is called. Build a translated env with container paths.
 	// Step 1: build a translated env with container paths substituted for host paths.
@@ -32,7 +32,11 @@ func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string, wo
 	// Step 3: evaluate the command expression using the translated env.
 	// Pass workDir so write_* functions create files inside the task work directory
 	// (which is bind-mounted into the container as /mnt/outputs).
-	v, err := eval.Eval(task.Command, translatedEnv, eval.ExecContext{WorkDir: workDir})
+	cmdCtx := eval.ExecContext{WorkDir: workDir}
+	if len(structDefs) > 0 {
+		cmdCtx.StructDefs = structDefs[0]
+	}
+	v, err := eval.Eval(task.Command, translatedEnv, cmdCtx)
 	if err != nil {
 		return "", fmt.Errorf("evaluating command for task %q: %w", task.Name, err)
 	}

@@ -329,33 +329,124 @@ func stdWriteLines(args []values.Value, ctx ExecContext) (values.Value, error) {
 	return values.FileValue{Type: types.FileType{}, Value: path}, nil
 }
 
-// stdWriteTsv implements write_tsv(Array[Array[String]]) -> File.
-// Writes each row as tab-separated fields, one row per line.
+// stdWriteTsv implements write_tsv with multiple overloads:
+//   - write_tsv(Array[Array[String]]) -> File
+//   - write_tsv(Array[Array[String]], Boolean header, Array[String] columns) -> File
+//   - write_tsv(Array[Struct]) -> File (struct field names as header by default)
+//   - write_tsv(Array[Struct], Boolean header) -> File
+//   - write_tsv(Array[Struct], Boolean header, Array[String] columns) -> File
 func stdWriteTsv(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
-		return nil, &EvalError{Message: "write_tsv: expected Array[Array[String]] argument"}
+		return nil, &EvalError{Message: "write_tsv: expected Array argument"}
 	}
 	av, ok := args[0].(values.ArrayValue)
 	if !ok {
 		return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected ArrayValue, got %T", args[0])}
 	}
-	var sb strings.Builder
-	for _, rowVal := range av.Items {
-		row, ok := rowVal.(values.ArrayValue)
+
+	// Parse optional header and columns arguments.
+	writeHeader := false
+	var headerNames []string
+
+	if len(args) >= 2 {
+		bv, ok := args[1].(values.BooleanValue)
 		if !ok {
-			return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected ArrayValue rows, got %T", rowVal)}
+			return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected Boolean for header arg, got %T", args[1])}
 		}
-		fields := make([]string, len(row.Items))
-		for i, item := range row.Items {
+		writeHeader = bv.Value
+	}
+	if len(args) >= 3 {
+		colArr, ok := args[2].(values.ArrayValue)
+		if !ok {
+			return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected Array[String] for columns arg, got %T", args[2])}
+		}
+		for _, item := range colArr.Items {
 			sv, ok := item.(values.StringValue)
 			if !ok {
-				return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected StringValue fields, got %T", item)}
+				return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected StringValue in columns, got %T", item)}
 			}
-			fields[i] = sv.Value
+			headerNames = append(headerNames, sv.Value)
 		}
-		sb.WriteString(strings.Join(fields, "\t"))
-		sb.WriteByte('\n')
 	}
+
+	var sb strings.Builder
+
+	// Detect whether items are structs or arrays.
+	isStruct := len(av.Items) > 0
+	if isStruct {
+		if _, ok := av.Items[0].(values.StructValue); !ok {
+			isStruct = false
+		}
+	}
+
+	if isStruct {
+		// Struct mode: use field names from the struct definition for deterministic order.
+		firstStruct := av.Items[0].(values.StructValue)
+		var fieldOrder []string
+		if ctx.StructDefs != nil {
+			if sd, ok := ctx.StructDefs[firstStruct.Type.Name]; ok {
+				for _, m := range sd.Members {
+					fieldOrder = append(fieldOrder, m.Name)
+				}
+			}
+		}
+		if len(fieldOrder) == 0 {
+			// Fallback: use map key order (non-deterministic).
+			for k := range firstStruct.Fields {
+				fieldOrder = append(fieldOrder, k)
+			}
+		}
+
+		// For structs, default behavior includes header unless explicitly disabled.
+		// write_tsv(structs) = no header (default for 1-arg)
+		// write_tsv(structs, true) = with struct field names as header
+		// write_tsv(structs, false) = no header
+		if writeHeader {
+			if len(headerNames) > 0 {
+				sb.WriteString(strings.Join(headerNames, "\t"))
+			} else {
+				sb.WriteString(strings.Join(fieldOrder, "\t"))
+			}
+			sb.WriteByte('\n')
+		}
+
+		for _, rowVal := range av.Items {
+			sv, ok := rowVal.(values.StructValue)
+			if !ok {
+				return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected StructValue rows, got %T", rowVal)}
+			}
+			fields := make([]string, len(fieldOrder))
+			for i, name := range fieldOrder {
+				fv, exists := sv.Fields[name]
+				if !exists {
+					fields[i] = ""
+				} else {
+					fields[i] = valueToTsvField(fv)
+				}
+			}
+			sb.WriteString(strings.Join(fields, "\t"))
+			sb.WriteByte('\n')
+		}
+	} else {
+		// Array[Array[String]] mode.
+		if writeHeader && len(headerNames) > 0 {
+			sb.WriteString(strings.Join(headerNames, "\t"))
+			sb.WriteByte('\n')
+		}
+		for _, rowVal := range av.Items {
+			row, ok := rowVal.(values.ArrayValue)
+			if !ok {
+				return nil, &EvalError{Message: fmt.Sprintf("write_tsv: expected ArrayValue rows, got %T", rowVal)}
+			}
+			fields := make([]string, len(row.Items))
+			for i, item := range row.Items {
+				fields[i] = valueToTsvField(item)
+			}
+			sb.WriteString(strings.Join(fields, "\t"))
+			sb.WriteByte('\n')
+		}
+	}
+
 	dir, err := writeTempDir("wdl-write-*", ctx)
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("write_tsv: cannot create temp dir: %v", err)}
@@ -365,6 +456,29 @@ func stdWriteTsv(args []values.Value, ctx ExecContext) (values.Value, error) {
 		return nil, &EvalError{Message: fmt.Sprintf("write_tsv: cannot write file: %v", err)}
 	}
 	return values.FileValue{Type: types.FileType{}, Value: path}, nil
+}
+
+// valueToTsvField converts a WDL value to its TSV field string representation.
+func valueToTsvField(v values.Value) string {
+	switch val := v.(type) {
+	case values.StringValue:
+		return val.Value
+	case values.IntValue:
+		return fmt.Sprintf("%d", val.Value)
+	case values.FloatValue:
+		return fmt.Sprintf("%g", val.Value)
+	case values.BooleanValue:
+		if val.Value {
+			return "true"
+		}
+		return "false"
+	case values.FileValue:
+		return val.Value
+	case values.DirectoryValue:
+		return val.Value
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 // stdWriteMap implements write_map(Map[String, String]) -> File.
