@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-11T01:59:00.161Z"
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-03-11T02:24:56.448Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 26
+  completed_plans: 25
   percent: 0
 ---
 
@@ -74,6 +74,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06-workflow-execution-dag-scheduler P03 | 3min | 2 tasks | 4 files |
 | Phase 07-cli-and-integration P01 | 3min | 2 tasks | 9 files |
 | Phase 07-cli-and-integration P02 | 4min | 2 tasks | 6 files |
+| Phase 08-add-spectool-integration-for-wdl-specification-compliance-testing P01 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,9 @@ Recent decisions affecting current work:
 - [Phase 07-cli-and-integration]: TypeError rustc-style formatting in main.go readSourceLine+printRustcError — checker TypeError.Error() lacks source line
 - [Phase 07-cli-and-integration]: newRunner package-level factory var enables ContainerRunner injection without subprocess in CLI tests
 - [Phase 07-cli-and-integration]: printVerboseOutput post-hoc approach reads stdout.txt/stderr.txt after execution (zero API changes to inner packages)
+- [Phase 08]: SerializeOutputs exported so CLI can call it for stdout JSON output
+- [Phase 08]: valueToJSONOutput drops execRoot — File/Directory values already absolute from task execution
+- [Phase 08]: --output flag: JSON goes to file, stdout empty when flag is set
 
 ### Pending Todos
 
@@ -171,6 +175,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T01:59:00.156Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-add-spectool-integration-for-wdl-specification-compliance-testing/08-CONTEXT.md
+Last session: 2026-03-11T02:24:56.442Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None

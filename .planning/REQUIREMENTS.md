@@ -81,10 +81,10 @@
 
 ### Specification Compliance
 
-- [ ] **SPEC-01**: `flowy run` が成功時に outputs JSON を stdout に出力する（miniwdl 互換）
-- [ ] **SPEC-02**: `--output <path>` フラグで outputs JSON を指定ファイルに書き出せる（stdout 出力なし）
-- [ ] **SPEC-03**: outputs JSON の File/Directory 値が絶対パスを使用する
-- [ ] **SPEC-04**: `--task` 実行時に `taskName.outputName` ドット記法キーで outputs JSON を出力する
+- [x] **SPEC-01**: `flowy run` が成功時に outputs JSON を stdout に出力する（miniwdl 互換）
+- [x] **SPEC-02**: `--output <path>` フラグで outputs JSON を指定ファイルに書き出せる（stdout 出力なし）
+- [x] **SPEC-03**: outputs JSON の File/Directory 値が絶対パスを使用する
+- [x] **SPEC-04**: `--task` 実行時に `taskName.outputName` ドット記法キーで outputs JSON を出力する
 - [ ] **SPEC-05**: Makefile の `make spectool` ターゲットで spectool 適合テストを実行できる
 - [ ] **SPEC-06**: 未サポート機能のテストが spectool-exclude.txt で除外される
 
