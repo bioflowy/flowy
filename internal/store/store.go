@@ -85,8 +85,14 @@ type Store interface {
 	ClaimTask(ctx context.Context, daemonID string) (*Task, error)
 	// UpdateTaskState sets the state of a task and updates its updated_at timestamp.
 	UpdateTaskState(ctx context.Context, taskID int64, state TaskState) error
+	// GetTaskByID returns the task with the given ID, or an error if not found.
+	GetTaskByID(ctx context.Context, taskID int64) (*Task, error)
 	// UpdateHeartbeat refreshes last_heartbeat_at for a running task.
 	UpdateHeartbeat(ctx context.Context, taskID int64) error
+	// UpdateHeartbeatByDaemon refreshes last_heartbeat_at for ALL CLAIMED/RUNNING
+	// tasks owned by daemonID in a single UPDATE. This is used by the daemon to
+	// refresh all its active tasks in one call per heartbeat interval.
+	UpdateHeartbeatByDaemon(ctx context.Context, daemonID string) error
 	// FindStaleTasks returns tasks in CLAIMED or RUNNING state whose
 	// last_heartbeat_at is older than timeoutSec seconds ago.
 	FindStaleTasks(ctx context.Context, timeoutSec int) ([]Task, error)

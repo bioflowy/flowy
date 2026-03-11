@@ -373,6 +373,114 @@ func TestFindStaleTasks(t *testing.T) {
 	}
 }
 
+// TestGetTaskByID verifies that a task can be retrieved by its integer ID.
+func TestGetTaskByID(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	r := newRun("run-gettask-01")
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	task := &store.Task{RunID: r.ID, TaskName: "fetch-me", ShardIndex: 2}
+	if err := s.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	// Fetch by ID — should return the exact task.
+	got, err := s.GetTaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTaskByID: %v", err)
+	}
+	if got.ID != task.ID {
+		t.Errorf("ID: got %d, want %d", got.ID, task.ID)
+	}
+	if got.TaskName != "fetch-me" {
+		t.Errorf("TaskName: got %q, want %q", got.TaskName, "fetch-me")
+	}
+	if got.ShardIndex != 2 {
+		t.Errorf("ShardIndex: got %d, want 2", got.ShardIndex)
+	}
+	if got.RunID != r.ID {
+		t.Errorf("RunID: got %q, want %q", got.RunID, r.ID)
+	}
+
+	// Fetch nonexistent ID — should return a descriptive error, not nil task.
+	_, err = s.GetTaskByID(ctx, 99999)
+	if err == nil {
+		t.Error("expected error for nonexistent task ID, got nil")
+	}
+}
+
+// TestUpdateHeartbeatByDaemon verifies that a single call refreshes heartbeats
+// for all CLAIMED/RUNNING tasks owned by the given daemon.
+func TestUpdateHeartbeatByDaemon(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	r := newRun("run-hbd-01")
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create two tasks and claim both with the same daemon.
+	for i := 0; i < 2; i++ {
+		if err := s.CreateTask(ctx, &store.Task{
+			RunID: r.ID, TaskName: "parallel", ShardIndex: i,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	taskA, err := s.ClaimTask(ctx, "daemon-HBD")
+	if err != nil || taskA == nil {
+		t.Fatalf("ClaimTask A: err=%v task=%v", err, taskA)
+	}
+	taskB, err := s.ClaimTask(ctx, "daemon-HBD")
+	if err != nil || taskB == nil {
+		t.Fatalf("ClaimTask B: err=%v task=%v", err, taskB)
+	}
+
+	firstA := taskA.LastHeartbeatAt
+	firstB := taskB.LastHeartbeatAt
+	time.Sleep(1100 * time.Millisecond)
+
+	// Single call should update both tasks.
+	if err := s.UpdateHeartbeatByDaemon(ctx, "daemon-HBD"); err != nil {
+		t.Fatalf("UpdateHeartbeatByDaemon: %v", err)
+	}
+
+	tasks, err := s.ListTasksByRun(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+	for _, task := range tasks {
+		if task.LastHeartbeatAt == nil {
+			t.Errorf("task %d: LastHeartbeatAt is nil", task.ID)
+			continue
+		}
+		var first *time.Time
+		if task.ID == taskA.ID {
+			first = firstA
+		} else {
+			first = firstB
+		}
+		if !task.LastHeartbeatAt.After(*first) {
+			t.Errorf("task %d: heartbeat not advanced: first=%v second=%v",
+				task.ID, *first, *task.LastHeartbeatAt)
+		}
+	}
+
+	// Call with a daemon that has no active tasks — should not error.
+	if err := s.UpdateHeartbeatByDaemon(ctx, "daemon-nonexistent"); err != nil {
+		t.Errorf("UpdateHeartbeatByDaemon with no tasks: unexpected error: %v", err)
+	}
+}
+
 // TestFindStaleTasksIncludesClaimed verifies that CLAIMED tasks with expired
 // heartbeats are included in FindStaleTasks results.
 func TestFindStaleTasksIncludesClaimed(t *testing.T) {

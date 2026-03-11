@@ -99,6 +99,27 @@ func (s *SQLiteStore) UpdateTaskState(ctx context.Context, taskID int64, state s
 	return nil
 }
 
+// GetTaskByID returns the task with the given ID, or an error if not found.
+func (s *SQLiteStore) GetTaskByID(ctx context.Context, taskID int64) (*store.Task, error) {
+	rows, err := s.reader.QueryContext(ctx,
+		`SELECT id, run_id, task_name, state, shard_index, daemon_id,
+		        last_heartbeat_at, created_at, updated_at
+		   FROM tasks WHERE id = ?`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: GetTaskByID: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, fmt.Errorf("sqlite: GetTaskByID: task %d not found", taskID)
+	}
+	t, err := scanTask(rows)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: GetTaskByID scan: %w", err)
+	}
+	return &t, nil
+}
+
 // UpdateHeartbeat refreshes last_heartbeat_at for a running/claimed task.
 func (s *SQLiteStore) UpdateHeartbeat(ctx context.Context, taskID int64) error {
 	_, err := s.writer.ExecContext(ctx,
@@ -108,6 +129,23 @@ func (s *SQLiteStore) UpdateHeartbeat(ctx context.Context, taskID int64) error {
 		  WHERE id = ?`, taskID)
 	if err != nil {
 		return fmt.Errorf("sqlite: UpdateHeartbeat: %w", err)
+	}
+	return nil
+}
+
+// UpdateHeartbeatByDaemon refreshes last_heartbeat_at for all CLAIMED/RUNNING
+// tasks owned by daemonID in a single UPDATE — one call per heartbeat interval
+// regardless of task count.
+func (s *SQLiteStore) UpdateHeartbeatByDaemon(ctx context.Context, daemonID string) error {
+	_, err := s.writer.ExecContext(ctx,
+		`UPDATE tasks
+		    SET last_heartbeat_at = datetime('now'),
+		        updated_at        = datetime('now')
+		  WHERE daemon_id = ?
+		    AND state IN ('CLAIMED', 'RUNNING')`,
+		daemonID)
+	if err != nil {
+		return fmt.Errorf("sqlite: UpdateHeartbeatByDaemon: %w", err)
 	}
 	return nil
 }
