@@ -87,7 +87,7 @@ func Check(doc *ast.Document) (TypeEnv, []error) {
 
 	// Process each workflow independently.
 	for _, wf := range doc.Workflows {
-		scope, wfErrs := checkWorkflow(wf, structDefs)
+		scope, wfErrs := checkWorkflow(wf, structDefs, doc.Tasks)
 		errs = append(errs, wfErrs...)
 		// Merge workflow declarations into the top-level env.
 		for name, t := range scope.decls {
@@ -135,9 +135,15 @@ type declGroup struct {
 
 // checkWorkflow runs both passes for a single workflow and returns the resulting
 // scope plus any errors found. structDefs is the document-level struct definition map.
-func checkWorkflow(wf *ast.Workflow, structDefs map[string]*ast.StructDef) (*Scope, []error) {
+func checkWorkflow(wf *ast.Workflow, structDefs map[string]*ast.StructDef, tasks []*ast.Task) (*Scope, []error) {
 	outerScope := newScope(nil)
 	var groups []declGroup
+
+	// Build task lookup map for resolving call outputs.
+	taskMap := make(map[string]*ast.Task, len(tasks))
+	for _, t := range tasks {
+		taskMap[t.Name] = t
+	}
 
 	// Pass 1: register inputs.
 	for _, d := range wf.Inputs {
@@ -146,7 +152,7 @@ func checkWorkflow(wf *ast.Workflow, structDefs map[string]*ast.StructDef) (*Sco
 	}
 
 	// Pass 1: walk body nodes, applying promotion for scatter/if.
-	bodyGroups := collectWorkflowBodyGroups(wf.Body, outerScope, nil)
+	bodyGroups := collectWorkflowBodyGroups(wf.Body, outerScope, nil, taskMap)
 	groups = append(groups, bodyGroups...)
 
 	// Pass 1: register outputs.
@@ -171,7 +177,7 @@ func checkWorkflow(wf *ast.Workflow, structDefs map[string]*ast.StructDef) (*Sco
 //
 // Returns declGroup values pairing each decl with the scope it should be
 // validated against (may be an inner scope containing scatter variables).
-func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, promoteFn func(types.Type) types.Type) []declGroup {
+func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, promoteFn func(types.Type) types.Type, taskMap map[string]*ast.Task) []declGroup {
 	var groups []declGroup
 
 	for _, node := range nodes {
@@ -183,6 +189,9 @@ func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, prom
 			}
 			outerScope.define(n.Name, t)
 			groups = append(groups, declGroup{n, outerScope})
+
+		case *ast.Call:
+			registerCallOutputs(n, outerScope, promoteFn, taskMap)
 
 		case *ast.Scatter:
 			// Create an inner scope for the scatter body that includes the
@@ -200,7 +209,7 @@ func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, prom
 				}
 				return arrayize(t)
 			}
-			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, innerScope, scatterPromote)
+			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, innerScope, scatterPromote, taskMap)
 			groups = append(groups, inner...)
 
 		case *ast.Conditional:
@@ -212,7 +221,7 @@ func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, prom
 				}
 				return optionalize(t)
 			}
-			inner := collectWorkflowBodyGroups(n.Body, outerScope, condPromote)
+			inner := collectWorkflowBodyGroups(n.Body, outerScope, condPromote, taskMap)
 			groups = append(groups, inner...)
 		}
 	}
@@ -223,7 +232,7 @@ func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, prom
 // collectWorkflowBodyGroupsInner is like collectWorkflowBodyGroups but uses
 // innerScope for validation (so that scatter variables are in scope) while
 // still registering promoted names into outerScope.
-func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope, innerScope *Scope, promoteFn func(types.Type) types.Type) []declGroup {
+func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope, innerScope *Scope, promoteFn func(types.Type) types.Type, taskMap map[string]*ast.Task) []declGroup {
 	var groups []declGroup
 
 	for _, node := range nodes {
@@ -237,6 +246,9 @@ func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope,
 			// Validate against innerScope so scatter variable is accessible.
 			groups = append(groups, declGroup{n, innerScope})
 
+		case *ast.Call:
+			registerCallOutputs(n, outerScope, promoteFn, taskMap)
+
 		case *ast.Scatter:
 			scatterVarType := scatterVarElementType(n.Expr, innerScope)
 			nestedInner := newScope(innerScope)
@@ -248,7 +260,7 @@ func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope,
 				}
 				return arrayize(t)
 			}
-			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, nestedInner, scatterPromote)
+			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, nestedInner, scatterPromote, taskMap)
 			groups = append(groups, inner...)
 
 		case *ast.Conditional:
@@ -258,12 +270,42 @@ func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope,
 				}
 				return optionalize(t)
 			}
-			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, innerScope, condPromote)
+			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, innerScope, condPromote, taskMap)
 			groups = append(groups, inner...)
 		}
 	}
 
 	return groups
+}
+
+// registerCallOutputs resolves a Call node's target task and registers the call
+// alias (or task name) as a StructType in the given scope. Each task output
+// becomes a member of the struct, with promoteFn applied to its type.
+func registerCallOutputs(call *ast.Call, scope *Scope, promoteFn func(types.Type) types.Type, taskMap map[string]*ast.Task) {
+	taskName := call.Callee[len(call.Callee)-1]
+	task, ok := taskMap[taskName]
+	if !ok {
+		return // unknown task — will be caught elsewhere
+	}
+
+	// Build StructType from task outputs, applying promoteFn to each member.
+	members := make(map[string]types.Type, len(task.Outputs))
+	for _, out := range task.Outputs {
+		t := out.Type
+		if promoteFn != nil {
+			t = promoteFn(t)
+		}
+		members[out.Name] = t
+	}
+
+	// Call ID: alias if set, else task name.
+	callID := call.Alias
+	if callID == "" {
+		callID = taskName
+	}
+
+	st := types.StructType{Name: callID, Members: members}
+	scope.define(callID, st)
 }
 
 // validateGroups runs Kahn's topological sort on the declarations visible in
@@ -282,18 +324,27 @@ func validateGroups(outerScope *Scope, groups []declGroup, structDefs map[string
 	edges := make(map[string][]string, len(groups))
 	groupByName := make(map[string]declGroup, len(groups))
 
+	// First pass: collect all declaration names so we can distinguish
+	// peer declarations from call aliases in the dependency check.
 	for _, g := range groups {
 		d := g.decl
 		nodes = append(nodes, d.Name)
 		groupByName[d.Name] = g
+	}
 
+	// Second pass: build dependency edges.
+	for _, g := range groups {
+		d := g.decl
 		var deps []string
 		if d.Expr != nil {
 			for _, ident := range collectIdents(d.Expr) {
 				// Only add dependency if the referenced name is a peer declaration
-				// (registered in outerScope.decls directly — not inherited from parent).
+				// (registered in outerScope.decls directly — not inherited from parent)
+				// AND is an actual declaration node (not a call alias registered as StructType).
 				if _, inScope := outerScope.decls[ident]; inScope {
-					deps = append(deps, ident)
+					if _, isDecl := groupByName[ident]; isDecl {
+						deps = append(deps, ident)
+					}
 				}
 			}
 		}
