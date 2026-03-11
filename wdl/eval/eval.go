@@ -254,6 +254,20 @@ func evalArith(op int, left, right values.Value, pos ast.Pos) (values.Value, err
 
 // evalComparison evaluates comparison operators.
 func evalComparison(op int, left, right values.Value, pos ast.Pos) (values.Value, error) {
+	// WDL 1.2: comparing any value with None using == returns false, != returns true.
+	// None == None returns true, None != None returns false.
+	_, leftIsNull := left.(values.NullValue)
+	_, rightIsNull := right.(values.NullValue)
+	if leftIsNull || rightIsNull {
+		if op == lexer.TokEqEq {
+			return values.BooleanValue{Type: types.BooleanType{}, Value: leftIsNull && rightIsNull}, nil
+		}
+		if op == lexer.TokNotEq {
+			return values.BooleanValue{Type: types.BooleanType{}, Value: !(leftIsNull && rightIsNull)}, nil
+		}
+		return nil, &EvalError{Pos: pos, Message: "only == and != are supported for None comparisons"}
+	}
+
 	// Compare numeric values with promotion
 	lf, leftIsFloat := asFloat(left)
 	rf, rightIsFloat := asFloat(right)
