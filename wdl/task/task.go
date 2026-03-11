@@ -61,7 +61,7 @@ func isAcceptableExitCode(exitCode int, spec ReturnCodesSpec) bool {
 //
 // The runner parameter accepts any ContainerRunner implementation, enabling
 // testing with ShellRunner without a live Docker daemon.
-func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interface{}, runner ContainerRunner, execRoot string) (map[string]values.Value, error) {
+func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interface{}, runner ContainerRunner, execRoot string, structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 	// Step 1: create execution directory layout.
 	// Use MkdirTemp to generate a unique directory per invocation, avoiding
 	// collisions when the same task is called from scatter iterations.
@@ -84,13 +84,19 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		return nil, fmt.Errorf("binding inputs for task %q: %w", task.Name, err)
 	}
 
+	// Extract struct definitions from variadic parameter.
+	var sd map[string]*ast.StructDef
+	if len(structDefs) > 0 {
+		sd = structDefs[0]
+	}
+
 	// Step 4: evaluate private declarations (task.Decls) into env so they
 	// are available for both runtime/requirements and command expansion.
 	for _, decl := range task.Decls {
 		if decl.Expr == nil {
 			continue
 		}
-		v, err := eval.Eval(decl.Expr, env, eval.ExecContext{})
+		v, err := eval.Eval(decl.Expr, env, eval.ExecContext{StructDefs: sd})
 		if err != nil {
 			return nil, fmt.Errorf("evaluating private decl %q for task %q: %w", decl.Name, task.Name, err)
 		}
@@ -163,6 +169,7 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		WorkDir:    workDir,
 		StdoutPath: stdoutPath,
 		StderrPath: stderrPath,
+		StructDefs: sd,
 	}
 	outputs, err := CollectOutputs(task, env, execCtx, pm)
 	if err != nil {

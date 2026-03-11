@@ -38,7 +38,19 @@ type scheduler struct {
 	nodes      map[string]*dagNode // from buildDAG
 	order      []string            // topological order from topoSort
 	done       map[string]bool     // tracks completed node IDs
-	taskRunner func(ctx context.Context, t *ast.Task, inputs map[string]interface{}, runner task.ContainerRunner, execRoot string) (map[string]values.Value, error)
+	taskRunner func(ctx context.Context, t *ast.Task, inputs map[string]interface{}, runner task.ContainerRunner, execRoot string, structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error)
+}
+
+// structDefs returns a map of struct definitions from the document.
+func (s *scheduler) structDefs() map[string]*ast.StructDef {
+	if s.doc == nil {
+		return nil
+	}
+	defs := make(map[string]*ast.StructDef, len(s.doc.Structs))
+	for _, sd := range s.doc.Structs {
+		defs[sd.Name] = sd
+	}
+	return defs
 }
 
 // run executes the scheduler in topological order.
@@ -100,7 +112,7 @@ func (s *scheduler) run(ctx context.Context) error {
 		case *ast.Decl:
 			// Decls are synchronous — evaluate and bind immediately.
 			decl := node.node.(*ast.Decl)
-			v, err := eval.Eval(decl.Expr, s.env, eval.ExecContext{})
+			v, err := eval.Eval(decl.Expr, s.env, eval.ExecContext{StructDefs: s.structDefs()})
 			if err != nil {
 				_ = g.Wait()
 				return fmt.Errorf("decl %q: %w", decl.Name, err)
@@ -198,7 +210,7 @@ func (s *scheduler) runCall(ctx context.Context, call *ast.Call) (map[string]val
 	if fn == nil {
 		fn = runTaskFn
 	}
-	rawOutputs, err := fn(ctx, t, inputs, s.runner, s.execRoot)
+	rawOutputs, err := fn(ctx, t, inputs, s.runner, s.execRoot, s.structDefs())
 	if err != nil {
 		return nil, fmt.Errorf("call %q execution: %w", alias, err)
 	}

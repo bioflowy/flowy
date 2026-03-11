@@ -94,8 +94,22 @@ func Eval(expr ast.Expr, env *Env, ctx ExecContext) (values.Value, error) {
 			}
 			fields[m.Name] = v
 		}
+		// Build Type.Members from struct definition if available, and fill
+		// missing optional fields with NullValue so they serialize as null.
+		st := types.StructType{Name: e.TypeName}
+		if ctx.StructDefs != nil {
+			if def, ok := ctx.StructDefs[e.TypeName]; ok {
+				st.Members = make(map[string]types.Type, len(def.Members))
+				for _, m := range def.Members {
+					st.Members[m.Name] = m.Type
+					if _, exists := fields[m.Name]; !exists && m.Type.IsOptional() {
+						fields[m.Name] = values.NullValue{}
+					}
+				}
+			}
+		}
 		return values.StructValue{
-			Type:   types.StructType{Name: e.TypeName},
+			Type:   st,
 			Fields: fields,
 		}, nil
 	case *ast.IfThenElse:

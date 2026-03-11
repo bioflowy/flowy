@@ -234,7 +234,12 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "error: task %q not found in %s\n", *taskFlag, file)
 			return 1
 		}
-		taskOutputs, execErr := task.RunTask(ctx, taskDef, jsonInputs, runner, execRoot)
+		// Build struct definitions map for struct literal evaluation.
+		structDefs := make(map[string]*ast.StructDef, len(doc.Structs))
+		for _, s := range doc.Structs {
+			structDefs[s.Name] = s
+		}
+		taskOutputs, execErr := task.RunTask(ctx, taskDef, jsonInputs, runner, execRoot, structDefs)
 		if execErr != nil {
 			fmt.Fprintf(stderr, "error: %v\n", execErr)
 			fmt.Fprintf(stderr, "See %s/error.json for details\n", execRoot)

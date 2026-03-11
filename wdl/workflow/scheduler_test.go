@@ -95,7 +95,7 @@ func makeDoc(wfName string, wfBody []ast.WorkflowNode, wfOutputs []*ast.Decl, ta
 func TestRunWorkflow_SingleCall(t *testing.T) {
 	// Override runTaskFn to return a fixed output without spawning a container.
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return map[string]values.Value{
 			"result": values.IntValue{Value: 42},
 		}, nil
@@ -123,7 +123,7 @@ func TestRunWorkflow_TwoCalls_DataDep(t *testing.T) {
 	var mu sync.Mutex
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		mu.Lock()
 		callOrder = append(callOrder, tsk.Name)
 		mu.Unlock()
@@ -164,7 +164,7 @@ func TestRunWorkflow_TwoCalls_Parallel(t *testing.T) {
 	called := map[string]bool{}
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		mu.Lock()
 		called[tsk.Name] = true
 		mu.Unlock()
@@ -195,7 +195,7 @@ func TestRunWorkflow_AfterDep(t *testing.T) {
 	var mu sync.Mutex
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		mu.Lock()
 		callOrder = append(callOrder, tsk.Name)
 		mu.Unlock()
@@ -232,7 +232,7 @@ func TestRunWorkflow_Conditional_True(t *testing.T) {
 
 	called := false
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		called = true
 		return map[string]values.Value{"result": values.IntValue{Value: 99}}, nil
 	}
@@ -261,7 +261,7 @@ func TestRunWorkflow_Conditional_False(t *testing.T) {
 
 	called := false
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		called = true
 		return map[string]values.Value{"result": values.IntValue{Value: 99}}, nil
 	}
@@ -290,7 +290,7 @@ func TestRunWorkflow_Decl(t *testing.T) {
 
 	var capturedInputs map[string]interface{}
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		capturedInputs = inputs
 		return map[string]values.Value{"result": values.IntValue{Value: 1}}, nil
 	}
@@ -325,7 +325,7 @@ func TestRunWorkflow_Decl(t *testing.T) {
 func TestRunWorkflow_Scatter_Basic(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		// Return doubled input value.
 		v, _ := inputs["n"].(int64)
 		return map[string]values.Value{
@@ -365,7 +365,7 @@ func TestRunWorkflow_Scatter_Basic(t *testing.T) {
 func TestRunWorkflow_Scatter_Basic_CheckOutputs(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		v, _ := inputs["n"].(int64)
 		return map[string]values.Value{
 			"out": values.IntValue{Value: v * 2},
@@ -428,7 +428,7 @@ func TestRunWorkflow_Scatter_Basic_CheckOutputs(t *testing.T) {
 func TestRunWorkflow_Scatter_Empty(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return map[string]values.Value{"out": values.IntValue{Value: 0}}, nil
 	}
 	defer func() { runTaskFn = origFn }()
@@ -480,7 +480,7 @@ func TestRunWorkflow_ScatterConcurrencyLimit(t *testing.T) {
 	)
 
 	origFn := runTaskFn
-	runTaskFn = func(ctx context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(ctx context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		c := atomic.AddInt64(&current, 1)
 		for {
 			m := atomic.LoadInt64(&maxSeen)
@@ -531,7 +531,7 @@ func TestRunWorkflow_ScatterConcurrencyLimit(t *testing.T) {
 func TestRunWorkflow_ScatterInIf_True(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		v, _ := inputs["n"].(int64)
 		return map[string]values.Value{"out": values.IntValue{Value: v}}, nil
 	}
@@ -565,7 +565,7 @@ func TestRunWorkflow_ScatterInIf_False(t *testing.T) {
 
 	called := false
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		called = true
 		return map[string]values.Value{"out": values.IntValue{Value: 1}}, nil
 	}
@@ -601,7 +601,7 @@ func TestRunWorkflow_ScatterInIf_False(t *testing.T) {
 func TestRunWorkflow_IfInScatter(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		v, _ := inputs["n"].(int64)
 		return map[string]values.Value{"out": values.IntValue{Value: v}}, nil
 	}
@@ -637,7 +637,7 @@ func TestRunWorkflow_IfInScatter(t *testing.T) {
 func TestRunWorkflow_ScatterInScatter(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		v, _ := inputs["n"].(int64)
 		return map[string]values.Value{"out": values.IntValue{Value: v}}, nil
 	}
@@ -671,7 +671,7 @@ func TestRunWorkflow_ScatterInScatter(t *testing.T) {
 func TestRunWorkflow_WorkflowOutputs(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return map[string]values.Value{"result": values.IntValue{Value: 7}}, nil
 	}
 	defer func() { runTaskFn = origFn }()
@@ -721,7 +721,7 @@ func TestRunWorkflow_NotFound(t *testing.T) {
 func TestRunWorkflow_TaskNotFound(t *testing.T) {
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return nil, fmt.Errorf("should not be called")
 	}
 	defer func() { runTaskFn = origFn }()
@@ -759,7 +759,7 @@ func TestRunWorkflow_OutputsJSON(t *testing.T) {
 	execRoot := t.TempDir()
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return map[string]values.Value{"result": values.IntValue{Value: 99}}, nil
 	}
 	defer func() { runTaskFn = origFn }()
@@ -804,7 +804,7 @@ func TestRunWorkflow_FailFast_ErrorJSON(t *testing.T) {
 	execRoot := t.TempDir()
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return nil, &task.TaskError{TaskName: tsk.Name, ExitCode: 2, Stderr: []byte("boom")}
 	}
 	defer func() { runTaskFn = origFn }()
@@ -850,7 +850,7 @@ func TestRunWorkflow_FailFast_CancelsOthers(t *testing.T) {
 	cancelledB := make(chan struct{})
 
 	origFn := runTaskFn
-	runTaskFn = func(ctx context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(ctx context.Context, tsk *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		if tsk.Name == "task_a" {
 			return nil, &task.TaskError{TaskName: "task_a", ExitCode: 1, Stderr: []byte("fail")}
 		}
@@ -881,7 +881,7 @@ func TestRunWorkflow_WorkflowOutputs_JSON(t *testing.T) {
 	execRoot := t.TempDir()
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, _ *ast.Task, _ map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		return map[string]values.Value{"value": values.IntValue{Value: 42}}, nil
 	}
 	defer func() { runTaskFn = origFn }()
@@ -919,7 +919,7 @@ func TestRunWorkflow_EndToEnd(t *testing.T) {
 	execRoot := t.TempDir()
 
 	origFn := runTaskFn
-	runTaskFn = func(_ context.Context, tsk *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string) (map[string]values.Value, error) {
+	runTaskFn = func(_ context.Context, tsk *ast.Task, inputs map[string]interface{}, _ task.ContainerRunner, _ string, _ ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 		if tsk.Name == "doubler" {
 			v, _ := inputs["n"].(int64)
 			return map[string]values.Value{"out": values.IntValue{Value: v * 2}}, nil
