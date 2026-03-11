@@ -63,7 +63,10 @@ Plans:
   3. `GET /workflows/{id}/outputs` returns output key-value pairs after a workflow reaches COMPLETED state
   4. `POST /workflows/{id}/abort` transitions a running workflow to ABORTED and cancels its in-progress tasks
   5. `GET /health` returns HTTP 200 and the server correctly ships as the `flowy-server` binary under `cmd/flowy-server/`
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 10-01-PLAN.md — Store extensions (GetTaskByID, UpdateHeartbeatByDaemon), per-task directory helpers, RunWorkflowWithDispatch, api comment fix
+- [ ] 10-02-PLAN.md — Server package with all REST handlers, DAG dispatch logic, stale detection, daemon-facing endpoints, and flowy-server binary
 
 ### Phase 11: Daemon Binary + Task Execution
 **Goal**: `flowy-daemon` binary runs, claims tasks from the server atomically, executes them via Docker, writes outputs to the shared filesystem, and handles crashes gracefully
@@ -102,6 +105,6 @@ Plans:
 | 7. CLI and Integration | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
-| 10. Server Binary + DAG Dispatch | v1.1 | 0/? | Not started | - |
+| 10. Server Binary + DAG Dispatch | v1.1 | 0/2 | Planning | - |
 | 11. Daemon Binary + Task Execution | v1.1 | 0/? | Not started | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |
