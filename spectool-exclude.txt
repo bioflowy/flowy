@@ -1,0 +1,23 @@
+# spectool-exclude.txt
+# Tests to skip during WDL 1.2 conformance run.
+# One pattern per line. Lines starting with # are comments.
+# Patterns are matched as substrings of test names (case-sensitive).
+# Remove patterns as features are implemented in flowy.
+#
+# Usage: make spectool reads this file and passes patterns to
+#        spectool --exclude "pattern1,pattern2,..."
+
+# --- HTTP/HTTPS imports (not supported — v2 roadmap, EXT-01) ---
+# WDL allows importing files via http:// and https:// URLs.
+# Populate exact pattern(s) after first spectool run.
+# http_import
+
+# --- Sub-workflow calls (not supported — v2 roadmap) ---
+# WDL allows calling another workflow as a sub-workflow.
+# Populate exact pattern(s) after first spectool run.
+# sub_workflow
+
+# --- Object type (WDL 1.2 deprecated, not implemented) ---
+# The Object type was deprecated in WDL 1.x and is not implemented in flowy.
+# Populate exact pattern(s) after first spectool run.
+# object_type
