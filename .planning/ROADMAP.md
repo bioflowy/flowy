@@ -19,6 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 5: Task Execution** - Run a single WDL task end-to-end in Docker with input staging and output collection
 - [x] **Phase 6: Workflow Execution (DAG Scheduler)** - Execute multi-task workflows with scatter parallelism, conditionals, and outputs.json (completed 2026-03-10)
 - [x] **Phase 7: CLI and Integration** - Ship `flowy run` and `flowy check` as usable CLI tools with all flags and exit codes (completed 2026-03-11)
+- [ ] **Phase 8: Specification Compliance** - Integrate spectool conformance testing and make flowy output format spectool-compatible
 
 ## Phase Details
 
@@ -144,10 +145,27 @@ Plans:
 - [ ] 07-01-PLAN.md — Extend parser with search paths, create CLI skeleton with check subcommand
 - [ ] 07-02-PLAN.md — Implement run subcommand with all flags (--input, --task, --dir, --verbose)
 
+### Phase 8: Specification Compliance
+**Goal**: flowy's output format is spectool-compatible (stdout JSON, absolute paths, task dot-notation keys) and `make spectool` runs WDL 1.2 conformance tests
+**Depends on**: Phase 7
+**Requirements**: SPEC-01, SPEC-02, SPEC-03, SPEC-04, SPEC-05, SPEC-06
+**Success Criteria** (what must be TRUE):
+  1. `flowy run` prints valid outputs JSON to stdout on successful execution (workflow and task)
+  2. `--output <path>` writes outputs JSON to a file instead of stdout
+  3. File/Directory values in outputs JSON use absolute paths
+  4. Task single execution uses `taskName.outputName` dot-notation keys
+  5. `make spectool` builds flowy, installs spectool, and runs conformance tests
+  6. Unsupported feature tests are excluded via spectool-exclude.txt
+**Plans**: 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Refactor output format (absolute paths, SerializeOutputs), update CLI for stdout JSON and --output flag
+- [ ] 08-02-PLAN.md — Create Makefile with spectool conformance test target and exclude list
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -158,3 +176,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 5. Task Execution | 2/3 | In Progress|  |
 | 6. Workflow Execution (DAG Scheduler) | 3/3 | Complete   | 2026-03-10 |
 | 7. CLI and Integration | 2/2 | Complete   | 2026-03-11 |
+| 8. Specification Compliance | 0/2 | Planned    |  |

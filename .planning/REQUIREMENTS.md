@@ -79,6 +79,15 @@
 - [x] **CLI-06**: 成功時は exit code 0、失敗時は非ゼロで終了する
 - [x] **CLI-07**: `--verbose` フラグでタスク stdout/stderr をターミナルに表示できる
 
+### Specification Compliance
+
+- [ ] **SPEC-01**: `flowy run` が成功時に outputs JSON を stdout に出力する（miniwdl 互換）
+- [ ] **SPEC-02**: `--output <path>` フラグで outputs JSON を指定ファイルに書き出せる（stdout 出力なし）
+- [ ] **SPEC-03**: outputs JSON の File/Directory 値が絶対パスを使用する
+- [ ] **SPEC-04**: `--task` 実行時に `taskName.outputName` ドット記法キーで outputs JSON を出力する
+- [ ] **SPEC-05**: Makefile の `make spectool` ターゲットで spectool 適合テストを実行できる
+- [ ] **SPEC-06**: 未サポート機能のテストが spectool-exclude.txt で除外される
+
 ## v2 Requirements
 
 ### サーバ/クライアント分離
@@ -165,12 +174,18 @@
 | CLI-05 | Phase 7: CLI and Integration | Complete |
 | CLI-06 | Phase 7: CLI and Integration | Complete |
 | CLI-07 | Phase 7: CLI and Integration | Complete |
+| SPEC-01 | Phase 8: Specification Compliance | Planned |
+| SPEC-02 | Phase 8: Specification Compliance | Planned |
+| SPEC-03 | Phase 8: Specification Compliance | Planned |
+| SPEC-04 | Phase 8: Specification Compliance | Planned |
+| SPEC-05 | Phase 8: Specification Compliance | Planned |
+| SPEC-06 | Phase 8: Specification Compliance | Planned |
 
 **Coverage:**
-- v1 requirements: 57 total
-- Mapped to phases: 57
-- Unmapped: 0 ✓
+- v1 requirements: 63 total
+- Mapped to phases: 63
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after roadmap revision (7 phases)*
+*Last updated: 2026-03-11 after Phase 8 planning (8 phases)*
