@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -o ./flowy ./cmd/flowy
+
+      - name: Unit tests
+        run: go test ./... -count=1
+
+  spectool:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build flowy
+        run: go build -o ./flowy ./cmd/flowy
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache spectool binary
+        id: cache-spectool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/spectool
+          key: spectool-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Install spectool
+        if: steps.cache-spectool.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch main --depth 1 https://github.com/openwdl/spectool /tmp/spectool-src
+          cd /tmp/spectool-src
+          sed -i 's/git2 = "0.20.0"/git2 = { version = "0.20.0", features = ["vendored-openssl"] }/' Cargo.toml
+          cargo install --path .
+          rm -rf /tmp/spectool-src
+
+      - name: Clone WDL 1.2 spec
+        run: git clone --branch wdl-1.2 --depth 1 https://github.com/openwdl/wdl /tmp/wdl-spec
+
+      - name: Run spectool conformance tests
+        run: make spectool
