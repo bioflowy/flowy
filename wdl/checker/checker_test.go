@@ -54,12 +54,12 @@ func TestCoerces(t *testing.T) {
 		},
 		// False: unrelated types
 		{"String->Int", types.StringType{}, types.IntType{}, false},
-		// False: Array item types differ (shallow only, no item coercion)
+		// True: Array item types coerce recursively (String → File)
 		{
-			"Array[String]->Array[File] (shallow, false)",
+			"Array[String]->Array[File] (recursive coercion)",
 			types.ArrayType{ItemType: types.StringType{}},
 			types.ArrayType{ItemType: types.FileType{}},
-			false,
+			true,
 		},
 	}
 

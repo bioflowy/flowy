@@ -58,14 +58,27 @@ func Coerces(from, to types.Type) bool {
 		}
 
 	case types.ArrayType:
-		// Rule 5: Array[T]+ → Array[T]
-		// The source must be non-empty and the target must be an ArrayType with the
-		// same item TypeName and Nonempty==false. Item types are compared shallowly
-		// by TypeName(); we do NOT recurse into Coerces for the item types.
-		if f.Nonempty {
-			if t, ok := to.(types.ArrayType); ok && !t.Nonempty {
-				return f.ItemType.TypeName() == t.ItemType.TypeName()
+		if t, ok := to.(types.ArrayType); ok {
+			// Rule 5: Array[T]+ → Array[T] (nonempty to regular)
+			// Also: Array[Int] → Array[Float] (recursive item coercion)
+			if f.Nonempty && !t.Nonempty {
+				return Coerces(f.ItemType, t.ItemType)
 			}
+			if !f.Nonempty || t.Nonempty {
+				return Coerces(f.ItemType, t.ItemType)
+			}
+		}
+
+	case types.MapType:
+		// Map[K1,V1] → Map[K2,V2] if K1→K2 and V1→V2
+		if t, ok := to.(types.MapType); ok {
+			return Coerces(f.KeyType, t.KeyType) && Coerces(f.ValType, t.ValType)
+		}
+
+	case types.PairType:
+		// Pair[L1,R1] → Pair[L2,R2] if L1→L2 and R1→R2
+		if t, ok := to.(types.PairType); ok {
+			return Coerces(f.LeftType, t.LeftType) && Coerces(f.RightType, t.RightType)
 		}
 	}
 
