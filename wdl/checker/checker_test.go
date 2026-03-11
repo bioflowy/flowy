@@ -333,6 +333,38 @@ func TestConditionalCallPromotion(t *testing.T) {
 	}
 }
 
+// TestNestedIfScatterPromotion checks that when a variable is declared inside
+// a scatter block nested inside a conditional block (if { scatter { Int x } }),
+// the type becomes Array[Int]? (not Array[Int?]). Conversely, scatter { if { Int x } }
+// should produce Array[Int?].
+func TestNestedIfScatterPromotion(t *testing.T) {
+	doc := parseFixture(t, "wdl/testdata/if_scatter_nested.wdl")
+	env, errs := Check(doc)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+
+	// if { scatter { Int result } } -> Array[Int]?
+	got, ok := env["result"]
+	if !ok {
+		t.Fatal("result not found in TypeEnv")
+	}
+	expected := "Array[Int]?"
+	if got.TypeName() != expected {
+		t.Fatalf("result: expected %s, got %s", expected, got.TypeName())
+	}
+
+	// scatter { if { Int inner } } -> Array[Int?]
+	got2, ok := env["inner"]
+	if !ok {
+		t.Fatal("inner not found in TypeEnv")
+	}
+	expected2 := "Array[Int?]"
+	if got2.TypeName() != expected2 {
+		t.Fatalf("inner: expected %s, got %s", expected2, got2.TypeName())
+	}
+}
+
 // TestStructUndefined checks that the checker reports an error when a struct
 // literal references a struct name that is not defined in the document.
 func TestStructUndefined(t *testing.T) {

@@ -204,10 +204,11 @@ func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, prom
 			// Each name declared inside the scatter body gets arrayize() applied
 			// on top of any outer promotion, but is registered in outerScope.
 			scatterPromote := func(t types.Type) types.Type {
+				t = arrayize(t)
 				if promoteFn != nil {
 					t = promoteFn(t)
 				}
-				return arrayize(t)
+				return t
 			}
 			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, innerScope, scatterPromote, taskMap)
 			groups = append(groups, inner...)
@@ -216,10 +217,11 @@ func collectWorkflowBodyGroups(nodes []ast.WorkflowNode, outerScope *Scope, prom
 			// Each name declared inside the if body gets optionalize() applied
 			// on top of any outer promotion.
 			condPromote := func(t types.Type) types.Type {
+				t = optionalize(t)
 				if promoteFn != nil {
 					t = promoteFn(t)
 				}
-				return optionalize(t)
+				return t
 			}
 			inner := collectWorkflowBodyGroups(n.Body, outerScope, condPromote, taskMap)
 			groups = append(groups, inner...)
@@ -255,20 +257,22 @@ func collectWorkflowBodyGroupsInner(nodes []ast.WorkflowNode, outerScope *Scope,
 			nestedInner.define(n.Variable, scatterVarType)
 
 			scatterPromote := func(t types.Type) types.Type {
+				t = arrayize(t)
 				if promoteFn != nil {
 					t = promoteFn(t)
 				}
-				return arrayize(t)
+				return t
 			}
 			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, nestedInner, scatterPromote, taskMap)
 			groups = append(groups, inner...)
 
 		case *ast.Conditional:
 			condPromote := func(t types.Type) types.Type {
+				t = optionalize(t)
 				if promoteFn != nil {
 					t = promoteFn(t)
 				}
-				return optionalize(t)
+				return t
 			}
 			inner := collectWorkflowBodyGroupsInner(n.Body, outerScope, innerScope, condPromote, taskMap)
 			groups = append(groups, inner...)
