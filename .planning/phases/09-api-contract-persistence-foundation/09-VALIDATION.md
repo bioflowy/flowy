@@ -45,7 +45,7 @@ created: 2026-03-11
 | 09-02-02 | 02 | 1 | SRV-07 | integration | `go test ./internal/store/sqlite/... -run TestOpen -count=1` | ❌ W0 | ⬜ pending |
 | 09-02-03 | 02 | 1 | SRV-07 | integration | `go test ./internal/store/sqlite/... -run TestSchema -count=1` | ❌ W0 | ⬜ pending |
 | 09-02-04 | 02 | 1 | SRV-08 | integration | `go test ./internal/store/sqlite/... -run TestFindStaleTasks -count=1` | ❌ W0 | ⬜ pending |
-| 09-03-01 | 03 | 1 | — | compile | `go build ./internal/api/...` | ❌ W0 | ⬜ pending |
+| 09-01-04 | 01 | 1 | — | compile | `go test ./internal/api/... -count=1` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
