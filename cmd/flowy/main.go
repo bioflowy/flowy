@@ -145,6 +145,11 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	verboseFlag := fs.Bool("verbose", false, "print task stdout/stderr after execution")
 	outputFlag := fs.String("output", "", "write outputs JSON to specified file path instead of stdout")
 
+	// Reorder args so flags after positional args are parsed correctly.
+	// Go's flag package stops parsing at the first non-flag argument,
+	// but spectool places --task after the WDL file path.
+	args = reorderArgs(args)
+
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -390,5 +395,32 @@ func readSourceLine(file string, line int) string {
 		}
 	}
 	return ""
+}
+
+// reorderArgs moves flags that appear after positional arguments to the front.
+// Go's flag package stops parsing at the first non-flag argument, so
+// "file.wdl --task name" would silently ignore --task. This function
+// reorders to "--task name file.wdl".
+func reorderArgs(args []string) []string {
+	var flags, positional []string
+	knownValueFlags := map[string]bool{
+		"--input": true, "--task": true, "--dir": true,
+		"--path": true, "--output": true,
+		"-input": true, "-task": true, "-dir": true,
+		"-path": true, "-output": true,
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "-") {
+			flags = append(flags, a)
+			if knownValueFlags[a] && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		} else {
+			positional = append(positional, a)
+		}
+	}
+	return append(flags, positional...)
 }
 
