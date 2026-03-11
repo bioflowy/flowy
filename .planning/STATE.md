@@ -156,7 +156,7 @@ None yet.
 | 1 | Create test data, sample workflow, and testing documentation for flowy | 2026-03-11 | a55514c | [1-create-test-data-sample-workflow-and-tes](./quick/1-create-test-data-sample-workflow-and-tes/) |
 | 2 | Fix type checker to register call output in workflow scope | 2026-03-11 | 9d024c5 | [2-fix-type-checker-to-register-call-output](./quick/2-fix-type-checker-to-register-call-output/) |
 | 3 | Restore output blocks to all example WDL workflows | 2026-03-11 | 21e4be2 | [3-restore-output-blocks-to-all-example-wdl](./quick/3-restore-output-blocks-to-all-example-wdl/) |
-| 4 | Fix workflow input binding to support fully-qualified JSON keys | 2026-03-11 | 3b283ff | [4-fix-workflow-input-binding-to-support-fu](./quick/4-fix-workflow-input-binding-to-support-fu/) |
+| 4 | Fix workflow input binding to support fully-qualified JSON keys | 2026-03-11 | 4b60e61 | [4-fix-workflow-input-binding-to-support-fu](./quick/4-fix-workflow-input-binding-to-support-fu/) |
 
 ### Blockers/Concerns
 
