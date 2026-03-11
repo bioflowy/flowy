@@ -98,6 +98,7 @@ func RunWorkflow(
 	}
 
 	// Evaluate workflow output declarations.
+	// Each output is added to env so subsequent outputs can reference it.
 	outputs := make(map[string]values.Value, len(wf.Outputs))
 	for _, outDecl := range wf.Outputs {
 		v, err := eval.Eval(outDecl.Expr, env, eval.ExecContext{})
@@ -105,6 +106,7 @@ func RunWorkflow(
 			return nil, fmt.Errorf("evaluating workflow output %q: %w", outDecl.Name, err)
 		}
 		outputs[outDecl.Name] = v
+		env.Define(outDecl.Name, v)
 	}
 
 	// On success, write outputs.json.
