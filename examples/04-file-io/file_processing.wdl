@@ -37,4 +37,8 @@ workflow file_processing {
   }
   call write_data { input: content = content }
   call read_data { input: input_file = write_data.result }
+  output {
+    File written_file = write_data.result
+    String read_content = read_data.data
+  }
 }

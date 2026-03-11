@@ -20,4 +20,7 @@ workflow hello {
     String name = "World"
   }
   call say_hello { input: name = name }
+  output {
+    String greeting = say_hello.greeting
+  }
 }

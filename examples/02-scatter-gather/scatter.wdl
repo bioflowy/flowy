@@ -23,4 +23,7 @@ workflow scatter_example {
   scatter (sample in samples) {
     call process_sample { input: sample_name = sample }
   }
+  output {
+    Array[String] results = process_sample.result
+  }
 }

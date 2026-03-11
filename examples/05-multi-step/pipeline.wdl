@@ -52,4 +52,7 @@ workflow pipeline {
   call step1_parse { input: raw_data = raw_data }
   call step2_transform { input: data = step1_parse.parsed }
   call step3_format { input: data = step2_transform.transformed }
+  output {
+    String final_result = step3_format.formatted
+  }
 }

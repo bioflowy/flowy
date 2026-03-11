@@ -39,4 +39,8 @@ workflow conditional_example {
   if (run_extended) {
     call extended_report { input: message = message }
   }
+  output {
+    String basic_result = basic_report.report
+    String? extended_result = extended_report.report
+  }
 }
