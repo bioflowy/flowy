@@ -727,21 +727,11 @@ func (p *Parser) parseCommandBlock() (*ast.CommandExpr, error) {
 			p.advance()
 			cmd.Parts = append(cmd.Parts, &ast.RawStringPart{Val: t.Val})
 		case lexer.TokPlaceholderOpen:
-			p.advance()
-			partPos := t.Pos
-			// Stub: consume tokens until TokPlaceholderClose
-			expr, err := p.parseExpr(lexer.TokPlaceholderClose)
+			part, err := p.parsePlaceholderPart()
 			if err != nil {
 				return nil, err
 			}
-			_, err = p.expect(lexer.TokPlaceholderClose)
-			if err != nil {
-				return nil, err
-			}
-			cmd.Parts = append(cmd.Parts, &ast.PlaceholderPart{
-				Pos:  partPos,
-				Expr: expr,
-			})
+			cmd.Parts = append(cmd.Parts, part)
 		default:
 			// Unexpected token in command block; treat as raw content
 			p.advance()

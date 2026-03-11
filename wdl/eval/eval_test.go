@@ -796,4 +796,59 @@ func TestEvalCommand(t *testing.T) {
 			t.Errorf("got %q, want %q", sv.Value, want)
 		}
 	})
+
+	t.Run("StringExpr: true/false placeholder options", func(t *testing.T) {
+		env := NewEnv(nil)
+		env.Define("flag", values.BooleanValue{Value: true})
+		expr := &ast.StringExpr{
+			Parts: []ast.StringPart{
+				&ast.RawStringPart{Val: "result: "},
+				&ast.PlaceholderPart{
+					Expr:    &ast.IdentExpr{Name: "flag"},
+					Options: map[string]string{"true": "yes", "false": "no"},
+				},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := values.StringValue{Type: types.StringType{}, Value: "result: yes"}
+		if got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+
+		// Test with false value
+		env.Define("flag", values.BooleanValue{Value: false})
+		got, err = Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want = values.StringValue{Type: types.StringType{}, Value: "result: no"}
+		if got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("StringExpr: default placeholder option", func(t *testing.T) {
+		env := NewEnv(nil)
+		env.Define("name", values.NullValue{})
+		expr := &ast.StringExpr{
+			Parts: []ast.StringPart{
+				&ast.RawStringPart{Val: "hello "},
+				&ast.PlaceholderPart{
+					Expr:    &ast.IdentExpr{Name: "name"},
+					Options: map[string]string{"default": "world"},
+				},
+			},
+		}
+		got, err := Eval(expr, env, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := values.StringValue{Type: types.StringType{}, Value: "hello world"}
+		if got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
 }

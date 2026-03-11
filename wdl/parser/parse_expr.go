@@ -423,57 +423,68 @@ func (p *Parser) parsePlaceholderPart() (*ast.PlaceholderPart, error) {
 
 	// Parse optional placeholder options: ident = (string | bool) sequences
 	// e.g., sep="," true="yes" false="no" default="none"
+	// Note: "true" and "false" are lexed as TokTrue/TokFalse keywords, not TokIdent.
 	options := make(map[string]string)
-	for p.peek().Type == lexer.TokIdent {
-		// Look ahead: if next-next is TokAssign, this is an option
-		// We need two-token lookahead here. Use a simple heuristic:
-		// if the ident is one of the known option keywords, treat as option.
-		optName := p.peek().Val
-		if optName == "sep" || optName == "true" || optName == "false" || optName == "default" {
-			// Peek one more: should be "="
-			saved := p.peek()
-			p.advance() // consume ident
-			if p.peek().Type == lexer.TokAssign {
-				p.advance() // consume "="
-				// Consume the value (string or bool literal)
-				valTok := p.advance()
-				var optVal string
-				if valTok.Type == lexer.TokStringOpen {
-					// Consume string content until StringClose
-					var sb []byte
-					for p.peek().Type == lexer.TokCommandContent {
-						sb = append(sb, p.advance().Val...)
-					}
-					_, err := p.expect(lexer.TokStringClose)
-					if err != nil {
-						return nil, err
-					}
-					optVal = string(sb)
-				} else {
-					optVal = valTok.Val
-				}
-				options[optName] = optVal
-			} else {
-				// Not an option — this was actually the expression; put it back
-				// We can't "unread" but we can parse as ident expression manually
-				// The token is already consumed as 'saved'. Build an IdentExpr.
-				_ = saved
-				identExpr := &ast.IdentExpr{Pos: saved.Pos, Name: saved.Val}
-				// Parse the rest of the expression starting from identExpr as the lhs
-				// We need to integrate this into the Pratt loop. Use a workaround:
-				// continue with remaining parsing after building the full expression.
-				expr, err := p.finishExprFromIdent(identExpr)
-				if err != nil {
-					return nil, err
-				}
-				_, err = p.expect(lexer.TokPlaceholderClose)
-				if err != nil {
-					return nil, err
-				}
-				return &ast.PlaceholderPart{Pos: pos, Options: options, Expr: expr}, nil
+	for {
+		tok := p.peek()
+		var optName string
+		switch tok.Type {
+		case lexer.TokIdent:
+			if tok.Val == "sep" || tok.Val == "default" {
+				optName = tok.Val
 			}
-		} else {
+		case lexer.TokTrue:
+			optName = "true"
+		case lexer.TokFalse:
+			optName = "false"
+		}
+		if optName == "" {
 			break
+		}
+
+		// Speculatively consume the token to check for "="
+		saved := p.peek()
+		p.advance()
+		if p.peek().Type == lexer.TokAssign {
+			p.advance() // consume "="
+			// Consume the value (string or bool literal)
+			valTok := p.advance()
+			var optVal string
+			if valTok.Type == lexer.TokStringOpen {
+				// Consume string content until StringClose
+				var sb []byte
+				for p.peek().Type == lexer.TokCommandContent {
+					sb = append(sb, p.advance().Val...)
+				}
+				_, err := p.expect(lexer.TokStringClose)
+				if err != nil {
+					return nil, err
+				}
+				optVal = string(sb)
+			} else {
+				optVal = valTok.Val
+			}
+			options[optName] = optVal
+		} else {
+			// Not an option — this was actually the expression; build AST from the consumed token.
+			var lhs ast.Expr
+			switch saved.Type {
+			case lexer.TokTrue:
+				lhs = &ast.BoolLit{Pos: saved.Pos, Value: true}
+			case lexer.TokFalse:
+				lhs = &ast.BoolLit{Pos: saved.Pos, Value: false}
+			default:
+				lhs = &ast.IdentExpr{Pos: saved.Pos, Name: saved.Val}
+			}
+			expr, err := p.finishExprFromIdent(lhs)
+			if err != nil {
+				return nil, err
+			}
+			_, err = p.expect(lexer.TokPlaceholderClose)
+			if err != nil {
+				return nil, err
+			}
+			return &ast.PlaceholderPart{Pos: pos, Options: options, Expr: expr}, nil
 		}
 	}
 

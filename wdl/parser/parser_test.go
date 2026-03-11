@@ -604,6 +604,71 @@ func TestStringInterpolation(t *testing.T) {
 			t.Errorf("expected ${HOME} to appear as raw text, raw parts: %v", rawParts)
 		}
 	})
+
+	t.Run("placeholder_true_false_options", func(t *testing.T) {
+		wdlSrc := `version 1.2
+task t {
+  input { Boolean flag = true }
+  command <<< printf "~{true="yes" false="no" flag}" >>>
+}`
+		doc, err := parseWDL(wdlSrc)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		cmd := doc.Tasks[0].Command
+		if cmd == nil {
+			t.Fatal("expected non-nil command")
+		}
+		var placeholders []*ast.PlaceholderPart
+		for _, part := range cmd.Parts {
+			if ph, ok := part.(*ast.PlaceholderPart); ok {
+				placeholders = append(placeholders, ph)
+			}
+		}
+		if len(placeholders) != 1 {
+			t.Fatalf("expected 1 placeholder, got %d", len(placeholders))
+		}
+		ph := placeholders[0]
+		if ph.Options["true"] != "yes" {
+			t.Errorf("expected true option = %q, got %q", "yes", ph.Options["true"])
+		}
+		if ph.Options["false"] != "no" {
+			t.Errorf("expected false option = %q, got %q", "no", ph.Options["false"])
+		}
+		ident, ok := ph.Expr.(*ast.IdentExpr)
+		if !ok {
+			t.Fatalf("expected IdentExpr, got %T", ph.Expr)
+		}
+		if ident.Name != "flag" {
+			t.Errorf("expected expr name %q, got %q", "flag", ident.Name)
+		}
+	})
+
+	t.Run("placeholder_default_option", func(t *testing.T) {
+		wdlSrc := `version 1.2
+task t {
+  input { String? name = None }
+  command <<< echo "~{default="world" name}" >>>
+}`
+		doc, err := parseWDL(wdlSrc)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		cmd := doc.Tasks[0].Command
+		var placeholders []*ast.PlaceholderPart
+		for _, part := range cmd.Parts {
+			if ph, ok := part.(*ast.PlaceholderPart); ok {
+				placeholders = append(placeholders, ph)
+			}
+		}
+		if len(placeholders) != 1 {
+			t.Fatalf("expected 1 placeholder, got %d", len(placeholders))
+		}
+		ph := placeholders[0]
+		if ph.Options["default"] != "world" {
+			t.Errorf("expected default option = %q, got %q", "world", ph.Options["default"])
+		}
+	})
 }
 
 // TestImportResolution verifies that import statements are recursively resolved,
