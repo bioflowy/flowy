@@ -311,7 +311,151 @@ func evalComparison(op int, left, right values.Value, pos ast.Pos) (values.Value
 		}
 	}
 
+	// File equality
+	if lf, ok1 := left.(values.FileValue); ok1 {
+		if rf, ok2 := right.(values.FileValue); ok2 {
+			switch op {
+			case lexer.TokEqEq:
+				result = lf.Value == rf.Value
+			case lexer.TokNotEq:
+				result = lf.Value != rf.Value
+			default:
+				return nil, &EvalError{Pos: pos, Message: "File only supports == and != comparisons"}
+			}
+			return values.BooleanValue{Type: types.BooleanType{}, Value: result}, nil
+		}
+	}
+
+	// Directory equality
+	if ld, ok1 := left.(values.DirectoryValue); ok1 {
+		if rd, ok2 := right.(values.DirectoryValue); ok2 {
+			switch op {
+			case lexer.TokEqEq:
+				result = ld.Value == rd.Value
+			case lexer.TokNotEq:
+				result = ld.Value != rd.Value
+			default:
+				return nil, &EvalError{Pos: pos, Message: "Directory only supports == and != comparisons"}
+			}
+			return values.BooleanValue{Type: types.BooleanType{}, Value: result}, nil
+		}
+	}
+
+	// Deep equality for compound types (Array, Map, Pair)
+	if op == lexer.TokEqEq || op == lexer.TokNotEq {
+		eq, err := valuesEqual(left, right)
+		if err == nil {
+			if op == lexer.TokNotEq {
+				eq = !eq
+			}
+			return values.BooleanValue{Type: types.BooleanType{}, Value: eq}, nil
+		}
+	}
+
 	return nil, &EvalError{Pos: pos, Message: fmt.Sprintf("cannot compare %T and %T", left, right)}
+}
+
+// valuesEqual performs deep equality comparison for compound WDL values.
+func valuesEqual(left, right values.Value) (bool, error) {
+	switch l := left.(type) {
+	case values.ArrayValue:
+		r, ok := right.(values.ArrayValue)
+		if !ok {
+			return false, fmt.Errorf("type mismatch")
+		}
+		if len(l.Items) != len(r.Items) {
+			return false, nil
+		}
+		for i := range l.Items {
+			eq, err := valuesEqual(l.Items[i], r.Items[i])
+			if err != nil {
+				return false, err
+			}
+			if !eq {
+				return false, nil
+			}
+		}
+		return true, nil
+	case values.MapValue:
+		r, ok := right.(values.MapValue)
+		if !ok {
+			return false, fmt.Errorf("type mismatch")
+		}
+		if len(l.Entries) != len(r.Entries) {
+			return false, nil
+		}
+		for i := range l.Entries {
+			keq, err := valuesEqual(l.Entries[i].Key, r.Entries[i].Key)
+			if err != nil {
+				return false, err
+			}
+			veq, err := valuesEqual(l.Entries[i].Value, r.Entries[i].Value)
+			if err != nil {
+				return false, err
+			}
+			if !keq || !veq {
+				return false, nil
+			}
+		}
+		return true, nil
+	case values.PairValue:
+		r, ok := right.(values.PairValue)
+		if !ok {
+			return false, fmt.Errorf("type mismatch")
+		}
+		leq, err := valuesEqual(l.Left, r.Left)
+		if err != nil {
+			return false, err
+		}
+		req, err := valuesEqual(l.Right, r.Right)
+		if err != nil {
+			return false, err
+		}
+		return leq && req, nil
+	case values.IntValue:
+		if r, ok := right.(values.IntValue); ok {
+			return l.Value == r.Value, nil
+		}
+		if r, ok := right.(values.FloatValue); ok {
+			return float64(l.Value) == r.Value, nil
+		}
+		return false, fmt.Errorf("type mismatch")
+	case values.FloatValue:
+		if r, ok := right.(values.FloatValue); ok {
+			return l.Value == r.Value, nil
+		}
+		if r, ok := right.(values.IntValue); ok {
+			return l.Value == float64(r.Value), nil
+		}
+		return false, fmt.Errorf("type mismatch")
+	case values.StringValue:
+		if r, ok := right.(values.StringValue); ok {
+			return l.Value == r.Value, nil
+		}
+		return false, fmt.Errorf("type mismatch")
+	case values.BooleanValue:
+		if r, ok := right.(values.BooleanValue); ok {
+			return l.Value == r.Value, nil
+		}
+		return false, fmt.Errorf("type mismatch")
+	case values.FileValue:
+		if r, ok := right.(values.FileValue); ok {
+			return l.Value == r.Value, nil
+		}
+		return false, fmt.Errorf("type mismatch")
+	case values.DirectoryValue:
+		if r, ok := right.(values.DirectoryValue); ok {
+			return l.Value == r.Value, nil
+		}
+		return false, fmt.Errorf("type mismatch")
+	case values.NullValue:
+		if _, ok := right.(values.NullValue); ok {
+			return true, nil
+		}
+		return false, nil
+	default:
+		return false, fmt.Errorf("unsupported type %T", left)
+	}
 }
 
 // evalUnary evaluates a unary operator expression.
