@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: "Completed 09-01: Config + API DTO + Run Directory Helpers"
-last_updated: "2026-03-11T13:53:51.900Z"
+stopped_at: "Completed 09-02: Store Interface and SQLite Implementation"
+last_updated: "2026-03-11T14:03:21.146Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 09-api-contract-persistence-foundation P01 | 2 | 2 tasks | 8 files |
+| Phase 09-api-contract-persistence-foundation P02 | 7 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 09-01]: DefaultDSN() returns DBDSN unchanged if explicitly set, otherwise constructs SQLite WAL DSN pointing to {base_dir}/flowy.db
 - [Phase 09-01]: internal/api is a strict leaf package — only stdlib imports allowed, verified by go vet
 - [Phase 09-01]: CreateRunDirs uses os.MkdirAll (not os.Mkdir) to ensure idempotency
+- [Phase 09-02]: ClaimTask uses RETURNING with all columns in single UPDATE — avoids deadlock from opening reader while writer rows cursor is still open under single-connection writer pool
+- [Phase 09-02]: OpenMemory() uses file::memory:?cache=shared DSN so writer and reader see the same in-memory database
+- [Phase 09-02]: FindStaleTasks uses string modifier ('-N seconds') for SQLite datetime() — not integer
 
 ### Pending Todos
 
@@ -75,6 +79,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:53:51.896Z
-Stopped at: Completed 09-01: Config + API DTO + Run Directory Helpers
+Last session: 2026-03-11T14:03:21.142Z
+Stopped at: Completed 09-02: Store Interface and SQLite Implementation
 Resume file: None

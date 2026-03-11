@@ -14,6 +14,8 @@ The critical schema decisions are locked: the `tasks` table MUST include `last_h
 
 **Primary recommendation:** Create three packages — `internal/config`, `internal/store`, `internal/api` — each consumed independently by server, daemon, and client. Use embedded SQL migrations via `embed.FS`. Keep all three packages free of cross-dependencies.
 
+**Future-proofing:** `Store` is defined as a Go interface so that a PostgreSQL backend (PG-01, v2+) can be added later without changing callers. The SQLite implementation lives under `internal/store/sqlite/`. Config includes a `db_driver` field to select the backend at runtime. SQL queries stay inside the implementation package, allowing dialect-specific SQL without leaking through the interface.
+
 <phase_requirements>
 ## Phase Requirements
 
@@ -67,12 +69,15 @@ Note: `gopkg.in/yaml.v3` is already in go.sum and available.
 internal/
 ├── config/           # YAML config loader (all three binaries import this)
 │   └── config.go
-├── store/            # SQLite store: open DB, run migrations, CRUD helpers
-│   ├── store.go      # Store struct, Open(), migrations call
-│   ├── runs.go       # Run CRUD (CreateRun, GetRun, UpdateRunState)
-│   ├── tasks.go      # Task CRUD (CreateTask, ClaimTask, UpdateHeartbeat, FindStaleTasks)
-│   └── migrations/
-│       └── 00001_init.sql
+├── store/            # Store interface + model types (no DB driver imports)
+│   ├── store.go      # Store interface definition + model structs (Run, Task)
+│   ├── sqlite/       # SQLite implementation of Store interface
+│   │   ├── sqlite.go # Open(), Close(), migrations, WAL pragma setup
+│   │   ├── runs.go   # Run CRUD (CreateRun, GetRun, UpdateRunState)
+│   │   ├── tasks.go  # Task CRUD (CreateTask, ClaimTask, UpdateHeartbeat, FindStaleTasks)
+│   │   └── migrations/
+│   │       └── 00001_init.sql
+│   └── postgres/     # (v2+ PG-01) PostgreSQL implementation — not in Phase 9 scope
 └── api/              # HTTP DTO types only (no import of store or config)
     └── types.go      # SubmitRequest, StatusResponse, OutputsResponse
 
@@ -101,10 +106,12 @@ import (
 )
 
 type Config struct {
-    BaseDir string       `yaml:"base_dir"`
-    Server  ServerConfig `yaml:"server"`
-    Daemon  DaemonConfig `yaml:"daemon"`
-    Client  ClientConfig `yaml:"client"`
+    BaseDir  string       `yaml:"base_dir"`
+    DBDriver string       `yaml:"db_driver"` // "sqlite" (default) or "postgres" (v2+)
+    DBDSN    string       `yaml:"db_dsn"`    // driver-specific connection string
+    Server   ServerConfig `yaml:"server"`
+    Daemon   DaemonConfig `yaml:"daemon"`
+    Client   ClientConfig `yaml:"client"`
 }
 
 type ServerConfig struct {
@@ -135,17 +142,59 @@ func Load(path string) (*Config, error) {
 }
 ```
 
-### Pattern 2: SQLite Store with WAL Mode and Separate Writer Pool
+### Pattern 2: Store Interface + SQLite Implementation
 
-**What:** Two `*sql.DB` instances from the same file — one writer (MaxOpenConns=1) and one reader pool. WAL mode enables concurrent reads while a write is in progress.
+**What:** `internal/store` defines a `Store` interface and model types (Run, Task). `internal/store/sqlite` provides the SQLite implementation with WAL mode, separate writer/reader pools, and goose migrations. This allows adding a PostgreSQL backend (v2+ PG-01) without changing any caller code.
 
-**When to use:** Any SQLite-backed service with concurrent read and write access.
+**When to use:** Always. All callers depend on the interface, never on the concrete implementation.
 
-**Example:**
+**Example — Interface (internal/store/store.go):**
 ```go
-// internal/store/store.go
-
 package store
+
+import "context"
+
+type Run struct {
+    ID         string
+    WDLPath    string
+    InputsJSON string
+    State      string
+    CreatedAt  string
+    UpdatedAt  string
+}
+
+type Task struct {
+    ID              string
+    RunID           string
+    TaskName        string
+    State           string
+    ShardIndex      int
+    DaemonID        string
+    LastHeartbeatAt string
+    CreatedAt       string
+    UpdatedAt       string
+}
+
+type Store interface {
+    // Run operations
+    CreateRun(ctx context.Context, r *Run) error
+    GetRun(ctx context.Context, id string) (*Run, error)
+    UpdateRunState(ctx context.Context, id, state string) error
+
+    // Task operations
+    CreateTask(ctx context.Context, t *Task) error
+    ClaimTask(ctx context.Context, taskID, daemonID string) error
+    UpdateHeartbeat(ctx context.Context, taskID string) error
+    FindStaleTasks(ctx context.Context, timeoutSec int) ([]Task, error)
+
+    // Lifecycle
+    Close() error
+}
+```
+
+**Example — SQLite implementation (internal/store/sqlite/sqlite.go):**
+```go
+package sqlite
 
 import (
     "database/sql"
@@ -159,21 +208,13 @@ import (
 //go:embed migrations/*.sql
 var embedMigrations embed.FS
 
-const pragmas = `
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA temp_store = MEMORY;
-    PRAGMA foreign_keys = ON;
-`
-
-type Store struct {
+type SQLiteStore struct {
     writer *sql.DB
     reader *sql.DB
 }
 
-func Open(path string) (*Store, error) {
-    dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=temp_store(MEMORY)&_pragma=foreign_keys(ON)", path)
+func Open(dsn string) (*SQLiteStore, error) {
+    // dsn example: "file:./flowy.db?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
 
     writer, err := sql.Open("sqlite", dsn)
     if err != nil {
@@ -185,9 +226,8 @@ func Open(path string) (*Store, error) {
     if err != nil {
         return nil, fmt.Errorf("open sqlite reader: %w", err)
     }
-    // reader pool: use default (up to GOMAXPROCS connections)
 
-    // Run goose migrations.
+    // Run goose migrations on writer connection.
     goose.SetBaseFS(embedMigrations)
     if err := goose.SetDialect("sqlite3"); err != nil {
         return nil, fmt.Errorf("goose dialect: %w", err)
@@ -196,12 +236,29 @@ func Open(path string) (*Store, error) {
         return nil, fmt.Errorf("goose up: %w", err)
     }
 
-    return &Store{writer: writer, reader: reader}, nil
+    return &SQLiteStore{writer: writer, reader: reader}, nil
 }
 
-func (s *Store) Close() error {
+func (s *SQLiteStore) Close() error {
     s.writer.Close()
     return s.reader.Close()
+}
+
+// ... Run and Task methods implement store.Store interface
+```
+
+**Example — Factory function wired from config (used in server main.go):**
+```go
+// Phase 10: cmd/flowy-server/main.go
+func openStore(cfg *config.Config) (store.Store, error) {
+    switch cfg.DBDriver {
+    case "sqlite", "":
+        return sqlite.Open(cfg.DBDSN)
+    // case "postgres":  // v2+ PG-01
+    //     return postgres.Open(cfg.DBDSN)
+    default:
+        return nil, fmt.Errorf("unsupported db_driver: %s", cfg.DBDriver)
+    }
 }
 ```
 
@@ -252,11 +309,11 @@ DROP TABLE IF EXISTS runs;
 
 **Example:**
 ```go
-// internal/store/tasks.go
+// internal/store/sqlite/tasks.go
 
 // FindStaleTasks returns tasks in RUNNING state whose heartbeat has not been
-// updated within timeoutSec seconds.
-func (s *Store) FindStaleTasks(ctx context.Context, timeoutSec int) ([]Task, error) {
+// updated within timeoutSec seconds. SQLite-specific datetime() syntax.
+func (s *SQLiteStore) FindStaleTasks(ctx context.Context, timeoutSec int) ([]Task, error) {
     const q = `
         SELECT id, run_id, task_name, state, shard_index, daemon_id, last_heartbeat_at
         FROM tasks
@@ -329,8 +386,9 @@ type OutputsResponse struct {
 | SQLite WAL pragma application | Init function that runs PRAGMA manually per connection | DSN `_pragma=` query parameters | DSN pragmas apply to every connection in the pool automatically |
 | YAML config validation | Custom field presence checks | yaml.v3 struct decode + Go zero-value checks | yaml.v3 returns errors for type mismatches; zero-value detection is idiomatic |
 | Run directory creation | Recursive mkdir in each binary | Helper function in `internal/store` or `internal/config` | Single tested function prevents path convention drift across binaries |
+| DB-specific SQL in callers | Switch statements on driver type in handler code | Store interface with per-driver implementations | Dialect-specific SQL stays inside `internal/store/sqlite/` (or `postgres/`); callers only see the interface |
 
-**Key insight:** SQLite's WAL mode handles most concurrency for this workload. The main risk is programmer error in PRAGMA setup — use DSN parameters to enforce them at open time.
+**Key insight:** SQLite's WAL mode handles most concurrency for this workload. The main risk is programmer error in PRAGMA setup — use DSN parameters to enforce them at open time. The Store interface ensures dialect-specific concerns never leak into caller code, making a future PostgreSQL backend a pure addition (no modifications to existing callers).
 
 ## Common Pitfalls
 
@@ -366,7 +424,7 @@ type OutputsResponse struct {
 
 ## Code Examples
 
-### Opening the DB with pragmas via DSN
+### Opening the DB with pragmas via DSN (inside internal/store/sqlite/)
 ```go
 // Source: modernc.org/sqlite v1.46.1 docs (pkg.go.dev/modernc.org/sqlite)
 import _ "modernc.org/sqlite"
@@ -420,7 +478,9 @@ func CreateRunDirs(baseDir, runID string) error {
 
 ### Stale task detection (integration-test-verified pattern)
 ```go
-// Use string concatenation to build the SQLite modifier correctly
+// internal/store/sqlite/tasks.go
+// Use string concatenation to build the SQLite modifier correctly.
+// PostgreSQL equivalent would use: NOW() - INTERVAL '? seconds'
 modifier := fmt.Sprintf("-%d seconds", timeoutSec)
 rows, err := db.QueryContext(ctx,
     `SELECT id FROM tasks WHERE state = 'RUNNING' AND last_heartbeat_at < datetime('now', ?)`,
@@ -452,6 +512,12 @@ rows, err := db.QueryContext(ctx,
    - What's unclear: Whether to use a flag (`--config`), environment variable (`FLOWY_CONFIG`), or fixed default path (`/etc/flowy/config.yaml`, `~/.config/flowy/config.yaml`).
    - Recommendation: Support `--config` flag with default `./flowy.yaml` for dev convenience. Phase 9 defines the loader; each binary's main.go adds the flag in its own phase.
 
+3. **PostgreSQL backend (PG-01, v2+) — design decision made**
+   - Decision: `Store` is a Go interface. SQLite implementation is in `internal/store/sqlite/`. PostgreSQL implementation will be added as `internal/store/postgres/` when PG-01 is in scope.
+   - Config uses `db_driver` ("sqlite" default) and `db_dsn` fields. Factory function in server main.go switches on `db_driver`.
+   - Phase 9 scope: SQLite implementation only. The interface and config fields are the only PostgreSQL-related work.
+   - When PG-01 arrives: Add `internal/store/postgres/` package, goose migrations with `"postgres"` dialect, `pgx` driver, and a `case "postgres"` in the factory. No changes to existing callers.
+
 ## Validation Architecture
 
 ### Test Framework
@@ -469,9 +535,9 @@ rows, err := db.QueryContext(ctx,
 | STR-02 | Config has server, daemon, client sections all present | unit | `go test ./internal/config/... -run TestSections -count=1` | Wave 0 |
 | STR-03 | Run directories created at correct paths | unit | `go test ./internal/store/... -run TestRunDirs -count=1` | Wave 0 |
 | STR-04 | All three binaries parse same config format | unit | `go test ./internal/config/... -count=1` (single shared loader) | Wave 0 |
-| SRV-07 | SQLite opens in WAL mode, migrations run, tables exist | integration | `go test ./internal/store/... -run TestOpen -count=1` | Wave 0 |
-| SRV-07 | runs + tasks tables have correct schema including heartbeat/shard cols | integration | `go test ./internal/store/... -run TestSchema -count=1` | Wave 0 |
-| SRV-08 | Stale task detection query returns expected stale rows | integration | `go test ./internal/store/... -run TestFindStaleTasks -count=1` | Wave 0 |
+| SRV-07 | SQLite opens in WAL mode, migrations run, tables exist | integration | `go test ./internal/store/sqlite/... -run TestOpen -count=1` | Wave 0 |
+| SRV-07 | runs + tasks tables have correct schema including heartbeat/shard cols | integration | `go test ./internal/store/sqlite/... -run TestSchema -count=1` | Wave 0 |
+| SRV-08 | Stale task detection query returns expected stale rows | integration | `go test ./internal/store/sqlite/... -run TestFindStaleTasks -count=1` | Wave 0 |
 
 ### Sampling Rate
 - **Per task commit:** `go test ./internal/... -count=1`
@@ -480,7 +546,7 @@ rows, err := db.QueryContext(ctx,
 
 ### Wave 0 Gaps
 - [ ] `internal/config/config_test.go` — covers STR-01, STR-02, STR-04
-- [ ] `internal/store/store_test.go` — covers SRV-07, SRV-08, STR-03
+- [ ] `internal/store/sqlite/sqlite_test.go` — covers SRV-07, SRV-08, STR-03
 - [ ] `internal/api/types_test.go` — compile check for DTO types (no import cycles)
 - [ ] Framework install: `go get modernc.org/sqlite@v1.46.1 github.com/pressly/goose/v3@v3.27.0 github.com/go-chi/chi/v5@latest` — must precede any store tests
 

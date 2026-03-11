@@ -15,8 +15,8 @@ Requirements for distributed server/daemon/client architecture. Each maps to roa
 - [ ] **SRV-04**: Server exposes POST /workflows/{id}/abort endpoint to cancel a running workflow
 - [ ] **SRV-05**: Server exposes GET /health endpoint for liveness checks
 - [ ] **SRV-06**: Server runs DAG scheduler in-process using runTaskFn injection to dispatch tasks to SQLite queue
-- [ ] **SRV-07**: Server persists workflow runs and task state in SQLite with WAL mode
-- [ ] **SRV-08**: Server detects stale tasks (no heartbeat within timeout) and resets them to PENDING
+- [x] **SRV-07**: Server persists workflow runs and task state in SQLite with WAL mode
+- [x] **SRV-08**: Server detects stale tasks (no heartbeat within timeout) and resets them to PENDING
 - [ ] **SRV-09**: Server binary ships as `flowy-server` (`cmd/flowy-server/`)
 
 ### Daemon
@@ -86,8 +86,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRV-04 | Phase 10 | Pending |
 | SRV-05 | Phase 10 | Pending |
 | SRV-06 | Phase 10 | Pending |
-| SRV-07 | Phase 9 | Pending |
-| SRV-08 | Phase 9 | Pending |
+| SRV-07 | Phase 9 | Complete |
+| SRV-08 | Phase 9 | Complete |
 | SRV-09 | Phase 10 | Pending |
 | DMN-01 | Phase 11 | Pending |
 | DMN-02 | Phase 11 | Pending |

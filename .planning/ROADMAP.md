@@ -31,7 +31,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 **Milestone Goal:** Split monolithic CLI into server/daemon/client architecture so workflows execute across multiple hosts via REST API, SQLite task queue, and shared filesystem.
 
-- [ ] **Phase 9: API Contract + Persistence Foundation** - Shared DTO types, YAML config, and SQLite schema that all three binaries depend on
+- [x] **Phase 9: API Contract + Persistence Foundation** - Shared DTO types, YAML config, and SQLite schema that all three binaries depend on (completed 2026-03-11)
 - [ ] **Phase 10: Server Binary + DAG Dispatch** - `flowy-server` with REST API, workflow orchestration, and task queue
 - [ ] **Phase 11: Daemon Binary + Task Execution** - `flowy-daemon` polling worker with Docker execution and heartbeat
 - [ ] **Phase 12: Client CLI + Spectool Compatibility** - Extended `flowy` with submit/status/outputs commands and synchronous `run` mode
@@ -48,7 +48,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   3. The SQLite database opens in WAL mode, migrations run on startup without error, and the runs + tasks tables exist with the correct schema including `last_heartbeat_at` and `shard_index` columns
   4. A stale task (no heartbeat update within configurable timeout) can be detected by querying the tasks table — the detection query returns the expected stale rows in an integration test
   5. All shared HTTP DTO types (workflow submission request, status response, outputs response) are defined in `internal/api` and compile without import cycles
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 09-01-PLAN.md — Config package, API DTO types, and filesystem layout helpers
 - [ ] 09-02-PLAN.md — Store interface and SQLite implementation with migrations
@@ -101,7 +101,7 @@ Plans:
 | 6. Workflow Execution (DAG Scheduler) | v1.0 | 3/3 | Complete | 2026-03-10 |
 | 7. CLI and Integration | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
-| 9. API Contract + Persistence Foundation | 1/2 | In Progress|  | - |
+| 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
 | 10. Server Binary + DAG Dispatch | v1.1 | 0/? | Not started | - |
 | 11. Daemon Binary + Task Execution | v1.1 | 0/? | Not started | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |
