@@ -547,7 +547,8 @@ func (p *Parser) parseTaskSection(task *ast.Task) error {
 			return err
 		}
 		for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
-			decl, err := p.parseDecl(false)
+			// WDL 1.2: inputs may have default values (e.g. String? salutation = "hello")
+			decl, err := p.parseDecl(true)
 			if err != nil {
 				return err
 			}
