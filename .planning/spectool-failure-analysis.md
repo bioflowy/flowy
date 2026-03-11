@@ -2,23 +2,24 @@
 
 **Date:** 2026-03-11
 **Baseline:** 45/160 tests passing
+**After fixes:** 79/160 tests passing (+34)
 
 ## Summary
 
 All 10 investigated failures are flowy bugs or missing features. None are spec-side issues.
 
-| # | Test | Category | Root Cause | Impact |
-|---|------|----------|------------|--------|
-| 1 | hello.wdl | Missing feature | Shorthand call syntax not parsed | ~10+ tests |
-| 2 | optionals.wdl | Missing feature | `None` keyword not recognized | ~8+ tests |
-| 3 | test_pairs.wdl | Bug | Pair `.left`/`.right` rejected by type checker | ~2+ tests |
-| 4 | nested_placeholders.wdl | Missing feature | Single-quoted strings not supported | ~1+ tests |
-| 5 | test_struct.wdl | Bug | Output block can't reference earlier declarations in same block | ~1+ tests |
-| 6 | if_else.wdl | Bug | Conditional call outputs not wrapped as Optional | ~3+ tests |
-| 7 | test_map_ordering.wdl | Bug | False circular dependency in scatter | ~1+ tests |
-| 8 | test_cross.wdl | Missing feature | Array equality comparison not implemented | ~2+ tests |
-| 9 | test_length.wdl | Missing feature | `length()` only accepts Array, not Map/String | ~1+ tests |
-| 10 | (all task tests) | Bug | CLI `--task` flag ignored after positional arg | ~30+ task tests |
+| # | Test | Category | Root Cause | Impact | Status |
+|---|------|----------|------------|--------|--------|
+| 1 | hello.wdl | Missing feature | Shorthand call syntax not parsed | ~10+ tests | FIXED |
+| 2 | optionals.wdl | Missing feature | `None` keyword not recognized | ~8+ tests | FIXED |
+| 3 | test_pairs.wdl | Bug | Pair `.left`/`.right` rejected by type checker | ~2+ tests | FIXED |
+| 4 | nested_placeholders.wdl | Missing feature | Single-quoted strings not supported | ~1+ tests | FIXED |
+| 5 | test_struct.wdl | Bug | Output block can't reference earlier declarations in same block | ~1+ tests | FIXED |
+| 6 | if_else.wdl | Bug | Conditional call outputs not wrapped as Optional | ~3+ tests | FIXED |
+| 7 | test_map_ordering.wdl | Bug | False circular dependency in scatter | ~1+ tests | FIXED |
+| 8 | test_cross.wdl | Missing feature | Array equality comparison not implemented | ~2+ tests | FIXED |
+| 9 | test_length.wdl | Missing feature | `length()` only accepts Array, not Map/String | ~1+ tests | FIXED |
+| 10 | (all task tests) | Bug | CLI `--task` flag ignored after positional arg | ~30+ task tests | FIXED |
 
 ---
 
