@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 07-cli-and-integration 07-02-PLAN.md
-last_updated: "2026-03-11T00:08:40.903Z"
-last_activity: 2026-03-11 - Completed quick task 5: Fix relative path coercion in task File/Directory outputs
+stopped_at: Phase 8 context gathered
+last_updated: "2026-03-11T01:59:00.161Z"
+last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 7
   total_plans: 24
   completed_plans: 24
@@ -159,6 +159,10 @@ None yet.
 | 4 | Fix workflow input binding to support fully-qualified JSON keys | 2026-03-11 | 4b60e61 | [4-fix-workflow-input-binding-to-support-fu](./quick/4-fix-workflow-input-binding-to-support-fu/) |
 | 5 | Fix relative path coercion in task File/Directory outputs | 2026-03-11 | 2642dd2 | [5-fix-relative-path-coercion-in-task-file-](./quick/5-fix-relative-path-coercion-in-task-file-/) |
 
+### Roadmap Evolution
+
+- Phase 8 added: Add spectool integration for WDL specification compliance testing
+
 ### Blockers/Concerns
 
 - [Research]: Phase 5 DAG scheduler needs deeper review of miniwdl runtime/workflow.py StateMachine before planning — scatter-in-conditional nesting is complex
@@ -167,6 +171,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T00:42:00Z
-Stopped at: Completed quick task 2 (fix type checker call output registration)
-Resume file: None
+Last session: 2026-03-11T01:59:00.156Z
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-add-spectool-integration-for-wdl-specification-compliance-testing/08-CONTEXT.md
