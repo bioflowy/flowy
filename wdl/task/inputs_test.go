@@ -217,8 +217,8 @@ func TestBindInputs_DirectoryType(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected DirectoryValue, got %T", v)
 	}
-	if dv.Value != "/host/refdata/" {
-		t.Errorf("ref_dir.Value = %q, want %q", dv.Value, "/host/refdata/")
+	if dv.Value != "/host/refdata" {
+		t.Errorf("ref_dir.Value = %q, want %q", dv.Value, "/host/refdata")
 	}
 	// Verify PathMap was populated
 	binds := pm.Binds()

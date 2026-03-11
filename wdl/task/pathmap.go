@@ -188,6 +188,35 @@ func (pm *PathMap) UntranslateValue(v values.Value) values.Value {
 	}
 }
 
+// ReplaceHostPaths replaces all registered host paths in the string s with their
+// corresponding container paths. Longer paths are replaced first to prevent
+// partial matches.
+func (pm *PathMap) ReplaceHostPaths(s string) string {
+	// Sort host paths by length descending to avoid partial matches.
+	paths := make([]string, 0, len(pm.hostToContainer))
+	for hp := range pm.hostToContainer {
+		paths = append(paths, hp)
+	}
+	sortByLengthDesc(paths)
+	for _, hp := range paths {
+		s = strings.ReplaceAll(s, hp, pm.hostToContainer[hp])
+	}
+	return s
+}
+
+// sortByLengthDesc sorts strings by length in descending order.
+func sortByLengthDesc(s []string) {
+	for i := 1; i < len(s); i++ {
+		key := s[i]
+		j := i - 1
+		for j >= 0 && len(s[j]) < len(key) {
+			s[j+1] = s[j]
+			j--
+		}
+		s[j+1] = key
+	}
+}
+
 // Binds returns the accumulated Docker bind-mount specification strings.
 // Each entry has the format "hostPath:containerPath:ro".
 func (pm *PathMap) Binds() []string {

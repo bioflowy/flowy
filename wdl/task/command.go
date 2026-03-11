@@ -24,19 +24,15 @@ import (
 //  4. Write the expanded command string to filepath.Join(execDir, "command") mode 0644.
 //  5. Return the path to the written file.
 func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string, workDir string, structDefs ...map[string]*ast.StructDef) (string, error) {
-	// Private declarations are already evaluated into env by RunTask before
-	// BuildCommand is called. Build a translated env with container paths.
-	// Step 1: build a translated env with container paths substituted for host paths.
-	translatedEnv := translateEnv(env, pm)
-
-	// Step 3: evaluate the command expression using the translated env.
-	// Pass workDir so write_* functions create files inside the task work directory
-	// (which is bind-mounted into the container as /mnt/outputs).
+	// Evaluate the command expression using the original (host-path) env.
+	// This allows stdlib functions like read_lines(file) to access host files.
+	// After evaluation, host paths in the result string are replaced with
+	// container paths.
 	cmdCtx := eval.ExecContext{WorkDir: workDir}
 	if len(structDefs) > 0 {
 		cmdCtx.StructDefs = structDefs[0]
 	}
-	v, err := eval.Eval(task.Command, translatedEnv, cmdCtx)
+	v, err := eval.Eval(task.Command, env, cmdCtx)
 	if err != nil {
 		return "", fmt.Errorf("evaluating command for task %q: %w", task.Name, err)
 	}
@@ -46,10 +42,10 @@ func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string, wo
 		return "", fmt.Errorf("command expression must evaluate to String, got %T", v)
 	}
 
-	// Step 4: translate any host workDir paths in the command to container paths.
-	// Files created by write_* during command evaluation are placed in workDir,
-	// but the container sees workDir as /mnt/outputs.
-	cmd := sv.Value
+	// Translate host paths to container paths in the command string.
+	// First replace registered file/directory host paths with container paths.
+	cmd := pm.ReplaceHostPaths(sv.Value)
+	// Then replace workDir paths (for write_* output files).
 	if workDir != "" {
 		cmd = strings.ReplaceAll(cmd, workDir+"/", "/mnt/outputs/")
 		cmd = strings.ReplaceAll(cmd, workDir, "/mnt/outputs")
