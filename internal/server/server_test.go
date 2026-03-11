@@ -328,15 +328,17 @@ func TestSubmit_Valid(t *testing.T) {
 	}
 
 	// Verify run exists in store.
+	// The state may already have transitioned from PENDING to RUNNING by the goroutine.
 	run, err := st.GetRun(context.Background(), resp.RunID)
 	if err != nil {
 		t.Fatalf("GetRun: %v", err)
 	}
-	if run.State != store.RunPending {
-		t.Errorf("expected PENDING state, got %q", run.State)
+	if run.State != store.RunPending && run.State != store.RunRunning {
+		t.Errorf("expected PENDING or RUNNING state, got %q", run.State)
 	}
 
-	// Shutdown to drain goroutines.
+	// Abort the workflow to unblock the goroutine, then shutdown.
+	doRequest(t, srv, "POST", fmt.Sprintf("/workflows/%s/abort", resp.RunID), nil)
 	srv.Shutdown()
 }
 
@@ -463,8 +465,10 @@ func TestDispatch_Integration(t *testing.T) {
 	}
 
 	// Write outputs.json to the task directory.
+	// Keys must be plain output names (without task prefix), as the scheduler
+	// wraps them in a StructValue keyed by the call alias.
 	taskDir := store.TaskDir(baseDir, runID, claimedTask.TaskName, claimedTask.ShardIndex)
-	outputsData := `{"hello.out": "Hello, world!"}`
+	outputsData := `{"out": "Hello, world!"}`
 	if err := os.WriteFile(filepath.Join(taskDir, "outputs.json"), []byte(outputsData), 0o644); err != nil {
 		t.Fatalf("write task outputs.json: %v", err)
 	}
@@ -536,12 +540,13 @@ func TestStaleDetection(t *testing.T) {
 		t.Fatalf("backdate heartbeat: %v", err)
 	}
 
-	// Start stale detection with short timeout (1 second for test).
+	// Start stale detection with short timeout and short interval for test.
 	cfg := &config.Config{
 		BaseDir: t.TempDir(),
 		Server:  config.ServerConfig{HeartbeatTimeoutSec: 1},
 	}
 	srv2 := server.New(cfg, st)
+	srv2.SetStaleInterval(500 * time.Millisecond) // short interval for test
 	staleCtx, staleCancel := context.WithCancel(context.Background())
 	defer staleCancel()
 	srv2.StartStaleDetection(staleCtx)

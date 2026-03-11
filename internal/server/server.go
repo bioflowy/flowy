@@ -29,20 +29,31 @@ type Server struct {
 	mu   sync.Mutex
 	runs map[string]context.CancelFunc // runID -> cancel func for in-flight runs
 
-	wg        sync.WaitGroup    // tracks in-flight run goroutines
+	wg        sync.WaitGroup     // tracks in-flight run goroutines
 	stopStale context.CancelFunc // cancel function for stale detection goroutine
+
+	// staleInterval is the interval between stale task checks.
+	// Defaults to 30 seconds. Tests may override via SetStaleInterval.
+	staleInterval time.Duration
 }
 
 // New constructs a new Server with the given config and store.
 // The router is wired immediately; call ServeHTTP or use with http.Server.
 func New(cfg *config.Config, st store.Store) *Server {
 	s := &Server{
-		cfg:   cfg,
-		store: st,
-		runs:  make(map[string]context.CancelFunc),
+		cfg:           cfg,
+		store:         st,
+		runs:          make(map[string]context.CancelFunc),
+		staleInterval: 30 * time.Second,
 	}
 	s.router = s.newRouter()
 	return s
+}
+
+// SetStaleInterval overrides the stale detection ticker interval.
+// This is intended for tests only — production code should use the default 30s.
+func (s *Server) SetStaleInterval(d time.Duration) {
+	s.staleInterval = d
 }
 
 // newRouter creates and configures the chi.Mux with all routes.
@@ -84,7 +95,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // The goroutine runs until ctx is cancelled.
 func (s *Server) StartStaleDetection(ctx context.Context) {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(s.staleInterval)
 		defer ticker.Stop()
 
 		for {
