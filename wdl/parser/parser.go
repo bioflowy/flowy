@@ -1058,34 +1058,55 @@ func (p *Parser) parseCall() (*ast.Call, error) {
 		}
 	}
 
-	// Optional input block
+	// Optional input block: three forms supported:
+	//   { input: key = expr, ... }     — traditional form
+	//   { key = expr, ... }            — shorthand with explicit values
+	//   { key1, key2, ... }            — shorthand where key is used as variable reference
 	if p.peek().Type == lexer.TokLBrace {
 		p.advance()
-		// Expect "input:"
 		if p.peek().Type == lexer.TokInput {
-			p.advance()
-			_, err = p.expect(lexer.TokColon)
-			if err != nil {
-				return nil, err
-			}
-			// Parse key = expr pairs
-			for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
-				keyTok := p.advance()
-				if keyTok.Type != lexer.TokIdent {
-					return nil, p.errorf(keyTok.Pos, "expected identifier in call input, got %q", keyTok.Val)
-				}
-				_, err = p.expect(lexer.TokAssign)
-				if err != nil {
-					return nil, err
-				}
-				expr, err := p.parseExpr(lexer.TokComma, lexer.TokRBrace)
-				if err != nil {
-					return nil, err
+			// Check if this is "input:" (traditional) or "input" as a shorthand variable name.
+			// Traditional form has TokInput followed by TokColon.
+			inputTok := p.advance() // consume "input"
+			if p.peek().Type == lexer.TokColon {
+				p.advance() // consume ":"
+			} else {
+				// Not followed by ":" — treat "input" as a shorthand variable name.
+				// Handle it as first input entry.
+				if p.peek().Type == lexer.TokAssign {
+					p.advance()
+					expr, exprErr := p.parseExpr(lexer.TokComma, lexer.TokRBrace)
+					if exprErr != nil {
+						return nil, exprErr
+					}
+					call.Inputs[inputTok.Val] = expr
+				} else {
+					call.Inputs[inputTok.Val] = &ast.IdentExpr{Pos: inputTok.Pos, Name: inputTok.Val}
 				}
 				if p.peek().Type == lexer.TokComma {
 					p.advance()
 				}
+			}
+		}
+		// Parse inputs: key [= expr] [, ...]
+		for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
+			keyTok := p.advance()
+			if keyTok.Type != lexer.TokIdent {
+				return nil, p.errorf(keyTok.Pos, "expected identifier in call input, got %q", keyTok.Val)
+			}
+			if p.peek().Type == lexer.TokAssign {
+				p.advance()
+				expr, err := p.parseExpr(lexer.TokComma, lexer.TokRBrace)
+				if err != nil {
+					return nil, err
+				}
 				call.Inputs[keyTok.Val] = expr
+			} else {
+				// Shorthand: just the name — equivalent to key = key
+				call.Inputs[keyTok.Val] = &ast.IdentExpr{Pos: keyTok.Pos, Name: keyTok.Val}
+			}
+			if p.peek().Type == lexer.TokComma {
+				p.advance()
 			}
 		}
 		_, err = p.expect(lexer.TokRBrace)
