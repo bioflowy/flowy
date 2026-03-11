@@ -109,7 +109,7 @@ func RunWorkflow(
 
 	// On success, write outputs.json.
 	outPath := filepath.Join(execRoot, "outputs.json")
-	if err := writeOutputsJSON(wf.Name, outputs, execRoot, outPath); err != nil {
+	if err := writeOutputsJSON(wf.Name, outputs, outPath); err != nil {
 		return nil, fmt.Errorf("writing outputs.json: %w", err)
 	}
 

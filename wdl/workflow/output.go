@@ -4,23 +4,28 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 
 	"github.com/bioflowy/flowy/wdl/task"
 	"github.com/bioflowy/flowy/wdl/values"
 )
 
-// writeOutputsJSON writes workflow outputs to a JSON file in miniwdl-compatible format.
-// Keys are formatted as "workflowName.outputName". File and Directory values are
-// serialized as paths relative to execRoot. The file is written with 0644 permissions.
-func writeOutputsJSON(wfName string, outputs map[string]values.Value, execRoot string, destPath string) error {
+// SerializeOutputs converts workflow or task outputs to JSON bytes in spectool-compatible format.
+// Keys are formatted as "entityName.outputName". File and Directory values are serialized
+// as absolute paths (not relativized). Returns json.MarshalIndent output.
+func SerializeOutputs(entityName string, outputs map[string]values.Value) ([]byte, error) {
 	data := make(map[string]interface{}, len(outputs))
 	for name, v := range outputs {
-		key := wfName + "." + name
-		data[key] = valueToJSONOutput(v, execRoot)
+		key := entityName + "." + name
+		data[key] = valueToJSONOutput(v)
 	}
+	return json.MarshalIndent(data, "", "  ")
+}
 
-	encoded, err := json.MarshalIndent(data, "", "  ")
+// writeOutputsJSON writes workflow outputs to a JSON file in spectool-compatible format.
+// Keys are formatted as "workflowName.outputName". File and Directory values are
+// serialized as absolute paths. The file is written with 0644 permissions.
+func writeOutputsJSON(wfName string, outputs map[string]values.Value, destPath string) error {
+	encoded, err := SerializeOutputs(wfName, outputs)
 	if err != nil {
 		return err
 	}
@@ -28,9 +33,9 @@ func writeOutputsJSON(wfName string, outputs map[string]values.Value, execRoot s
 }
 
 // valueToJSONOutput converts a WDL value to a JSON-compatible Go value for output serialization.
-// File and Directory paths are converted to paths relative to execRoot.
+// File and Directory paths are returned as absolute paths (val.Value directly).
 // Other types follow the same rules as valueToJSON.
-func valueToJSONOutput(v values.Value, execRoot string) interface{} {
+func valueToJSONOutput(v values.Value) interface{} {
 	if v == nil {
 		return nil
 	}
@@ -46,27 +51,21 @@ func valueToJSONOutput(v values.Value, execRoot string) interface{} {
 	case values.NullValue:
 		return nil
 	case values.FileValue:
-		rel, err := filepath.Rel(execRoot, val.Value)
-		if err != nil {
-			return val.Value
-		}
-		return rel
+		// Return absolute path directly — spectool expects absolute paths.
+		return val.Value
 	case values.DirectoryValue:
-		rel, err := filepath.Rel(execRoot, val.Value)
-		if err != nil {
-			return val.Value
-		}
-		return rel
+		// Return absolute path directly — spectool expects absolute paths.
+		return val.Value
 	case values.ArrayValue:
 		result := make([]interface{}, len(val.Items))
 		for i, item := range val.Items {
-			result[i] = valueToJSONOutput(item, execRoot)
+			result[i] = valueToJSONOutput(item)
 		}
 		return result
 	case values.MapValue:
 		result := make(map[string]interface{}, len(val.Entries))
 		for _, entry := range val.Entries {
-			k := valueToJSONOutput(entry.Key, execRoot)
+			k := valueToJSONOutput(entry.Key)
 			var keyStr string
 			switch ks := k.(type) {
 			case string:
@@ -74,18 +73,18 @@ func valueToJSONOutput(v values.Value, execRoot string) interface{} {
 			default:
 				keyStr = ""
 			}
-			result[keyStr] = valueToJSONOutput(entry.Value, execRoot)
+			result[keyStr] = valueToJSONOutput(entry.Value)
 		}
 		return result
 	case values.PairValue:
 		return map[string]interface{}{
-			"left":  valueToJSONOutput(val.Left, execRoot),
-			"right": valueToJSONOutput(val.Right, execRoot),
+			"left":  valueToJSONOutput(val.Left),
+			"right": valueToJSONOutput(val.Right),
 		}
 	case values.StructValue:
 		result := make(map[string]interface{}, len(val.Fields))
 		for name, fv := range val.Fields {
-			result[name] = valueToJSONOutput(fv, execRoot)
+			result[name] = valueToJSONOutput(fv)
 		}
 		return result
 	default:

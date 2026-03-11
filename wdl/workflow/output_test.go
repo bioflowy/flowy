@@ -35,7 +35,7 @@ func TestWriteOutputsJSON_Simple(t *testing.T) {
 		"result": values.IntValue{Value: 42},
 	}
 
-	if err := writeOutputsJSON("myWf", outputs, dir, destPath); err != nil {
+	if err := writeOutputsJSON("myWf", outputs, destPath); err != nil {
 		t.Fatalf("writeOutputsJSON: %v", err)
 	}
 
@@ -50,18 +50,17 @@ func TestWriteOutputsJSON_Simple(t *testing.T) {
 	}
 }
 
-// TestWriteOutputsJSON_FileRelativePath: FileValue("/tmp/exec/work/out.txt") with execRoot="/tmp/exec"
-// -> value is "work/out.txt" (relative).
-func TestWriteOutputsJSON_FileRelativePath(t *testing.T) {
+// TestWriteOutputsJSON_FileAbsolutePath: FileValue("/tmp/exec/work/out.txt")
+// -> value is "/tmp/exec/work/out.txt" (absolute, not relative).
+func TestWriteOutputsJSON_FileAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	destPath := filepath.Join(dir, "outputs.json")
-	execRoot := "/tmp/exec"
 
 	outputs := map[string]values.Value{
 		"outfile": values.FileValue{Value: "/tmp/exec/work/out.txt"},
 	}
 
-	if err := writeOutputsJSON("wf", outputs, execRoot, destPath); err != nil {
+	if err := writeOutputsJSON("wf", outputs, destPath); err != nil {
 		t.Fatalf("writeOutputsJSON: %v", err)
 	}
 
@@ -70,22 +69,21 @@ func TestWriteOutputsJSON_FileRelativePath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'wf.outfile' in outputs.json")
 	}
-	if v.(string) != "work/out.txt" {
-		t.Errorf("expected 'work/out.txt', got %q", v)
+	if v.(string) != "/tmp/exec/work/out.txt" {
+		t.Errorf("expected '/tmp/exec/work/out.txt', got %q", v)
 	}
 }
 
-// TestWriteOutputsJSON_DirectoryRelativePath: DirectoryValue absolute -> relative.
-func TestWriteOutputsJSON_DirectoryRelativePath(t *testing.T) {
+// TestWriteOutputsJSON_DirectoryAbsolutePath: DirectoryValue absolute path stays absolute.
+func TestWriteOutputsJSON_DirectoryAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	destPath := filepath.Join(dir, "outputs.json")
-	execRoot := "/data/run"
 
 	outputs := map[string]values.Value{
 		"outdir": values.DirectoryValue{Value: "/data/run/results/dir"},
 	}
 
-	if err := writeOutputsJSON("wf", outputs, execRoot, destPath); err != nil {
+	if err := writeOutputsJSON("wf", outputs, destPath); err != nil {
 		t.Fatalf("writeOutputsJSON: %v", err)
 	}
 
@@ -94,8 +92,58 @@ func TestWriteOutputsJSON_DirectoryRelativePath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected key 'wf.outdir' in outputs.json")
 	}
-	if v.(string) != "results/dir" {
-		t.Errorf("expected 'results/dir', got %q", v)
+	if v.(string) != "/data/run/results/dir" {
+		t.Errorf("expected '/data/run/results/dir', got %q", v)
+	}
+}
+
+// TestSerializeOutputs_Simple: SerializeOutputs("myWf", {"result": IntValue(42)})
+// -> JSON bytes with key "myWf.result" and value 42.
+func TestSerializeOutputs_Simple(t *testing.T) {
+	outputs := map[string]values.Value{
+		"result": values.IntValue{Value: 42},
+	}
+
+	data, err := SerializeOutputs("myWf", outputs)
+	if err != nil {
+		t.Fatalf("SerializeOutputs: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	v, ok := got["myWf.result"]
+	if !ok {
+		t.Fatal("expected key 'myWf.result'")
+	}
+	if v.(float64) != 42 {
+		t.Errorf("expected 42, got %v", v)
+	}
+}
+
+// TestSerializeOutputs_FileAbsolute: SerializeOutputs("wf", {"out": FileValue("/abs/path")})
+// -> JSON bytes with absolute path "/abs/path".
+func TestSerializeOutputs_FileAbsolute(t *testing.T) {
+	outputs := map[string]values.Value{
+		"out": values.FileValue{Value: "/abs/path"},
+	}
+
+	data, err := SerializeOutputs("wf", outputs)
+	if err != nil {
+		t.Fatalf("SerializeOutputs: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	v, ok := got["wf.out"]
+	if !ok {
+		t.Fatal("expected key 'wf.out'")
+	}
+	if v.(string) != "/abs/path" {
+		t.Errorf("expected '/abs/path', got %q", v)
 	}
 }
 
@@ -114,7 +162,7 @@ func TestWriteOutputsJSON_Array(t *testing.T) {
 		},
 	}
 
-	if err := writeOutputsJSON("wf", outputs, "/exec", destPath); err != nil {
+	if err := writeOutputsJSON("wf", outputs, destPath); err != nil {
 		t.Fatalf("writeOutputsJSON: %v", err)
 	}
 
@@ -144,7 +192,7 @@ func TestWriteOutputsJSON_Null(t *testing.T) {
 		"maybe": values.NullValue{},
 	}
 
-	if err := writeOutputsJSON("wf", outputs, "/exec", destPath); err != nil {
+	if err := writeOutputsJSON("wf", outputs, destPath); err != nil {
 		t.Fatalf("writeOutputsJSON: %v", err)
 	}
 
@@ -176,7 +224,7 @@ func TestWriteOutputsJSON_MultipleOutputs(t *testing.T) {
 		"y": values.StringValue{Value: "hello"},
 	}
 
-	if err := writeOutputsJSON("myWorkflow", outputs, "/exec", destPath); err != nil {
+	if err := writeOutputsJSON("myWorkflow", outputs, destPath); err != nil {
 		t.Fatalf("writeOutputsJSON: %v", err)
 	}
 
