@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
@@ -22,6 +23,8 @@ func init() {
 	stdlibFuncs["select_all"]   = stdSelectAll
 	stdlibFuncs["select_first"] = stdSelectFirst
 	stdlibFuncs["chunk"]        = stdChunk
+	stdlibFuncs["sep"]          = stdSep
+	stdlibFuncs["range"]        = stdRange
 }
 
 // valueToStr returns the string form of a WDL value for prefix/suffix/quote/squote operations.
@@ -410,5 +413,53 @@ func stdChunk(args []values.Value, ctx ExecContext) (values.Value, error) {
 	return values.ArrayValue{
 		Type:  types.ArrayType{ItemType: av.Type},
 		Items: chunks,
+	}, nil
+}
+
+// stdSep implements sep(String separator, Array[String] array) -> String.
+// Joins the array elements with the given separator string.
+func stdSep(args []values.Value, ctx ExecContext) (values.Value, error) {
+	if len(args) < 2 {
+		return nil, &EvalError{Message: "sep: expected (String, Array) arguments"}
+	}
+	sep, ok := args[0].(values.StringValue)
+	if !ok {
+		return nil, &EvalError{Message: fmt.Sprintf("sep: first argument must be StringValue, got %T", args[0])}
+	}
+	av, ok := args[1].(values.ArrayValue)
+	if !ok {
+		return nil, &EvalError{Message: fmt.Sprintf("sep: second argument must be ArrayValue, got %T", args[1])}
+	}
+	parts := make([]string, len(av.Items))
+	for i, item := range av.Items {
+		parts[i] = valueToStr(item)
+	}
+	return values.StringValue{Type: types.StringType{}, Value: strings.Join(parts, sep.Value)}, nil
+}
+
+// stdRange implements range(Int n) -> Array[Int].
+// Returns an array [0, 1, ..., n-1]. Returns empty array if n <= 0.
+func stdRange(args []values.Value, ctx ExecContext) (values.Value, error) {
+	if len(args) < 1 {
+		return nil, &EvalError{Message: "range: expected Int argument"}
+	}
+	nv, ok := args[0].(values.IntValue)
+	if !ok {
+		return nil, &EvalError{Message: fmt.Sprintf("range: argument must be IntValue, got %T", args[0])}
+	}
+	n := nv.Value
+	if n <= 0 {
+		return values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{},
+		}, nil
+	}
+	items := make([]values.Value, n)
+	for i := int64(0); i < n; i++ {
+		items[i] = values.IntValue{Type: types.IntType{}, Value: i}
+	}
+	return values.ArrayValue{
+		Type:  types.ArrayType{ItemType: types.IntType{}},
+		Items: items,
 	}, nil
 }

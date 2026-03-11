@@ -26,6 +26,25 @@ func (e *TaskError) Error() string {
 	return fmt.Sprintf("task %q failed with exit code %d: %s", e.TaskName, e.ExitCode, string(e.Stderr))
 }
 
+// isAcceptableExitCode checks whether the given exit code is acceptable
+// according to the return_codes specification. If no return_codes is specified
+// (empty Codes and AllCodes=false), only exit code 0 is acceptable.
+func isAcceptableExitCode(exitCode int, spec ReturnCodesSpec) bool {
+	if spec.AllCodes {
+		return true
+	}
+	if len(spec.Codes) == 0 {
+		// Default: only 0 is acceptable.
+		return exitCode == 0
+	}
+	for _, code := range spec.Codes {
+		if int64(exitCode) == code {
+			return true
+		}
+	}
+	return false
+}
+
 // RunTask is the public entry point for executing a WDL task. It orchestrates the
 // full pipeline:
 //
@@ -44,7 +63,12 @@ func (e *TaskError) Error() string {
 // testing with ShellRunner without a live Docker daemon.
 func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interface{}, runner ContainerRunner, execRoot string) (map[string]values.Value, error) {
 	// Step 1: create execution directory layout.
-	execDir := filepath.Join(execRoot, task.Name)
+	// Use MkdirTemp to generate a unique directory per invocation, avoiding
+	// collisions when the same task is called from scatter iterations.
+	execDir, err := os.MkdirTemp(execRoot, task.Name+"-")
+	if err != nil {
+		return nil, fmt.Errorf("creating exec dir for task %q: %w", task.Name, err)
+	}
 	workDir := filepath.Join(execDir, "work")
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating work dir for task %q: %w", task.Name, err)
@@ -60,13 +84,26 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		return nil, fmt.Errorf("binding inputs for task %q: %w", task.Name, err)
 	}
 
-	// Step 4: parse runtime/requirements for image, memory, cpu.
+	// Step 4: evaluate private declarations (task.Decls) into env so they
+	// are available for both runtime/requirements and command expansion.
+	for _, decl := range task.Decls {
+		if decl.Expr == nil {
+			continue
+		}
+		v, err := eval.Eval(decl.Expr, env, eval.ExecContext{})
+		if err != nil {
+			return nil, fmt.Errorf("evaluating private decl %q for task %q: %w", decl.Name, task.Name, err)
+		}
+		env.Define(decl.Name, v)
+	}
+
+	// Step 5: parse runtime/requirements for image, memory, cpu.
 	config, err := ParseRuntime(task, env)
 	if err != nil {
 		return nil, fmt.Errorf("parsing runtime for task %q: %w", task.Name, err)
 	}
 
-	// Step 5 + 6: BuildCommand evaluates private decls and writes the command script.
+	// Step 6: BuildCommand writes the command script (private decls already evaluated).
 	commandPath, err := BuildCommand(task, env, pm, execDir)
 	if err != nil {
 		return nil, fmt.Errorf("building command for task %q: %w", task.Name, err)
@@ -111,8 +148,9 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 		return nil, fmt.Errorf("writing rc for task %q: %w", task.Name, writeErr)
 	}
 
-	// Step 9: return TaskError if non-zero exit.
-	if result.ExitCode != 0 {
+	// Step 9: return TaskError if exit code is not acceptable.
+	// WDL 1.2 return_codes requirement allows specifying acceptable exit codes.
+	if !isAcceptableExitCode(result.ExitCode, config.ReturnCodes) {
 		return nil, &TaskError{
 			TaskName: task.Name,
 			ExitCode: result.ExitCode,

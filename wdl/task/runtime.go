@@ -8,12 +8,21 @@ import (
 	"github.com/bioflowy/flowy/wdl/values"
 )
 
+// ReturnCodesSpec describes acceptable exit codes for a task.
+// If AllCodes is true, any exit code is acceptable.
+// Otherwise, Codes lists the specific acceptable exit codes.
+type ReturnCodesSpec struct {
+	AllCodes bool    // true means "*" (any exit code is acceptable)
+	Codes    []int64 // specific acceptable codes (default: [0])
+}
+
 // DockerConfig holds the parsed container execution parameters extracted from a
 // WDL task's runtime or requirements section.
 type DockerConfig struct {
-	Image    string // Docker image reference (e.g., "ubuntu:22.04")
-	Memory   int64  // Memory limit in bytes (0 = no limit)
-	NanoCPUs int64  // CPU limit in nanocpus (0 = no limit)
+	Image       string          // Docker image reference (e.g., "ubuntu:22.04")
+	Memory      int64           // Memory limit in bytes (0 = no limit)
+	NanoCPUs    int64           // CPU limit in nanocpus (0 = no limit)
+	ReturnCodes ReturnCodesSpec // acceptable exit codes (default: only 0)
 }
 
 // ParseRuntime evaluates the WDL runtime/requirements section of a task and
@@ -104,6 +113,36 @@ func ParseRuntime(task *ast.Task, env *eval.Env) (DockerConfig, error) {
 				return cfg, fmt.Errorf("parseRuntime: parsing memory %q: %w", memStr, err)
 			}
 			cfg.Memory = bytes
+		}
+	}
+
+	// Resolve return_codes -> ReturnCodes
+	if expr, ok := lookup("return_codes"); ok {
+		v, err := eval.Eval(expr, env, ctx)
+		if err != nil {
+			return cfg, fmt.Errorf("parseRuntime: evaluating 'return_codes': %w", err)
+		}
+		switch rv := v.(type) {
+		case values.StringValue:
+			if rv.Value == "*" {
+				cfg.ReturnCodes = ReturnCodesSpec{AllCodes: true}
+			} else {
+				return cfg, fmt.Errorf("parseRuntime: 'return_codes' string must be \"*\", got %q", rv.Value)
+			}
+		case values.IntValue:
+			cfg.ReturnCodes = ReturnCodesSpec{Codes: []int64{rv.Value}}
+		case values.ArrayValue:
+			codes := make([]int64, 0, len(rv.Items))
+			for _, item := range rv.Items {
+				iv, ok := item.(values.IntValue)
+				if !ok {
+					return cfg, fmt.Errorf("parseRuntime: 'return_codes' array must contain Int values, got %T", item)
+				}
+				codes = append(codes, iv.Value)
+			}
+			cfg.ReturnCodes = ReturnCodesSpec{Codes: codes}
+		default:
+			return cfg, fmt.Errorf("parseRuntime: 'return_codes' must evaluate to Int, Array[Int], or \"*\", got %T", v)
 		}
 	}
 

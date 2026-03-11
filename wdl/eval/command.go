@@ -118,7 +118,7 @@ func valueToString(v values.Value, opts map[string]string) string {
 	case values.IntValue:
 		return strconv.FormatInt(val.Value, 10)
 	case values.FloatValue:
-		return strconv.FormatFloat(val.Value, 'g', -1, 64)
+		return strconv.FormatFloat(val.Value, 'f', 6, 64)
 	case values.StringValue:
 		return val.Value
 	case values.FileValue:

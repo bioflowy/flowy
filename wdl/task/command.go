@@ -23,20 +23,9 @@ import (
 //  4. Write the expanded command string to filepath.Join(execDir, "command") mode 0644.
 //  5. Return the path to the written file.
 func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string) (string, error) {
-	// Step 1: evaluate private declarations into env so they are available
-	// during command expansion.
-	for _, decl := range task.Decls {
-		if decl.Expr == nil {
-			continue
-		}
-		v, err := eval.Eval(decl.Expr, env, eval.ExecContext{})
-		if err != nil {
-			return "", fmt.Errorf("evaluating private decl %q: %w", decl.Name, err)
-		}
-		env.Define(decl.Name, v)
-	}
-
-	// Step 2: build a translated env with container paths substituted for host paths.
+	// Private declarations are already evaluated into env by RunTask before
+	// BuildCommand is called. Build a translated env with container paths.
+	// Step 1: build a translated env with container paths substituted for host paths.
 	translatedEnv := translateEnv(env, pm)
 
 	// Step 3: evaluate the command expression using the translated env.

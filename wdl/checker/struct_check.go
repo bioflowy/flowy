@@ -132,6 +132,13 @@ func checkGetExpr(expr *ast.GetExpr, pos ast.Pos, scope *Scope, structDefs map[s
 		return nil, types.AnyType{}
 	}
 
+	// Allow field access on AnyType — this occurs when the checker cannot
+	// fully infer the type (e.g., complex scatter expressions). Return AnyType
+	// to avoid false type errors; runtime evaluation will catch real errors.
+	if _, ok := baseType.(types.AnyType); ok {
+		return nil, types.AnyType{}
+	}
+
 	// Handle Pair field access (.left / .right).
 	if pt, ok := baseType.(types.PairType); ok {
 		switch expr.Member {

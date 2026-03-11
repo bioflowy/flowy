@@ -386,9 +386,46 @@ func validateGroups(outerScope *Scope, groups []declGroup, structDefs map[string
 
 // scatterVarElementType derives the element type of the collection expression
 // in a Scatter node. If the expression is an IdentExpr and that ident resolves
-// to an ArrayType in scope, the item type is returned. Otherwise AnyType is
-// returned as a safe fallback (no false type errors).
+// to an ArrayType in scope, the item type is returned. For known stdlib
+// functions like zip/cross, the return element type is inferred.
+// Otherwise AnyType is returned as a safe fallback (no false type errors).
 func scatterVarElementType(expr ast.Expr, scope *Scope) types.Type {
+	switch e := expr.(type) {
+	case *ast.IdentExpr:
+		if t, found := scope.lookup(e.Name); found {
+			if arr, ok := t.(types.ArrayType); ok {
+				return arr.ItemType
+			}
+		}
+	case *ast.ApplyExpr:
+		// Infer element types for known stdlib functions that return arrays.
+		switch e.Name {
+		case "zip", "cross":
+			// zip(Array[X], Array[Y]) -> Array[Pair[X,Y]]
+			// cross(Array[X], Array[Y]) -> Array[Pair[X,Y]]
+			if len(e.Args) >= 2 {
+				leftType := inferExprArrayItemType(e.Args[0], scope)
+				rightType := inferExprArrayItemType(e.Args[1], scope)
+				return types.PairType{LeftType: leftType, RightType: rightType}
+			}
+		case "flatten":
+			// flatten(Array[Array[X]]) -> Array[X]
+			if len(e.Args) >= 1 {
+				outerItem := inferExprArrayItemType(e.Args[0], scope)
+				if arr, ok := outerItem.(types.ArrayType); ok {
+					return arr.ItemType
+				}
+			}
+		case "range":
+			return types.IntType{}
+		}
+	}
+	return types.AnyType{}
+}
+
+// inferExprArrayItemType attempts to infer the item type of an Array expression.
+// Returns the item type if the expression resolves to an ArrayType, otherwise AnyType.
+func inferExprArrayItemType(expr ast.Expr, scope *Scope) types.Type {
 	if ident, ok := expr.(*ast.IdentExpr); ok {
 		if t, found := scope.lookup(ident.Name); found {
 			if arr, ok := t.(types.ArrayType); ok {
@@ -419,6 +456,16 @@ func checkExprType(decl *ast.Decl, scope *Scope, structDefs map[string]*ast.Stru
 		fromType = types.AnyType{Optional: true}
 	case *ast.StringExpr:
 		fromType = types.StringType{}
+	case *ast.ArrayExpr:
+		// Check non-empty constraint: Array[T]+ cannot be assigned an empty array literal.
+		if at, ok := decl.Type.(types.ArrayType); ok && at.Nonempty && len(e.Items) == 0 {
+			errs = append(errs, &TypeError{
+				Pos:     decl.Pos,
+				Message: fmt.Sprintf("cannot assign empty array to non-empty type %s", decl.Type.TypeName()),
+			})
+			return errs
+		}
+		return nil // skip further type checking for array literals
 	case *ast.IdentExpr:
 		t, ok := scope.lookup(e.Name)
 		if !ok {

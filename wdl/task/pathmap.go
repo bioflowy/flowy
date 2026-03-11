@@ -33,6 +33,12 @@ func NewPathMap() *PathMap {
 // to avoid collisions (e.g., /mnt/inputs/a1b2c3d4-input.bam).
 // Calling AddFile with the same host path twice is idempotent.
 func (pm *PathMap) AddFile(hostPath string) string {
+	// Resolve relative paths to absolute (relative to CWD).
+	if !filepath.IsAbs(hostPath) {
+		if abs, err := filepath.Abs(hostPath); err == nil {
+			hostPath = abs
+		}
+	}
 	if c, ok := pm.hostToContainer[hostPath]; ok {
 		return c
 	}
@@ -54,6 +60,12 @@ func (pm *PathMap) AddFile(hostPath string) string {
 // Directory container paths end with "/" and follow the same collision-avoidance
 // strategy as AddFile. Calling AddDir with the same host path twice is idempotent.
 func (pm *PathMap) AddDir(hostPath string) string {
+	// Resolve relative paths to absolute (relative to CWD).
+	if !filepath.IsAbs(hostPath) {
+		if abs, err := filepath.Abs(hostPath); err == nil {
+			hostPath = abs
+		}
+	}
 	if c, ok := pm.hostToContainer[hostPath]; ok {
 		return c
 	}

@@ -82,9 +82,22 @@ func valueToJSONOutput(v values.Value) interface{} {
 			"right": valueToJSONOutput(val.Right),
 		}
 	case values.StructValue:
-		result := make(map[string]interface{}, len(val.Fields))
+		// Include all declared members from the struct type, outputting null
+		// for optional fields that are not set in Fields.
+		memberCount := len(val.Fields)
+		if len(val.Type.Members) > memberCount {
+			memberCount = len(val.Type.Members)
+		}
+		result := make(map[string]interface{}, memberCount)
+		// First, output all fields that are present.
 		for name, fv := range val.Fields {
 			result[name] = valueToJSONOutput(fv)
+		}
+		// Then, add null for any declared members missing from Fields.
+		for name := range val.Type.Members {
+			if _, exists := result[name]; !exists {
+				result[name] = nil
+			}
 		}
 		return result
 	default:

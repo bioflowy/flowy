@@ -147,8 +147,8 @@ func TestCommandDedentEdgeCases(t *testing.T) {
 
 	t.Run("valueToString: FloatValue", func(t *testing.T) {
 		got := valueToString(values.FloatValue{Type: types.FloatType{}, Value: 3.14}, nil)
-		if got != "3.14" {
-			t.Errorf("got %q, want %q", got, "3.14")
+		if got != "3.140000" {
+			t.Errorf("got %q, want %q", got, "3.140000")
 		}
 	})
 
