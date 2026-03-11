@@ -865,6 +865,22 @@ func (p *Parser) parseWorkflow() (*ast.Workflow, error) {
 				return nil, err
 			}
 
+		case lexer.TokHints:
+			p.advance()
+			_, err = p.expect(lexer.TokLBrace)
+			if err != nil {
+				return nil, err
+			}
+			vals, err := p.parseMetaBody()
+			if err != nil {
+				return nil, err
+			}
+			wf.Hints = vals
+			_, err = p.expect(lexer.TokRBrace)
+			if err != nil {
+				return nil, err
+			}
+
 		default:
 			node, err := p.parseWorkflowBodyElement()
 			if err != nil {

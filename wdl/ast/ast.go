@@ -88,6 +88,7 @@ type Workflow struct {
 	Outputs   []*Decl
 	Meta      map[string]any
 	ParamMeta map[string]any
+	Hints     map[string]any
 }
 
 // Decl represents a WDL declaration (typed variable binding).
