@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Phase 10 context gathered
-last_updated: "2026-03-11T23:12:05.659Z"
+stopped_at: Completed 10-server-binary-dag-dispatch/10-01-PLAN.md
+last_updated: "2026-03-11T23:38:14.424Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 0
 ---
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 09-api-contract-persistence-foundation P01 | 2 | 2 tasks | 8 files |
 | Phase 09-api-contract-persistence-foundation P02 | 7 | 2 tasks | 6 files |
+| Phase 10-server-binary-dag-dispatch P01 | 4 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 09-02]: ClaimTask uses RETURNING with all columns in single UPDATE — avoids deadlock from opening reader while writer rows cursor is still open under single-connection writer pool
 - [Phase 09-02]: OpenMemory() uses file::memory:?cache=shared DSN so writer and reader see the same in-memory database
 - [Phase 09-02]: FindStaleTasks uses string modifier ('-N seconds') for SQLite datetime() — not integer
+- [Phase 10-server-binary-dag-dispatch]: UpdateHeartbeatByDaemon uses single UPDATE WHERE daemon_id=? AND state IN CLAIMED/RUNNING — one call per heartbeat interval regardless of task count
+- [Phase 10-server-binary-dag-dispatch]: RunWorkflowWithDispatch injects TaskDispatchFn into scheduler.taskRunner; nil falls back to package-level runTaskFn for backward compat
+- [Phase 10-server-binary-dag-dispatch]: TaskDir format: {baseDir}/runs/{runID}/tasks/{taskName}_{shardIndex}
 
 ### Pending Todos
 
@@ -79,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T23:12:05.655Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-server-binary-dag-dispatch/10-CONTEXT.md
+Last session: 2026-03-11T23:38:14.420Z
+Stopped at: Completed 10-server-binary-dag-dispatch/10-01-PLAN.md
+Resume file: None
