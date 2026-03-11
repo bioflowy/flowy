@@ -341,8 +341,18 @@ func validateGroups(outerScope *Scope, groups []declGroup, structDefs map[string
 				// Only add dependency if the referenced name is a peer declaration
 				// (registered in outerScope.decls directly — not inherited from parent)
 				// AND is an actual declaration node (not a call alias registered as StructType).
+				// Skip if the ident is shadowed by the group's own inner scope
+				// (e.g. a scatter variable), which takes precedence.
 				if _, inScope := outerScope.decls[ident]; inScope {
 					if _, isDecl := groupByName[ident]; isDecl {
+						// If the group's scope is different from outerScope and
+						// defines this ident directly (e.g. scatter variable),
+						// the ident refers to the inner binding, not the peer decl.
+						if g.scope != outerScope {
+							if _, inInner := g.scope.decls[ident]; inInner {
+								continue
+							}
+						}
 						deps = append(deps, ident)
 					}
 				}

@@ -104,6 +104,7 @@ func (s *scheduler) executeBody(ctx context.Context, body []ast.WorkflowNode, en
 				return nil, fmt.Errorf("decl %q: %w", n.Name, err)
 			}
 			env.Define(n.Name, v)
+			result[n.Name] = v
 
 		case *ast.Scatter:
 			// Scatter within a body (nested scatter or scatter inside conditional).
