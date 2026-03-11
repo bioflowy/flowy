@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Phase 9 context gathered
-last_updated: "2026-03-11T13:32:19.591Z"
+stopped_at: "Completed 09-01: Config + API DTO + Run Directory Helpers"
+last_updated: "2026-03-11T13:53:51.900Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | — | — | — | — |
 
 *Updated after each plan completion*
+| Phase 09-api-contract-persistence-foundation P01 | 2 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -54,11 +55,14 @@ Progress: [░░░░░░░░░░] 0%
 - Separate binaries: flowy (client), flowy-server, flowy-daemon
 - Daemon polls server for tasks (not server-push); long-poll (30s timeout) preferred over interval polling
 - Shared filesystem (NFS) first, S3 deferred to v2+
-- `flowy run` maintains synchronous behavior for spectool compatibility; local fallback if no server configured
+- `flowy run` maintains synchronous behavior for spectool compatibility; server is required (no local fallback)
 - SQLite with WAL mode + `modernc.org/sqlite` (CGO-free); chi v5 for routing; goose for migrations
 - Atomic task claiming via single `UPDATE WHERE state='PENDING'` — SELECT+UPDATE is a TOCTOU race
 - `runTaskFn` injection point in `wdl/workflow/scheduler.go` is the designed extension seam for distributed dispatch
 - Tasks table must include `last_heartbeat_at` and `shard_index` columns from Phase 9 — cannot retrofit later
+- [Phase 09-01]: DefaultDSN() returns DBDSN unchanged if explicitly set, otherwise constructs SQLite WAL DSN pointing to {base_dir}/flowy.db
+- [Phase 09-01]: internal/api is a strict leaf package — only stdlib imports allowed, verified by go vet
+- [Phase 09-01]: CreateRunDirs uses os.MkdirAll (not os.Mkdir) to ensure idempotency
 
 ### Pending Todos
 
@@ -71,6 +75,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:32:19.586Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-api-contract-persistence-foundation/09-CONTEXT.md
+Last session: 2026-03-11T13:53:51.896Z
+Stopped at: Completed 09-01: Config + API DTO + Run Directory Helpers
+Resume file: None

@@ -48,7 +48,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   3. The SQLite database opens in WAL mode, migrations run on startup without error, and the runs + tasks tables exist with the correct schema including `last_heartbeat_at` and `shard_index` columns
   4. A stale task (no heartbeat update within configurable timeout) can be detected by querying the tasks table — the detection query returns the expected stale rows in an integration test
   5. All shared HTTP DTO types (workflow submission request, status response, outputs response) are defined in `internal/api` and compile without import cycles
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 09-01-PLAN.md — Config package, API DTO types, and filesystem layout helpers
 - [ ] 09-02-PLAN.md — Store interface and SQLite implementation with migrations
@@ -78,14 +78,14 @@ Plans:
 **Plans**: TBD
 
 ### Phase 12: Client CLI + Spectool Compatibility
-**Goal**: The `flowy` binary provides submit/status/outputs commands for distributed workflows, and `flowy run` works synchronously in both distributed mode (server configured) and local fallback mode (no server)
+**Goal**: The `flowy` binary provides submit/status/outputs commands for distributed workflows, and `flowy run` works synchronously (submit → poll → print outputs) requiring a running server
 **Depends on**: Phase 11
 **Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06
 **Success Criteria** (what must be TRUE):
   1. `flowy submit <wdl> -i <inputs.json>` copies local input files to the shared filesystem, submits to the server, and prints the run ID to stdout
   2. `flowy status <run-id>` prints the current workflow state and `flowy outputs <run-id>` prints output key-value pairs for a completed run
   3. `flowy run <wdl> -i <inputs.json>` completes synchronously — submits the workflow, polls until a terminal state, prints outputs on success or an error with task name and exit code on failure, and exits with the correct exit code
-  4. `flowy run` without a server configured falls back to local in-process execution, preserving v1.0 behavior and keeping spectool conformance tests passing
+  4. `flowy run` without a reachable server exits with a clear error message (server is required for execution; no local fallback)
   5. The `flowy` client binary ships under `cmd/flowy/` and all three binaries (`flowy`, `flowy-server`, `flowy-daemon`) build from a single `go build ./...`
 **Plans**: TBD
 
@@ -101,7 +101,7 @@ Plans:
 | 6. Workflow Execution (DAG Scheduler) | v1.0 | 3/3 | Complete | 2026-03-10 |
 | 7. CLI and Integration | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
-| 9. API Contract + Persistence Foundation | v1.1 | 0/2 | Not started | - |
+| 9. API Contract + Persistence Foundation | 1/2 | In Progress|  | - |
 | 10. Server Binary + DAG Dispatch | v1.1 | 0/? | Not started | - |
 | 11. Daemon Binary + Task Execution | v1.1 | 0/? | Not started | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |

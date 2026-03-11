@@ -33,16 +33,16 @@ Requirements for distributed server/daemon/client architecture. Each maps to roa
 - [ ] **CLI-01**: User can submit a workflow with `flowy submit <wdl> -i <inputs>`
 - [ ] **CLI-02**: User can check run status with `flowy status <run-id>`
 - [ ] **CLI-03**: User can retrieve outputs with `flowy outputs <run-id>`
-- [ ] **CLI-04**: `flowy run` works synchronously (submit → poll → print outputs) for spectool compatibility
+- [ ] **CLI-04**: `flowy run` works synchronously (submit → poll → print outputs) requiring a running server; no local fallback
 - [ ] **CLI-05**: Client copies local input files to shared filesystem before submitting
 - [ ] **CLI-06**: Client binary ships as `flowy` (`cmd/flowy/`)
 
 ### Storage
 
-- [ ] **STR-01**: Config file (YAML) specifies shared filesystem base directory
-- [ ] **STR-02**: Config file has sections for server, daemon, and client settings
-- [ ] **STR-03**: Runs are organized under `{base_dir}/runs/{run_id}/` with inputs/ and outputs/ subdirectories
-- [ ] **STR-04**: All three binaries read the same config file format
+- [x] **STR-01**: Config file (YAML) specifies shared filesystem base directory
+- [x] **STR-02**: Config file has sections for server, daemon, and client settings
+- [x] **STR-03**: Runs are organized under `{base_dir}/runs/{run_id}/` with inputs/ and outputs/ subdirectories
+- [x] **STR-04**: All three binaries read the same config file format
 
 ## Future Requirements
 
@@ -101,10 +101,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-04 | Phase 12 | Pending |
 | CLI-05 | Phase 12 | Pending |
 | CLI-06 | Phase 12 | Pending |
-| STR-01 | Phase 9 | Pending |
-| STR-02 | Phase 9 | Pending |
-| STR-03 | Phase 9 | Pending |
-| STR-04 | Phase 9 | Pending |
+| STR-01 | Phase 9 | Complete |
+| STR-02 | Phase 9 | Complete |
+| STR-03 | Phase 9 | Complete |
+| STR-04 | Phase 9 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 25 total
