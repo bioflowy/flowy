@@ -1198,6 +1198,7 @@ func (p *Parser) parseMetaBody() (map[string]any, error) {
 		if !isIdentLike(keyTok.Type) {
 			return nil, p.errorf(keyTok.Pos, "expected identifier in meta block, got %q", keyTok.Val)
 		}
+		key := p.parseMetaDottedKey(keyTok.Val)
 		_, err := p.expect(lexer.TokColon)
 		if err != nil {
 			return nil, err
@@ -1206,7 +1207,7 @@ func (p *Parser) parseMetaBody() (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		result[keyTok.Val] = val
+		result[key] = val
 
 		// consume optional comma
 		if p.peek().Type == lexer.TokComma {
@@ -1215,6 +1216,66 @@ func (p *Parser) parseMetaBody() (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+// parseMetaDottedKey extends a key with dot-separated segments (e.g. "person.name").
+// Used in hints blocks where input/output hints use dotted paths.
+func (p *Parser) parseMetaDottedKey(first string) string {
+	key := first
+	for p.peek().Type == lexer.TokDot {
+		p.advance() // consume '.'
+		seg := p.advance()
+		key += "." + seg.Val
+	}
+	return key
+}
+
+// parseMetaNestedObject parses a brace-enclosed meta object { key: value, ... }.
+// Expects the opening '{' to be the current token (will be consumed).
+// Supports dotted keys (e.g. "person.name") for hints blocks.
+func (p *Parser) parseMetaNestedObject() (map[string]any, error) {
+	_, err := p.expect(lexer.TokLBrace)
+	if err != nil {
+		return nil, err
+	}
+	nested := make(map[string]any)
+	for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
+		keyTok := p.advance()
+		if !isIdentLike(keyTok.Type) && keyTok.Type != lexer.TokStringOpen {
+			return nil, p.errorf(keyTok.Pos, "expected key in meta object, got %q", keyTok.Val)
+		}
+		var key string
+		if keyTok.Type == lexer.TokStringOpen {
+			var sb strings.Builder
+			for p.peek().Type == lexer.TokCommandContent {
+				sb.WriteString(p.advance().Val)
+			}
+			_, err := p.expect(lexer.TokStringClose)
+			if err != nil {
+				return nil, err
+			}
+			key = sb.String()
+		} else {
+			key = p.parseMetaDottedKey(keyTok.Val)
+		}
+		_, err := p.expect(lexer.TokColon)
+		if err != nil {
+			return nil, err
+		}
+		val, err := p.parseMetaValue()
+		if err != nil {
+			return nil, err
+		}
+		nested[key] = val
+		if p.peek().Type == lexer.TokComma {
+			p.advance()
+		}
+	}
+	_, err = p.expect(lexer.TokRBrace)
+	if err != nil {
+		return nil, err
+	}
+	return nested, nil
 }
 
 // parseMetaValue parses a JSON-like meta value (string, number, bool, null, array, object).
@@ -1294,45 +1355,7 @@ func (p *Parser) parseMetaValue() (any, error) {
 		return items, nil
 
 	case lexer.TokLBrace:
-		p.advance()
-		nested := make(map[string]any)
-		for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
-			keyTok := p.advance()
-			if !isIdentLike(keyTok.Type) && keyTok.Type != lexer.TokStringOpen {
-				return nil, p.errorf(keyTok.Pos, "expected key in meta object, got %q", keyTok.Val)
-			}
-			var key string
-			if keyTok.Type == lexer.TokStringOpen {
-				var sb strings.Builder
-				for p.peek().Type == lexer.TokCommandContent {
-					sb.WriteString(p.advance().Val)
-				}
-				_, err := p.expect(lexer.TokStringClose)
-				if err != nil {
-					return nil, err
-				}
-				key = sb.String()
-			} else {
-				key = keyTok.Val
-			}
-			_, err := p.expect(lexer.TokColon)
-			if err != nil {
-				return nil, err
-			}
-			val, err := p.parseMetaValue()
-			if err != nil {
-				return nil, err
-			}
-			nested[key] = val
-			if p.peek().Type == lexer.TokComma {
-				p.advance()
-			}
-		}
-		_, err := p.expect(lexer.TokRBrace)
-		if err != nil {
-			return nil, err
-		}
-		return nested, nil
+		return p.parseMetaNestedObject()
 
 	default:
 		// Allow keyword/identifier tokens as meta values (e.g. "inputs: input { ... }" in hints)
@@ -1340,45 +1363,7 @@ func (p *Parser) parseMetaValue() (any, error) {
 			p.advance()
 			// If followed by '{', treat as a tagged nested object
 			if p.peek().Type == lexer.TokLBrace {
-				p.advance()
-				nested := make(map[string]any)
-				for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
-					keyTok := p.advance()
-					if !isIdentLike(keyTok.Type) && keyTok.Type != lexer.TokStringOpen {
-						return nil, p.errorf(keyTok.Pos, "expected key in meta object, got %q", keyTok.Val)
-					}
-					var key string
-					if keyTok.Type == lexer.TokStringOpen {
-						var sb strings.Builder
-						for p.peek().Type == lexer.TokCommandContent {
-							sb.WriteString(p.advance().Val)
-						}
-						_, err := p.expect(lexer.TokStringClose)
-						if err != nil {
-							return nil, err
-						}
-						key = sb.String()
-					} else {
-						key = keyTok.Val
-					}
-					_, err := p.expect(lexer.TokColon)
-					if err != nil {
-						return nil, err
-					}
-					val, err := p.parseMetaValue()
-					if err != nil {
-						return nil, err
-					}
-					nested[key] = val
-					if p.peek().Type == lexer.TokComma {
-						p.advance()
-					}
-				}
-				_, err := p.expect(lexer.TokRBrace)
-				if err != nil {
-					return nil, err
-				}
-				return nested, nil
+				return p.parseMetaNestedObject()
 			}
 			// Otherwise treat keyword as string value
 			return tok.Val, nil
