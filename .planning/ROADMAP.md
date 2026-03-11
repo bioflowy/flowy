@@ -32,7 +32,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Milestone Goal:** Split monolithic CLI into server/daemon/client architecture so workflows execute across multiple hosts via REST API, SQLite task queue, and shared filesystem.
 
 - [x] **Phase 9: API Contract + Persistence Foundation** - Shared DTO types, YAML config, and SQLite schema that all three binaries depend on (completed 2026-03-11)
-- [ ] **Phase 10: Server Binary + DAG Dispatch** - `flowy-server` with REST API, workflow orchestration, and task queue
+- [x] **Phase 10: Server Binary + DAG Dispatch** - `flowy-server` with REST API, workflow orchestration, and task queue (completed 2026-03-11)
 - [ ] **Phase 11: Daemon Binary + Task Execution** - `flowy-daemon` polling worker with Docker execution and heartbeat
 - [ ] **Phase 12: Client CLI + Spectool Compatibility** - Extended `flowy` with submit/status/outputs commands and synchronous `run` mode
 
@@ -63,7 +63,7 @@ Plans:
   3. `GET /workflows/{id}/outputs` returns output key-value pairs after a workflow reaches COMPLETED state
   4. `POST /workflows/{id}/abort` transitions a running workflow to ABORTED and cancels its in-progress tasks
   5. `GET /health` returns HTTP 200 and the server correctly ships as the `flowy-server` binary under `cmd/flowy-server/`
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 10-01-PLAN.md — Store extensions (GetTaskByID, UpdateHeartbeatByDaemon), per-task directory helpers, RunWorkflowWithDispatch, api comment fix
 - [ ] 10-02-PLAN.md — Server package with all REST handlers, DAG dispatch logic, stale detection, daemon-facing endpoints, and flowy-server binary
@@ -105,6 +105,6 @@ Plans:
 | 7. CLI and Integration | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
-| 10. Server Binary + DAG Dispatch | 1/2 | In Progress|  | - |
+| 10. Server Binary + DAG Dispatch | 2/2 | Complete   | 2026-03-11 | - |
 | 11. Daemon Binary + Task Execution | v1.1 | 0/? | Not started | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |

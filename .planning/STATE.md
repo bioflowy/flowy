@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Completed 10-server-binary-dag-dispatch/10-01-PLAN.md
-last_updated: "2026-03-11T23:38:14.424Z"
+stopped_at: Completed 10-server-binary-dag-dispatch/10-02-PLAN.md
+last_updated: "2026-03-11T23:50:00.147Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 09-api-contract-persistence-foundation P01 | 2 | 2 tasks | 8 files |
 | Phase 09-api-contract-persistence-foundation P02 | 7 | 2 tasks | 6 files |
 | Phase 10-server-binary-dag-dispatch P01 | 4 | 2 tasks | 7 files |
+| Phase 10-server-binary-dag-dispatch P02 | 8 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 10-server-binary-dag-dispatch]: UpdateHeartbeatByDaemon uses single UPDATE WHERE daemon_id=? AND state IN CLAIMED/RUNNING — one call per heartbeat interval regardless of task count
 - [Phase 10-server-binary-dag-dispatch]: RunWorkflowWithDispatch injects TaskDispatchFn into scheduler.taskRunner; nil falls back to package-level runTaskFn for backward compat
 - [Phase 10-server-binary-dag-dispatch]: TaskDir format: {baseDir}/runs/{runID}/tasks/{taskName}_{shardIndex}
+- [Phase 10-server-binary-dag-dispatch]: handleSubmit uses context.WithCancel(context.Background()) for run goroutines — ensures goroutine outlives HTTP request
+- [Phase 10-server-binary-dag-dispatch]: SetStaleInterval() exported on Server for test-controllable ticker interval (default 30s, tests use 500ms)
+- [Phase 10-server-binary-dag-dispatch]: Task outputs.json uses plain output names without task prefix — scheduler wraps in StructValue keyed by call alias
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T23:38:14.420Z
-Stopped at: Completed 10-server-binary-dag-dispatch/10-01-PLAN.md
+Last session: 2026-03-11T23:50:00.143Z
+Stopped at: Completed 10-server-binary-dag-dispatch/10-02-PLAN.md
 Resume file: None
