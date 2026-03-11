@@ -40,25 +40,31 @@ func init() {
 }
 
 // fileArg extracts the host filesystem path from args[0], which must be FileValue or StringValue.
-func fileArg(args []values.Value) (string, error) {
+// If workDir is non-empty and the path is relative, it is resolved against workDir.
+func fileArg(args []values.Value, workDir ...string) (string, error) {
 	if len(args) < 1 {
 		return "", fmt.Errorf("expected at least 1 argument")
 	}
+	var path string
 	switch v := args[0].(type) {
 	case values.FileValue:
-		return v.Value, nil
+		path = v.Value
 	case values.StringValue:
-		return v.Value, nil
+		path = v.Value
 	default:
 		return "", fmt.Errorf("expected File argument, got %T", args[0])
 	}
+	if len(workDir) > 0 && workDir[0] != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(workDir[0], path)
+	}
+	return path, nil
 }
 
 // stdReadLines implements read_lines(File) -> Array[String].
 // Reads the file, trims a trailing newline, then splits on "\n".
 // Each resulting line becomes a StringValue.
 func stdReadLines(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_lines: " + err.Error()}
 	}
@@ -86,7 +92,7 @@ func stdReadLines(args []values.Value, ctx ExecContext) (values.Value, error) {
 // stdReadTsv implements read_tsv(File) -> Array[Array[String]].
 // Each non-empty line is split by "\t" into fields; each row is an ArrayValue of StringValues.
 func stdReadTsv(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_tsv: " + err.Error()}
 	}
@@ -122,7 +128,7 @@ func stdReadTsv(args []values.Value, ctx ExecContext) (values.Value, error) {
 // stdReadMap implements read_map(File) -> Map[String, String].
 // Each line contains "key\tvalue"; builds MapValue with StringValue keys and values.
 func stdReadMap(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_map: " + err.Error()}
 	}
@@ -157,7 +163,7 @@ func stdReadMap(args []values.Value, ctx ExecContext) (values.Value, error) {
 // stdReadJson implements read_json(File) -> Value.
 // Unmarshals the JSON file into the appropriate WDL value type.
 func stdReadJson(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_json: " + err.Error()}
 	}
@@ -218,7 +224,7 @@ func jsonToValue(v interface{}) values.Value {
 
 // stdReadBoolean implements read_boolean(File) -> Boolean.
 func stdReadBoolean(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_boolean: " + err.Error()}
 	}
@@ -235,7 +241,7 @@ func stdReadBoolean(args []values.Value, ctx ExecContext) (values.Value, error) 
 
 // stdReadInt implements read_int(File) -> Int.
 func stdReadInt(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_int: " + err.Error()}
 	}
@@ -252,7 +258,7 @@ func stdReadInt(args []values.Value, ctx ExecContext) (values.Value, error) {
 
 // stdReadFloat implements read_float(File) -> Float.
 func stdReadFloat(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_float: " + err.Error()}
 	}
@@ -270,7 +276,7 @@ func stdReadFloat(args []values.Value, ctx ExecContext) (values.Value, error) {
 // stdReadString implements read_string(File) -> String.
 // Returns the file content with surrounding whitespace (including trailing newline) stripped.
 func stdReadString(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "read_string: " + err.Error()}
 	}
@@ -516,7 +522,7 @@ func stdGlob(args []values.Value, ctx ExecContext) (values.Value, error) {
 // If a second argument (suffix string) is provided, it is stripped from the result.
 // Accepts FileValue or StringValue for the first argument.
 func stdBasename(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "basename: " + err.Error()}
 	}
@@ -539,7 +545,7 @@ func stdBasename(args []values.Value, ctx ExecContext) (values.Value, error) {
 // Returns the directory component of the file path.
 // Accepts FileValue or StringValue input.
 func stdDirname(args []values.Value, ctx ExecContext) (values.Value, error) {
-	path, err := fileArg(args)
+	path, err := fileArg(args, ctx.WorkDir)
 	if err != nil {
 		return nil, &EvalError{Message: "dirname: " + err.Error()}
 	}
