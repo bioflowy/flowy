@@ -106,7 +106,11 @@ func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}) (*e
 	for _, decl := range wf.Inputs {
 		var val values.Value
 
-		raw, found := jsonInputs[decl.Name]
+		// Try fully-qualified key first (e.g. "hello.name"), then unqualified (e.g. "name").
+		raw, found := jsonInputs[wf.Name+"."+decl.Name]
+		if !found {
+			raw, found = jsonInputs[decl.Name]
+		}
 		if found {
 			val = jsonToValueUntyped(raw)
 		} else if decl.Expr != nil {

@@ -129,6 +129,130 @@ func TestValueToJSON_Nested(t *testing.T) {
 	}
 }
 
+// makeStringWorkflow builds a minimal ast.Workflow with a single String input declaration.
+// The returned *ast.Workflow has Name set to wfName and one Decl with Name=inputName.
+// If defaultVal is non-empty, the Decl's Expr is set to a StringExpr literal.
+// If optional is true, the Decl's Type is set to StringType{Optional:true}.
+func makeStringWorkflow(wfName, inputName, defaultVal string, optional bool) *ast.Workflow {
+	decl := &ast.Decl{
+		Type: types.StringType{Optional: optional},
+		Name: inputName,
+	}
+	if defaultVal != "" {
+		decl.Expr = &ast.StringExpr{
+			Parts: []ast.StringPart{&ast.RawStringPart{Val: defaultVal}},
+		}
+	}
+	return &ast.Workflow{
+		Name:   wfName,
+		Inputs: []*ast.Decl{decl},
+	}
+}
+
+// TestBindWorkflowInputs_FullyQualified verifies that a fully-qualified JSON key
+// (e.g. "hello.name") is resolved correctly for a workflow named "hello" with
+// input "name".
+func TestBindWorkflowInputs_FullyQualified(t *testing.T) {
+	wf := makeStringWorkflow("hello", "name", "", false)
+	jsonInputs := map[string]interface{}{
+		"hello.name": "world",
+	}
+
+	env, err := bindWorkflowInputs(wf, jsonInputs)
+	if err != nil {
+		t.Fatalf("bindWorkflowInputs returned error: %v", err)
+	}
+
+	got, ok := env.Lookup("name")
+	if !ok {
+		t.Fatal("expected 'name' to be bound in env, but not found")
+	}
+	sv, ok := got.(values.StringValue)
+	if !ok {
+		t.Fatalf("expected StringValue, got %T", got)
+	}
+	if sv.Value != "world" {
+		t.Errorf("expected value \"world\", got %q", sv.Value)
+	}
+}
+
+// TestBindWorkflowInputs_UnqualifiedFallback verifies that an unqualified JSON key
+// (e.g. "name") is accepted as a fallback when no fully-qualified key exists.
+func TestBindWorkflowInputs_UnqualifiedFallback(t *testing.T) {
+	wf := makeStringWorkflow("hello", "name", "", false)
+	jsonInputs := map[string]interface{}{
+		"name": "fallback",
+	}
+
+	env, err := bindWorkflowInputs(wf, jsonInputs)
+	if err != nil {
+		t.Fatalf("bindWorkflowInputs returned error: %v", err)
+	}
+
+	got, ok := env.Lookup("name")
+	if !ok {
+		t.Fatal("expected 'name' to be bound in env, but not found")
+	}
+	sv, ok := got.(values.StringValue)
+	if !ok {
+		t.Fatalf("expected StringValue, got %T", got)
+	}
+	if sv.Value != "fallback" {
+		t.Errorf("expected value \"fallback\", got %q", sv.Value)
+	}
+}
+
+// TestBindWorkflowInputs_FullyQualifiedTakesPrecedence verifies that when both
+// "hello.name" and "name" are present in the JSON map, the fully-qualified value wins.
+func TestBindWorkflowInputs_FullyQualifiedTakesPrecedence(t *testing.T) {
+	wf := makeStringWorkflow("hello", "name", "", false)
+	jsonInputs := map[string]interface{}{
+		"hello.name": "qualified",
+		"name":       "unqualified",
+	}
+
+	env, err := bindWorkflowInputs(wf, jsonInputs)
+	if err != nil {
+		t.Fatalf("bindWorkflowInputs returned error: %v", err)
+	}
+
+	got, ok := env.Lookup("name")
+	if !ok {
+		t.Fatal("expected 'name' to be bound in env, but not found")
+	}
+	sv, ok := got.(values.StringValue)
+	if !ok {
+		t.Fatalf("expected StringValue, got %T", got)
+	}
+	if sv.Value != "qualified" {
+		t.Errorf("expected \"qualified\" to take precedence, got %q", sv.Value)
+	}
+}
+
+// TestBindWorkflowInputs_DefaultUsedWhenMissing verifies that when no JSON key
+// is provided for an input with a default expression, the default value is used.
+func TestBindWorkflowInputs_DefaultUsedWhenMissing(t *testing.T) {
+	wf := makeStringWorkflow("hello", "greeting", "default_greeting", false)
+	jsonInputs := map[string]interface{}{} // no key for "greeting"
+
+	env, err := bindWorkflowInputs(wf, jsonInputs)
+	if err != nil {
+		t.Fatalf("bindWorkflowInputs returned error: %v", err)
+	}
+
+	got, ok := env.Lookup("greeting")
+	if !ok {
+		t.Fatal("expected 'greeting' to be bound in env, but not found")
+	}
+	sv, ok := got.(values.StringValue)
+	if !ok {
+		t.Fatalf("expected StringValue, got %T", got)
+	}
+	if sv.Value != "default_greeting" {
+		t.Errorf("expected value \"default_greeting\", got %q", sv.Value)
+	}
+}
+
 // TestEvalCallInputs tests that evalCallInputs correctly evaluates input expressions.
 func TestEvalCallInputs(t *testing.T) {
 	// Build an env with "x" = IntValue(99)
