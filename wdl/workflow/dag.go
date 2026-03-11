@@ -42,13 +42,36 @@ func buildDAG(body []ast.WorkflowNode) (map[string]*dagNode, error) {
 			id := conditionalID(n, if_n)
 			nodes[id] = &dagNode{id: id, node: n}
 		case *ast.Decl:
-			// skip — evaluated synchronously
+			id := "decl_" + n.Name
+			nodes[id] = &dagNode{id: id, node: n}
 		}
 	}
 
-	knownCalls := make(map[string]bool, len(nodes))
+	// knownNodes includes call aliases, scatter/if IDs, and decl_ prefixed names.
+	knownNodes := make(map[string]bool, len(nodes))
 	for id := range nodes {
-		knownCalls[id] = true
+		knownNodes[id] = true
+	}
+
+	// varToNodeID maps variable names produced by any DAG node to that node's ID.
+	// This includes: call aliases, decl variable names, and names produced by scatter/conditional bodies.
+	varToNodeID := make(map[string]string)
+	scatter_n2, if_n2 := 0, 0
+	for _, item := range body {
+		switch n := item.(type) {
+		case *ast.Call:
+			varToNodeID[callID(n)] = callID(n)
+		case *ast.Decl:
+			varToNodeID[n.Name] = "decl_" + n.Name
+		case *ast.Scatter:
+			scatter_n2++
+			id := scatterID(n, scatter_n2)
+			collectBodyOutputNames(n.Body, id, varToNodeID)
+		case *ast.Conditional:
+			if_n2++
+			id := conditionalID(n, if_n2)
+			collectBodyOutputNames(n.Body, id, varToNodeID)
+		}
 	}
 
 	// Second pass: build edges.
@@ -61,11 +84,11 @@ func buildDAG(body []ast.WorkflowNode) (map[string]*dagNode, error) {
 			node := nodes[id]
 
 			// Data-flow edges from input expressions.
-			deps := collectCallDeps(n.Inputs, knownCalls)
+			deps := collectExprDeps2(n.Inputs, knownNodes, varToNodeID)
 
 			// Explicit after edges.
 			for _, afterID := range n.After {
-				if knownCalls[afterID] {
+				if knownNodes[afterID] {
 					deps = append(deps, afterID)
 				}
 			}
@@ -85,8 +108,8 @@ func buildDAG(body []ast.WorkflowNode) (map[string]*dagNode, error) {
 			node := nodes[id]
 
 			// Scatter depends on calls referenced in its Expr and inner call inputs.
-			deps := collectExprDeps(n.Expr, knownCalls)
-			deps = append(deps, collectBodyDeps(n.Body, knownCalls)...)
+			deps := collectExprDepsNode(n.Expr, knownNodes, varToNodeID)
+			deps = append(deps, collectBodyDeps2(n.Body, knownNodes, varToNodeID)...)
 			deps = uniqueStrings(deps)
 			node.deps = deps
 			for _, depID := range deps {
@@ -101,8 +124,22 @@ func buildDAG(body []ast.WorkflowNode) (map[string]*dagNode, error) {
 			node := nodes[id]
 
 			// Conditional depends on calls referenced in its Expr and inner call inputs.
-			deps := collectExprDeps(n.Expr, knownCalls)
-			deps = append(deps, collectBodyDeps(n.Body, knownCalls)...)
+			deps := collectExprDepsNode(n.Expr, knownNodes, varToNodeID)
+			deps = append(deps, collectBodyDeps2(n.Body, knownNodes, varToNodeID)...)
+			deps = uniqueStrings(deps)
+			node.deps = deps
+			for _, depID := range deps {
+				depNode := nodes[depID]
+				depNode.successors = append(depNode.successors, id)
+				node.indegree++
+			}
+
+		case *ast.Decl:
+			id := "decl_" + n.Name
+			node := nodes[id]
+
+			// Decl depends on calls/decls referenced in its expression.
+			deps := collectExprDepsNode(n.Expr, knownNodes, varToNodeID)
 			deps = uniqueStrings(deps)
 			node.deps = deps
 			for _, depID := range deps {
@@ -168,92 +205,117 @@ func (e *CycleError) Error() string {
 	return "workflow dependency graph contains a cycle"
 }
 
-// collectCallDeps walks call input expressions looking for references to known call IDs.
-// Recognizes:
-//   - *ast.IdentExpr whose Name matches a known call id
-//   - *ast.GetExpr whose Object is an *ast.IdentExpr matching a known call id
-func collectCallDeps(inputs map[string]ast.Expr, knownCalls map[string]bool) []string {
+// collectExprDeps2 walks call input expressions looking for references to known DAG nodes.
+func collectExprDeps2(inputs map[string]ast.Expr, knownNodes map[string]bool, declVarToID map[string]string) []string {
 	var deps []string
 	for _, expr := range inputs {
-		deps = append(deps, collectExprDeps(expr, knownCalls)...)
+		deps = append(deps, collectExprDepsNode(expr, knownNodes, declVarToID)...)
 	}
 	return deps
 }
 
-// collectExprDeps recursively walks an expression tree looking for references to known call IDs.
-func collectExprDeps(expr ast.Expr, knownCalls map[string]bool) []string {
+// collectExprDepsNode recursively walks an expression tree looking for references
+// to known DAG node IDs (call aliases, scatter/if IDs, or decl variable names).
+func collectExprDepsNode(expr ast.Expr, knownNodes map[string]bool, declVarToID map[string]string) []string {
 	if expr == nil {
 		return nil
 	}
 	var deps []string
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
-		if knownCalls[e.Name] {
+		if knownNodes[e.Name] {
 			deps = append(deps, e.Name)
+		} else if id, ok := declVarToID[e.Name]; ok {
+			deps = append(deps, id)
 		}
 	case *ast.GetExpr:
 		// Most common: call_name.output_name
-		if obj, ok := e.Object.(*ast.IdentExpr); ok && knownCalls[obj.Name] {
-			deps = append(deps, obj.Name)
+		if obj, ok := e.Object.(*ast.IdentExpr); ok {
+			if knownNodes[obj.Name] {
+				deps = append(deps, obj.Name)
+			} else if id, ok := declVarToID[obj.Name]; ok {
+				deps = append(deps, id)
+			}
 		} else {
 			// Recurse in case it is a deeper expression.
-			deps = append(deps, collectExprDeps(e.Object, knownCalls)...)
+			deps = append(deps, collectExprDepsNode(e.Object, knownNodes, declVarToID)...)
 		}
 	case *ast.BinaryExpr:
-		deps = append(deps, collectExprDeps(e.Left, knownCalls)...)
-		deps = append(deps, collectExprDeps(e.Right, knownCalls)...)
+		deps = append(deps, collectExprDepsNode(e.Left, knownNodes, declVarToID)...)
+		deps = append(deps, collectExprDepsNode(e.Right, knownNodes, declVarToID)...)
 	case *ast.UnaryExpr:
-		deps = append(deps, collectExprDeps(e.Operand, knownCalls)...)
+		deps = append(deps, collectExprDepsNode(e.Operand, knownNodes, declVarToID)...)
 	case *ast.IndexExpr:
-		deps = append(deps, collectExprDeps(e.Collection, knownCalls)...)
-		deps = append(deps, collectExprDeps(e.Index, knownCalls)...)
+		deps = append(deps, collectExprDepsNode(e.Collection, knownNodes, declVarToID)...)
+		deps = append(deps, collectExprDepsNode(e.Index, knownNodes, declVarToID)...)
 	case *ast.IfThenElse:
-		deps = append(deps, collectExprDeps(e.Cond, knownCalls)...)
-		deps = append(deps, collectExprDeps(e.Then, knownCalls)...)
-		deps = append(deps, collectExprDeps(e.Else, knownCalls)...)
+		deps = append(deps, collectExprDepsNode(e.Cond, knownNodes, declVarToID)...)
+		deps = append(deps, collectExprDepsNode(e.Then, knownNodes, declVarToID)...)
+		deps = append(deps, collectExprDepsNode(e.Else, knownNodes, declVarToID)...)
 	case *ast.ApplyExpr:
 		for _, arg := range e.Args {
-			deps = append(deps, collectExprDeps(arg, knownCalls)...)
+			deps = append(deps, collectExprDepsNode(arg, knownNodes, declVarToID)...)
 		}
 	case *ast.ArrayExpr:
 		for _, item := range e.Items {
-			deps = append(deps, collectExprDeps(item, knownCalls)...)
+			deps = append(deps, collectExprDepsNode(item, knownNodes, declVarToID)...)
 		}
 	case *ast.MapExpr:
 		for _, item := range e.Items {
-			deps = append(deps, collectExprDeps(item.Key, knownCalls)...)
-			deps = append(deps, collectExprDeps(item.Value, knownCalls)...)
+			deps = append(deps, collectExprDepsNode(item.Key, knownNodes, declVarToID)...)
+			deps = append(deps, collectExprDepsNode(item.Value, knownNodes, declVarToID)...)
 		}
 	case *ast.PairExpr:
-		deps = append(deps, collectExprDeps(e.Left, knownCalls)...)
-		deps = append(deps, collectExprDeps(e.Right, knownCalls)...)
+		deps = append(deps, collectExprDepsNode(e.Left, knownNodes, declVarToID)...)
+		deps = append(deps, collectExprDepsNode(e.Right, knownNodes, declVarToID)...)
 	}
 	return deps
 }
 
-// collectBodyDeps walks a workflow body (nested calls in scatter/conditional) and
+// collectBodyDeps2 walks a workflow body (nested calls in scatter/conditional) and
 // collects deps from their input expressions, but does NOT treat nested calls as
 // DAG nodes themselves — they are owned by their enclosing scatter/conditional.
-func collectBodyDeps(body []ast.WorkflowNode, knownCalls map[string]bool) []string {
+func collectBodyDeps2(body []ast.WorkflowNode, knownNodes map[string]bool, varMap map[string]string) []string {
 	var deps []string
 	for _, item := range body {
 		switch n := item.(type) {
 		case *ast.Call:
-			deps = append(deps, collectCallDeps(n.Inputs, knownCalls)...)
+			deps = append(deps, collectExprDeps2(n.Inputs, knownNodes, varMap)...)
 			for _, after := range n.After {
-				if knownCalls[after] {
+				if knownNodes[after] {
 					deps = append(deps, after)
 				}
 			}
 		case *ast.Scatter:
-			deps = append(deps, collectExprDeps(n.Expr, knownCalls)...)
-			deps = append(deps, collectBodyDeps(n.Body, knownCalls)...)
+			deps = append(deps, collectExprDepsNode(n.Expr, knownNodes, varMap)...)
+			deps = append(deps, collectBodyDeps2(n.Body, knownNodes, varMap)...)
 		case *ast.Conditional:
-			deps = append(deps, collectExprDeps(n.Expr, knownCalls)...)
-			deps = append(deps, collectBodyDeps(n.Body, knownCalls)...)
+			deps = append(deps, collectExprDepsNode(n.Expr, knownNodes, varMap)...)
+			deps = append(deps, collectBodyDeps2(n.Body, knownNodes, varMap)...)
+		case *ast.Decl:
+			if n.Expr != nil {
+				deps = append(deps, collectExprDepsNode(n.Expr, knownNodes, varMap)...)
+			}
 		}
 	}
 	return deps
+}
+
+// collectBodyOutputNames recursively collects all variable names produced by a
+// scatter/conditional body and maps them to the owning DAG node ID.
+func collectBodyOutputNames(body []ast.WorkflowNode, ownerID string, varToNodeID map[string]string) {
+	for _, node := range body {
+		switch n := node.(type) {
+		case *ast.Call:
+			varToNodeID[callID(n)] = ownerID
+		case *ast.Decl:
+			varToNodeID[n.Name] = ownerID
+		case *ast.Scatter:
+			collectBodyOutputNames(n.Body, ownerID, varToNodeID)
+		case *ast.Conditional:
+			collectBodyOutputNames(n.Body, ownerID, varToNodeID)
+		}
+	}
 }
 
 // callID returns the node identifier for a call: alias if set, else last element of Callee.
