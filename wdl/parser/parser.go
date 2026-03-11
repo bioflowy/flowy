@@ -291,7 +291,7 @@ func isNameToken(tt lexer.TokenType) bool {
 		lexer.TokFileType, lexer.TokDirectoryType,
 		lexer.TokArray, lexer.TokMap, lexer.TokPair, lexer.TokObject,
 		// Other keywords usable as variable names in expression context
-		lexer.TokEnv:
+		lexer.TokEnv, lexer.TokIn:
 		return true
 	}
 	return false
@@ -1164,7 +1164,7 @@ func (p *Parser) parseDecl(bound bool) (*ast.Decl, error) {
 		return nil, err
 	}
 
-	nameTok, err := p.expect(lexer.TokIdent)
+	nameTok, err := p.expectName()
 	if err != nil {
 		return nil, err
 	}
