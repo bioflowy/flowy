@@ -187,6 +187,9 @@ type Lexer struct {
 	// braceDepth tracks nested { } inside a placeholder to prevent premature close
 	braceDepth int
 
+	// stringDelimStack tracks the string delimiter for each nested string mode
+	stringDelimStack []byte
+
 	// pending holds tokens ready to be returned by Next()
 	pending []Token
 }
@@ -376,10 +379,11 @@ func lexNormal(l *Lexer) stateFn {
 	l.markStart()
 	b := l.src[l.pos]
 
-	// String literal
-	if b == '"' {
+	// String literal (double or single quoted)
+	if b == '"' || b == '\'' {
+		l.stringDelimStack = append(l.stringDelimStack, b)
 		l.advance()
-		l.emit(TokStringOpen, "\"")
+		l.emit(TokStringOpen, string(b))
 		l.markStart()
 		l.pushMode(modeString)
 		return nil // will be picked up by currentStateFn -> lexString
@@ -715,18 +719,23 @@ func lexCommandHeredoc(l *Lexer) stateFn {
 // Both ~{ and ${ are placeholder delimiters inside strings.
 func lexString(l *Lexer) stateFn {
 	l.markStart()
+	delim := byte('"')
+	if len(l.stringDelimStack) > 0 {
+		delim = l.stringDelimStack[len(l.stringDelimStack)-1]
+	}
 	for l.pos < len(l.src) {
 		b := l.src[l.pos]
 
-		if b == '"' {
+		if b == delim {
 			// End of string
 			if l.pos > l.start {
 				l.emitCurrent(TokCommandContent)
 			}
 			l.markStart()
 			l.advance()
-			l.emit(TokStringClose, "\"")
+			l.emit(TokStringClose, string(delim))
 			l.popMode()
+			l.stringDelimStack = l.stringDelimStack[:len(l.stringDelimStack)-1]
 			return nil
 		} else if b == '~' && l.peek(1) == '{' {
 			if l.pos > l.start {
