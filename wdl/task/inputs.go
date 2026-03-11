@@ -27,7 +27,11 @@ import (
 // paths in the PathMap.
 //
 // Returns: (env with all bindings, env-var strings for env=true inputs, error)
-func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap) (*eval.Env, []string, error) {
+func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap, structDefs ...map[string]*ast.StructDef) (*eval.Env, []string, error) {
+	var sd map[string]*ast.StructDef
+	if len(structDefs) > 0 {
+		sd = structDefs[0]
+	}
 	env := eval.NewEnv(nil)
 	var envVars []string
 
@@ -41,7 +45,7 @@ func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap) 
 		}
 		if found {
 			// Convert JSON value using declaration type for type-aware coercion
-			converted, err := jsonToWDLValue(raw, decl.Type)
+			converted, err := jsonToWDLValue(raw, decl.Type, sd)
 			if err != nil {
 				return nil, nil, fmt.Errorf("input %q: %w", decl.Name, err)
 			}
@@ -85,7 +89,7 @@ func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap) 
 //   - float64 -> IntValue when declType is IntType (always truncates)
 //   - For compound types (Array, Map, Pair): recurse with item/key/value types
 //   - Falls back to untyped conversion for AnyType or unrecognized types
-func jsonToWDLValue(v interface{}, declType types.Type) (values.Value, error) {
+func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef) (values.Value, error) {
 	if v == nil {
 		return values.NullValue{}, nil
 	}
@@ -156,7 +160,7 @@ func jsonToWDLValue(v interface{}, declType types.Type) (values.Value, error) {
 		}
 		items := make([]values.Value, len(arr))
 		for i, elem := range arr {
-			item, err := jsonToWDLValue(elem, dt.ItemType)
+			item, err := jsonToWDLValue(elem, dt.ItemType, structDefs)
 			if err != nil {
 				return nil, fmt.Errorf("array item %d: %w", i, err)
 			}
@@ -171,17 +175,57 @@ func jsonToWDLValue(v interface{}, declType types.Type) (values.Value, error) {
 		}
 		entries := make([]values.MapEntry, 0, len(m))
 		for k, mv := range m {
-			kv, err := jsonToWDLValue(k, dt.KeyType)
+			kv, err := jsonToWDLValue(k, dt.KeyType, structDefs)
 			if err != nil {
 				return nil, fmt.Errorf("map key %q: %w", k, err)
 			}
-			vv, err := jsonToWDLValue(mv, dt.ValType)
+			vv, err := jsonToWDLValue(mv, dt.ValType, structDefs)
 			if err != nil {
 				return nil, fmt.Errorf("map value for key %q: %w", k, err)
 			}
 			entries = append(entries, values.MapEntry{Key: kv, Value: vv})
 		}
 		return values.MapValue{Type: dt, Entries: entries}, nil
+
+	case types.PairType:
+		m, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("expected object for Pair, got %T", v)
+		}
+		left, err := jsonToWDLValue(m["left"], dt.LeftType, structDefs)
+		if err != nil {
+			return nil, fmt.Errorf("pair left: %w", err)
+		}
+		right, err := jsonToWDLValue(m["right"], dt.RightType, structDefs)
+		if err != nil {
+			return nil, fmt.Errorf("pair right: %w", err)
+		}
+		return values.PairValue{Type: dt, Left: left, Right: right}, nil
+
+	case types.StructType:
+		m, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("expected object for Struct %q, got %T", dt.Name, v)
+		}
+		fields := make(map[string]values.Value, len(m))
+		if sd, hasDef := structDefs[dt.Name]; hasDef {
+			for _, member := range sd.Members {
+				if fv, exists := m[member.Name]; exists {
+					val, err := jsonToWDLValue(fv, member.Type, structDefs)
+					if err != nil {
+						return nil, fmt.Errorf("struct %q field %q: %w", dt.Name, member.Name, err)
+					}
+					fields[member.Name] = val
+				} else if member.Type.IsOptional() {
+					fields[member.Name] = values.NullValue{}
+				}
+			}
+		} else {
+			for k, fv := range m {
+				fields[k] = jsonToValueUntyped(fv)
+			}
+		}
+		return values.StructValue{Type: dt, Fields: fields}, nil
 
 	default:
 		// Fall back to untyped conversion (AnyType or unknown type)

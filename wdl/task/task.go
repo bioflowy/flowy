@@ -79,7 +79,7 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 
 	// Step 3: bind inputs — converts JSON values to typed WDL values and
 	// registers all File/Directory paths in the PathMap.
-	env, envVars, err := BindInputs(task, jsonInputs, pm)
+	env, envVars, err := BindInputs(task, jsonInputs, pm, structDefs...)
 	if err != nil {
 		return nil, fmt.Errorf("binding inputs for task %q: %w", task.Name, err)
 	}
