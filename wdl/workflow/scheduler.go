@@ -117,6 +117,7 @@ func (s *scheduler) run(ctx context.Context) error {
 				_ = g.Wait()
 				return fmt.Errorf("decl %q: %w", decl.Name, err)
 			}
+			v = coerceToType(v, decl.Type)
 			s.env.Define(decl.Name, v)
 			s.done[id] = true
 

@@ -300,3 +300,34 @@ func jsonToValueUntyped(v interface{}) values.Value {
 		return values.NullValue{}
 	}
 }
+
+// coerceToType applies WDL implicit coercion rules to convert a value to the
+// target type. Currently handles:
+//   - String → File (wraps string path in FileValue)
+//   - String → Directory (wraps string path in DirectoryValue)
+//   - Int → Float (promotes integer to float)
+func coerceToType(v values.Value, target types.Type) values.Value {
+	switch target.(type) {
+	case types.FileType:
+		if sv, ok := v.(values.StringValue); ok {
+			return values.FileValue{Type: types.FileType{}, Value: sv.Value}
+		}
+	case types.DirectoryType:
+		if sv, ok := v.(values.StringValue); ok {
+			return values.DirectoryValue{Type: types.DirectoryType{}, Value: sv.Value}
+		}
+	case types.StringType:
+		// File/Directory → String coercion (path as string value)
+		if fv, ok := v.(values.FileValue); ok {
+			return values.StringValue{Type: types.StringType{}, Value: fv.Value}
+		}
+		if dv, ok := v.(values.DirectoryValue); ok {
+			return values.StringValue{Type: types.StringType{}, Value: dv.Value}
+		}
+	case types.FloatType:
+		if iv, ok := v.(values.IntValue); ok {
+			return values.FloatValue{Type: types.FloatType{}, Value: float64(iv.Value)}
+		}
+	}
+	return v
+}
