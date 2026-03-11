@@ -80,37 +80,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRV-01 | — | Pending |
-| SRV-02 | — | Pending |
-| SRV-03 | — | Pending |
-| SRV-04 | — | Pending |
-| SRV-05 | — | Pending |
-| SRV-06 | — | Pending |
-| SRV-07 | — | Pending |
-| SRV-08 | — | Pending |
-| SRV-09 | — | Pending |
-| DMN-01 | — | Pending |
-| DMN-02 | — | Pending |
-| DMN-03 | — | Pending |
-| DMN-04 | — | Pending |
-| DMN-05 | — | Pending |
-| DMN-06 | — | Pending |
-| CLI-01 | — | Pending |
-| CLI-02 | — | Pending |
-| CLI-03 | — | Pending |
-| CLI-04 | — | Pending |
-| CLI-05 | — | Pending |
-| CLI-06 | — | Pending |
-| STR-01 | — | Pending |
-| STR-02 | — | Pending |
-| STR-03 | — | Pending |
-| STR-04 | — | Pending |
+| SRV-01 | Phase 10 | Pending |
+| SRV-02 | Phase 10 | Pending |
+| SRV-03 | Phase 10 | Pending |
+| SRV-04 | Phase 10 | Pending |
+| SRV-05 | Phase 10 | Pending |
+| SRV-06 | Phase 10 | Pending |
+| SRV-07 | Phase 9 | Pending |
+| SRV-08 | Phase 9 | Pending |
+| SRV-09 | Phase 10 | Pending |
+| DMN-01 | Phase 11 | Pending |
+| DMN-02 | Phase 11 | Pending |
+| DMN-03 | Phase 11 | Pending |
+| DMN-04 | Phase 11 | Pending |
+| DMN-05 | Phase 11 | Pending |
+| DMN-06 | Phase 11 | Pending |
+| CLI-01 | Phase 12 | Pending |
+| CLI-02 | Phase 12 | Pending |
+| CLI-03 | Phase 12 | Pending |
+| CLI-04 | Phase 12 | Pending |
+| CLI-05 | Phase 12 | Pending |
+| CLI-06 | Phase 12 | Pending |
+| STR-01 | Phase 9 | Pending |
+| STR-02 | Phase 9 | Pending |
+| STR-03 | Phase 9 | Pending |
+| STR-04 | Phase 9 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25 ⚠️
+- Mapped to phases: 25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after initial definition*
+*Last updated: 2026-03-11 after roadmap creation*
