@@ -418,9 +418,43 @@ func scatterVarElementType(expr ast.Expr, scope *Scope) types.Type {
 			}
 		case "range":
 			return types.IntType{}
+		case "as_pairs":
+			// as_pairs(Map[K,V]) -> Array[Pair[K,V]]
+			if len(e.Args) >= 1 {
+				if mapType := inferExprMapType(e.Args[0], scope); mapType != nil {
+					return types.PairType{LeftType: mapType.KeyType, RightType: mapType.ValType}
+				}
+			}
+		case "keys":
+			// keys(Map[K,V]) -> Array[K]
+			if len(e.Args) >= 1 {
+				if mapType := inferExprMapType(e.Args[0], scope); mapType != nil {
+					return mapType.KeyType
+				}
+			}
+		case "values":
+			// values(Map[K,V]) -> Array[V]
+			if len(e.Args) >= 1 {
+				if mapType := inferExprMapType(e.Args[0], scope); mapType != nil {
+					return mapType.ValType
+				}
+			}
 		}
 	}
 	return types.AnyType{}
+}
+
+// inferExprMapType attempts to infer the MapType of an expression.
+// Returns the MapType if the expression resolves to a MapType, otherwise nil.
+func inferExprMapType(expr ast.Expr, scope *Scope) *types.MapType {
+	if ident, ok := expr.(*ast.IdentExpr); ok {
+		if t, found := scope.lookup(ident.Name); found {
+			if mt, ok := t.(types.MapType); ok {
+				return &mt
+			}
+		}
+	}
+	return nil
 }
 
 // inferExprArrayItemType attempts to infer the item type of an Array expression.
