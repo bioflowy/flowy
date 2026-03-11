@@ -299,6 +299,27 @@ func isNameToken(tt lexer.TokenType) bool {
 
 // errorf creates a *ParseError at pos with a formatted message.
 // SourceLine is retrieved from the source lines slice.
+// isIdentLike returns true if the token type is an identifier or a keyword
+// that can be used as an identifier in contexts like meta/hints blocks.
+func isIdentLike(t lexer.TokenType) bool {
+	switch t {
+	case lexer.TokIdent,
+		lexer.TokVersion, lexer.TokTask, lexer.TokWorkflow, lexer.TokStruct,
+		lexer.TokImport, lexer.TokAs, lexer.TokAlias,
+		lexer.TokInput, lexer.TokOutput,
+		lexer.TokCommand, lexer.TokRuntime, lexer.TokRequirements, lexer.TokHints,
+		lexer.TokMeta, lexer.TokParamMeta,
+		lexer.TokCall, lexer.TokScatter, lexer.TokIn, lexer.TokIf, lexer.TokThen, lexer.TokElse,
+		lexer.TokAfter, lexer.TokEnv,
+		lexer.TokBoolean, lexer.TokIntType, lexer.TokFloatType,
+		lexer.TokStringType, lexer.TokFileType, lexer.TokDirectoryType,
+		lexer.TokArray, lexer.TokMap, lexer.TokPair, lexer.TokObject,
+		lexer.TokNull, lexer.TokTrue, lexer.TokFalse:
+		return true
+	}
+	return false
+}
+
 func (p *Parser) errorf(pos ast.Pos, format string, args ...any) *ParseError {
 	msg := fmt.Sprintf(format, args...)
 	sourceLine := ""
@@ -1158,7 +1179,7 @@ func (p *Parser) parseMetaBody() (map[string]any, error) {
 
 	for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
 		keyTok := p.advance()
-		if keyTok.Type != lexer.TokIdent {
+		if !isIdentLike(keyTok.Type) {
 			return nil, p.errorf(keyTok.Pos, "expected identifier in meta block, got %q", keyTok.Val)
 		}
 		_, err := p.expect(lexer.TokColon)
@@ -1261,7 +1282,7 @@ func (p *Parser) parseMetaValue() (any, error) {
 		nested := make(map[string]any)
 		for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
 			keyTok := p.advance()
-			if keyTok.Type != lexer.TokIdent && keyTok.Type != lexer.TokStringOpen {
+			if !isIdentLike(keyTok.Type) && keyTok.Type != lexer.TokStringOpen {
 				return nil, p.errorf(keyTok.Pos, "expected key in meta object, got %q", keyTok.Val)
 			}
 			var key string
@@ -1298,6 +1319,54 @@ func (p *Parser) parseMetaValue() (any, error) {
 		return nested, nil
 
 	default:
+		// Allow keyword/identifier tokens as meta values (e.g. "inputs: input { ... }" in hints)
+		if isIdentLike(tok.Type) {
+			p.advance()
+			// If followed by '{', treat as a tagged nested object
+			if p.peek().Type == lexer.TokLBrace {
+				p.advance()
+				nested := make(map[string]any)
+				for p.peek().Type != lexer.TokRBrace && p.peek().Type != lexer.TokEOF {
+					keyTok := p.advance()
+					if !isIdentLike(keyTok.Type) && keyTok.Type != lexer.TokStringOpen {
+						return nil, p.errorf(keyTok.Pos, "expected key in meta object, got %q", keyTok.Val)
+					}
+					var key string
+					if keyTok.Type == lexer.TokStringOpen {
+						var sb strings.Builder
+						for p.peek().Type == lexer.TokCommandContent {
+							sb.WriteString(p.advance().Val)
+						}
+						_, err := p.expect(lexer.TokStringClose)
+						if err != nil {
+							return nil, err
+						}
+						key = sb.String()
+					} else {
+						key = keyTok.Val
+					}
+					_, err := p.expect(lexer.TokColon)
+					if err != nil {
+						return nil, err
+					}
+					val, err := p.parseMetaValue()
+					if err != nil {
+						return nil, err
+					}
+					nested[key] = val
+					if p.peek().Type == lexer.TokComma {
+						p.advance()
+					}
+				}
+				_, err := p.expect(lexer.TokRBrace)
+				if err != nil {
+					return nil, err
+				}
+				return nested, nil
+			}
+			// Otherwise treat keyword as string value
+			return tok.Val, nil
+		}
 		p.advance()
 		return nil, p.errorf(tok.Pos, "unexpected token %q in meta value", tok.Val)
 	}
