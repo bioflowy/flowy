@@ -8,6 +8,17 @@ WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parse
 
 WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること。
 
+## Current Milestone: v1.1 Distributed Execution
+
+**Goal:** Split monolithic CLI into distributed server/daemon/client architecture for multi-host workflow execution.
+
+**Target features:**
+- Workflow server (flowy-server) — REST API, DAG scheduling, SQLite state management
+- Execution daemon (flowy-daemon) — polls server for tasks, Docker execution, multi-host scale-out
+- Client CLI (flowy) — submit/status/outputs commands, `flowy run` synchronous mode for spectool compatibility
+- Shared filesystem storage — config-driven shared directory, client copies inputs, daemon copies outputs
+- Separate binaries: `flowy`, `flowy-server`, `flowy-daemon`
+
 ## Requirements
 
 ### Validated
@@ -24,20 +35,24 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-- [ ] REST API server for workflow execution control
-- [ ] Project-based user/workflow/input/output management
-- [ ] SQLite persistence for projects, execution history, state
-- [ ] CLI client that operates via REST API
-- [ ] HTTP(S) import resolution
-- [ ] Execution cache (task output reuse)
-- [ ] Workflow resume from checkpoint
-- [ ] Docker-alternative backends (Podman, Singularity)
+- [ ] Workflow server with REST API (flowy-server binary)
+- [ ] Execution daemon with task polling (flowy-daemon binary)
+- [ ] Client CLI with submit/status/outputs/run commands (flowy binary)
+- [ ] Shared filesystem storage with config-driven directory
+- [ ] SQLite persistence for workflow runs, task state, execution history
+- [ ] `flowy run` synchronous mode (submit → poll → results, spectool compatible)
+- [ ] Multi-daemon scale-out for scatter parallelism
 
 ### Out of Scope
 
 - Object type — deprecated in WDL 1.2, use Struct instead
 - WDL draft-2/1.0/1.1 support — different grammar, high maintenance cost
 - WDL lint/zip features — execution engine is priority
+- S3/object storage backend — shared filesystem first, S3 deferred to future milestone
+- HTTP(S) import resolution — deferred to future milestone
+- Execution cache (task output reuse) — deferred to future milestone
+- Workflow resume from checkpoint — deferred to future milestone
+- Docker-alternative backends (Podman, Singularity) — deferred to future milestone
 
 ## Context
 
@@ -65,6 +80,9 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | ShellRunner mock for tests | No Docker dependency in unit tests | ✓ Good — fast CI-friendly tests |
 | errgroup for scatter parallelism | Bounded concurrency with cancellation | ✓ Good — clean fail-fast behavior |
 | Spectool for conformance | Official WDL compliance benchmark | ✓ Good — 45/160 baseline established |
+| Separate binaries for server/daemon/client | Clean process separation, independent deployment | — Pending |
+| Daemon polls server (not push) | Simpler scale-out, daemon only needs server address | — Pending |
+| Shared filesystem first, S3 later | Reduce scope, NFS ubiquitous in HPC environments | — Pending |
 
 ---
-*Last updated: 2026-03-11 after v1.0 milestone*
+*Last updated: 2026-03-11 after v1.1 milestone start*
