@@ -5,7 +5,7 @@ milestone_name: milestone
 status: planning
 stopped_at: Completed 07-cli-and-integration 07-02-PLAN.md
 last_updated: "2026-03-11T00:08:40.903Z"
-last_activity: 2026-03-11 - Completed quick task 1: Create test data, sample workflow, and testing documentation for flowy
+last_activity: 2026-03-11 - Completed quick task 2: Fix type checker to register call output in workflow scope
 progress:
   total_phases: 7
   completed_phases: 7
@@ -154,6 +154,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | Create test data, sample workflow, and testing documentation for flowy | 2026-03-11 | a55514c | [1-create-test-data-sample-workflow-and-tes](./quick/1-create-test-data-sample-workflow-and-tes/) |
+| 2 | Fix type checker to register call output in workflow scope | 2026-03-11 | 9d024c5 | [2-fix-type-checker-to-register-call-output](./quick/2-fix-type-checker-to-register-call-output/) |
 
 ### Blockers/Concerns
 
@@ -163,6 +164,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T00:23:36Z
-Stopped at: Completed quick task 1 (examples and testing guide)
+Last session: 2026-03-11T00:42:00Z
+Stopped at: Completed quick task 2 (fix type checker call output registration)
 Resume file: None
