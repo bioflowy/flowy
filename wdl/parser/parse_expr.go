@@ -232,6 +232,9 @@ func (p *Parser) parsePrefixExpr() (ast.Expr, error) {
 	case lexer.TokStringOpen:
 		return p.parseStringExpr()
 
+	case lexer.TokHeredocOpen:
+		return p.parseMultilineStringExpr()
+
 	case lexer.TokLParen:
 		p.advance()
 		pos := tok.Pos
@@ -679,4 +682,294 @@ func (p *Parser) parseIfThenElse() (*ast.IfThenElse, error) {
 	}
 
 	return &ast.IfThenElse{Pos: pos, Cond: cond, Then: thenExpr, Else: elseExpr}, nil
+}
+
+// parseMultilineStringExpr parses a multiline string expression starting with TokHeredocOpen (<<<).
+// Produces an ast.StringExpr with whitespace stripping applied per WDL 1.2 spec.
+func (p *Parser) parseMultilineStringExpr() (*ast.StringExpr, error) {
+	openTok, err := p.expect(lexer.TokHeredocOpen)
+	if err != nil {
+		return nil, err
+	}
+	pos := openTok.Pos
+
+	var parts []ast.StringPart
+
+	for p.peek().Type != lexer.TokHeredocClose && p.peek().Type != lexer.TokEOF {
+		tok := p.peek()
+		switch tok.Type {
+		case lexer.TokCommandContent:
+			p.advance()
+			// Do NOT unescape — multiline strings preserve raw content
+			parts = append(parts, &ast.RawStringPart{Val: tok.Val})
+		case lexer.TokPlaceholderOpen:
+			part, err := p.parsePlaceholderPart()
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+		default:
+			p.advance()
+			return nil, p.errorf(tok.Pos, "unexpected token %q in multiline string", tok.Val)
+		}
+	}
+
+	_, err = p.expect(lexer.TokHeredocClose)
+	if err != nil {
+		return nil, err
+	}
+
+	parts = stripMultilineWhitespace(parts)
+
+	return &ast.StringExpr{Pos: pos, Parts: parts}, nil
+}
+
+// stripMultilineWhitespace applies the WDL 1.2 whitespace stripping algorithm
+// for multiline string literals. The algorithm has 5 steps:
+//  1. Process line continuations (backslash before newline)
+//  2. Strip everything after <<< up to and including the first newline
+//  3. Strip everything before >>> up to and including the preceding newline
+//  4. Calculate common leading whitespace from non-blank lines
+//  5. Remove common leading whitespace from all lines
+func stripMultilineWhitespace(parts []ast.StringPart) []ast.StringPart {
+	// Step 1: Process line continuations
+	parts = processLineContinuations(parts)
+
+	// Step 2: Strip content after opening <<< up to first newline
+	parts = stripAfterOpen(parts)
+
+	// Step 3: Strip content before closing >>> after last newline
+	parts = stripBeforeClose(parts)
+
+	// Step 4 & 5: Calculate and remove common leading whitespace
+	parts = removeCommonIndent(parts)
+
+	// Remove empty raw parts
+	var cleaned []ast.StringPart
+	for _, p := range parts {
+		if raw, ok := p.(*ast.RawStringPart); ok && raw.Val == "" {
+			continue
+		}
+		cleaned = append(cleaned, p)
+	}
+	if len(cleaned) == 0 {
+		return []ast.StringPart{&ast.RawStringPart{Val: ""}}
+	}
+	return cleaned
+}
+
+// processLineContinuations handles backslash-newline continuations in RawStringParts.
+// Per WDL 1.2 spec:
+//   - Each pair of consecutive backslashes (\\) is an escaped backslash producing a single \.
+//   - A line is continued only if it ends in an odd number of backslashes before a newline.
+//   - Removing a line continuation means removing the last \, the newline, and all subsequent
+//     whitespace before the next non-whitespace character or end of line.
+func processLineContinuations(parts []ast.StringPart) []ast.StringPart {
+	result := make([]ast.StringPart, 0, len(parts))
+	for _, p := range parts {
+		raw, ok := p.(*ast.RawStringPart)
+		if !ok {
+			result = append(result, p)
+			continue
+		}
+		val := raw.Val
+		var sb strings.Builder
+		sb.Grow(len(val))
+		i := 0
+		for i < len(val) {
+			if val[i] == '\\' {
+				// Count consecutive backslashes
+				bsStart := i
+				for i < len(val) && val[i] == '\\' {
+					i++
+				}
+				bsCount := i - bsStart
+				if i < len(val) && val[i] == '\n' {
+					// Backslashes before newline: each pair → single backslash
+					for j := 0; j < bsCount/2; j++ {
+						sb.WriteByte('\\')
+					}
+					if bsCount%2 == 1 {
+						// Odd: last backslash is a line continuation
+						i++ // skip \n
+						// Skip leading whitespace on next line
+						for i < len(val) && (val[i] == ' ' || val[i] == '\t') {
+							i++
+						}
+					} else {
+						// Even: no continuation, preserve newline
+						// The backslashes were already written as escaped pairs above
+					}
+				} else {
+					// Backslashes not before newline: preserve as-is
+					sb.WriteString(val[bsStart:i])
+				}
+			} else {
+				sb.WriteByte(val[i])
+				i++
+			}
+		}
+		result = append(result, &ast.RawStringPart{Val: sb.String()})
+	}
+	return result
+}
+
+// stripAfterOpen removes whitespace after <<< up to and including the first newline (if any).
+// If there is no newline, only leading whitespace is removed.
+func stripAfterOpen(parts []ast.StringPart) []ast.StringPart {
+	if len(parts) == 0 {
+		return parts
+	}
+	raw, ok := parts[0].(*ast.RawStringPart)
+	if !ok {
+		return parts
+	}
+	idx := strings.IndexByte(raw.Val, '\n')
+	if idx >= 0 {
+		// Check if everything before the newline is whitespace
+		before := raw.Val[:idx]
+		allWS := true
+		for _, c := range before {
+			if c != ' ' && c != '\t' {
+				allWS = false
+				break
+			}
+		}
+		if allWS {
+			parts[0] = &ast.RawStringPart{Val: raw.Val[idx+1:]}
+		}
+	} else {
+		// No newline: strip leading whitespace only
+		trimmed := strings.TrimLeft(raw.Val, " \t")
+		parts[0] = &ast.RawStringPart{Val: trimmed}
+	}
+	return parts
+}
+
+// stripBeforeClose removes whitespace before >>> up to and including the preceding newline (if any).
+// If there is no newline, only trailing whitespace is removed.
+func stripBeforeClose(parts []ast.StringPart) []ast.StringPart {
+	if len(parts) == 0 {
+		return parts
+	}
+	// Find the last RawStringPart
+	for i := len(parts) - 1; i >= 0; i-- {
+		raw, ok := parts[i].(*ast.RawStringPart)
+		if !ok {
+			continue
+		}
+		idx := strings.LastIndexByte(raw.Val, '\n')
+		if idx >= 0 {
+			// Check if everything after the last \n is whitespace
+			trailing := raw.Val[idx+1:]
+			allWhitespace := true
+			for _, c := range trailing {
+				if c != ' ' && c != '\t' {
+					allWhitespace = false
+					break
+				}
+			}
+			if allWhitespace {
+				// Remove the newline and trailing whitespace
+				parts[i] = &ast.RawStringPart{Val: raw.Val[:idx]}
+			}
+		} else {
+			// No newline: strip trailing whitespace only
+			trimmed := strings.TrimRight(raw.Val, " \t")
+			parts[i] = &ast.RawStringPart{Val: trimmed}
+		}
+		break
+	}
+	return parts
+}
+
+// removeCommonIndent calculates the minimum leading whitespace across all non-blank lines
+// and removes it from each line. Lines are tracked across part boundaries.
+func removeCommonIndent(parts []ast.StringPart) []ast.StringPart {
+	// First pass: find common indent by examining all lines across parts.
+	// A "line" starts at the beginning or after a \n in a RawStringPart.
+	// We only measure indent from RawStringPart content at line beginnings.
+
+	minIndent := -1 // -1 means not yet set
+	atLineStart := true
+	currentIndent := 0
+	lineHasContent := false
+
+	for _, p := range parts {
+		raw, ok := p.(*ast.RawStringPart)
+		if !ok {
+			// Placeholder at line start means indent is whatever we've accumulated
+			if atLineStart {
+				lineHasContent = true
+				if minIndent == -1 || currentIndent < minIndent {
+					minIndent = currentIndent
+				}
+				atLineStart = false
+			}
+			continue
+		}
+		for _, c := range raw.Val {
+			if c == '\n' {
+				// End of line. If line had content, its indent was already recorded.
+				// If line was blank (atLineStart && !lineHasContent), skip it.
+				if atLineStart && lineHasContent {
+					// This shouldn't happen normally
+				}
+				atLineStart = true
+				currentIndent = 0
+				lineHasContent = false
+			} else if atLineStart && (c == ' ' || c == '\t') {
+				currentIndent++
+			} else {
+				if atLineStart {
+					lineHasContent = true
+					if minIndent == -1 || currentIndent < minIndent {
+						minIndent = currentIndent
+					}
+					atLineStart = false
+				}
+			}
+		}
+	}
+
+	if minIndent <= 0 {
+		return parts
+	}
+
+	// Second pass: remove minIndent chars from the beginning of each line
+	result := make([]ast.StringPart, 0, len(parts))
+	atLineStart = true
+	charsToStrip := minIndent
+
+	for _, p := range parts {
+		raw, ok := p.(*ast.RawStringPart)
+		if !ok {
+			atLineStart = false
+			charsToStrip = 0
+			result = append(result, p)
+			continue
+		}
+
+		var sb strings.Builder
+		sb.Grow(len(raw.Val))
+		for _, c := range raw.Val {
+			if c == '\n' {
+				sb.WriteByte('\n')
+				atLineStart = true
+				charsToStrip = minIndent
+			} else if atLineStart && charsToStrip > 0 && (c == ' ' || c == '\t') {
+				charsToStrip--
+				if charsToStrip == 0 {
+					atLineStart = false
+				}
+			} else {
+				atLineStart = false
+				charsToStrip = 0
+				sb.WriteRune(c)
+			}
+		}
+		result = append(result, &ast.RawStringPart{Val: sb.String()})
+	}
+
+	return result
 }

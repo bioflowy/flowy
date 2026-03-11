@@ -1,5 +1,9 @@
 # Build artifacts
 /flowy
+/bin/
+
+# Serena IDE config
+/.serena/
 
 # spectool build source (temporary)
 /tmp/spectool-src

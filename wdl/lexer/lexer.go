@@ -444,6 +444,8 @@ func lexNormal(l *Lexer) stateFn {
 			l.advance()
 			l.advance()
 			l.emitCurrent(TokHeredocOpen)
+			l.markStart()
+			l.pushMode(modeCommandHeredoc) // multiline string literal
 		} else {
 			l.emitCurrent(TokLt)
 		}
