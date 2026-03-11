@@ -142,6 +142,44 @@ func stdJoinPaths(args []values.Value, ctx ExecContext) (values.Value, error) {
 		default:
 			return nil, &EvalError{Message: fmt.Sprintf("join_paths: second argument must be String or Array[String], got %T", args[1])}
 		}
+	case values.StringValue:
+		parts = append(parts, a0.Value)
+		if len(args) < 2 {
+			return nil, &EvalError{Message: "join_paths: (String, ...) overload requires a second argument"}
+		}
+		switch a1 := args[1].(type) {
+		case values.StringValue:
+			parts = append(parts, a1.Value)
+		case values.ArrayValue:
+			for _, item := range a1.Items {
+				sv, ok := item.(values.StringValue)
+				if !ok {
+					return nil, &EvalError{Message: fmt.Sprintf("join_paths: Array items must be StringValue, got %T", item)}
+				}
+				parts = append(parts, sv.Value)
+			}
+		default:
+			return nil, &EvalError{Message: fmt.Sprintf("join_paths: second argument must be String or Array[String], got %T", args[1])}
+		}
+	case values.DirectoryValue:
+		parts = append(parts, a0.Value)
+		if len(args) < 2 {
+			return nil, &EvalError{Message: "join_paths: (Directory, ...) overload requires a second argument"}
+		}
+		switch a1 := args[1].(type) {
+		case values.StringValue:
+			parts = append(parts, a1.Value)
+		case values.ArrayValue:
+			for _, item := range a1.Items {
+				sv, ok := item.(values.StringValue)
+				if !ok {
+					return nil, &EvalError{Message: fmt.Sprintf("join_paths: Array items must be StringValue, got %T", item)}
+				}
+				parts = append(parts, sv.Value)
+			}
+		default:
+			return nil, &EvalError{Message: fmt.Sprintf("join_paths: second argument must be String or Array[String], got %T", args[1])}
+		}
 	case values.ArrayValue:
 		for _, item := range a0.Items {
 			sv, ok := item.(values.StringValue)
