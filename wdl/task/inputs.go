@@ -3,6 +3,7 @@ package task
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
@@ -99,6 +100,8 @@ func jsonToWDLValue(v interface{}, declType types.Type) (values.Value, error) {
 		if !ok {
 			return nil, fmt.Errorf("expected string for File, got %T", v)
 		}
+		// Resolve relative paths to absolute and canonicalize.
+		s = cleanPath(s)
 		return values.FileValue{Type: dt, Value: s}, nil
 
 	case types.DirectoryType:
@@ -106,6 +109,8 @@ func jsonToWDLValue(v interface{}, declType types.Type) (values.Value, error) {
 		if !ok {
 			return nil, fmt.Errorf("expected string for Directory, got %T", v)
 		}
+		// Resolve relative paths to absolute and canonicalize.
+		s = cleanPath(s)
 		return values.DirectoryValue{Type: dt, Value: s}, nil
 
 	case types.StringType:
@@ -225,6 +230,16 @@ func jsonToValueUntyped(v interface{}) values.Value {
 	default:
 		return values.NullValue{}
 	}
+}
+
+// cleanPath resolves relative paths to absolute and canonicalizes ".." components.
+func cleanPath(p string) string {
+	if !filepath.IsAbs(p) {
+		if abs, err := filepath.Abs(p); err == nil {
+			return filepath.Clean(abs)
+		}
+	}
+	return filepath.Clean(p)
 }
 
 // collectPaths walks a WDL value and registers all FileValue and DirectoryValue

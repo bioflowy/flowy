@@ -49,7 +49,12 @@ func RunWorkflow(
 	taskIndex := buildTaskIndex(doc)
 
 	// Bind workflow-level inputs.
-	env, err := bindWorkflowInputs(wf, jsonInputs)
+	// Build struct definitions for type-aware input binding.
+	sdefs := make(map[string]*ast.StructDef, len(doc.Structs))
+	for _, sd := range doc.Structs {
+		sdefs[sd.Name] = sd
+	}
+	env, err := bindWorkflowInputs(wf, jsonInputs, sdefs)
 	if err != nil {
 		return nil, fmt.Errorf("binding workflow inputs: %w", err)
 	}

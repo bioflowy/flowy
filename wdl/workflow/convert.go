@@ -2,9 +2,11 @@ package workflow
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
+	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
 )
 
@@ -96,11 +98,15 @@ func evalCallInputs(call *ast.Call, env *eval.Env) (map[string]interface{}, erro
 
 // bindWorkflowInputs binds a workflow's declared inputs from JSON inputs into an eval.Env.
 // For each input declaration in wf.Inputs:
-//   - If present in jsonInputs: use the value directly (as untyped conversion)
+//   - If present in jsonInputs: use type-aware conversion (File, Directory, Struct, etc.)
 //   - If absent and has default Expr: evaluate the default expression
 //   - If absent, no default, and optional: bind NullValue{}
 //   - If absent, no default, and required: return error
-func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}) (*eval.Env, error) {
+func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}, structDefs ...map[string]*ast.StructDef) (*eval.Env, error) {
+	var sd map[string]*ast.StructDef
+	if len(structDefs) > 0 {
+		sd = structDefs[0]
+	}
 	env := eval.NewEnv(nil)
 
 	for _, decl := range wf.Inputs {
@@ -112,7 +118,7 @@ func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}) (*e
 			raw, found = jsonInputs[decl.Name]
 		}
 		if found {
-			val = jsonToValueUntyped(raw)
+			val = jsonToValueTyped(raw, decl.Type, sd)
 		} else if decl.Expr != nil {
 			v, err := eval.Eval(decl.Expr, env, eval.ExecContext{})
 			if err != nil {
@@ -129,6 +135,129 @@ func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}) (*e
 	}
 
 	return env, nil
+}
+
+// cleanPath resolves relative paths to absolute and canonicalizes ".." components.
+func cleanPath(p string) string {
+	if !filepath.IsAbs(p) {
+		if abs, err := filepath.Abs(p); err == nil {
+			return filepath.Clean(abs)
+		}
+	}
+	return filepath.Clean(p)
+}
+
+// jsonToValueTyped converts a JSON-decoded value to a WDL Value using the
+// declaration type for type-aware conversions (File, Directory, Struct, etc.).
+func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef) values.Value {
+	if v == nil {
+		return values.NullValue{}
+	}
+
+	switch dt := declType.(type) {
+	case types.FileType:
+		if s, ok := v.(string); ok {
+			return values.FileValue{Type: dt, Value: cleanPath(s)}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.DirectoryType:
+		if s, ok := v.(string); ok {
+			return values.DirectoryValue{Type: dt, Value: cleanPath(s)}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.StringType:
+		if s, ok := v.(string); ok {
+			return values.StringValue{Type: dt, Value: s}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.IntType:
+		switch x := v.(type) {
+		case float64:
+			return values.IntValue{Type: dt, Value: int64(x)}
+		case int64:
+			return values.IntValue{Type: dt, Value: x}
+		case int:
+			return values.IntValue{Type: dt, Value: int64(x)}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.FloatType:
+		switch x := v.(type) {
+		case float64:
+			return values.FloatValue{Type: dt, Value: x}
+		case int64:
+			return values.FloatValue{Type: dt, Value: float64(x)}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.BooleanType:
+		if b, ok := v.(bool); ok {
+			return values.BooleanValue{Type: dt, Value: b}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.ArrayType:
+		if arr, ok := v.([]interface{}); ok {
+			items := make([]values.Value, len(arr))
+			for i, elem := range arr {
+				items[i] = jsonToValueTyped(elem, dt.ItemType, structDefs)
+			}
+			return values.ArrayValue{Type: dt, Items: items}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.MapType:
+		if m, ok := v.(map[string]interface{}); ok {
+			entries := make([]values.MapEntry, 0, len(m))
+			for k, mv := range m {
+				kv := jsonToValueTyped(k, dt.KeyType, structDefs)
+				vv := jsonToValueTyped(mv, dt.ValType, structDefs)
+				entries = append(entries, values.MapEntry{Key: kv, Value: vv})
+			}
+			return values.MapValue{Type: dt, Entries: entries}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.PairType:
+		if m, ok := v.(map[string]interface{}); ok {
+			left := jsonToValueTyped(m["left"], dt.LeftType, structDefs)
+			right := jsonToValueTyped(m["right"], dt.RightType, structDefs)
+			return values.PairValue{Type: dt, Left: left, Right: right}
+		}
+		return jsonToValueUntyped(v)
+
+	case types.StructType:
+		if m, ok := v.(map[string]interface{}); ok {
+			fields := make(map[string]values.Value, len(m))
+			// Look up struct definition for field types.
+			if sd, hasDef := structDefs[dt.Name]; hasDef {
+				for _, member := range sd.Members {
+					if fv, exists := m[member.Name]; exists {
+						fields[member.Name] = jsonToValueTyped(fv, member.Type, structDefs)
+					}
+				}
+				// Include any extra fields not in the struct definition.
+				for k, fv := range m {
+					if _, already := fields[k]; !already {
+						fields[k] = jsonToValueUntyped(fv)
+					}
+				}
+			} else {
+				// No struct definition available; convert fields untyped.
+				for k, fv := range m {
+					fields[k] = jsonToValueUntyped(fv)
+				}
+			}
+			return values.StructValue{Type: dt, Fields: fields}
+		}
+		return jsonToValueUntyped(v)
+
+	default:
+		return jsonToValueUntyped(v)
+	}
 }
 
 // jsonToValueUntyped is the untyped fallback for JSON-to-WDL conversion.

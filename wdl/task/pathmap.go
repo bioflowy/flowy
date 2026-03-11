@@ -39,6 +39,8 @@ func (pm *PathMap) AddFile(hostPath string) string {
 			hostPath = abs
 		}
 	}
+	// Canonicalize: clean ".." components and normalize path.
+	hostPath = filepath.Clean(hostPath)
 	if c, ok := pm.hostToContainer[hostPath]; ok {
 		return c
 	}
@@ -66,6 +68,8 @@ func (pm *PathMap) AddDir(hostPath string) string {
 			hostPath = abs
 		}
 	}
+	// Canonicalize: clean ".." components, trailing slashes, etc.
+	hostPath = filepath.Clean(hostPath)
 	if c, ok := pm.hostToContainer[hostPath]; ok {
 		return c
 	}
@@ -94,12 +98,14 @@ func (pm *PathMap) AddDir(hostPath string) string {
 func (pm *PathMap) TranslateValue(v values.Value) values.Value {
 	switch val := v.(type) {
 	case values.FileValue:
-		if c, ok := pm.hostToContainer[val.Value]; ok {
+		cleaned := filepath.Clean(val.Value)
+		if c, ok := pm.hostToContainer[cleaned]; ok {
 			return values.FileValue{Type: val.Type, Value: c}
 		}
 		return val
 	case values.DirectoryValue:
-		if c, ok := pm.hostToContainer[val.Value]; ok {
+		cleaned := filepath.Clean(val.Value)
+		if c, ok := pm.hostToContainer[cleaned]; ok {
 			return values.DirectoryValue{Type: val.Type, Value: c}
 		}
 		return val
