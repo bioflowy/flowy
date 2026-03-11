@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 5: Task Execution** - Run a single WDL task end-to-end in Docker with input staging and output collection
 - [x] **Phase 6: Workflow Execution (DAG Scheduler)** - Execute multi-task workflows with scatter parallelism, conditionals, and outputs.json (completed 2026-03-10)
 - [x] **Phase 7: CLI and Integration** - Ship `flowy run` and `flowy check` as usable CLI tools with all flags and exit codes (completed 2026-03-11)
-- [ ] **Phase 8: Specification Compliance** - Integrate spectool conformance testing and make flowy output format spectool-compatible
+- [x] **Phase 8: Specification Compliance** - Integrate spectool conformance testing and make flowy output format spectool-compatible (completed 2026-03-11)
 
 ## Phase Details
 
@@ -176,4 +176,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Task Execution | 2/3 | In Progress|  |
 | 6. Workflow Execution (DAG Scheduler) | 3/3 | Complete   | 2026-03-10 |
 | 7. CLI and Integration | 2/2 | Complete   | 2026-03-11 |
-| 8. Specification Compliance | 1/2 | In Progress|  |
+| 8. Specification Compliance | 2/2 | Complete   | 2026-03-11 |

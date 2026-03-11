@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-03-11T02:24:56.448Z"
+stopped_at: Completed 08-02-PLAN.md Task 1; awaiting human-verify checkpoint Task 2
+last_updated: "2026-03-11T02:32:45.282Z"
 last_activity: 2026-03-10 — Roadmap created; all 57 v1 requirements mapped to 6 phases
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
   percent: 0
 ---
 
@@ -75,6 +75,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07-cli-and-integration P01 | 3min | 2 tasks | 9 files |
 | Phase 07-cli-and-integration P02 | 4min | 2 tasks | 6 files |
 | Phase 08-add-spectool-integration-for-wdl-specification-compliance-testing P01 | 3min | 2 tasks | 5 files |
+| Phase 08-add-spectool-integration-for-wdl-specification-compliance-testing P02 | 5min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,8 @@ Recent decisions affecting current work:
 - [Phase 08]: SerializeOutputs exported so CLI can call it for stdout JSON output
 - [Phase 08]: valueToJSONOutput drops execRoot — File/Directory values already absolute from task execution
 - [Phase 08]: --output flag: JSON goes to file, stdout empty when flag is set
+- [Phase 08]: spectool --exclude takes comma-separated patterns (no --exclude-file); loaded from spectool-exclude.txt via shell expansion in Makefile
+- [Phase 08]: spectool --workflow-target-args/--task-target-args replace ~{target} in base command; workflow gets empty args, task gets --task ~{target}
 
 ### Pending Todos
 
@@ -175,6 +178,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T02:24:56.442Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-03-11T02:32:45.275Z
+Stopped at: Completed 08-02-PLAN.md Task 1; awaiting human-verify checkpoint Task 2
 Resume file: None

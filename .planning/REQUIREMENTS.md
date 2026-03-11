@@ -85,8 +85,8 @@
 - [x] **SPEC-02**: `--output <path>` フラグで outputs JSON を指定ファイルに書き出せる（stdout 出力なし）
 - [x] **SPEC-03**: outputs JSON の File/Directory 値が絶対パスを使用する
 - [x] **SPEC-04**: `--task` 実行時に `taskName.outputName` ドット記法キーで outputs JSON を出力する
-- [ ] **SPEC-05**: Makefile の `make spectool` ターゲットで spectool 適合テストを実行できる
-- [ ] **SPEC-06**: 未サポート機能のテストが spectool-exclude.txt で除外される
+- [x] **SPEC-05**: Makefile の `make spectool` ターゲットで spectool 適合テストを実行できる
+- [x] **SPEC-06**: 未サポート機能のテストが spectool-exclude.txt で除外される
 
 ## v2 Requirements
 
