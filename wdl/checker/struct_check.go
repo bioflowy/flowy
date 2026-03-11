@@ -132,6 +132,21 @@ func checkGetExpr(expr *ast.GetExpr, pos ast.Pos, scope *Scope, structDefs map[s
 		return nil, types.AnyType{}
 	}
 
+	// Handle Pair field access (.left / .right).
+	if pt, ok := baseType.(types.PairType); ok {
+		switch expr.Member {
+		case "left":
+			return nil, pt.LeftType
+		case "right":
+			return nil, pt.RightType
+		default:
+			return &TypeError{
+				Pos:     pos,
+				Message: fmt.Sprintf("Pair has no field %q (only \"left\" and \"right\")", expr.Member),
+			}, nil
+		}
+	}
+
 	// Type-assert base to StructType.
 	st, ok := baseType.(types.StructType)
 	if !ok {
