@@ -48,7 +48,10 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   3. The SQLite database opens in WAL mode, migrations run on startup without error, and the runs + tasks tables exist with the correct schema including `last_heartbeat_at` and `shard_index` columns
   4. A stale task (no heartbeat update within configurable timeout) can be detected by querying the tasks table — the detection query returns the expected stale rows in an integration test
   5. All shared HTTP DTO types (workflow submission request, status response, outputs response) are defined in `internal/api` and compile without import cycles
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 09-01-PLAN.md — Config package, API DTO types, and filesystem layout helpers
+- [ ] 09-02-PLAN.md — Store interface and SQLite implementation with migrations
 
 ### Phase 10: Server Binary + DAG Dispatch
 **Goal**: `flowy-server` binary runs, accepts workflow submissions via REST API, schedules the DAG, and dispatches tasks to the SQLite queue for daemon pickup
@@ -98,7 +101,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 6. Workflow Execution (DAG Scheduler) | v1.0 | 3/3 | Complete | 2026-03-10 |
 | 7. CLI and Integration | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
-| 9. API Contract + Persistence Foundation | v1.1 | 0/? | Not started | - |
+| 9. API Contract + Persistence Foundation | v1.1 | 0/2 | Not started | - |
 | 10. Server Binary + DAG Dispatch | v1.1 | 0/? | Not started | - |
 | 11. Daemon Binary + Task Execution | v1.1 | 0/? | Not started | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |
