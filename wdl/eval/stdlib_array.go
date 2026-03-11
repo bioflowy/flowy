@@ -360,8 +360,9 @@ func stdSelectAll(args []values.Value, ctx ExecContext) (values.Value, error) {
 	}, nil
 }
 
-// stdSelectFirst implements select_first(Array[X?]) -> X.
-// Returns the first non-NullValue item; returns EvalError if all items are null.
+// stdSelectFirst implements select_first(Array[X?], [default]) -> X.
+// Returns the first non-NullValue item. If all items are null and a default
+// argument is provided, returns the default. Otherwise returns EvalError.
 func stdSelectFirst(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
 		return nil, &EvalError{Message: "select_first: expected Array argument"}
@@ -374,6 +375,9 @@ func stdSelectFirst(args []values.Value, ctx ExecContext) (values.Value, error) 
 		if _, isNull := item.(values.NullValue); !isNull {
 			return item, nil
 		}
+	}
+	if len(args) >= 2 {
+		return args[1], nil
 	}
 	return nil, &EvalError{Message: "select_first: all elements are null"}
 }

@@ -816,6 +816,51 @@ func TestStdlibArray(t *testing.T) {
 			t.Fatal("expected EvalError for all-null array")
 		}
 	})
+	t.Run("select_first with default returns default when all null", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{values.NullValue{}, values.NullValue{}},
+		}
+		defVal := values.IntValue{Type: types.IntType{}, Value: 42}
+		got, err := callStdlib(t, "select_first", []values.Value{arr, defVal}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 42 {
+			t.Errorf("got %d, want 42", iv.Value)
+		}
+	})
+	t.Run("select_first with default returns first non-null", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{values.NullValue{}, values.IntValue{Type: types.IntType{}, Value: 7}},
+		}
+		defVal := values.IntValue{Type: types.IntType{}, Value: 42}
+		got, err := callStdlib(t, "select_first", []values.Value{arr, defVal}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 7 {
+			t.Errorf("got %d, want 7", iv.Value)
+		}
+	})
+	t.Run("select_first with default on empty array", func(t *testing.T) {
+		arr := values.ArrayValue{
+			Type:  types.ArrayType{ItemType: types.IntType{}},
+			Items: []values.Value{},
+		}
+		defVal := values.IntValue{Type: types.IntType{}, Value: 5}
+		got, err := callStdlib(t, "select_first", []values.Value{arr, defVal}, ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		iv := got.(values.IntValue)
+		if iv.Value != 5 {
+			t.Errorf("got %d, want 5", iv.Value)
+		}
+	})
 
 	// --- chunk ---
 	t.Run("chunk [1,2,3,4,5] by 2", func(t *testing.T) {
