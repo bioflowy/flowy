@@ -105,6 +105,6 @@ Plans:
 | 7. CLI and Integration | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
-| 10. Server Binary + DAG Dispatch | 2/2 | Complete   | 2026-03-11 | - |
+| 10. Server Binary + DAG Dispatch | 2/2 | Complete    | 2026-03-11 | - |
 | 11. Daemon Binary + Task Execution | v1.1 | 0/? | Not started | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |

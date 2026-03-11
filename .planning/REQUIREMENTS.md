@@ -9,15 +9,15 @@ Requirements for distributed server/daemon/client architecture. Each maps to roa
 
 ### Server
 
-- [ ] **SRV-01**: Server exposes POST /workflows endpoint to accept workflow submission (WDL path + inputs JSON), returns run ID
-- [ ] **SRV-02**: Server exposes GET /workflows/{id}/status endpoint returning run state
-- [ ] **SRV-03**: Server exposes GET /workflows/{id}/outputs endpoint returning output paths after completion
-- [ ] **SRV-04**: Server exposes POST /workflows/{id}/abort endpoint to cancel a running workflow
-- [ ] **SRV-05**: Server exposes GET /health endpoint for liveness checks
+- [x] **SRV-01**: Server exposes POST /workflows endpoint to accept workflow submission (WDL path + inputs JSON), returns run ID
+- [x] **SRV-02**: Server exposes GET /workflows/{id}/status endpoint returning run state
+- [x] **SRV-03**: Server exposes GET /workflows/{id}/outputs endpoint returning output paths after completion
+- [x] **SRV-04**: Server exposes POST /workflows/{id}/abort endpoint to cancel a running workflow
+- [x] **SRV-05**: Server exposes GET /health endpoint for liveness checks
 - [x] **SRV-06**: Server runs DAG scheduler in-process using runTaskFn injection to dispatch tasks to SQLite queue
 - [x] **SRV-07**: Server persists workflow runs and task state in SQLite with WAL mode
 - [x] **SRV-08**: Server detects stale tasks (no heartbeat within timeout) and resets them to PENDING
-- [ ] **SRV-09**: Server binary ships as `flowy-server` (`cmd/flowy-server/`)
+- [x] **SRV-09**: Server binary ships as `flowy-server` (`cmd/flowy-server/`)
 
 ### Daemon
 
@@ -80,15 +80,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRV-01 | Phase 10 | Pending |
-| SRV-02 | Phase 10 | Pending |
-| SRV-03 | Phase 10 | Pending |
-| SRV-04 | Phase 10 | Pending |
-| SRV-05 | Phase 10 | Pending |
+| SRV-01 | Phase 10 | Complete |
+| SRV-02 | Phase 10 | Complete |
+| SRV-03 | Phase 10 | Complete |
+| SRV-04 | Phase 10 | Complete |
+| SRV-05 | Phase 10 | Complete |
 | SRV-06 | Phase 10 | Complete |
 | SRV-07 | Phase 9 | Complete |
 | SRV-08 | Phase 9 | Complete |
-| SRV-09 | Phase 10 | Pending |
+| SRV-09 | Phase 10 | Complete |
 | DMN-01 | Phase 11 | Pending |
 | DMN-02 | Phase 11 | Pending |
 | DMN-03 | Phase 11 | Pending |
