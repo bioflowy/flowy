@@ -1,6 +1,8 @@
 package eval
 
 import (
+	"fmt"
+
 	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
 )
@@ -56,9 +58,15 @@ func stdValues(args []values.Value, _ ExecContext) (values.Value, error) {
 func stdAsMap(args []values.Value, _ ExecContext) (values.Value, error) {
 	av := args[0].(values.ArrayValue)
 	entries := make([]values.MapEntry, len(av.Items))
+	seen := make(map[string]bool)
 	var keyType, valType types.Type = types.AnyType{}, types.AnyType{}
 	for i, item := range av.Items {
 		pv := item.(values.PairValue)
+		keyStr := fmt.Sprintf("%v", pv.Left)
+		if seen[keyStr] {
+			return nil, &EvalError{Message: fmt.Sprintf("as_map: duplicate key: %v", pv.Left)}
+		}
+		seen[keyStr] = true
 		entries[i] = values.MapEntry{Key: pv.Left, Value: pv.Right}
 		if i == 0 {
 			keyType = pv.Left.ValueType()

@@ -161,10 +161,10 @@ func stdZip(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if !ok1 || !ok2 {
 		return nil, &EvalError{Message: "zip: both arguments must be ArrayValue"}
 	}
-	n := len(a1.Items)
-	if len(a2.Items) < n {
-		n = len(a2.Items)
+	if len(a1.Items) != len(a2.Items) {
+		return nil, &EvalError{Message: fmt.Sprintf("zip: arrays must have the same length, got %d and %d", len(a1.Items), len(a2.Items))}
 	}
+	n := len(a1.Items)
 	items := make([]values.Value, n)
 	for i := 0; i < n; i++ {
 		l := a1.Items[i]

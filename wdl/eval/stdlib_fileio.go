@@ -388,6 +388,9 @@ func stdWriteJson(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
 		return nil, &EvalError{Message: "write_json: expected argument"}
 	}
+	if err := validateJsonSerializable(args[0]); err != nil {
+		return nil, &EvalError{Message: fmt.Sprintf("write_json: %v", err)}
+	}
 	raw := valueToJson(args[0])
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -402,6 +405,42 @@ func stdWriteJson(args []values.Value, ctx ExecContext) (values.Value, error) {
 		return nil, &EvalError{Message: fmt.Sprintf("write_json: cannot write file: %v", err)}
 	}
 	return values.FileValue{Type: types.FileType{}, Value: path}, nil
+}
+
+// validateJsonSerializable checks that a value can be serialized to JSON.
+// Returns an error if any Map has non-String keys.
+func validateJsonSerializable(v values.Value) error {
+	switch x := v.(type) {
+	case values.ArrayValue:
+		for _, item := range x.Items {
+			if err := validateJsonSerializable(item); err != nil {
+				return err
+			}
+		}
+	case values.MapValue:
+		for _, entry := range x.Entries {
+			if _, ok := entry.Key.(values.StringValue); !ok {
+				return fmt.Errorf("Map keys must be String for JSON serialization, got %T", entry.Key)
+			}
+			if err := validateJsonSerializable(entry.Value); err != nil {
+				return err
+			}
+		}
+	case values.PairValue:
+		if err := validateJsonSerializable(x.Left); err != nil {
+			return err
+		}
+		if err := validateJsonSerializable(x.Right); err != nil {
+			return err
+		}
+	case values.StructValue:
+		for _, val := range x.Fields {
+			if err := validateJsonSerializable(val); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // valueToJson converts a WDL values.Value to a json-serializable interface{}.
@@ -458,9 +497,13 @@ func stdGlob(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("glob: invalid pattern %q: %v", pattern.Value, err)}
 	}
-	items := make([]values.Value, len(matches))
-	for i, m := range matches {
-		items[i] = values.FileValue{Type: types.FileType{}, Value: m}
+	var items []values.Value
+	for _, m := range matches {
+		info, err := os.Stat(m)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		items = append(items, values.FileValue{Type: types.FileType{}, Value: m})
 	}
 	return values.ArrayValue{
 		Type:  types.ArrayType{ItemType: types.FileType{}},
