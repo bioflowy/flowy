@@ -6,18 +6,32 @@
 #
 # Usage: make spectool reads this file and passes patterns to
 #        spectool --exclude "pattern1,pattern2,..."
+#
+# Conformance baseline: 45/170 passed (2026-03-11)
+# See .planning/phases/08-add-spectool-integration-for-wdl-specification-compliance-testing/08-02-SUMMARY.md
 
-# --- HTTP/HTTPS imports (not supported — v2 roadmap, EXT-01) ---
-# WDL allows importing files via http:// and https:// URLs.
-# Populate exact pattern(s) after first spectool run.
-# http_import
 
-# --- Sub-workflow calls (not supported — v2 roadmap) ---
-# WDL allows calling another workflow as a sub-workflow.
-# Populate exact pattern(s) after first spectool run.
-# sub_workflow
+# =============================================================================
+# Object type — WDL 1.0/1.1 deprecated type, not implemented in flowy
+# =============================================================================
+# Object type was deprecated in WDL 1.x and is not implemented.
+# This covers test_object (Object literal), read_object_task (read_object()),
+# read_objects_task (read_objects()), write_object_task (write_object()),
+# and write_objects_task (write_objects()).
+test_object
+read_object_task
+read_objects_task
+write_object_task
+write_objects_task
 
-# --- Object type (WDL 1.2 deprecated, not implemented) ---
-# The Object type was deprecated in WDL 1.x and is not implemented in flowy.
-# Populate exact pattern(s) after first spectool run.
-# object_type
+
+# =============================================================================
+# Multiline string literals — WDL 1.2 expression-context heredoc syntax
+# =============================================================================
+# WDL 1.2 supports multiline string literals using <<<...>>> in expression
+# context (outside of command blocks). This differs from heredoc command blocks
+# and is not yet implemented in flowy's parser.
+# Affects: multiline_strings1, multiline_strings2, multiline_strings3,
+#          multiline_strings4, multiline_string_placeholders.
+multiline_strings
+multiline_string_placeholders
