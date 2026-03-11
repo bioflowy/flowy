@@ -44,7 +44,7 @@ func TestBuildCommand_SimpleCommand(t *testing.T) {
 	env := eval.NewEnv(nil)
 	pm := task.NewPathMap()
 
-	scriptPath, err := task.BuildCommand(taskAST, env, pm, execDir)
+	scriptPath, err := task.BuildCommand(taskAST, env, pm, execDir, "")
 	if err != nil {
 		t.Fatalf("BuildCommand error: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestBuildCommand_ContainerPath(t *testing.T) {
 		Command: makeCommandExprWithPlaceholder("\nsamtools view ", "bam", "\n"),
 	}
 
-	scriptPath, err := task.BuildCommand(taskAST, env, pm, execDir)
+	scriptPath, err := task.BuildCommand(taskAST, env, pm, execDir, "")
 	if err != nil {
 		t.Fatalf("BuildCommand error: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestBuildCommand_WritesFile(t *testing.T) {
 	env := eval.NewEnv(nil)
 	pm := task.NewPathMap()
 
-	_, err := task.BuildCommand(taskAST, env, pm, execDir)
+	_, err := task.BuildCommand(taskAST, env, pm, execDir, "")
 	if err != nil {
 		t.Fatalf("BuildCommand error: %v", err)
 	}

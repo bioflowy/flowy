@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
@@ -22,15 +23,16 @@ import (
 //  3. Evaluate task.Command via eval.Eval with the translated env.
 //  4. Write the expanded command string to filepath.Join(execDir, "command") mode 0644.
 //  5. Return the path to the written file.
-func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string) (string, error) {
+func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string, workDir string) (string, error) {
 	// Private declarations are already evaluated into env by RunTask before
 	// BuildCommand is called. Build a translated env with container paths.
 	// Step 1: build a translated env with container paths substituted for host paths.
 	translatedEnv := translateEnv(env, pm)
 
 	// Step 3: evaluate the command expression using the translated env.
-	// ExecContext is empty during command expansion — stdout/stderr not yet captured.
-	v, err := eval.Eval(task.Command, translatedEnv, eval.ExecContext{})
+	// Pass workDir so write_* functions create files inside the task work directory
+	// (which is bind-mounted into the container as /mnt/outputs).
+	v, err := eval.Eval(task.Command, translatedEnv, eval.ExecContext{WorkDir: workDir})
 	if err != nil {
 		return "", fmt.Errorf("evaluating command for task %q: %w", task.Name, err)
 	}
@@ -40,13 +42,22 @@ func BuildCommand(task *ast.Task, env *eval.Env, pm *PathMap, execDir string) (s
 		return "", fmt.Errorf("command expression must evaluate to String, got %T", v)
 	}
 
-	// Step 4: write the expanded command string to execDir/command.
+	// Step 4: translate any host workDir paths in the command to container paths.
+	// Files created by write_* during command evaluation are placed in workDir,
+	// but the container sees workDir as /mnt/outputs.
+	cmd := sv.Value
+	if workDir != "" {
+		cmd = strings.ReplaceAll(cmd, workDir+"/", "/mnt/outputs/")
+		cmd = strings.ReplaceAll(cmd, workDir, "/mnt/outputs")
+	}
+
+	// Step 5: write the expanded command string to execDir/command.
 	scriptPath := filepath.Join(execDir, "command")
-	if err := os.WriteFile(scriptPath, []byte(sv.Value), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(cmd), 0644); err != nil {
 		return "", fmt.Errorf("writing command script for task %q: %w", task.Name, err)
 	}
 
-	// Step 5: return path to the written file.
+	// Step 6: return path to the written file.
 	return scriptPath, nil
 }
 

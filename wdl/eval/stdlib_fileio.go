@@ -60,6 +60,18 @@ func fileArg(args []values.Value, workDir ...string) (string, error) {
 	return path, nil
 }
 
+// writeTempDir creates a temporary directory for write_* functions.
+// If ctx.WorkDir is set (task execution context), the temp dir is created
+// inside the work directory so files are accessible from within the task command.
+// Otherwise, falls back to os.TempDir().
+func writeTempDir(prefix string, ctx ExecContext) (string, error) {
+	parent := ""
+	if ctx.WorkDir != "" {
+		parent = ctx.WorkDir
+	}
+	return os.MkdirTemp(parent, prefix)
+}
+
 // stdReadLines implements read_lines(File) -> Array[String].
 // Reads the file, trims a trailing newline, then splits on "\n".
 // Each resulting line becomes a StringValue.
@@ -306,7 +318,7 @@ func stdWriteLines(args []values.Value, ctx ExecContext) (values.Value, error) {
 		sb.WriteString(sv.Value)
 		sb.WriteByte('\n')
 	}
-	dir, err := os.MkdirTemp("", "wdl-write-*")
+	dir, err := writeTempDir("wdl-write-*", ctx)
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("write_lines: cannot create temp dir: %v", err)}
 	}
@@ -344,7 +356,7 @@ func stdWriteTsv(args []values.Value, ctx ExecContext) (values.Value, error) {
 		sb.WriteString(strings.Join(fields, "\t"))
 		sb.WriteByte('\n')
 	}
-	dir, err := os.MkdirTemp("", "wdl-write-*")
+	dir, err := writeTempDir("wdl-write-*", ctx)
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("write_tsv: cannot create temp dir: %v", err)}
 	}
@@ -377,7 +389,7 @@ func stdWriteMap(args []values.Value, ctx ExecContext) (values.Value, error) {
 		sb.WriteString(vs.Value)
 		sb.WriteByte('\n')
 	}
-	dir, err := os.MkdirTemp("", "wdl-write-*")
+	dir, err := writeTempDir("wdl-write-*", ctx)
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("write_map: cannot create temp dir: %v", err)}
 	}
@@ -402,7 +414,7 @@ func stdWriteJson(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("write_json: cannot marshal value: %v", err)}
 	}
-	dir, err := os.MkdirTemp("", "wdl-write-*")
+	dir, err := writeTempDir("wdl-write-*", ctx)
 	if err != nil {
 		return nil, &EvalError{Message: fmt.Sprintf("write_json: cannot create temp dir: %v", err)}
 	}
