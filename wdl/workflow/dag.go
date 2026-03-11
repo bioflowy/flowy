@@ -110,7 +110,7 @@ func buildDAG(body []ast.WorkflowNode) (map[string]*dagNode, error) {
 			// Scatter depends on calls referenced in its Expr and inner call inputs.
 			deps := collectExprDepsNode(n.Expr, knownNodes, varToNodeID)
 			deps = append(deps, collectBodyDeps2(n.Body, knownNodes, varToNodeID)...)
-			deps = uniqueStrings(deps)
+			deps = removeString(uniqueStrings(deps), id) // filter self-dependency
 			node.deps = deps
 			for _, depID := range deps {
 				depNode := nodes[depID]
@@ -126,7 +126,7 @@ func buildDAG(body []ast.WorkflowNode) (map[string]*dagNode, error) {
 			// Conditional depends on calls referenced in its Expr and inner call inputs.
 			deps := collectExprDepsNode(n.Expr, knownNodes, varToNodeID)
 			deps = append(deps, collectBodyDeps2(n.Body, knownNodes, varToNodeID)...)
-			deps = uniqueStrings(deps)
+			deps = removeString(uniqueStrings(deps), id) // filter self-dependency
 			node.deps = deps
 			for _, depID := range deps {
 				depNode := nodes[depID]
@@ -356,6 +356,17 @@ func uniqueStrings(s []string) []string {
 	for _, v := range s {
 		if !seen[v] {
 			seen[v] = true
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// removeString returns a new slice with all occurrences of s removed.
+func removeString(slice []string, s string) []string {
+	result := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if v != s {
 			result = append(result, v)
 		}
 	}
