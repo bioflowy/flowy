@@ -221,6 +221,118 @@ func TestStructFieldAccess(t *testing.T) {
 	}
 }
 
+// TestCallOutputInWorkflow checks that a workflow output referencing a call output
+// (e.g., sayHello.greeting) resolves correctly without type errors.
+func TestCallOutputInWorkflow(t *testing.T) {
+	doc := parseFixture(t, "wdl/testdata/hello.wdl")
+	env, errs := Check(doc)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+	got, ok := env["result"]
+	if !ok {
+		t.Fatal("result not found in TypeEnv")
+	}
+	if got.TypeName() != "String" {
+		t.Fatalf("result: expected String, got %s", got.TypeName())
+	}
+}
+
+// TestCallOutputInline checks that an inline task+workflow with a call output
+// reference type-checks without errors.
+func TestCallOutputInline(t *testing.T) {
+	doc := parseFixture(t, "wdl/testdata/call_output.wdl")
+	env, errs := Check(doc)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+	got, ok := env["msg"]
+	if !ok {
+		t.Fatal("msg not found in TypeEnv")
+	}
+	if got.TypeName() != "String" {
+		t.Fatalf("msg: expected String, got %s", got.TypeName())
+	}
+}
+
+// TestScatterCallPromotion checks that a call inside a scatter block has its
+// outputs promoted to Array[T] in the enclosing workflow scope.
+func TestScatterCallPromotion(t *testing.T) {
+	doc := parseFixture(t, "wdl/testdata/scatter_call.wdl")
+	env, errs := Check(doc)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+	got, ok := env["results"]
+	if !ok {
+		t.Fatal("results not found in TypeEnv")
+	}
+	if got.TypeName() != "Array[String]" {
+		t.Fatalf("results: expected Array[String], got %s", got.TypeName())
+	}
+}
+
+// TestConditionalCallPromotion checks that a call inside a conditional block
+// has its outputs promoted to T? in the enclosing workflow scope.
+func TestConditionalCallPromotion(t *testing.T) {
+	// Build in-memory AST: task with String output, workflow with conditional call.
+	doc := &ast.Document{
+		Tasks: []*ast.Task{
+			{
+				Name: "innerTask",
+				Outputs: []*ast.Decl{
+					{
+						Type: types.StringType{},
+						Name: "out",
+					},
+				},
+			},
+		},
+		Workflows: []*ast.Workflow{
+			{
+				Name: "condWf",
+				Inputs: []*ast.Decl{
+					{
+						Type: types.BooleanType{},
+						Name: "flag",
+					},
+				},
+				Body: []ast.WorkflowNode{
+					&ast.Conditional{
+						Expr: &ast.IdentExpr{Name: "flag"},
+						Body: []ast.WorkflowNode{
+							&ast.Call{
+								Callee: []string{"innerTask"},
+							},
+						},
+					},
+				},
+				Outputs: []*ast.Decl{
+					{
+						Type: types.StringType{Optional: true},
+						Name: "cond_out",
+						Expr: &ast.GetExpr{
+							Object: &ast.IdentExpr{Name: "innerTask"},
+							Member: "out",
+						},
+					},
+				},
+			},
+		},
+	}
+	env, errs := Check(doc)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+	got, ok := env["cond_out"]
+	if !ok {
+		t.Fatal("cond_out not found in TypeEnv")
+	}
+	if got.TypeName() != "String?" {
+		t.Fatalf("cond_out: expected String?, got %s", got.TypeName())
+	}
+}
+
 // TestStructUndefined checks that the checker reports an error when a struct
 // literal references a struct name that is not defined in the document.
 func TestStructUndefined(t *testing.T) {
