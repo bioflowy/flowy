@@ -45,16 +45,21 @@ func valueToStr(v values.Value) string {
 	}
 }
 
-// stdLength implements length(Array[X]) -> Int.
+// stdLength implements length(Array[X]) -> Int, length(Map[K,V]) -> Int, length(String) -> Int.
 func stdLength(args []values.Value, ctx ExecContext) (values.Value, error) {
 	if len(args) < 1 {
-		return nil, &EvalError{Message: "length: expected Array argument"}
+		return nil, &EvalError{Message: "length: expected argument"}
 	}
-	av, ok := args[0].(values.ArrayValue)
-	if !ok {
-		return nil, &EvalError{Message: fmt.Sprintf("length: expected ArrayValue, got %T", args[0])}
+	switch v := args[0].(type) {
+	case values.ArrayValue:
+		return values.IntValue{Type: types.IntType{}, Value: int64(len(v.Items))}, nil
+	case values.MapValue:
+		return values.IntValue{Type: types.IntType{}, Value: int64(len(v.Entries))}, nil
+	case values.StringValue:
+		return values.IntValue{Type: types.IntType{}, Value: int64(len([]rune(v.Value)))}, nil
+	default:
+		return nil, &EvalError{Message: fmt.Sprintf("length: expected Array, Map, or String, got %T", args[0])}
 	}
-	return values.IntValue{Type: types.IntType{}, Value: int64(len(av.Items))}, nil
 }
 
 // stdFlatten implements flatten(Array[Array[X]]) -> Array[X].
