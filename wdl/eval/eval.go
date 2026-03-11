@@ -385,6 +385,19 @@ func evalComparison(op int, left, right values.Value, pos ast.Pos) (values.Value
 		}
 	}
 
+	// Comparing anything with None using == returns false, != returns true
+	if op == lexer.TokEqEq || op == lexer.TokNotEq {
+		_, leftIsNull := left.(values.NullValue)
+		_, rightIsNull := right.(values.NullValue)
+		if leftIsNull || rightIsNull {
+			bothNull := leftIsNull && rightIsNull
+			if op == lexer.TokEqEq {
+				return values.BooleanValue{Type: types.BooleanType{}, Value: bothNull}, nil
+			}
+			return values.BooleanValue{Type: types.BooleanType{}, Value: !bothNull}, nil
+		}
+	}
+
 	// Deep equality for compound types (Array, Map, Pair)
 	if op == lexer.TokEqEq || op == lexer.TokNotEq {
 		eq, err := valuesEqual(left, right)
