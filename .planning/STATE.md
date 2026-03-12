@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Completed 12-client-cli-spectool-compatibility-02-PLAN.md
-last_updated: "2026-03-12T01:45:05.295Z"
+stopped_at: Completed 12-client-cli-spectool-compatibility-03-PLAN.md
+last_updated: "2026-03-12T01:52:34.935Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 11-daemon-binary-task-execution P02 | 2 | 2 tasks | 2 files |
 | Phase 12-client-cli-spectool-compatibility P01 | 3 | 3 tasks | 6 files |
 | Phase 12-client-cli-spectool-compatibility P02 | 3 | 1 tasks | 2 files |
+| Phase 12-client-cli-spectool-compatibility P03 | 30 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 12-client-cli-spectool-compatibility]: internal/client.Client uses 30s HTTP timeout matching daemon pattern; New(serverURL) returns configured client
 - [Phase 12-client-cli-spectool-compatibility]: --base-dir CLI flag overrides cfg.BaseDir for submit subcommand — enables t.TempDir() staging in tests without config files
 - [Phase 12-client-cli-spectool-compatibility]: stageInputFiles silently skips non-existent paths (no error) — WDL inputs can contain non-file string values
+- [Phase 12-client-cli-spectool-compatibility]: --verbose accepted as no-op with note in server mode — avoids breaking spectool invocations
+- [Phase 12-client-cli-spectool-compatibility]: pollUntilDone uses 2s ticker; transient poll failures warn and continue (not fatal)
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:45:05.291Z
-Stopped at: Completed 12-client-cli-spectool-compatibility-02-PLAN.md
+Last session: 2026-03-12T01:52:34.930Z
+Stopped at: Completed 12-client-cli-spectool-compatibility-03-PLAN.md
 Resume file: None
