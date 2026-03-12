@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.1 Distributed Execution (Shipped: 2026-03-12)
+
+**Phases completed:** 5 phases, 10 plans
+**Timeline:** 2 days (2026-03-10 → 2026-03-12)
+**Codebase:** 25,433 lines Go (+13,504 / -627), 86 files modified, 64 commits
+**Git range:** test(09-01) → docs(13-01)
+
+**Key accomplishments:**
+1. Shared foundation — YAML config, HTTP DTO types, SQLite persistence (WAL mode, CGO-free), filesystem layout helpers
+2. flowy-server binary — REST API (submit/status/outputs/abort/health), DAG dispatch to SQLite task queue, stale task detection
+3. flowy-daemon binary — poll-based task claiming, Docker execution, heartbeat reporting, graceful SIGTERM shutdown
+4. flowy client CLI — submit/status/outputs subcommands, synchronous `flowy run` with polling, spectool compatibility preserved
+5. Code quality cleanup — consolidated ValueToInterface into shared wdl/values package, documentation fixes, API surface cleanup
+
+**Archive:** `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQUIREMENTS.md`
+
+---
+
 ## v1.0 MVP (Shipped: 2026-03-11)
 
 **Phases completed:** 8 phases, 26 plans

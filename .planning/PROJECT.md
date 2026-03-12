@@ -2,22 +2,11 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as a CLI tool (`flowy run`, `flowy check`) with spectool conformance testing.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports both local single-host execution and distributed multi-host execution via shared filesystem and SQLite task queue.
 
 ## Core Value
 
 WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること。
-
-## Current Milestone: v1.1 Distributed Execution
-
-**Goal:** Split monolithic CLI into distributed server/daemon/client architecture for multi-host workflow execution.
-
-**Target features:**
-- Workflow server (flowy-server) — REST API, DAG scheduling, SQLite state management
-- Execution daemon (flowy-daemon) — polls server for tasks, Docker execution, multi-host scale-out
-- Client CLI (flowy) — submit/status/outputs commands, `flowy run` synchronous mode for spectool compatibility
-- Shared filesystem storage — config-driven shared directory, client copies inputs, daemon copies outputs
-- Separate binaries: `flowy`, `flowy-server`, `flowy-daemon`
 
 ## Requirements
 
@@ -32,16 +21,17 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ Standard library functions (35+ functions) — v1.0
 - ✓ CLI tools (`flowy run`, `flowy check`) with all flags — v1.0
 - ✓ Spectool conformance testing integration — v1.0
+- ✓ Workflow server with REST API (flowy-server binary) — v1.1
+- ✓ Execution daemon with task polling (flowy-daemon binary) — v1.1
+- ✓ Client CLI with submit/status/outputs/run commands (flowy binary) — v1.1
+- ✓ Shared filesystem storage with config-driven directory — v1.1
+- ✓ SQLite persistence for workflow runs, task state, execution history — v1.1
+- ✓ `flowy run` synchronous mode (submit → poll → results, spectool compatible) — v1.1
+- ✓ Multi-daemon scale-out for scatter parallelism — v1.1
 
 ### Active
 
-- [ ] Workflow server with REST API (flowy-server binary)
-- [ ] Execution daemon with task polling (flowy-daemon binary)
-- [ ] Client CLI with submit/status/outputs/run commands (flowy binary)
-- [ ] Shared filesystem storage with config-driven directory
-- [ ] SQLite persistence for workflow runs, task state, execution history
-- [ ] `flowy run` synchronous mode (submit → poll → results, spectool compatible)
-- [ ] Multi-daemon scale-out for scatter parallelism
+(None — next milestone requirements to be defined via `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -53,12 +43,17 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - Execution cache (task output reuse) — deferred to future milestone
 - Workflow resume from checkpoint — deferred to future milestone
 - Docker-alternative backends (Podman, Singularity) — deferred to future milestone
+- WebSocket/SSE for status — no web UI; polling sufficient for batch workflows
+- JWT/OAuth2 authentication — HPC clusters use network-level security; add later if needed
+- gRPC API — REST is standard in bioinformatics tooling
+- Kubernetes integration — enormous scope; Docker per node sufficient for HPC
 
 ## Context
 
-Shipped v1.0 with 17,648 LOC Go across 204 files.
-Tech stack: Go 1.24, Docker SDK for Go, hand-written lexer (Rob Pike pattern), Pratt expression parser.
+Shipped v1.1 with 25,433 LOC Go.
+Tech stack: Go 1.24, Docker SDK for Go, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations.
 Spectool conformance: 45/160 WDL 1.2 tests passing (28% baseline).
+Architecture: three binaries (flowy, flowy-server, flowy-daemon), SQLite task queue, shared filesystem for I/O.
 Known gaps: None keyword, sep() function, shorthand call syntax, length() on Map/Pair.
 Reference implementation: `../miniwdl` (Python, ~20k lines).
 
@@ -80,9 +75,14 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | ShellRunner mock for tests | No Docker dependency in unit tests | ✓ Good — fast CI-friendly tests |
 | errgroup for scatter parallelism | Bounded concurrency with cancellation | ✓ Good — clean fail-fast behavior |
 | Spectool for conformance | Official WDL compliance benchmark | ✓ Good — 45/160 baseline established |
-| Separate binaries for server/daemon/client | Clean process separation, independent deployment | — Pending |
-| Daemon polls server (not push) | Simpler scale-out, daemon only needs server address | — Pending |
-| Shared filesystem first, S3 later | Reduce scope, NFS ubiquitous in HPC environments | — Pending |
+| Separate binaries for server/daemon/client | Clean process separation, independent deployment | ✓ Good — clean architecture |
+| Daemon polls server (not push) | Simpler scale-out, daemon only needs server address | ✓ Good — simple and reliable |
+| Shared filesystem first, S3 later | Reduce scope, NFS ubiquitous in HPC environments | ✓ Good — ships fast |
+| SQLite with WAL + modernc.org/sqlite | CGO-free, single-file DB, WAL for concurrent reads | ✓ Good — zero external dependencies |
+| chi v5 for HTTP routing | Lightweight, idiomatic Go, middleware support | ✓ Good — clean handler code |
+| Atomic task claiming (single UPDATE) | Avoid TOCTOU race in multi-daemon environments | ✓ Good — correct concurrency |
+| runTaskFn injection for dispatch | Extension seam in scheduler for distributed execution | ✓ Good — minimal refactoring |
+| ADR 0001: Remove heuristic file staging | Client cannot reliably detect File-typed inputs from JSON | ✓ Good — correct by construction |
 
 ---
-*Last updated: 2026-03-11 after v1.1 milestone start*
+*Last updated: 2026-03-12 after v1.1 milestone*
