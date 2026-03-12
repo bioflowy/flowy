@@ -27,7 +27,7 @@ import (
 // paths in the PathMap.
 //
 // Returns: (env with all bindings, env-var strings for env=true inputs, error)
-func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap, structDefs ...map[string]*ast.StructDef) (*eval.Env, []string, error) {
+func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap, wdlDir string, structDefs ...map[string]*ast.StructDef) (*eval.Env, []string, error) {
 	var sd map[string]*ast.StructDef
 	if len(structDefs) > 0 {
 		sd = structDefs[0]
@@ -45,7 +45,7 @@ func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap, 
 		}
 		if found {
 			// Convert JSON value using declaration type for type-aware coercion
-			converted, err := jsonToWDLValue(raw, decl.Type, sd)
+			converted, err := jsonToWDLValue(raw, decl.Type, sd, wdlDir)
 			if err != nil {
 				return nil, nil, fmt.Errorf("input %q: %w", decl.Name, err)
 			}
@@ -89,7 +89,7 @@ func BindInputs(task *ast.Task, jsonInputs map[string]interface{}, pm *PathMap, 
 //   - float64 -> IntValue when declType is IntType (always truncates)
 //   - For compound types (Array, Map, Pair): recurse with item/key/value types
 //   - Falls back to untyped conversion for AnyType or unrecognized types
-func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef) (values.Value, error) {
+func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef, wdlDir string) (values.Value, error) {
 	if v == nil {
 		return values.NullValue{}, nil
 	}
@@ -105,7 +105,7 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 			return nil, fmt.Errorf("expected string for File, got %T", v)
 		}
 		// Resolve relative paths to absolute and canonicalize.
-		s = cleanPath(s)
+		s = cleanPath(s, wdlDir)
 		return values.FileValue{Type: dt, Value: s}, nil
 
 	case types.DirectoryType:
@@ -114,7 +114,7 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 			return nil, fmt.Errorf("expected string for Directory, got %T", v)
 		}
 		// Resolve relative paths to absolute and canonicalize.
-		s = cleanPath(s)
+		s = cleanPath(s, wdlDir)
 		return values.DirectoryValue{Type: dt, Value: s}, nil
 
 	case types.StringType:
@@ -160,7 +160,7 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 		}
 		items := make([]values.Value, len(arr))
 		for i, elem := range arr {
-			item, err := jsonToWDLValue(elem, dt.ItemType, structDefs)
+			item, err := jsonToWDLValue(elem, dt.ItemType, structDefs, wdlDir)
 			if err != nil {
 				return nil, fmt.Errorf("array item %d: %w", i, err)
 			}
@@ -175,11 +175,11 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 		}
 		entries := make([]values.MapEntry, 0, len(m))
 		for k, mv := range m {
-			kv, err := jsonToWDLValue(k, dt.KeyType, structDefs)
+			kv, err := jsonToWDLValue(k, dt.KeyType, structDefs, wdlDir)
 			if err != nil {
 				return nil, fmt.Errorf("map key %q: %w", k, err)
 			}
-			vv, err := jsonToWDLValue(mv, dt.ValType, structDefs)
+			vv, err := jsonToWDLValue(mv, dt.ValType, structDefs, wdlDir)
 			if err != nil {
 				return nil, fmt.Errorf("map value for key %q: %w", k, err)
 			}
@@ -192,11 +192,11 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 		if !ok {
 			return nil, fmt.Errorf("expected object for Pair, got %T", v)
 		}
-		left, err := jsonToWDLValue(m["left"], dt.LeftType, structDefs)
+		left, err := jsonToWDLValue(m["left"], dt.LeftType, structDefs, wdlDir)
 		if err != nil {
 			return nil, fmt.Errorf("pair left: %w", err)
 		}
-		right, err := jsonToWDLValue(m["right"], dt.RightType, structDefs)
+		right, err := jsonToWDLValue(m["right"], dt.RightType, structDefs, wdlDir)
 		if err != nil {
 			return nil, fmt.Errorf("pair right: %w", err)
 		}
@@ -211,7 +211,7 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 		if sd, hasDef := structDefs[dt.Name]; hasDef {
 			for _, member := range sd.Members {
 				if fv, exists := m[member.Name]; exists {
-					val, err := jsonToWDLValue(fv, member.Type, structDefs)
+					val, err := jsonToWDLValue(fv, member.Type, structDefs, wdlDir)
 					if err != nil {
 						return nil, fmt.Errorf("struct %q field %q: %w", dt.Name, member.Name, err)
 					}
@@ -277,8 +277,13 @@ func jsonToValueUntyped(v interface{}) values.Value {
 }
 
 // cleanPath resolves relative paths to absolute and canonicalizes ".." components.
-func cleanPath(p string) string {
+// If wdlDir is non-empty, relative paths are resolved relative to it (the WDL
+// file's parent directory, per WDL 1.2 spec). Otherwise, falls back to CWD.
+func cleanPath(p string, wdlDir string) string {
 	if !filepath.IsAbs(p) {
+		if wdlDir != "" {
+			return filepath.Clean(filepath.Join(wdlDir, p))
+		}
 		if abs, err := filepath.Abs(p); err == nil {
 			return filepath.Clean(abs)
 		}

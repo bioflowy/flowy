@@ -158,7 +158,7 @@ func TestBindWorkflowInputs_FullyQualified(t *testing.T) {
 		"hello.name": "world",
 	}
 
-	env, err := bindWorkflowInputs(wf, jsonInputs)
+	env, err := bindWorkflowInputs(wf, jsonInputs, "")
 	if err != nil {
 		t.Fatalf("bindWorkflowInputs returned error: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestBindWorkflowInputs_UnqualifiedFallback(t *testing.T) {
 		"name": "fallback",
 	}
 
-	env, err := bindWorkflowInputs(wf, jsonInputs)
+	env, err := bindWorkflowInputs(wf, jsonInputs, "")
 	if err != nil {
 		t.Fatalf("bindWorkflowInputs returned error: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestBindWorkflowInputs_FullyQualifiedTakesPrecedence(t *testing.T) {
 		"name":       "unqualified",
 	}
 
-	env, err := bindWorkflowInputs(wf, jsonInputs)
+	env, err := bindWorkflowInputs(wf, jsonInputs, "")
 	if err != nil {
 		t.Fatalf("bindWorkflowInputs returned error: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestBindWorkflowInputs_DefaultUsedWhenMissing(t *testing.T) {
 	wf := makeStringWorkflow("hello", "greeting", "default_greeting", false)
 	jsonInputs := map[string]interface{}{} // no key for "greeting"
 
-	env, err := bindWorkflowInputs(wf, jsonInputs)
+	env, err := bindWorkflowInputs(wf, jsonInputs, "")
 	if err != nil {
 		t.Fatalf("bindWorkflowInputs returned error: %v", err)
 	}

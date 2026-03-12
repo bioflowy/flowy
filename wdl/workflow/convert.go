@@ -102,7 +102,7 @@ func evalCallInputs(call *ast.Call, env *eval.Env) (map[string]interface{}, erro
 //   - If absent and has default Expr: evaluate the default expression
 //   - If absent, no default, and optional: bind NullValue{}
 //   - If absent, no default, and required: return error
-func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}, structDefs ...map[string]*ast.StructDef) (*eval.Env, error) {
+func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}, wdlDir string, structDefs ...map[string]*ast.StructDef) (*eval.Env, error) {
 	var sd map[string]*ast.StructDef
 	if len(structDefs) > 0 {
 		sd = structDefs[0]
@@ -118,7 +118,7 @@ func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}, str
 			raw, found = jsonInputs[decl.Name]
 		}
 		if found {
-			val = jsonToValueTyped(raw, decl.Type, sd)
+			val = jsonToValueTyped(raw, decl.Type, sd, wdlDir)
 		} else if decl.Expr != nil {
 			v, err := eval.Eval(decl.Expr, env, eval.ExecContext{})
 			if err != nil {
@@ -138,8 +138,13 @@ func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}, str
 }
 
 // cleanPath resolves relative paths to absolute and canonicalizes ".." components.
-func cleanPath(p string) string {
+// If wdlDir is non-empty, relative paths are resolved relative to it (the WDL
+// file's parent directory, per WDL 1.2 spec). Otherwise, falls back to CWD.
+func cleanPath(p string, wdlDir string) string {
 	if !filepath.IsAbs(p) {
+		if wdlDir != "" {
+			return filepath.Clean(filepath.Join(wdlDir, p))
+		}
 		if abs, err := filepath.Abs(p); err == nil {
 			return filepath.Clean(abs)
 		}
@@ -149,7 +154,7 @@ func cleanPath(p string) string {
 
 // jsonToValueTyped converts a JSON-decoded value to a WDL Value using the
 // declaration type for type-aware conversions (File, Directory, Struct, etc.).
-func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef) values.Value {
+func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef, wdlDir string) values.Value {
 	if v == nil {
 		return values.NullValue{}
 	}
@@ -157,13 +162,13 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 	switch dt := declType.(type) {
 	case types.FileType:
 		if s, ok := v.(string); ok {
-			return values.FileValue{Type: dt, Value: cleanPath(s)}
+			return values.FileValue{Type: dt, Value: cleanPath(s, wdlDir)}
 		}
 		return jsonToValueUntyped(v)
 
 	case types.DirectoryType:
 		if s, ok := v.(string); ok {
-			return values.DirectoryValue{Type: dt, Value: cleanPath(s)}
+			return values.DirectoryValue{Type: dt, Value: cleanPath(s, wdlDir)}
 		}
 		return jsonToValueUntyped(v)
 
@@ -203,7 +208,7 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 		if arr, ok := v.([]interface{}); ok {
 			items := make([]values.Value, len(arr))
 			for i, elem := range arr {
-				items[i] = jsonToValueTyped(elem, dt.ItemType, structDefs)
+				items[i] = jsonToValueTyped(elem, dt.ItemType, structDefs, wdlDir)
 			}
 			return values.ArrayValue{Type: dt, Items: items}
 		}
@@ -213,8 +218,8 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 		if m, ok := v.(map[string]interface{}); ok {
 			entries := make([]values.MapEntry, 0, len(m))
 			for k, mv := range m {
-				kv := jsonToValueTyped(k, dt.KeyType, structDefs)
-				vv := jsonToValueTyped(mv, dt.ValType, structDefs)
+				kv := jsonToValueTyped(k, dt.KeyType, structDefs, wdlDir)
+				vv := jsonToValueTyped(mv, dt.ValType, structDefs, wdlDir)
 				entries = append(entries, values.MapEntry{Key: kv, Value: vv})
 			}
 			return values.MapValue{Type: dt, Entries: entries}
@@ -223,8 +228,8 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 
 	case types.PairType:
 		if m, ok := v.(map[string]interface{}); ok {
-			left := jsonToValueTyped(m["left"], dt.LeftType, structDefs)
-			right := jsonToValueTyped(m["right"], dt.RightType, structDefs)
+			left := jsonToValueTyped(m["left"], dt.LeftType, structDefs, wdlDir)
+			right := jsonToValueTyped(m["right"], dt.RightType, structDefs, wdlDir)
 			return values.PairValue{Type: dt, Left: left, Right: right}
 		}
 		return jsonToValueUntyped(v)
@@ -236,7 +241,7 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 			if sd, hasDef := structDefs[dt.Name]; hasDef {
 				for _, member := range sd.Members {
 					if fv, exists := m[member.Name]; exists {
-						fields[member.Name] = jsonToValueTyped(fv, member.Type, structDefs)
+						fields[member.Name] = jsonToValueTyped(fv, member.Type, structDefs, wdlDir)
 					}
 				}
 				// Include any extra fields not in the struct definition.

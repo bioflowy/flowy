@@ -27,7 +27,7 @@ import (
 func (s *Server) makeDispatchFn(runID string) workflow.TaskDispatchFn {
 	var shardCounter int64 // atomic counter for unique shard indices per run
 	return func(ctx context.Context, t *ast.Task, inputs map[string]interface{},
-		runner task.ContainerRunner, execRoot string,
+		runner task.ContainerRunner, execRoot string, wdlDir string,
 		structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 
 		shardIndex := int(atomic.AddInt64(&shardCounter, 1) - 1)

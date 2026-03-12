@@ -206,7 +206,9 @@ func (d *Daemon) executeTask(claim *api.TaskClaimResponse) {
 	}
 
 	// Execute the task via Docker.
-	outputs, err := task.RunTask(taskCtx, astTask, jsonInputs, task.NewDockerRunner(), claim.OutputsDir, structDefs)
+	// Resolve relative file paths in inputs against the WDL file's parent directory.
+	wdlDir := filepath.Dir(claim.WDLPath)
+	outputs, err := task.RunTask(taskCtx, astTask, jsonInputs, task.NewDockerRunner(), claim.OutputsDir, wdlDir, structDefs)
 	if err != nil {
 		log.Printf("daemon: RunTask task_id=%s: %v", claim.TaskID, err)
 		d.reportResult(taskCtx, claim.TaskID, "FAILED", fmt.Sprintf("run task: %v", err))

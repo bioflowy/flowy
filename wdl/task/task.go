@@ -62,7 +62,7 @@ func isAcceptableExitCode(exitCode int, spec ReturnCodesSpec) bool {
 //
 // The runner parameter accepts any ContainerRunner implementation, enabling
 // testing with ShellRunner without a live Docker daemon.
-func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interface{}, runner ContainerRunner, execRoot string, structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
+func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interface{}, runner ContainerRunner, execRoot string, wdlDir string, structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 	// Step 1: create execution directory layout.
 	// Use MkdirTemp to generate a unique directory per invocation, avoiding
 	// collisions when the same task is called from scatter iterations.
@@ -80,7 +80,7 @@ func RunTask(ctx context.Context, task *ast.Task, jsonInputs map[string]interfac
 
 	// Step 3: bind inputs — converts JSON values to typed WDL values and
 	// registers all File/Directory paths in the PathMap.
-	env, envVars, err := BindInputs(task, jsonInputs, pm, structDefs...)
+	env, envVars, err := BindInputs(task, jsonInputs, pm, wdlDir, structDefs...)
 	if err != nil {
 		return nil, fmt.Errorf("binding inputs for task %q: %w", task.Name, err)
 	}

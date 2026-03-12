@@ -18,7 +18,7 @@ import (
 // It replaces Docker execution in distributed mode — the server uses it
 // to create task rows in the SQLite queue instead of running containers.
 type TaskDispatchFn func(ctx context.Context, t *ast.Task, inputs map[string]interface{},
-	runner task.ContainerRunner, execRoot string,
+	runner task.ContainerRunner, execRoot string, wdlDir string,
 	structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error)
 
 // RunWorkflow is the public entry point for executing a WDL workflow.
@@ -94,7 +94,9 @@ func runWorkflowInternal(
 	for _, sd := range doc.Structs {
 		sdefs[sd.Name] = sd
 	}
-	env, err := bindWorkflowInputs(wf, jsonInputs, sdefs)
+	// Resolve WDL directory for relative path resolution (WDL 1.2 spec).
+	wdlDir := filepath.Dir(doc.File)
+	env, err := bindWorkflowInputs(wf, jsonInputs, wdlDir, sdefs)
 	if err != nil {
 		return nil, fmt.Errorf("binding workflow inputs: %w", err)
 	}
@@ -130,6 +132,7 @@ func runWorkflowInternal(
 		nodes:      dagNodes,
 		order:      order,
 		done:       make(map[string]bool),
+		wdlDir:     wdlDir,
 		taskRunner: dispatchFn,
 	}
 

@@ -20,7 +20,7 @@ func TestBindInputs_String(t *testing.T) {
 		"sample_name": "NA12878",
 	}
 	pm := task.NewPathMap()
-	env, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	env, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestBindInputs_FileType(t *testing.T) {
 		"bam_file": "/host/data/input.bam",
 	}
 	pm := task.NewPathMap()
-	env, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	env, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestBindInputs_MissingRequired(t *testing.T) {
 	}
 	jsonInputs := map[string]interface{}{} // missing required input
 	pm := task.NewPathMap()
-	_, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	_, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err == nil {
 		t.Error("expected error for missing required input, got nil")
 	}
@@ -94,7 +94,7 @@ func TestBindInputs_MissingOptional(t *testing.T) {
 	}
 	jsonInputs := map[string]interface{}{} // missing optional input
 	pm := task.NewPathMap()
-	env, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	env, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error for optional input: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestBindInputs_DefaultExpression(t *testing.T) {
 	}
 	jsonInputs := map[string]interface{}{} // not provided, should use default
 	pm := task.NewPathMap()
-	env, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	env, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestBindInputs_EnvModifier(t *testing.T) {
 		"SAMPLE_ID": "NA12878",
 	}
 	pm := task.NewPathMap()
-	_, envVars, err := task.BindInputs(taskAST, jsonInputs, pm)
+	_, envVars, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestBindInputs_IntType(t *testing.T) {
 		"count": float64(42), // JSON numbers are float64
 	}
 	pm := task.NewPathMap()
-	env, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	env, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestBindInputs_DirectoryType(t *testing.T) {
 		"ref_dir": "/host/refdata/",
 	}
 	pm := task.NewPathMap()
-	env, _, err := task.BindInputs(taskAST, jsonInputs, pm)
+	env, _, err := task.BindInputs(taskAST, jsonInputs, pm, "")
 	if err != nil {
 		t.Fatalf("BindInputs error: %v", err)
 	}

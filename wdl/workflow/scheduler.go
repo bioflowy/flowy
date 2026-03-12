@@ -38,7 +38,8 @@ type scheduler struct {
 	nodes      map[string]*dagNode // from buildDAG
 	order      []string            // topological order from topoSort
 	done       map[string]bool     // tracks completed node IDs
-	taskRunner func(ctx context.Context, t *ast.Task, inputs map[string]interface{}, runner task.ContainerRunner, execRoot string, structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error)
+	wdlDir     string // WDL file's parent directory for relative path resolution
+	taskRunner func(ctx context.Context, t *ast.Task, inputs map[string]interface{}, runner task.ContainerRunner, execRoot string, wdlDir string, structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error)
 }
 
 // structDefs returns a map of struct definitions from the document.
@@ -210,7 +211,7 @@ func (s *scheduler) runCall(ctx context.Context, call *ast.Call) (map[string]val
 	if fn == nil {
 		fn = runTaskFn
 	}
-	rawOutputs, err := fn(ctx, t, inputs, s.runner, s.execRoot, s.structDefs())
+	rawOutputs, err := fn(ctx, t, inputs, s.runner, s.execRoot, s.wdlDir, s.structDefs())
 	if err != nil {
 		return nil, fmt.Errorf("call %q execution: %w", alias, err)
 	}

@@ -107,7 +107,7 @@ func TestRunTaskEcho(t *testing.T) {
 	execRoot := t.TempDir()
 	runner := &ShellRunner{}
 
-	outputs, err := task.RunTask(context.Background(), makeEchoTask(), map[string]interface{}{}, runner, execRoot)
+	outputs, err := task.RunTask(context.Background(), makeEchoTask(), map[string]interface{}{}, runner, execRoot, "")
 	if err != nil {
 		t.Fatalf("RunTask error: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestRunTaskWithInputs(t *testing.T) {
 	outputs, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{
 		"count": float64(42),
 		"label": "sample",
-	}, runner, execRoot)
+	}, runner, execRoot, "")
 	if err != nil {
 		t.Fatalf("RunTask error: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestRunTaskFailure(t *testing.T) {
 		},
 	}
 
-	_, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{}, runner, execRoot)
+	_, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{}, runner, execRoot, "")
 	if err == nil {
 		t.Fatal("expected error for non-zero exit, got nil")
 	}
@@ -228,7 +228,7 @@ func TestRunTaskMissingInput(t *testing.T) {
 		},
 	}
 
-	_, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{}, runner, execRoot)
+	_, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{}, runner, execRoot, "")
 	if err == nil {
 		t.Fatal("expected error for missing required input, got nil")
 	}
@@ -270,7 +270,7 @@ func TestRunTaskFileOutput(t *testing.T) {
 		},
 	}
 
-	outputs, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{}, runner, execRoot)
+	outputs, err := task.RunTask(context.Background(), taskAST, map[string]interface{}{}, runner, execRoot, "")
 	if err != nil {
 		t.Fatalf("RunTask error: %v", err)
 	}

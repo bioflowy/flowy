@@ -16,7 +16,7 @@ func TestRunWorkflowWithDispatch(t *testing.T) {
 	dispatchCalled := false
 	mockDispatch := func(
 		_ context.Context, tsk *ast.Task, _ map[string]interface{},
-		_ task.ContainerRunner, _ string,
+		_ task.ContainerRunner, _ string, _ string,
 		_ ...map[string]*ast.StructDef,
 	) (map[string]values.Value, error) {
 		dispatchCalled = true
@@ -70,7 +70,7 @@ func TestRunWorkflowWithDispatch_ContextCancel(t *testing.T) {
 
 	blockDispatch := func(
 		innerCtx context.Context, _ *ast.Task, _ map[string]interface{},
-		_ task.ContainerRunner, _ string,
+		_ task.ContainerRunner, _ string, _ string,
 		_ ...map[string]*ast.StructDef,
 	) (map[string]values.Value, error) {
 		cancel() // trigger cancellation
