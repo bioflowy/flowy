@@ -50,6 +50,9 @@ type DaemonConfig struct {
 	// PollTimeoutSec is the long-poll timeout in seconds when waiting for tasks.
 	// Defaults to 30.
 	PollTimeoutSec int `yaml:"poll_timeout_sec"`
+
+	// Workers is the number of concurrent task execution goroutines. Defaults to 1.
+	Workers int `yaml:"workers"`
 }
 
 // ClientConfig holds configuration for the flowy CLI client binary.
@@ -99,6 +102,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Daemon.PollTimeoutSec == 0 {
 		cfg.Daemon.PollTimeoutSec = 30
+	}
+	if cfg.Daemon.Workers == 0 {
+		cfg.Daemon.Workers = 1
 	}
 	if cfg.Client.ServerURL == "" {
 		cfg.Client.ServerURL = "http://localhost:8124"

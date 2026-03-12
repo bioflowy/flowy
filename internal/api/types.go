@@ -77,6 +77,9 @@ type TaskClaimResponse struct {
 
 	// OutputsDir is the absolute path to the task's outputs directory on the shared FS.
 	OutputsDir string `json:"outputs_dir"`
+
+	// WDLPath is the absolute path to the WDL file for this run.
+	WDLPath string `json:"wdl_path"`
 }
 
 // HeartbeatRequest is the request body for POST /heartbeat.

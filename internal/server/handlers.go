@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -213,6 +212,15 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Retrieve the WDL path for the parent run so the daemon can parse it.
+	var wdlPath string
+	run, err := s.store.GetRun(r.Context(), task.RunID)
+	if err != nil {
+		log.Printf("handleClaim: GetRun %s: %v — daemon will fail on WDL parse", task.RunID, err)
+	} else {
+		wdlPath = run.WDLPath
+	}
+
 	taskDir := store.TaskDir(s.cfg.BaseDir, task.RunID, task.TaskName, task.ShardIndex)
 	writeJSON(w, http.StatusOK, api.TaskClaimResponse{
 		TaskID:     strconv.FormatInt(task.ID, 10),
@@ -221,6 +229,7 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 		ShardIndex: task.ShardIndex,
 		InputsDir:  taskDir,
 		OutputsDir: taskDir,
+		WDLPath:    wdlPath,
 	})
 }
 
@@ -278,5 +287,3 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// Ensure handlers.go imports are used (prevents "declared and not used" compile errors).
-var _ = sync.Mutex{}
