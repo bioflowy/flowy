@@ -73,34 +73,45 @@ func (d *Daemon) Shutdown() {
 	d.wg.Wait()
 }
 
-// workerLoop polls for tasks on a 5-second tick and executes each claimed task.
+// workerLoop polls for tasks on a 1-second tick and executes each claimed task.
 // It stops polling when ctx is cancelled, but in-flight tasks complete naturally.
 func (d *Daemon) workerLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
+	// Immediate first poll to pick up tasks without waiting for the ticker.
+	if err := d.tryClaimAndExecute(ctx); err != nil {
+		log.Printf("daemon: claimTask error: %v", err)
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			claim, err := d.claimTask(ctx)
-			if err != nil {
+			if err := d.tryClaimAndExecute(ctx); err != nil {
 				log.Printf("daemon: claimTask error: %v", err)
-				continue
 			}
-			if claim == nil {
-				// No pending tasks — continue polling.
-				continue
-			}
-
-			// Execute the task in a separate goroutine with its own WaitGroup
-			// entry. Use context.Background() so SIGTERM does not interrupt
-			// Docker mid-execution (graceful shutdown pitfall 6 per research).
-			d.wg.Add(1)
-			go d.executeTask(claim)
 		}
 	}
+}
+
+// tryClaimAndExecute attempts to claim a task and execute it.
+// Returns an error only for claim failures; nil if no task is available.
+func (d *Daemon) tryClaimAndExecute(ctx context.Context) error {
+	claim, err := d.claimTask(ctx)
+	if err != nil {
+		return err
+	}
+	if claim == nil {
+		return nil
+	}
+	// Execute the task in a separate goroutine with its own WaitGroup
+	// entry. Use context.Background() so SIGTERM does not interrupt
+	// Docker mid-execution (graceful shutdown pitfall 6 per research).
+	d.wg.Add(1)
+	go d.executeTask(claim)
+	return nil
 }
 
 // claimTask sends POST /tasks/claim and returns the claimed task, or nil if

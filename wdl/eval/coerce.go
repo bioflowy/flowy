@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/bioflowy/flowy/wdl/ast"
@@ -186,6 +187,12 @@ func EvalDecl(expr ast.Expr, env *Env, ctx ExecContext, targetType types.Type) (
 		return nil, err
 	}
 	coerced, _ := CoerceValue(v, targetType, ctx.StructDefs)
+	// Enforce non-empty array constraint (Array[T]+).
+	if at, ok := targetType.(types.ArrayType); ok && at.Nonempty {
+		if av, ok := coerced.(values.ArrayValue); ok && len(av.Items) == 0 {
+			return nil, fmt.Errorf("cannot assign empty array to non-empty type %s", targetType.TypeName())
+		}
+	}
 	return coerced, nil
 }
 

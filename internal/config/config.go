@@ -81,9 +81,14 @@ func Load(path string) (*Config, error) {
 }
 
 // applyDefaults sets zero-value fields in cfg to their default values.
+// BaseDir is resolved to an absolute path so that Docker volume mounts
+// and other path consumers always receive absolute paths.
 func applyDefaults(cfg *Config) {
 	if cfg.BaseDir == "" {
 		cfg.BaseDir = "./flowy-data"
+	}
+	if abs, err := filepath.Abs(cfg.BaseDir); err == nil {
+		cfg.BaseDir = abs
 	}
 	if cfg.DBDriver == "" {
 		cfg.DBDriver = "sqlite"

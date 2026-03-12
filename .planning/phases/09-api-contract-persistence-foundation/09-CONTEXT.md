@@ -61,7 +61,7 @@ Shared foundation packages (`internal/config`, `internal/store`, `internal/api`)
 <specifics>
 ## Specific Ideas
 
-- Client must always connect to server — no local execution fallback mode in Phase 9 scope (this may affect Phase 12 CLI-04 spectool compatibility approach)
+- Client must always connect to server — no local execution fallback mode (server is required for all execution)
 - Run ID prefix matching should behave like `git` — error with "ambiguous run ID" message listing matches when prefix is not unique
 
 </specifics>
@@ -88,7 +88,6 @@ Shared foundation packages (`internal/config`, `internal/store`, `internal/api`)
 <deferred>
 ## Deferred Ideas
 
-- Local execution fallback for `flowy run` without server — Phase 12 scope (CLI-04 spectool compatibility)
 - PostgreSQL backend (PG-01) — v2+ scope; Store interface prepared in Phase 9
 
 </deferred>

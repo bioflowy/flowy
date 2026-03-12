@@ -162,8 +162,8 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTaskRun handles POST /tasks/run.
-// It runs a single named task from a WDL file by wrapping it in a synthetic
-// workflow document and dispatching it via the normal runWorkflow mechanism.
+// It runs a single named task from a WDL file by directly dispatching it
+// to the daemon, bypassing the workflow engine entirely.
 func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 	var req api.TaskRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -193,17 +193,18 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the named task in the document.
-	var found bool
+	var targetTask *ast.Task
 	for _, t := range doc.Tasks {
 		if t.Name == req.TaskName {
-			found = true
+			targetTask = t
 			break
 		}
 	}
-	if !found {
+	if targetTask == nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("task not found: %s", req.TaskName))
 		return
 	}
+	_ = targetTask // validated; daemon re-parses WDL to execute
 
 	// Use client-provided run ID if given, otherwise generate a new UUID.
 	runID := req.RunID
@@ -217,54 +218,54 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the inputs for the synthetic workflow. The dispatch mechanism uses
-	// "callAlias.inputName" format when passing inputs to a called task, so we
-	// prefix each task input with the task name (used as the call alias).
-	workflowInputs := make(map[string]interface{}, len(req.InputsJSON))
-	for k, v := range req.InputsJSON {
-		workflowInputs[req.TaskName+"."+k] = v
+	// Create task directories (shard 0 for single-task dispatch).
+	if err := store.CreateTaskDirs(s.cfg.BaseDir, runID, req.TaskName, 0); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create task dirs: %v", err))
+		return
 	}
+	taskDir := store.TaskDir(s.cfg.BaseDir, runID, req.TaskName, 0)
 
-	// Marshal inputs to JSON string for the run record.
-	inputsJSON, err := json.Marshal(workflowInputs)
+	// Write inputs.json directly from client inputs (no prefix transformation).
+	inputsData, err := json.Marshal(req.InputsJSON)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("marshal inputs: %v", err))
 		return
 	}
+	if err := os.WriteFile(filepath.Join(taskDir, "inputs.json"), inputsData, 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("write inputs.json: %v", err))
+		return
+	}
 
-	// Create the run record in the store.
+	// Create Run record (state=RUNNING, task is immediately dispatchable).
 	run := &store.Run{
 		ID:         runID,
 		WDLPath:    req.WDLPath,
-		InputsJSON: string(inputsJSON),
-		State:      store.RunPending,
+		InputsJSON: string(inputsData),
+		State:      store.RunRunning,
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run: %v", err))
 		return
 	}
 
-	// Wrap the named task in a synthetic single-task workflow so runWorkflow
-	// can execute it via the normal dispatch mechanism.
-	syntheticWF := &ast.Workflow{
-		Name: req.TaskName + "_wrapper",
-		Body: []ast.WorkflowNode{
-			&ast.Call{Callee: []string{req.TaskName}, Alias: req.TaskName},
-		},
+	// Create Task record.
+	storeTask := &store.Task{
+		RunID:      runID,
+		TaskName:   req.TaskName,
+		ShardIndex: 0,
 	}
-	doc.Workflows = append(doc.Workflows, syntheticWF)
+	if err := s.store.CreateTask(r.Context(), storeTask); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create task: %v", err))
+		return
+	}
 
-	// Create a run context tied to context.Background() (not r.Context()).
+	// Launch background goroutine to wait for task completion.
 	runCtx, cancel := context.WithCancel(context.Background())
-
-	// Store the cancel function so handleAbort can cancel the run.
 	s.mu.Lock()
 	s.runs[runID] = cancel
 	s.mu.Unlock()
-
-	// Launch the run goroutine.
 	s.wg.Add(1)
-	go s.runWorkflow(runCtx, runID, doc, workflowInputs)
+	go s.waitForTaskAndFinalize(runCtx, runID, storeTask.ID, req.TaskName)
 
 	writeJSON(w, http.StatusCreated, api.TaskRunResponse{RunID: runID})
 }

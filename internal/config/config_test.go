@@ -77,8 +77,9 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
 
-	if cfg.BaseDir != "./flowy-data" {
-		t.Errorf("BaseDir = %q, want %q", cfg.BaseDir, "./flowy-data")
+	wantBase, _ := filepath.Abs("./flowy-data")
+	if cfg.BaseDir != wantBase {
+		t.Errorf("BaseDir = %q, want %q", cfg.BaseDir, wantBase)
 	}
 	if cfg.DBDriver != "sqlite" {
 		t.Errorf("DBDriver = %q, want %q", cfg.DBDriver, "sqlite")
@@ -137,8 +138,9 @@ server:
 		t.Errorf("Server.ListenAddr = %q, want %q", cfg.Server.ListenAddr, ":7070")
 	}
 	// Unset sections should get defaults
-	if cfg.BaseDir != "./flowy-data" {
-		t.Errorf("BaseDir = %q, want %q", cfg.BaseDir, "./flowy-data")
+	wantBase, _ := filepath.Abs("./flowy-data")
+	if cfg.BaseDir != wantBase {
+		t.Errorf("BaseDir = %q, want %q", cfg.BaseDir, wantBase)
 	}
 	if cfg.Daemon.ServerURL != "http://localhost:8124" {
 		t.Errorf("Daemon.ServerURL = %q, want %q", cfg.Daemon.ServerURL, "http://localhost:8124")

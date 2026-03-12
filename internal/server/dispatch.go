@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/bioflowy/flowy/internal/store"
@@ -20,12 +21,16 @@ import (
 
 // makeDispatchFn returns a TaskDispatchFn that enqueues tasks into the SQLite
 // store and waits for daemon completion, instead of running containers locally.
+// Each invocation gets a unique shard index via an atomic counter so that
+// concurrent scatter iterations of the same task do not overwrite each
+// other's input/output directories.
 func (s *Server) makeDispatchFn(runID string) workflow.TaskDispatchFn {
+	var shardCounter int64 // atomic counter for unique shard indices per run
 	return func(ctx context.Context, t *ast.Task, inputs map[string]interface{},
 		runner task.ContainerRunner, execRoot string,
 		structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
 
-		shardIndex := 0 // non-scatter default; scatter iteration is handled by scheduler
+		shardIndex := int(atomic.AddInt64(&shardCounter, 1) - 1)
 
 		// Create per-task directory.
 		if err := store.CreateTaskDirs(s.cfg.BaseDir, runID, t.Name, shardIndex); err != nil {
@@ -122,8 +127,6 @@ func loadTaskOutputs(baseDir, runID, taskName string, shardIndex int) (map[strin
 }
 
 // jsonToValue converts a JSON-decoded Go value to a WDL values.Value.
-// For Phase 10, only primitive types (string, bool, int/float) are handled.
-// Complex WDL types (Array, Map, Struct) will be refined in Phase 11.
 func jsonToValue(v interface{}) (values.Value, error) {
 	switch val := v.(type) {
 	case string:
@@ -136,16 +139,43 @@ func jsonToValue(v interface{}) (values.Value, error) {
 			return values.IntValue{Type: types.IntType{}, Value: int64(val)}, nil
 		}
 		return values.FloatValue{Type: types.FloatType{}, Value: val}, nil
+	case []interface{}:
+		items := make([]values.Value, len(val))
+		for i, elem := range val {
+			item, err := jsonToValue(elem)
+			if err != nil {
+				return nil, err
+			}
+			items[i] = item
+		}
+		var itemType types.Type = types.AnyType{}
+		if len(items) > 0 {
+			itemType = items[0].ValueType()
+		}
+		return values.ArrayValue{
+			Type:  types.ArrayType{ItemType: itemType},
+			Items: items,
+		}, nil
+	case map[string]interface{}:
+		entries := make([]values.MapEntry, 0, len(val))
+		for k, v := range val {
+			ev, err := jsonToValue(v)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, values.MapEntry{
+				Key:   values.StringValue{Type: types.StringType{}, Value: k},
+				Value: ev,
+			})
+		}
+		return values.MapValue{
+			Type:    types.MapType{KeyType: types.StringType{}, ValType: types.AnyType{}},
+			Entries: entries,
+		}, nil
 	case nil:
 		return values.NullValue{}, nil
 	default:
-		// For complex types (arrays, objects), stringify as a best-effort.
-		// This is a known limitation — see docs/technical-debt/ if needed.
-		b, err := json.Marshal(v)
-		if err != nil {
-			return nil, fmt.Errorf("unsupported output value type %T: %w", v, err)
-		}
-		return values.StringValue{Type: types.StringType{}, Value: string(b)}, nil
+		return nil, fmt.Errorf("unsupported output value type %T", v)
 	}
 }
 
@@ -171,7 +201,7 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 	execRoot := filepath.Join(s.cfg.BaseDir, "runs", runID)
 
 	// Execute the workflow using the dispatch function (no local Docker).
-	_, err := workflow.RunWorkflowWithDispatch(ctx, doc, wfName, inputs, nil, execRoot, s.makeDispatchFn(runID))
+	outputs, err := workflow.RunWorkflowWithDispatch(ctx, doc, wfName, inputs, nil, execRoot, s.makeDispatchFn(runID))
 
 	// Determine terminal state.
 	if err != nil {
@@ -183,6 +213,23 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 			_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
 		}
 	} else {
+		// Write run-level outputs.json with "workflowName.outputName" keys.
+		if outputs != nil {
+			jsonOutputs := make(map[string]interface{}, len(outputs))
+			for k, v := range outputs {
+				jsonOutputs[wfName+"."+k] = valueToInterface(v)
+			}
+			data, marshalErr := json.MarshalIndent(jsonOutputs, "", "  ")
+			if marshalErr != nil {
+				log.Printf("runWorkflow %s: marshal outputs: %v", runID, marshalErr)
+			} else {
+				outPath := filepath.Join(execRoot, "outputs.json")
+				if writeErr := os.WriteFile(outPath, data, 0o644); writeErr != nil {
+					log.Printf("runWorkflow %s: write outputs.json: %v", runID, writeErr)
+				}
+			}
+		}
+
 		// Success: only set COMPLETED if context is still valid (not aborted).
 		if ctx.Err() == nil {
 			if err := s.store.UpdateRunState(context.Background(), runID, store.RunCompleted); err != nil {
@@ -194,9 +241,94 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 	s.cleanupRun(runID)
 }
 
+// waitForTaskAndFinalize polls a single task until completion,
+// then writes run-level outputs.json and updates run state.
+// Used by handleTaskRun for direct task dispatch (no workflow engine).
+func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskID int64, taskName string) {
+	defer s.wg.Done()
+	defer s.cleanupRun(runID)
+
+	outputs, err := s.waitForTask(ctx, taskID, runID, taskName)
+	if err != nil {
+		log.Printf("runTask %s: task %q failed: %v", runID, taskName, err)
+		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+		return
+	}
+
+	// Write run-level outputs.json with "taskName.outputName" keys.
+	execRoot := filepath.Join(s.cfg.BaseDir, "runs", runID)
+	outPath := filepath.Join(execRoot, "outputs.json")
+	jsonOutputs := make(map[string]interface{}, len(outputs))
+	for k, v := range outputs {
+		jsonOutputs[taskName+"."+k] = valueToInterface(v)
+	}
+	data, err := json.MarshalIndent(jsonOutputs, "", "  ")
+	if err != nil {
+		log.Printf("runTask %s: marshal outputs: %v", runID, err)
+		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+		return
+	}
+	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		log.Printf("runTask %s: write outputs.json: %v", runID, err)
+		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+		return
+	}
+
+	_ = s.store.UpdateRunState(context.Background(), runID, store.RunCompleted)
+}
+
 // cleanupRun removes the run's cancel function from the active runs map.
 func (s *Server) cleanupRun(runID string) {
 	s.mu.Lock()
 	delete(s.runs, runID)
 	s.mu.Unlock()
+}
+
+// valueToInterface converts a single WDL Value to a JSON-compatible interface{}.
+func valueToInterface(v values.Value) interface{} {
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case values.StringValue:
+		return val.Value
+	case values.IntValue:
+		return val.Value
+	case values.FloatValue:
+		return val.Value
+	case values.BooleanValue:
+		return val.Value
+	case values.FileValue:
+		return val.Value
+	case values.DirectoryValue:
+		return val.Value
+	case values.NullValue:
+		return nil
+	case values.ArrayValue:
+		items := make([]interface{}, len(val.Items))
+		for i, item := range val.Items {
+			items[i] = valueToInterface(item)
+		}
+		return items
+	case values.MapValue:
+		m := make(map[string]interface{}, len(val.Entries))
+		for _, entry := range val.Entries {
+			key := fmt.Sprintf("%v", valueToInterface(entry.Key))
+			m[key] = valueToInterface(entry.Value)
+		}
+		return m
+	case values.StructValue:
+		m := make(map[string]interface{}, len(val.Fields))
+		for k, fv := range val.Fields {
+			m[k] = valueToInterface(fv)
+		}
+		return m
+	case values.PairValue:
+		return map[string]interface{}{
+			"left":  valueToInterface(val.Left),
+			"right": valueToInterface(val.Right),
+		}
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }

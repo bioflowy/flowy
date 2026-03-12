@@ -72,7 +72,7 @@ The architecture is a clean three-layer separation: client (HTTP REST consumer),
 4. `internal/config` — YAML config loading with env var override support
 5. `cmd/flowy-server` — thin main() wiring server + store + config; runs DAG scheduler in-process with injected `runTaskFn`
 6. `cmd/flowy-daemon` — poll loop + `task.RunTask()` invocation + heartbeat goroutine; stateless worker; CGO-free
-7. `cmd/flowy` (extended) — add submit/status/outputs subcommands; make `run` config-aware with distributed/local fallback
+7. `cmd/flowy` (extended) — add submit/status/outputs subcommands; `run` submits to server and polls (server required)
 
 See `.planning/research/ARCHITECTURE.md` for full component diagrams, REST API endpoint list, SQLite schema, and shared filesystem layout.
 
@@ -122,10 +122,10 @@ Based on combined research, four phases with a clear dependency chain:
 ### Phase 4: Client CLI + Spectool Compatibility
 
 **Rationale:** Client depends on working server + daemon (Phases 2-3). `flowy run` synchronous mode is the highest-risk feature for regression — spectool conformance tests call it directly and expect specific exit codes and output formats. All terminal state transitions (COMPLETED, FAILED, ABORTED) must be verified before declaring spectool compatibility.
-**Delivers:** Extended `cmd/flowy` with `submit`/`status`/`outputs` subcommands; config-aware `flowy run` (distributed mode if server configured, local fallback otherwise); correct exit code mapping; run ID printed to stderr before polling; structured error output with task name + exit code + stderr snippet
+**Delivers:** Extended `cmd/flowy` with `submit`/`status`/`outputs` subcommands; `flowy run` synchronous mode (server required); correct exit code mapping; run ID printed to stderr before polling; structured error output with task name + exit code + stderr snippet
 **Uses:** `internal/api`, `internal/config`, existing cobra CLI infrastructure
-**Implements:** `flowy run` poll loop with all terminal states, connection-error retry backoff, max timeout, backward-compatible local fallback
-**Avoids:** Poll loop that never terminates on FAILED state (all terminal states handled), spectool regression (local fallback preserves v1.0 behavior when no server configured)
+**Implements:** `flowy run` poll loop with all terminal states, connection-error retry backoff, max timeout; clear error if server unreachable
+**Avoids:** Poll loop that never terminates on FAILED state (all terminal states handled), spectool regression (spectool tests run against a local server instance)
 
 ### Phase Ordering Rationale
 
@@ -161,7 +161,7 @@ Phases with standard patterns (skip research-phase):
 
 - **Long-poll vs. interval-poll production tradeoff:** Research recommends long-poll (30s timeout) but documents interval polling (5s) as a simpler fallback. The implementation choice should be validated once Phase 2 server is runnable — if server goroutine count under simultaneous daemon connections is higher than expected, fall back to interval polling with no other changes needed.
 - **Output collection code path:** The exact call sequence from daemon to `wdl/task` output collection (`outputs.go`) needs a walkthrough during Phase 3 planning to confirm shared-FS absolute paths thread through correctly without triggering `filepath.Abs()` in `pathmap.go`.
-- **`flowy run` local-vs-distributed dispatch edge case:** The config-detection logic (`if config.ServerURL != ""`) is simple but needs explicit test coverage for the case where a config file exists but the server is unreachable — should it fall back to local execution or fail fast with a clear error?
+- **`flowy run` server-unreachable behavior:** Server is required for execution (no local fallback). When the server is unreachable, `flowy run` should fail fast with a clear error message. Needs explicit test coverage.
 
 ---
 
