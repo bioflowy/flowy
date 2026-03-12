@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: S3 Object Storage
-status: planning
-stopped_at: Phase 14 context gathered
-last_updated: "2026-03-12T09:59:11.459Z"
-last_activity: 2026-03-12 — Roadmap created for v1.2 milestone
+status: in-progress
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-03-12T23:51:31Z"
+last_activity: 2026-03-12 — Completed plan 14-01 (Backend interface, LocalBackend)
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 1
+  completed_plans: 1
+  percent: 20
 ---
 
 # Project State
@@ -26,24 +26,24 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 14 of 18 (Storage Abstraction)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-12 — Roadmap created for v1.2 milestone
+Plan: 1 of 1 (plan 14-01 complete)
+Status: Phase 14 in progress — plan 14-01 complete
+Last activity: 2026-03-12 — Completed plan 14-01 (Backend interface, LocalBackend, ParseS3URI)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: —
+- Total plans completed: 1
+- Average duration: 2 min
+- Total execution time: 2 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 14-storage-abstraction | 1 | 2 min | 2 min |
 
 *Updated after each plan completion*
 
@@ -59,6 +59,12 @@ Recent decisions affecting v1.2:
 - AWS SDK v2 only (v1 end-of-support July 2025); feature/s3/manager deprecated March 2026
 - MinIO testcontainers with pinned image tag (minio:latest unsafe — repo archived Feb 2026)
 
+Phase 14-01 decisions:
+- ParseS3URI uses string ops not net/url (avoids S3 key corruption from path normalization)
+- UploadDirectory/DownloadDirectory are no-ops for LocalBackend (path IS localSrc in local mode)
+- No context.Context in Backend interface (value-in/value-out per project decision)
+- storage package imports store (one-way dependency enforced)
+
 ### Pending Todos
 
 None.
@@ -70,6 +76,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T09:59:11.455Z
-Stopped at: Phase 14 context gathered
-Resume file: .planning/phases/14-storage-abstraction/14-CONTEXT.md
+Last session: 2026-03-12T23:51:31Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: .planning/phases/14-storage-abstraction/14-01-SUMMARY.md

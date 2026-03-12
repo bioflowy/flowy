@@ -9,8 +9,8 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 ### Storage Abstraction
 
-- [ ] **STOR-01**: Storage Backend interface defined in internal/storage/ with methods for file upload, download, JSON read/write, and directory operations
-- [ ] **STOR-02**: LocalBackend implementation wraps existing shared filesystem code behind the Backend interface with zero behavior change
+- [x] **STOR-01**: Storage Backend interface defined in internal/storage/ with methods for file upload, download, JSON read/write, and directory operations
+- [x] **STOR-02**: LocalBackend implementation wraps existing shared filesystem code behind the Backend interface with zero behavior change
 - [ ] **STOR-03**: All existing spectool tests (156/156) continue to pass after LocalBackend refactor
 
 ### S3 Backend
