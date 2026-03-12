@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-12T01:07:22.455Z"
+stopped_at: Completed 12-client-cli-spectool-compatibility-01-PLAN.md
+last_updated: "2026-03-12T01:40:05.520Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10-server-binary-dag-dispatch P02 | 8 | 3 tasks | 5 files |
 | Phase 11-daemon-binary-task-execution P01 | 11 | 2 tasks | 4 files |
 | Phase 11-daemon-binary-task-execution P02 | 2 | 2 tasks | 2 files |
+| Phase 12-client-cli-spectool-compatibility P01 | 3 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 11-daemon-binary-task-execution]: handleClaim failure to GetRun WDLPath is non-fatal: warns and sets empty string; daemon fails on WDL parse with clear error
 - [Phase 11-daemon-binary-task-execution]: Tests placed in package daemon (not daemon_test) to access unexported methods directly via httptest.NewServer
 - [Phase 11-daemon-binary-task-execution]: --workers CLI flag defaults to 0; only overrides config when > 0 so config file remains primary source of truth
+- [Phase 12-client-cli-spectool-compatibility]: handleOutputs uses run.ID (resolved full UUID) not raw runID param for outputsPath — correct path when prefix given
+- [Phase 12-client-cli-spectool-compatibility]: handleTaskRun prefixes task inputs as taskName.inputName before passing to runWorkflow — dispatch mechanism expects callAlias.inputName format
+- [Phase 12-client-cli-spectool-compatibility]: internal/client.Client uses 30s HTTP timeout matching daemon pattern; New(serverURL) returns configured client
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:07:22.451Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-client-cli-spectool-compatibility/12-CONTEXT.md
+Last session: 2026-03-12T01:40:05.516Z
+Stopped at: Completed 12-client-cli-spectool-compatibility-01-PLAN.md
+Resume file: None

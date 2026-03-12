@@ -93,7 +93,7 @@ Plans:
   3. `flowy run <wdl> -i <inputs.json>` completes synchronously — submits the workflow, polls until a terminal state, prints outputs on success or an error with task name and exit code on failure, and exits with the correct exit code
   4. `flowy run` without a reachable server exits with a clear error message (server is required for execution; no local fallback)
   5. The `flowy` client binary ships under `cmd/flowy/` and all three binaries (`flowy`, `flowy-server`, `flowy-daemon`) build from a single `go build ./...`
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 Plans:
 - [ ] 12-01-PLAN.md — Server-side prerequisites (API types, config, prefix matching) and client HTTP package
 - [ ] 12-02-PLAN.md — Submit, status, outputs subcommands with file staging
@@ -114,4 +114,4 @@ Plans:
 | 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
 | 10. Server Binary + DAG Dispatch | 2/2 | Complete    | 2026-03-11 | - |
 | 11. Daemon Binary + Task Execution | 2/2 | Complete    | 2026-03-12 | - |
-| 12. Client CLI + Spectool Compatibility | v1.1 | 0/3 | Not started | - |
+| 12. Client CLI + Spectool Compatibility | 1/3 | In Progress|  | - |
