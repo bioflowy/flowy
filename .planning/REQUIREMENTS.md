@@ -80,34 +80,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STOR-01 | — | Pending |
-| STOR-02 | — | Pending |
-| STOR-03 | — | Pending |
-| S3-01 | — | Pending |
-| S3-02 | — | Pending |
-| S3-03 | — | Pending |
-| S3-04 | — | Pending |
-| S3-05 | — | Pending |
-| PATH-01 | — | Pending |
-| PATH-02 | — | Pending |
-| PATH-03 | — | Pending |
-| PATH-04 | — | Pending |
-| CONF-01 | — | Pending |
-| CONF-02 | — | Pending |
-| CONF-03 | — | Pending |
-| CONF-04 | — | Pending |
-| DAEM-01 | — | Pending |
-| DAEM-02 | — | Pending |
-| DAEM-03 | — | Pending |
-| DAEM-04 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
+| STOR-01 | Phase 14 | Pending |
+| STOR-02 | Phase 14 | Pending |
+| STOR-03 | Phase 14 | Pending |
+| S3-01 | Phase 16 | Pending |
+| S3-02 | Phase 16 | Pending |
+| S3-03 | Phase 16 | Pending |
+| S3-04 | Phase 16 | Pending |
+| S3-05 | Phase 16 | Pending |
+| PATH-01 | Phase 15 | Pending |
+| PATH-02 | Phase 15 | Pending |
+| PATH-03 | Phase 15 | Pending |
+| PATH-04 | Phase 15 | Pending |
+| CONF-01 | Phase 15 | Pending |
+| CONF-02 | Phase 15 | Pending |
+| CONF-03 | Phase 15 | Pending |
+| CONF-04 | Phase 15 | Pending |
+| DAEM-01 | Phase 17 | Pending |
+| DAEM-02 | Phase 17 | Pending |
+| DAEM-03 | Phase 17 | Pending |
+| DAEM-04 | Phase 17 | Pending |
+| TEST-01 | Phase 18 | Pending |
+| TEST-02 | Phase 18 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 after initial definition*
+*Last updated: 2026-03-12 after roadmap creation*

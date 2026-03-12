@@ -2,12 +2,13 @@
 
 ## Overview
 
-flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full parse → typecheck → evaluate → execute pipeline. Spectool conformance baseline: 45/160. v1.1 shipped distributed server/daemon/client architecture for multi-host workflow execution.
+flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full parse → typecheck → evaluate → execute pipeline. Spectool conformance baseline: 45/160. v1.1 shipped distributed server/daemon/client architecture for multi-host workflow execution. v1.2 adds S3/MinIO object storage as an alternative backend to shared filesystem, enabling cloud-native WDL execution.
 
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-8 (shipped 2026-03-11)
 - ✅ **v1.1 Distributed Execution** — Phases 9-13 (shipped 2026-03-12)
+- 🚧 **v1.2 S3 Object Storage** — Phases 14-18 (in progress)
 
 ## Phases
 
@@ -40,6 +41,89 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
+### 🚧 v1.2 S3 Object Storage (In Progress)
+
+**Milestone Goal:** Enable S3/MinIO object storage as an alternative to shared filesystem, with workflow-level backend selection and path-based input resolution. All 156 spectool conformance tests pass on both local and S3 backends.
+
+- [ ] **Phase 14: Storage Abstraction** - Define the Backend interface and wrap existing shared FS as LocalBackend
+- [ ] **Phase 15: Configuration and Path Resolution** - Add --storage flag, S3 config, and s3:// URI detection
+- [ ] **Phase 16: S3Backend Implementation** - Implement S3Backend using AWS SDK v2 with streaming I/O and MinIO compatibility
+- [ ] **Phase 17: Daemon Staging** - Implement localize/delocalize pattern in daemon for S3-backed task execution
+- [ ] **Phase 18: MinIO Integration Testing** - End-to-end MinIO testcontainer tests and spectool conformance on S3 backend
+
+## Phase Details
+
+### Phase 14: Storage Abstraction
+**Goal**: The storage layer is abstracted behind a Backend interface and all existing behavior is preserved through LocalBackend
+**Depends on**: Nothing (continuing from Phase 13)
+**Requirements**: STOR-01, STOR-02, STOR-03
+**Success Criteria** (what must be TRUE):
+  1. A Backend interface exists in internal/storage/ with methods covering file upload, download, JSON read/write, and directory operations
+  2. LocalBackend wraps the existing store/rundir.go behavior and all 156 spectool tests pass unchanged
+  3. The server binary starts and functions identically to v1.1 using LocalBackend injected via factory
+  4. ParseS3URI helper function exists with tests covering edge cases (empty bucket, empty key, trailing slash)
+**Plans**: TBD
+
+Plans:
+- [ ] 14-01: TBD
+
+### Phase 15: Configuration and Path Resolution
+**Goal**: Users can select a storage backend per workflow via CLI flag, S3 settings are configurable in YAML, and s3:// URIs are safely handled in path processing
+**Depends on**: Phase 14
+**Requirements**: PATH-01, PATH-02, PATH-03, PATH-04, CONF-01, CONF-02, CONF-03, CONF-04
+**Success Criteria** (what must be TRUE):
+  1. Running `flowy run --storage s3 workflow.wdl` is accepted without error (backend selection wired end-to-end)
+  2. An s3:// URI in an input JSON file passes through cleanPath() without corruption (filepath.Abs is not applied)
+  3. Config YAML with storage.type, storage.bucket, storage.endpoint, storage.region, storage.prefix fields is parsed correctly
+  4. TaskClaimResponse includes storage addressing fields (type, bucket, endpoint, prefix) populated from server config
+  5. All 156 spectool tests continue to pass with the new config fields and path guard in place
+**Plans**: TBD
+
+Plans:
+- [ ] 15-01: TBD
+
+### Phase 16: S3Backend Implementation
+**Goal**: S3Backend fully implements the Backend interface with streaming I/O, MinIO compatibility, and correct scatter key layout
+**Depends on**: Phase 15
+**Requirements**: S3-01, S3-02, S3-03, S3-04, S3-05
+**Success Criteria** (what must be TRUE):
+  1. A file can be uploaded to a MinIO/S3 bucket and downloaded back via S3Backend with bit-for-bit identical content
+  2. Files exceeding the configurable multipart threshold are uploaded via multipart upload without loading the entire file into memory
+  3. S3Backend connects to a MinIO server using UsePathStyle and custom endpoint without error
+  4. Scatter tasks produce S3 keys containing the shard index, preventing key collision when multiple shards output identically named files
+  5. Unit tests with a mocked S3 client cover upload, download, and error paths
+**Plans**: TBD
+
+Plans:
+- [ ] 16-01: TBD
+
+### Phase 17: Daemon Staging
+**Goal**: The daemon correctly localizes S3 inputs to POSIX paths before container execution and delocalizes container outputs back to S3, with no s3:// URIs reaching Docker containers
+**Depends on**: Phase 16
+**Requirements**: DAEM-01, DAEM-02, DAEM-03, DAEM-04
+**Success Criteria** (what must be TRUE):
+  1. A WDL task with s3:// file inputs executes successfully via Docker with all inputs available as local POSIX paths inside the container
+  2. Task output files are uploaded to S3 after container exit and the outputs.json contains s3:// URIs for downstream consumers
+  3. Local staging files are removed after successful S3 upload
+  4. An S3 upload failure during output collection is reported to the server as a task failure with a descriptive error message
+**Plans**: TBD
+
+Plans:
+- [ ] 17-01: TBD
+
+### Phase 18: MinIO Integration Testing
+**Goal**: End-to-end integration tests using a real MinIO server validate S3 workflow execution, and spectool 156/156 passes on both local and S3 backends
+**Depends on**: Phase 17
+**Requirements**: TEST-01, TEST-02
+**Success Criteria** (what must be TRUE):
+  1. Integration tests spin up a MinIO testcontainer with a pinned image tag and run a full workflow end-to-end via S3 backend without AWS credentials
+  2. A WDL workflow that uploads a file, processes it in a task, and passes the output to a downstream task executes correctly via S3 with intermediate files visible in the MinIO bucket
+  3. All 156 spectool conformance tests pass when the S3/MinIO backend is configured as the default storage
+**Plans**: TBD
+
+Plans:
+- [ ] 18-01: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -57,3 +141,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 11. Daemon Binary + Task Execution | v1.1 | 2/2 | Complete | 2026-03-12 |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 3/3 | Complete | 2026-03-12 |
 | 13. Tech Debt Cleanup | v1.1 | 1/1 | Complete | 2026-03-12 |
+| 14. Storage Abstraction | v1.2 | 0/TBD | Not started | - |
+| 15. Configuration and Path Resolution | v1.2 | 0/TBD | Not started | - |
+| 16. S3Backend Implementation | v1.2 | 0/TBD | Not started | - |
+| 17. Daemon Staging | v1.2 | 0/TBD | Not started | - |
+| 18. MinIO Integration Testing | v1.2 | 0/TBD | Not started | - |
