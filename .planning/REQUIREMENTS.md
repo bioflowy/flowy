@@ -21,11 +21,11 @@ Requirements for distributed server/daemon/client architecture. Each maps to roa
 
 ### Daemon
 
-- [ ] **DMN-01**: Daemon polls server for available tasks and claims them atomically
-- [ ] **DMN-02**: Daemon executes claimed tasks via existing Docker engine (task.RunTask)
-- [ ] **DMN-03**: Daemon sends periodic heartbeat to server for running tasks
-- [ ] **DMN-04**: Daemon handles SIGTERM gracefully, completing in-flight tasks before shutdown
-- [ ] **DMN-05**: Daemon writes task outputs to shared filesystem convention path
+- [x] **DMN-01**: Daemon polls server for available tasks and claims them atomically
+- [x] **DMN-02**: Daemon executes claimed tasks via existing Docker engine (task.RunTask)
+- [x] **DMN-03**: Daemon sends periodic heartbeat to server for running tasks
+- [x] **DMN-04**: Daemon handles SIGTERM gracefully, completing in-flight tasks before shutdown
+- [x] **DMN-05**: Daemon writes task outputs to shared filesystem convention path
 - [ ] **DMN-06**: Daemon binary ships as `flowy-daemon` (`cmd/flowy-daemon/`)
 
 ### Client
@@ -89,11 +89,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRV-07 | Phase 9 | Complete |
 | SRV-08 | Phase 9 | Complete |
 | SRV-09 | Phase 10 | Complete |
-| DMN-01 | Phase 11 | Pending |
-| DMN-02 | Phase 11 | Pending |
-| DMN-03 | Phase 11 | Pending |
-| DMN-04 | Phase 11 | Pending |
-| DMN-05 | Phase 11 | Pending |
+| DMN-01 | Phase 11 | Complete |
+| DMN-02 | Phase 11 | Complete |
+| DMN-03 | Phase 11 | Complete |
+| DMN-04 | Phase 11 | Complete |
+| DMN-05 | Phase 11 | Complete |
 | DMN-06 | Phase 11 | Pending |
 | CLI-01 | Phase 12 | Pending |
 | CLI-02 | Phase 12 | Pending |

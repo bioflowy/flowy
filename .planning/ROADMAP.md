@@ -78,7 +78,7 @@ Plans:
   3. The server marks the run COMPLETED and makes outputs available after the daemon reports task completion — an end-to-end workflow (server + daemon) runs a real WDL task successfully
   4. A daemon that receives SIGTERM completes its in-flight task and shuts down cleanly within 30 seconds without leaving orphaned Docker containers
   5. The daemon sends a heartbeat to the server every 30 seconds for running tasks, and the `flowy-daemon` binary ships under `cmd/flowy-daemon/`
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 11-01-PLAN.md — Server-side prerequisites (WDLPath, Workers config) and daemon package implementation
 - [ ] 11-02-PLAN.md — Daemon integration tests and flowy-daemon binary entry point
@@ -109,5 +109,5 @@ Plans:
 | 8. Specification Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
 | 10. Server Binary + DAG Dispatch | 2/2 | Complete    | 2026-03-11 | - |
-| 11. Daemon Binary + Task Execution | v1.1 | 0/2 | Planning | - |
+| 11. Daemon Binary + Task Execution | 1/2 | In Progress|  | - |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 0/? | Not started | - |

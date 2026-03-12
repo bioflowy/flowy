@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Phase 11 context gathered
-last_updated: "2026-03-12T00:15:27.828Z"
+stopped_at: Completed 11-daemon-binary-task-execution-01-PLAN.md
+last_updated: "2026-03-12T00:27:11.630Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 09-api-contract-persistence-foundation P02 | 7 | 2 tasks | 6 files |
 | Phase 10-server-binary-dag-dispatch P01 | 4 | 2 tasks | 7 files |
 | Phase 10-server-binary-dag-dispatch P02 | 8 | 3 tasks | 5 files |
+| Phase 11-daemon-binary-task-execution P01 | 11 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 10-server-binary-dag-dispatch]: handleSubmit uses context.WithCancel(context.Background()) for run goroutines — ensures goroutine outlives HTTP request
 - [Phase 10-server-binary-dag-dispatch]: SetStaleInterval() exported on Server for test-controllable ticker interval (default 30s, tests use 500ms)
 - [Phase 10-server-binary-dag-dispatch]: Task outputs.json uses plain output names without task prefix — scheduler wraps in StructValue keyed by call alias
+- [Phase 11-daemon-binary-task-execution]: daemon_id format is hostname-PID (passed from main.go, not UUID)
+- [Phase 11-daemon-binary-task-execution]: executeTask uses context.Background() not signal ctx so Docker not cancelled on SIGTERM; wg.Wait() in Shutdown() ensures completion
+- [Phase 11-daemon-binary-task-execution]: handleClaim failure to GetRun WDLPath is non-fatal: warns and sets empty string; daemon fails on WDL parse with clear error
 
 ### Pending Todos
 
@@ -87,6 +91,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T00:15:27.824Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-daemon-binary-task-execution/11-CONTEXT.md
+Last session: 2026-03-12T00:27:11.626Z
+Stopped at: Completed 11-daemon-binary-task-execution-01-PLAN.md
+Resume file: None
