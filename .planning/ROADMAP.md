@@ -62,10 +62,11 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. LocalBackend wraps the existing store/rundir.go behavior and all 156 spectool tests pass unchanged
   3. The server binary starts and functions identically to v1.1 using LocalBackend injected via factory
   4. ParseS3URI helper function exists with tests covering edge cases (empty bucket, empty key, trailing slash)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: TBD
+- [ ] 14-01-PLAN.md — Create storage package with Backend interface, LocalBackend, ParseS3URI, and tests
+- [ ] 14-02-PLAN.md — Inject Backend into Server and replace all direct store/os calls
 
 ### Phase 15: Configuration and Path Resolution
 **Goal**: Users can select a storage backend per workflow via CLI flag, S3 settings are configurable in YAML, and s3:// URIs are safely handled in path processing
@@ -141,7 +142,7 @@ Plans:
 | 11. Daemon Binary + Task Execution | v1.1 | 2/2 | Complete | 2026-03-12 |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 3/3 | Complete | 2026-03-12 |
 | 13. Tech Debt Cleanup | v1.1 | 1/1 | Complete | 2026-03-12 |
-| 14. Storage Abstraction | v1.2 | 0/TBD | Not started | - |
+| 14. Storage Abstraction | v1.2 | 0/2 | Not started | - |
 | 15. Configuration and Path Resolution | v1.2 | 0/TBD | Not started | - |
 | 16. S3Backend Implementation | v1.2 | 0/TBD | Not started | - |
 | 17. Daemon Staging | v1.2 | 0/TBD | Not started | - |
