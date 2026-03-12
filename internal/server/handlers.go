@@ -17,6 +17,7 @@ import (
 
 	"github.com/bioflowy/flowy/internal/api"
 	"github.com/bioflowy/flowy/internal/store"
+	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/parser"
 )
 
@@ -32,12 +33,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStatus handles GET /workflows/{id}/status.
+// The {id} parameter may be a full UUID or a unique prefix of a run ID.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	run, err := s.store.GetRun(r.Context(), runID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("run not found: %s", runID))
-		return
+		// Try prefix match as fallback.
+		run, err = s.store.GetRunByPrefix(r.Context(), runID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("run not found: %s", runID))
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, api.StatusResponse{
 		RunID: run.ID,
@@ -46,20 +52,25 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleOutputs handles GET /workflows/{id}/outputs.
+// The {id} parameter may be a full UUID or a unique prefix of a run ID.
 func (s *Server) handleOutputs(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	run, err := s.store.GetRun(r.Context(), runID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("run not found: %s", runID))
-		return
+		// Try prefix match as fallback.
+		run, err = s.store.GetRunByPrefix(r.Context(), runID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("run not found: %s", runID))
+			return
+		}
 	}
 	if run.State != store.RunCompleted {
 		writeError(w, http.StatusConflict, fmt.Sprintf("run not completed (state: %s)", run.State))
 		return
 	}
 
-	// Read outputs.json from the run directory.
-	outputsPath := filepath.Join(s.cfg.BaseDir, "runs", runID, "outputs.json")
+	// Read outputs.json from the run directory using the resolved full run ID.
+	outputsPath := filepath.Join(s.cfg.BaseDir, "runs", run.ID, "outputs.json")
 	data, err := os.ReadFile(outputsPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("read outputs: %v", err))
@@ -73,7 +84,7 @@ func (s *Server) handleOutputs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, api.OutputsResponse{
-		RunID:   runID,
+		RunID:   run.ID,
 		Outputs: outputs,
 	})
 }
@@ -90,15 +101,24 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse the WDL file.
-	doc, err := parser.Parse(req.WDLPath, nil)
+	// Parse the WDL file, honoring client-provided import search paths.
+	var doc *ast.Document
+	var err error
+	if len(req.SearchPaths) > 0 {
+		doc, err = parser.ParseWithSearchPaths(req.WDLPath, nil, req.SearchPaths)
+	} else {
+		doc, err = parser.Parse(req.WDLPath, nil)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse WDL: %v", err))
 		return
 	}
 
-	// Generate run ID.
-	runID := uuid.New().String()
+	// Use client-provided run ID if given, otherwise generate a new UUID.
+	runID := req.RunID
+	if runID == "" {
+		runID = uuid.New().String()
+	}
 
 	// Create run directories.
 	if err := store.CreateRunDirs(s.cfg.BaseDir, runID); err != nil {

@@ -9,6 +9,15 @@ type SubmitRequest struct {
 
 	// InputsJSON contains the workflow-level input values keyed by input name.
 	InputsJSON map[string]interface{} `json:"inputs"`
+
+	// RunID is an optional client-provided UUID hint. When non-empty the server
+	// uses this value as the run ID instead of generating a new UUID. This enables
+	// pre-submission file staging by the client before the workflow is submitted.
+	RunID string `json:"run_id,omitempty"`
+
+	// SearchPaths are optional import search directories forwarded from the
+	// client's --path flag so the server-side WDL parser can resolve imports.
+	SearchPaths []string `json:"search_paths,omitempty"`
 }
 
 // SubmitResponse is the response body for POST /workflows.

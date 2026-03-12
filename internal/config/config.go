@@ -111,6 +111,15 @@ func applyDefaults(cfg *Config) {
 	}
 }
 
+// Default returns a new Config with all fields set to their default values.
+// Use this when no config file is present (e.g., the CLI client without a
+// config file on a developer workstation).
+func Default() *Config {
+	cfg := &Config{}
+	applyDefaults(cfg)
+	return cfg
+}
+
 // DefaultDSN returns the database DSN for the given config.
 // If DBDSN is already set in cfg, it is returned unchanged.
 // Otherwise, a SQLite WAL-mode DSN pointing to {BaseDir}/flowy.db is constructed.
