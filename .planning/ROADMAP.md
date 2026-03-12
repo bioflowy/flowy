@@ -110,7 +110,9 @@ Plans:
   3. `valueToInterface` exists in exactly one shared location, imported by both `internal/server/dispatch.go` and `internal/daemon/daemon.go`
   4. `store.RunInputsDir` and `store.RunOutputsDir` are either removed or documented as test-only utilities
   5. Daemon's `cfg.BaseDir` usage is documented with a comment explaining paths come from server
-**Plans:** 0/1 plans
+**Plans:** 1 plan
+Plans:
+- [ ] 13-01-PLAN.md — Documentation fixes (VERIFICATION.md, SUMMARY), valueToInterface dedup, API surface cleanup, clarifying comments
 
 ## Progress
 
