@@ -31,14 +31,18 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-(None — next milestone requirements to be defined via `/gsd:new-milestone`)
+- [ ] Storage abstraction interface (shared FS and S3 backends)
+- [ ] S3 backend implementation (AWS SDK for Go, MinIO compatible)
+- [ ] Workflow-level backend selection (CLI flag + config default)
+- [ ] Input path scheme resolution (relative → default backend, s3:// → S3, absolute → local FS)
+- [ ] MinIO integration testing (spectool 156/156 on S3 backend)
 
 ### Out of Scope
 
 - Object type — deprecated in WDL 1.2, use Struct instead
 - WDL draft-2/1.0/1.1 support — different grammar, high maintenance cost
 - WDL lint/zip features — execution engine is priority
-- S3/object storage backend — shared filesystem first, S3 deferred to future milestone
+- S3/object storage backend — NOW IN SCOPE for v1.2
 - HTTP(S) import resolution — deferred to future milestone
 - Execution cache (task output reuse) — deferred to future milestone
 - Workflow resume from checkpoint — deferred to future milestone
@@ -52,9 +56,8 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 Shipped v1.1 with 25,433 LOC Go.
 Tech stack: Go 1.24, Docker SDK for Go, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations.
-Spectool conformance: 45/160 WDL 1.2 tests passing (28% baseline).
+Spectool conformance: 156/156 WDL 1.2 tests passing (100% of supported features; 4 categories excluded: Object type, sub-workflow calls, deferred input defaults, read_tsv with Object).
 Architecture: three binaries (flowy, flowy-server, flowy-daemon), SQLite task queue, shared filesystem for I/O.
-Known gaps: None keyword, sep() function, shorthand call syntax, length() on Map/Pair.
 Reference implementation: `../miniwdl` (Python, ~20k lines).
 
 ## Constraints
@@ -74,7 +77,7 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Pratt parser for expressions | Clean operator precedence handling | ✓ Good — all operators correct |
 | ShellRunner mock for tests | No Docker dependency in unit tests | ✓ Good — fast CI-friendly tests |
 | errgroup for scatter parallelism | Bounded concurrency with cancellation | ✓ Good — clean fail-fast behavior |
-| Spectool for conformance | Official WDL compliance benchmark | ✓ Good — 45/160 baseline established |
+| Spectool for conformance | Official WDL compliance benchmark | ✓ Good — 156/156 supported tests passing |
 | Separate binaries for server/daemon/client | Clean process separation, independent deployment | ✓ Good — clean architecture |
 | Daemon polls server (not push) | Simpler scale-out, daemon only needs server address | ✓ Good — simple and reliable |
 | Shared filesystem first, S3 later | Reduce scope, NFS ubiquitous in HPC environments | ✓ Good — ships fast |
@@ -84,5 +87,16 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | runTaskFn injection for dispatch | Extension seam in scheduler for distributed execution | ✓ Good — minimal refactoring |
 | ADR 0001: Remove heuristic file staging | Client cannot reliably detect File-typed inputs from JSON | ✓ Good — correct by construction |
 
+## Current Milestone: v1.2 S3 Object Storage
+
+**Goal:** Enable S3/object storage as an alternative to shared filesystem, with workflow-level backend selection and path-based input resolution.
+
+**Target features:**
+- Storage abstraction interface behind shared FS and S3
+- S3 backend via AWS SDK for Go (MinIO compatible)
+- Workflow-level output backend selection (`--storage` flag, config default fallback)
+- Input path auto-resolution: relative → default backend, `s3://` → S3, absolute → local FS
+- MinIO-based integration testing with full spectool conformance
+
 ---
-*Last updated: 2026-03-12 after v1.1 milestone*
+*Last updated: 2026-03-12 after v1.2 milestone start*
