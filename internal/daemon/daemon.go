@@ -47,6 +47,8 @@ func New(cfg *config.Config, daemonID string) *Daemon {
 // Workers stop claiming new tasks when ctx is cancelled (e.g. on SIGTERM).
 // In-flight task executions are allowed to complete before Run returns.
 func (d *Daemon) Run(ctx context.Context) error {
+	// BaseDir is logged for operator visibility but is not used for task path construction.
+	// All task paths (InputsDir, OutputsDir, TaskDir) come from the server via TaskClaimResponse.
 	log.Printf("daemon starting daemon_id=%s server=%s workers=%d base_dir=%s",
 		d.daemonID, d.cfg.Daemon.ServerURL, d.cfg.Daemon.Workers, d.cfg.BaseDir)
 
@@ -216,7 +218,7 @@ func (d *Daemon) executeTask(claim *api.TaskClaimResponse) {
 	}
 
 	// Serialize outputs to JSON and write outputs.json.
-	jsonOutputs, err := valuesToJSON(outputs)
+	jsonOutputs, err := values.ValuesToJSON(outputs)
 	if err != nil {
 		log.Printf("daemon: valuesToJSON task_id=%s: %v", claim.TaskID, err)
 		d.reportResult(taskCtx, claim.TaskID, "FAILED", fmt.Sprintf("serialize outputs: %v", err))
@@ -317,61 +319,3 @@ func (d *Daemon) reportResult(ctx context.Context, taskID, state, errMsg string)
 	}
 }
 
-// valuesToJSON converts a map of WDL runtime values to JSON-compatible Go types.
-// Unknown value types are rendered as strings via fmt.Sprintf.
-func valuesToJSON(outputs map[string]values.Value) (map[string]interface{}, error) {
-	result := make(map[string]interface{}, len(outputs))
-	for k, v := range outputs {
-		result[k] = valueToInterface(v)
-	}
-	return result, nil
-}
-
-// valueToInterface converts a single WDL Value to a JSON-compatible interface{}.
-func valueToInterface(v values.Value) interface{} {
-	if v == nil {
-		return nil
-	}
-	switch val := v.(type) {
-	case values.StringValue:
-		return val.Value
-	case values.IntValue:
-		return val.Value
-	case values.FloatValue:
-		return val.Value
-	case values.BooleanValue:
-		return val.Value
-	case values.FileValue:
-		return val.Value
-	case values.DirectoryValue:
-		return val.Value
-	case values.NullValue:
-		return nil
-	case values.ArrayValue:
-		items := make([]interface{}, len(val.Items))
-		for i, item := range val.Items {
-			items[i] = valueToInterface(item)
-		}
-		return items
-	case values.MapValue:
-		m := make(map[string]interface{}, len(val.Entries))
-		for _, entry := range val.Entries {
-			key := fmt.Sprintf("%v", valueToInterface(entry.Key))
-			m[key] = valueToInterface(entry.Value)
-		}
-		return m
-	case values.StructValue:
-		m := make(map[string]interface{}, len(val.Fields))
-		for k, fv := range val.Fields {
-			m[k] = valueToInterface(fv)
-		}
-		return m
-	case values.PairValue:
-		return map[string]interface{}{
-			"left":  valueToInterface(val.Left),
-			"right": valueToInterface(val.Right),
-		}
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}

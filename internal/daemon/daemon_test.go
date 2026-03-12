@@ -169,7 +169,7 @@ func TestReportResult(t *testing.T) {
 	}
 }
 
-// TestOutputsJSON verifies valuesToJSON converts all WDL value types to correct Go types.
+// TestOutputsJSON verifies values.ValuesToJSON converts all WDL value types to correct Go types.
 func TestOutputsJSON(t *testing.T) {
 	inputs := map[string]values.Value{
 		"str":     values.StringValue{Value: "hello"},
@@ -181,7 +181,7 @@ func TestOutputsJSON(t *testing.T) {
 		"arr":     values.ArrayValue{Items: []values.Value{values.StringValue{Value: "a"}, values.StringValue{Value: "b"}}},
 	}
 
-	result, err := valuesToJSON(inputs)
+	result, err := values.ValuesToJSON(inputs)
 	if err != nil {
 		t.Fatalf("valuesToJSON returned error: %v", err)
 	}

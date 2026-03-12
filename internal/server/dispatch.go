@@ -217,7 +217,7 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 		if outputs != nil {
 			jsonOutputs := make(map[string]interface{}, len(outputs))
 			for k, v := range outputs {
-				jsonOutputs[wfName+"."+k] = valueToInterface(v)
+				jsonOutputs[wfName+"."+k] = values.ValueToInterface(v)
 			}
 			data, marshalErr := json.MarshalIndent(jsonOutputs, "", "  ")
 			if marshalErr != nil {
@@ -260,7 +260,7 @@ func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskI
 	outPath := filepath.Join(execRoot, "outputs.json")
 	jsonOutputs := make(map[string]interface{}, len(outputs))
 	for k, v := range outputs {
-		jsonOutputs[taskName+"."+k] = valueToInterface(v)
+		jsonOutputs[taskName+"."+k] = values.ValueToInterface(v)
 	}
 	data, err := json.MarshalIndent(jsonOutputs, "", "  ")
 	if err != nil {
@@ -284,51 +284,3 @@ func (s *Server) cleanupRun(runID string) {
 	s.mu.Unlock()
 }
 
-// valueToInterface converts a single WDL Value to a JSON-compatible interface{}.
-func valueToInterface(v values.Value) interface{} {
-	if v == nil {
-		return nil
-	}
-	switch val := v.(type) {
-	case values.StringValue:
-		return val.Value
-	case values.IntValue:
-		return val.Value
-	case values.FloatValue:
-		return val.Value
-	case values.BooleanValue:
-		return val.Value
-	case values.FileValue:
-		return val.Value
-	case values.DirectoryValue:
-		return val.Value
-	case values.NullValue:
-		return nil
-	case values.ArrayValue:
-		items := make([]interface{}, len(val.Items))
-		for i, item := range val.Items {
-			items[i] = valueToInterface(item)
-		}
-		return items
-	case values.MapValue:
-		m := make(map[string]interface{}, len(val.Entries))
-		for _, entry := range val.Entries {
-			key := fmt.Sprintf("%v", valueToInterface(entry.Key))
-			m[key] = valueToInterface(entry.Value)
-		}
-		return m
-	case values.StructValue:
-		m := make(map[string]interface{}, len(val.Fields))
-		for k, fv := range val.Fields {
-			m[k] = valueToInterface(fv)
-		}
-		return m
-	case values.PairValue:
-		return map[string]interface{}{
-			"left":  valueToInterface(val.Left),
-			"right": valueToInterface(val.Right),
-		}
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}

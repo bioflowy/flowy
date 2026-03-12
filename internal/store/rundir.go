@@ -9,13 +9,17 @@ import (
 	"path/filepath"
 )
 
-// RunInputsDir returns the absolute path to the inputs directory for a run.
+// RunInputsDir returns the inputs directory path for a run.
+// It is used internally by CreateRunDirs and in tests; production code receives
+// paths from the server via TaskClaimResponse.
 // The directory is at: {baseDir}/runs/{runID}/inputs
 func RunInputsDir(baseDir, runID string) string {
 	return filepath.Join(baseDir, "runs", runID, "inputs")
 }
 
-// RunOutputsDir returns the absolute path to the outputs directory for a run.
+// RunOutputsDir returns the outputs directory path for a run.
+// It is used internally by CreateRunDirs and in tests; production code receives
+// paths from the server via TaskClaimResponse.
 // The directory is at: {baseDir}/runs/{runID}/outputs
 func RunOutputsDir(baseDir, runID string) string {
 	return filepath.Join(baseDir, "runs", runID, "outputs")
