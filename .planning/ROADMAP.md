@@ -142,7 +142,7 @@ Plans:
 | 11. Daemon Binary + Task Execution | v1.1 | 2/2 | Complete | 2026-03-12 |
 | 12. Client CLI + Spectool Compatibility | v1.1 | 3/3 | Complete | 2026-03-12 |
 | 13. Tech Debt Cleanup | v1.1 | 1/1 | Complete | 2026-03-12 |
-| 14. Storage Abstraction | v1.2 | 1/2 | In progress | - |
+| 14. Storage Abstraction | 2/2 | Complete   | 2026-03-12 | - |
 | 15. Configuration and Path Resolution | v1.2 | 0/TBD | Not started | - |
 | 16. S3Backend Implementation | v1.2 | 0/TBD | Not started | - |
 | 17. Daemon Staging | v1.2 | 0/TBD | Not started | - |

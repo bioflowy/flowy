@@ -11,7 +11,7 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 - [x] **STOR-01**: Storage Backend interface defined in internal/storage/ with methods for file upload, download, JSON read/write, and directory operations
 - [x] **STOR-02**: LocalBackend implementation wraps existing shared filesystem code behind the Backend interface with zero behavior change
-- [ ] **STOR-03**: All existing spectool tests (156/156) continue to pass after LocalBackend refactor
+- [x] **STOR-03**: All existing spectool tests (156/156) continue to pass after LocalBackend refactor
 
 ### S3 Backend
 
@@ -81,8 +81,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | STOR-01 | Phase 14 | Pending |
-| STOR-02 | Phase 14 | Pending |
-| STOR-03 | Phase 14 | Pending |
+| STOR-02 | Phase 14 | Complete |
+| STOR-03 | Phase 14 | Complete |
 | S3-01 | Phase 16 | Pending |
 | S3-02 | Phase 16 | Pending |
 | S3-03 | Phase 16 | Pending |
