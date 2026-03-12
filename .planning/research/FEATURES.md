@@ -1,9 +1,9 @@
 # Feature Research
 
-**Domain:** Distributed WDL workflow execution — server/daemon/client architecture
-**Researched:** 2026-03-11
-**Confidence:** HIGH (core patterns), MEDIUM (implementation details)
-**Scope:** v1.1 milestone only. v1.0 engine features (parser, type checker, evaluator, Docker executor, DAG scheduler, stdlib, CLI) are already built.
+**Domain:** S3/object storage backend for WDL workflow execution engine
+**Researched:** 2026-03-12
+**Confidence:** HIGH (storage abstraction interface, S3 staging/delocalization patterns), MEDIUM (MinIO-specific behaviors, config-driven backend selection details)
+**Scope:** v1.2 milestone only. All v1.0/v1.1 features (parser, evaluator, Docker executor, DAG scheduler, REST API, distributed daemon) are already built and must remain fully functional.
 
 ---
 
@@ -11,145 +11,129 @@
 
 ### Table Stakes (Users Expect These)
 
-Features that any distributed workflow execution system must have. Missing any one makes the system incomplete or unusable for its intended purpose.
+Features that any S3-enabled WDL engine must have. Missing any one makes the S3 backend incomplete or unusable.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| REST API: POST /workflows — submit workflow | Standard entry point in every workflow server (Cromwell, Nextflow API). Returns run ID for subsequent operations. | MEDIUM | Accepts WDL file path (shared FS) + inputs JSON. Returns `{run_id: "uuid"}`. |
-| REST API: GET /workflows/{id}/status — poll run state | Required for async submission model. Clients must be able to check whether a workflow is still running. | LOW | Returns `{status: "Running|Succeeded|Failed|Aborted"}`. Cromwell uses the same 6-state model. |
-| REST API: GET /workflows/{id}/outputs — fetch results | Run is useless without retrieving outputs. Must return structured paths after completion. | LOW | Returns `{outputs: {"task.output": "path"}}` matching WDL output variable names. |
-| REST API: GET /workflows/{id}/logs — fetch task logs | Essential for debugging failed tasks. Users need stdout/stderr per task call. | MEDIUM | Returns per-call-attempt stdout/stderr paths or inline content. |
-| REST API: POST /workflows/{id}/abort — cancel a run | Users need to stop runaway or mistaken workflows. | LOW | Transitions state to Aborting → Aborted; signals daemon to stop dispatching new tasks. |
-| REST API: GET /health — liveness probe | Required for operations: know if server is up before submitting. | LOW | Returns `{status: "ok"}` with 200. No auth needed. |
-| Daemon: poll server for ready tasks | Core of the worker model. Daemon continuously polls `GET /tasks/next` and claims an available task. | MEDIUM | Uses SQLite `BEGIN IMMEDIATE` to prevent double-claim. Poll interval configurable (default 5s). |
-| Daemon: report task result to server | Daemon must notify server when a task completes (exit code, output paths, stdout/stderr). | MEDIUM | `POST /tasks/{id}/complete` or `PATCH /tasks/{id}` with exit code + outputs map. |
-| Daemon: execute claimed task via existing Docker engine | Daemon reuses `wdl/task` package directly. No re-implementation of Docker logic. | LOW | Dependency on existing `task.RunTask`. |
-| Daemon: heartbeat to prevent task timeout | Without heartbeat, server cannot detect crashed daemon; task would stay Running forever. | MEDIUM | `POST /tasks/{id}/heartbeat` every N seconds; server marks tasks stale if no heartbeat for configurable timeout (default 60s). |
-| SQLite persistence: workflow run table | Stores run_id, status, WDL path, inputs JSON, submitted_at, completed_at. | LOW | WAL mode required for concurrent reader (daemon) + writer (server). |
-| SQLite persistence: task table | Stores task_id, run_id, call_name, shard_index, status, daemon_id, attempt, stdout_path, stderr_path, outputs_json. | MEDIUM | Status enum: PENDING, CLAIMED, RUNNING, COMPLETED, FAILED. |
-| Shared filesystem: config-driven base directory | Server and all daemons must see the same path. Config key `storage.base_dir`. | LOW | NFS/local share. Server writes input files; daemon reads them; daemon writes outputs; server reads them. |
-| Shared filesystem: input staging by client | Client uploads WDL inputs (File values) to shared dir before submitting run. Server references those paths in task records. | MEDIUM | Client `flowy submit` copies local files to `{base_dir}/runs/{run_id}/inputs/`. |
-| Shared filesystem: output collection by daemon | Daemon writes task outputs to `{base_dir}/runs/{run_id}/tasks/{task_id}/outputs/`. Server reads these paths to build the workflow outputs response. | MEDIUM | Consistent path convention required across server/daemon. |
-| Client CLI: `flowy submit <wdl> [inputs]` | Users need to submit workflows from the command line. | LOW | Stages input files, calls POST /workflows, prints run_id. |
-| Client CLI: `flowy status <run-id>` | Users need to check status of a submitted run. | LOW | Calls GET /workflows/{id}/status, prints status. |
-| Client CLI: `flowy outputs <run-id>` | Users need to retrieve output paths after completion. | LOW | Calls GET /workflows/{id}/outputs, prints JSON. |
-| Client CLI: `flowy run <wdl> [inputs]` (synchronous mode) | Required for spectool compatibility. `flowy run` must continue to work end-to-end. In distributed mode: submit → poll until terminal → print outputs. | HIGH | Spectool calls `flowy run` and expects outputs.json at completion. Must be backward-compatible with v1.0 behavior. |
-| Server binary: `flowy-server` | Separate process from client; runs persistently. Accepts REST requests, manages DAG scheduling, dispatches tasks to daemon queue. | HIGH | New binary at `cmd/flowy-server/`. |
-| Daemon binary: `flowy-daemon` | Separate process per worker node. Polls server, executes Docker tasks. Horizontally scalable. | HIGH | New binary at `cmd/flowy-daemon/`. |
-| Run state machine: Submitted → Running → Succeeded/Failed/Aborted | Standard workflow lifecycle. Server transitions states as tasks complete. | MEDIUM | Run enters Running when first task starts; Succeeded when all tasks complete; Failed when any task fails and no retries remain. |
-| Task state machine: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED | Standard task lifecycle for polling-based worker systems. | MEDIUM | CLAIMED state prevents double-dispatch. Daemon sets to RUNNING after Docker start. |
+| Storage abstraction interface | All WDL engines (Cromwell, Nextflow, miniwdl) abstract filesystem access behind an interface so shared-FS and S3 backends are interchangeable. Without it, S3 is a bolt-on, not a real backend. | MEDIUM | Go interface with methods: `StageInputs(ctx, runID, inputs) error`, `CollectOutputs(ctx, runID, taskName, shardIndex) error`, `WriteInputsJSON(ctx, path, data) error`, `ReadOutputsJSON(ctx, path) ([]byte, error)`, `TaskDir(runID, taskName, shardIndex) string`. Existing shared-FS path logic moves into a concrete `LocalStorage` implementation. |
+| S3 input staging (localization) | Cromwell, Nextflow, and miniwdl all download `s3://` File inputs to a local working directory before the Docker container starts. Containers cannot reach S3 directly in typical HPC setups. | HIGH | Before Docker task launch, daemon downloads all `s3://` paths in inputs.json to a local temp dir. Rewrites `FileValue.Value` to local path. Uses `github.com/aws/aws-sdk-go-v2/feature/s3/manager` Downloader for concurrent multipart download. |
+| S3 output collection (delocalization) | After Docker task completes, output files must be uploaded to S3. The output paths returned to the scheduler become `s3://` URIs. This is the standard post-task step in every cloud workflow engine. | HIGH | After `task.RunTask` returns, daemon uploads each `FileValue` and `DirectoryValue` in the outputs map to `s3://{bucket}/{run_id}/tasks/{task_name}_{shard}/outputs/{filename}`. Rewrites value paths to `s3://` URIs. Uses `manager.Uploader` for concurrent multipart upload. |
+| `s3://` scheme detection in path resolution | WDL engines treat `s3://bucket/key` URIs as distinct from local paths. Cromwell configures per-filesystem handlers; Nextflow treats `s3://` as transparent. flowy needs to dispatch to the S3 backend when the scheme is `s3://`. | MEDIUM | `cleanPath()` in `wdl/task/inputs.go` currently only handles local paths. Must be extended: if path starts with `s3://`, leave as-is and defer to the storage backend for download. Affects `jsonToWDLValue` for `FileType` and `DirectoryType`. |
+| Workflow-level backend selection via `--storage` flag | Users need to specify `--storage=s3` for S3 and `--storage=local` (default) for shared FS at submit time. Cromwell uses configuration-file backend selection; Nextflow uses `process.executor`. A CLI flag is simpler and sufficient for flowy's use case. | MEDIUM | `flowy submit --storage s3` passes the backend selection through `SubmitRequest` to the server. Server stores `storage_backend` in the runs table and passes it to the dispatch function. Daemon reads backend from `TaskClaimResponse`. |
+| Config-driven S3 defaults (bucket, region, endpoint, credentials) | Without a config default, every submit requires explicit `--storage` and `--bucket` flags. Production deployments configure once and run. Cromwell uses HOCON `filesystems.s3`; Nextflow uses `aws` config block. | LOW | New `StorageConfig` in `config.go`: `storage.backend` (default `"local"`), `storage.s3.bucket`, `storage.s3.region`, `storage.s3.endpoint_url` (for MinIO), `storage.s3.prefix` (key prefix, default `"flowy-runs"`). Credentials via standard AWS SDK chain: env vars → `~/.aws/credentials` → IAM role. |
+| MinIO compatibility | MinIO is the standard self-hosted S3-compatible object store used in HPC environments without AWS access. All of miniwdl-aws, Cromwell, and Nextflow support MinIO via custom endpoint configuration. | MEDIUM | AWS SDK v2 supports custom endpoints via `aws.Config.EndpointResolverWithOptions`. Set `endpoint_url` in config to `http://minio:9000`. Must also set `UsePathStyle: true` (MinIO requires path-style addressing). |
+| Spectool conformance on S3 backend (156/156) | The spectool conformance suite is the authoritative compliance benchmark for flowy. Running 156/156 on S3 means the S3 backend is a true drop-in for shared FS, not a partial implementation. | HIGH | Requires a MinIO instance in the test environment. Test harness substitutes MinIO endpoint + bucket for `base_dir`. Tests must pass without WDL changes — the S3 backend must be transparent to WDL tasks. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that add value beyond the baseline distributed execution model.
+Features that go beyond the baseline S3 integration and add value specific to flowy's architecture.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| `flowy run` backward compatibility (spectool mode) | Spectool runs `flowy run` directly. If distributed mode is transparent, the conformance suite keeps working without changes. | HIGH | Most WDL engines break CLI compatibility when adding server mode. This is a strong differentiator for CI/CD integration. |
-| Multi-daemon scatter distribution | Scatter shards are independent tasks; multiple daemons can claim different shards, achieving real parallelism across machines. | HIGH | Requires task table to store shard_index per task record. Daemon claims any PENDING task for the current run. |
-| Single config file for all three binaries | `flowy.toml` or `flowy.yaml` with `[server]`, `[daemon]`, `[client]` sections. Each binary reads its section. No per-binary config management. | LOW | Reduces operational friction vs. Cromwell's complex HOCON configuration. |
-| Daemon auto-registration with server | Daemon registers its host/ID on startup; server tracks active daemons. Useful for diagnostics and detecting stale daemons. | LOW | `POST /daemons/register` on startup; `DELETE /daemons/{id}` on shutdown. Low value in MVP but low cost. |
-| SQLite-only persistence (no external DB) | Cromwell requires MySQL for production; flowy uses SQLite with WAL mode. Zero external dependencies for the server. | LOW | Appropriate for single-server deployments. If multi-server is needed, defer to v2 with PostgreSQL. |
-| REST API: GET /workflows?status=Running — list/query runs | Operational visibility: see all running/completed runs without knowing their IDs. | LOW | Simple SQL query with status filter. Cromwell has this; it's expected in production use. |
+| Path-scheme auto-routing (relative → default backend, `s3://` → S3, absolute → local) | miniwdl requires explicit URI inputs; Cromwell requires per-backend config. Auto-routing based on URI scheme means users can mix local and S3 paths in the same workflow without configuration changes. | MEDIUM | Resolution logic: (1) if value starts with `s3://` → S3 backend regardless of default; (2) if value is an absolute local path → local FS; (3) if value is relative → resolve against `wdlDir` (existing behavior). This matches miniwdl's "built-in s3: support" pattern. |
+| MinIO integration testing as part of CI | Most WDL engines (including miniwdl) rely on AWS accounts for S3 integration tests. A local MinIO container in `docker-compose` enables S3 tests without AWS credentials, which is critical for open-source CI. | MEDIUM | `docker-compose.yml` with MinIO service. Test harness starts MinIO, creates a test bucket, runs spectool against flowy with `--storage s3 --endpoint http://localhost:9000`. Teardown removes bucket. |
+| No WDL change required for S3 backend | Cromwell requires different task `runtime` sections for cloud vs. local backends. Nextflow requires `publishDir` with S3 URI. In flowy, the storage backend is configured at runtime (`--storage` flag), not in the WDL source. A single WDL file runs on both local and S3. | LOW | This is a consequence of doing staging/delocalization in the engine layer (daemon), not in the WDL task. The design decision to keep WDL tasks storage-agnostic should be explicit and documented. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Push-based task dispatch (server pushes to daemon) | Seems more efficient; no polling delay | Requires daemon to be reachable from server (reverse connectivity); NAT/firewall issues common in HPC clusters; much more complex server-side fan-out logic | Polling model: daemon only needs outbound access to server. Interval 2-5s is acceptable for batch workloads. |
-| WebSocket / Server-Sent Events for status | Real-time status updates in web UIs | First milestone has no web UI; adds dependencies (gorilla/websocket) and complexity; polling at 2s intervals is sufficient for batch workflows | Client polls GET /workflows/{id}/status in synchronous `flowy run` mode |
-| JWT / OAuth2 authentication | Secure multi-user access | Auth infrastructure is a project in itself; adds third-party dependencies; HPC clusters typically use network-level security | Run on trusted network (HPC), no auth in v1. Add basic auth or token header in v1.x if needed. |
-| Execution cache / call cache | Avoid re-running unchanged tasks (Cromwell call cache) | Requires stable hashing of inputs + WDL source + Docker image digest; complex invalidation logic; storage management | Not in v1.1. Document as v2 feature. |
-| Workflow resume / checkpoint restart | Re-start a failed workflow from last completed task | Requires careful state reconstruction; scatter partial completions are ambiguous | Not in v1.1. Full re-run is acceptable for initial distributed mode. |
-| S3 / GCS object storage as file backend | Cloud-native file staging | Requires signed URL handling, multipart upload, download caching; large surface area | Shared filesystem (NFS) first. S3 is explicitly deferred (see PROJECT.md). |
-| gRPC API instead of REST | Performance, type-safety, streaming | Not standard in bioinformatics tooling; spectool and community tools expect REST; adds code generation step | REST with JSON. Standard in the domain. |
-| Kubernetes / container orchestration integration | Cloud-native deployment | Enormous scope increase; out of v1.1 target | Docker daemon per node is sufficient for HPC environments. |
-| Distributed SQLite (Litestream, Turso) | SQLite replication across nodes | Only the server binary writes to SQLite; daemons talk to server via REST, never SQLite directly. Replication adds operational complexity for no benefit in single-server setup | Single-server SQLite is sufficient. |
+| Mount S3 bucket as filesystem via Mountpoint or s3fs | "S3 as a directory" feels simpler than explicit staging/delocalization | Mountpoint has read-only or limited write semantics; s3fs has performance problems with small files and rename operations; Docker containers cannot use host-mounted S3 without privileged mode or custom driver | Explicit staging (download before task) and delocalization (upload after task). The industry-standard WDL approach used by Cromwell, Nextflow, and miniwdl. |
+| Streaming S3 inputs directly into containers | Avoids staging latency for large files | Docker containers cannot directly access S3 without AWS CLI or SDK; WDL tasks are user-defined and cannot be assumed to have AWS credentials; breaks portability | Stage to local temp dir before container start. Add a "reference data cache" optimization in v2 for frequently reused large files. |
+| Per-task S3 backend (different tasks use different buckets) | Maximum flexibility for complex pipelines | WDL doesn't have per-task storage configuration; task declarations are storage-agnostic by design; adds complexity to dispatch logic and task claim protocol | Workflow-level backend selection. A single bucket per workflow run is sufficient and matches how Cromwell and Nextflow work. |
+| Client-side input upload to S3 before submit | Mirrors the shared-FS pattern where the client stages files to `base_dir/runs/{id}/inputs/` | In the shared-FS model the client uploads because only the client has the files locally. For S3 inputs, files are already in S3 (that's why the user is using S3). Pre-upload from client duplicates data. | For S3 backend: inputs with `s3://` URIs are left as-is. The daemon downloads them at task execution time. Local inputs (absolute paths) are uploaded by the daemon to S3 before running the container. |
+| GCS / Azure Blob Storage backend | Multi-cloud support | Tripling the storage backend implementations for a v1.2 milestone is out of scope; GCS and Azure have different SDK patterns | S3-compatible interface covers AWS S3 and MinIO. GCS supports S3-compatible API via interoperability mode. Defer native GCS/Azure support to v2+. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Client CLI: flowy submit / status / outputs / run]
-    └──requires──> [REST API: submit / status / outputs endpoints]
-                       └──requires──> [Server: flowy-server binary]
-                                          └──requires──> [SQLite: runs + tasks tables]
-                                          └──requires──> [DAG Scheduler (existing, wdl/workflow)]
+[Storage abstraction interface]
+    └──required by──> [LocalStorage implementation (wraps existing rundir.go logic)]
+    └──required by──> [S3Storage implementation (new)]
+    └──required by──> [Daemon: storage-aware task execution]
+    └──required by──> [Server: storage-aware dispatch]
 
-[Daemon: flowy-daemon binary]
-    └──requires──> [REST API: GET /tasks/next + POST /tasks/{id}/complete]
-    └──requires──> [Docker task executor (existing, wdl/task)]
-    └──requires──> [Shared filesystem: task input/output directories]
+[S3 input staging (localization)]
+    └──requires──> [Storage abstraction interface]
+    └──requires──> [s3:// scheme detection in path resolution]
+    └──requires──> [AWS SDK v2: s3/manager.Downloader]
+    └──requires──> [Config: S3 bucket + region + endpoint]
 
-[Multi-daemon scatter distribution]
-    └──requires──> [Task table: shard_index per task record]
-    └──requires──> [Daemon: claim any PENDING task (not just own run's tasks)]
+[S3 output collection (delocalization)]
+    └──requires──> [Storage abstraction interface]
+    └──requires──> [S3 input staging] (same SDK config, same session)
+    └──requires──> [AWS SDK v2: s3/manager.Uploader]
 
-[flowy run (synchronous/spectool mode)]
-    └──requires──> [REST API: submit + status + outputs]
-    └──requires──> [Client: poll-until-terminal loop]
+[s3:// scheme detection]
+    └──requires──> [Storage abstraction interface]
+    └──enhances──> [Path-scheme auto-routing differentiator]
 
-[Shared filesystem file staging]
-    └──requires──> [Server: base_dir config]
-    └──requires──> [Daemon: writes outputs to convention path]
-    └──requires──> [Client: copies input File values to shared dir before submit]
+[Workflow-level backend selection (--storage flag)]
+    └──requires──> [Storage abstraction interface]
+    └──requires──> [Config: StorageConfig struct in config.go]
+    └──requires──> [API: SubmitRequest gains StorageBackend field]
+    └──requires──> [API: TaskClaimResponse gains StorageBackend + S3Config fields]
+    └──requires──> [DB: runs table gains storage_backend column]
 
-[Daemon heartbeat]
-    └──requires──> [SQLite: last_heartbeat_at column in tasks table]
-    └──requires──> [Server: background goroutine to detect stale tasks → reset to PENDING]
+[Config-driven S3 defaults]
+    └──requires──> [Config: StorageConfig struct]
+    └──enhances──> [Workflow-level backend selection] (flag overrides config default)
 
-[Task state machine: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED]
-    └──enhances──> [Daemon polling (prevents double-claim via atomic CLAIMED transition)]
-    └──enhances──> [Run state machine (server computes run status from task states)]
+[MinIO compatibility]
+    └──requires──> [Config: endpoint_url + path_style settings]
+    └──requires──> [AWS SDK v2: custom EndpointResolver]
+    └──enhances──> [S3 input staging + output collection]
 
-[Run state machine: Submitted → Running → Succeeded/Failed/Aborted]
-    └──requires──> [All tasks in run have reached terminal state (COMPLETED or FAILED)]
+[Spectool on S3 backend]
+    └──requires──> [All above S3 features complete]
+    └──requires──> [MinIO integration testing infrastructure]
+
+[Path-scheme auto-routing (differentiator)]
+    └──requires──> [s3:// scheme detection]
+    └──requires──> [Storage abstraction interface]
 ```
 
 ### Dependency Notes
 
-- **`flowy run` synchronous mode requires all REST endpoints**: The synchronous mode is a thin loop over submit + poll status + fetch outputs. All three server endpoints must work before this can be implemented.
-- **Multi-daemon scatter requires task-level granularity in DB**: The server must create one task record per scatter shard, not one record per scatter block. This decision affects the DB schema and must be made in Phase 1 of implementation.
-- **Daemon heartbeat requires server-side background goroutine**: A goroutine in flowy-server periodically queries for tasks with last_heartbeat_at older than timeout and resets them to PENDING. Must be part of server startup, not a separate process.
-- **Shared filesystem path convention must be consistent**: Server, daemon, and client must agree on the path layout for run directories. Define once in a shared `storage` package; import from all three binaries. Any drift causes silent data loss.
-- **Existing `wdl/workflow` scheduler is reused unchanged in server**: The server runs the DAG scheduler in-process, but instead of calling `task.RunTask` directly, it dispatches tasks to the SQLite queue and waits for daemon completions. The `runTaskFn` indirection already exists in `scheduler.go` (line 18) — this is the exact seam to exploit.
+- **Storage abstraction interface must come first.** All other features depend on it. The interface defines the contract; both `LocalStorage` and `S3Storage` implement it. This is the single most important architectural decision for v1.2.
+- **`s3://` scheme detection requires changes in `wdl/task/inputs.go`.** The `cleanPath()` function currently unconditionally calls `filepath.Clean()` and `filepath.Abs()`, which corrupts `s3://` URIs. This must be fixed as part of the abstraction work.
+- **Daemon needs storage config from TaskClaimResponse.** The daemon is storage-agnostic in v1.1; it reads paths from `claim.InputsDir` and writes to `claim.OutputsDir`. For S3, the daemon needs to know the backend type and S3 config. `TaskClaimResponse` must be extended or a separate config endpoint added.
+- **MinIO integration testing requires `outputs.json` path handling.** In the S3 backend, `outputs.json` is stored at `s3://bucket/prefix/runs/{id}/tasks/{name}_{shard}/outputs.json`. The server's `loadTaskOutputs()` in `dispatch.go` reads this via the storage interface, not `os.ReadFile`. This is a non-trivial change to `dispatch.go`.
+- **Spectool tests pass local file paths.** Spectool generates inputs with local paths. With S3 backend, the daemon must upload those local inputs to S3 before running the container. This is a behavior change that must not break the `local` backend path (where local inputs are bind-mounted directly).
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.1)
+### Launch With (v1.2)
 
-Minimum viable set for the distributed architecture milestone.
+Minimum viable set for the S3 storage milestone.
 
-- [ ] `flowy-server` binary: REST API (submit/status/outputs/abort/health), SQLite state, DAG dispatch to task queue — *core value delivery*
-- [ ] `flowy-daemon` binary: poll for tasks, claim atomically, run via Docker, report result, heartbeat — *enables distributed execution*
-- [ ] Shared filesystem: config-driven base_dir, client input staging, daemon output collection — *file passing between components*
-- [ ] SQLite schema: runs + tasks tables, WAL mode, proper indexes on (status, run_id) — *durable state*
-- [ ] Task state machine: PENDING → CLAIMED → RUNNING → COMPLETED/FAILED with atomic claim — *prevents double-execution*
-- [ ] Run state machine: Submitted → Running → Succeeded/Failed — *visible lifecycle*
-- [ ] Client `flowy submit` / `flowy status` / `flowy outputs` commands — *user-facing operations*
-- [ ] `flowy run` synchronous mode: submit → poll → print outputs (spectool compatibility) — *backward compatibility, non-negotiable*
-- [ ] Stale task detection: server resets CLAIMED/RUNNING tasks with expired heartbeat to PENDING — *resilience against daemon crashes*
+- [ ] Storage abstraction interface (`internal/storage/storage.go`) with `Backend` interface — *foundation for everything else*
+- [ ] `LocalStorage` implementation wrapping existing `store/rundir.go` logic — *preserves v1.1 behavior exactly*
+- [ ] `s3://` scheme detection: fix `cleanPath()` to not corrupt S3 URIs — *correctness prerequisite*
+- [ ] `S3Storage` implementation: S3 input staging (download to temp dir), output collection (upload to S3), `outputs.json` read/write via S3 — *core S3 feature*
+- [ ] Config: `StorageConfig` struct with `backend`, `s3.bucket`, `s3.region`, `s3.endpoint_url`, `s3.prefix`, `s3.path_style` — *MinIO compatibility*
+- [ ] Workflow-level backend selection: `--storage` flag on `flowy submit` and `flowy run`, stored in runs table, forwarded to daemon via `TaskClaimResponse` — *per-run control*
+- [ ] MinIO integration testing: `docker-compose.yml` with MinIO, test harness that runs spectool against S3 backend — *compliance verification*
+- [ ] Spectool 156/156 passing on both local and S3 backends — *non-negotiable quality gate*
 
 ### Add After Validation (v1.x)
 
-Features to add once core distributed execution is working.
+Features to add once core S3 backend is working.
 
-- [ ] `flowy abort <run-id>` — add after basic submit/run/status flow is stable
-- [ ] `GET /workflows?status=Running` list endpoint — once basic operations work, operational visibility becomes useful
-- [ ] Daemon auto-registration (`POST /daemons/register`) — useful for diagnostics once multi-daemon deployments are common
-- [ ] `GET /workflows/{id}/logs` — task log retrieval endpoint; defer until after core status/outputs work
+- [ ] Path-scheme auto-routing for mixed local/S3 inputs in the same workflow — *convenience; needs correctness validation first*
+- [ ] Concurrent multipart upload/download tuning (part size, concurrency config) — *performance; not needed for correctness*
+- [ ] Pre-signed URL support for output download without AWS credentials — *useful for sharing results*
 
 ### Future Consideration (v2+)
 
-- [ ] Execution cache / call cache — complex hashing, invalidation; defer until v1.1 is stable
-- [ ] Workflow resume from checkpoint — requires careful partial-state reconstruction
-- [ ] S3 / GCS storage backend — explicitly out of scope per PROJECT.md
-- [ ] Authentication (JWT, API keys) — needed for multi-tenant deployment; not for single-team HPC use
-- [ ] PostgreSQL backend — if multi-server coordination is needed
-- [ ] Web UI for workflow monitoring
+- [ ] GCS / Azure Blob Storage backends — *multi-cloud; requires separate SDK integrations*
+- [ ] Reference data cache: skip re-download of unchanged `s3://` inputs across runs — *performance optimization; requires input hashing*
+- [ ] HTTP import resolution for WDL files — *separate feature, not storage-related*
+- [ ] Execution cache with S3-backed call cache — *complex; requires stable input fingerprinting*
 
 ---
 
@@ -157,82 +141,104 @@ Features to add once core distributed execution is working.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| REST API: submit + status + outputs | HIGH | MEDIUM | P1 |
-| flowy-server binary | HIGH | HIGH | P1 |
-| flowy-daemon binary | HIGH | HIGH | P1 |
-| SQLite schema: runs + tasks | HIGH | LOW | P1 |
-| Task state machine + atomic claim | HIGH | MEDIUM | P1 |
-| Shared filesystem file staging | HIGH | MEDIUM | P1 |
-| flowy run synchronous mode (spectool) | HIGH | MEDIUM | P1 |
-| Stale task / heartbeat recovery | MEDIUM | MEDIUM | P1 |
-| flowy submit / status / outputs CLI | MEDIUM | LOW | P1 |
-| REST API: abort | MEDIUM | LOW | P2 |
-| REST API: GET /workflows list | LOW | LOW | P2 |
-| REST API: GET /workflows/{id}/logs | MEDIUM | LOW | P2 |
-| Daemon auto-registration | LOW | LOW | P3 |
-| Call cache / execution cache | HIGH | HIGH | P3 |
-| S3 storage backend | MEDIUM | HIGH | P3 |
+| Storage abstraction interface | HIGH | MEDIUM | P1 |
+| `s3://` scheme detection fix | HIGH | LOW | P1 |
+| `LocalStorage` implementation | HIGH | LOW | P1 |
+| `S3Storage`: input staging (download) | HIGH | HIGH | P1 |
+| `S3Storage`: output collection (upload) | HIGH | HIGH | P1 |
+| Config: `StorageConfig` | HIGH | LOW | P1 |
+| `--storage` CLI flag + `TaskClaimResponse` extension | HIGH | MEDIUM | P1 |
+| MinIO compatibility (`endpoint_url`, path-style) | HIGH | LOW | P1 |
+| MinIO integration test infrastructure | HIGH | MEDIUM | P1 |
+| Spectool 156/156 on S3 backend | HIGH | MEDIUM | P1 |
+| Path-scheme auto-routing | MEDIUM | MEDIUM | P2 |
+| Multipart upload/download tuning | LOW | LOW | P2 |
+| Pre-signed URL output sharing | LOW | MEDIUM | P3 |
+| GCS backend | MEDIUM | HIGH | P3 |
 
 **Priority key:**
-- P1: Must have for v1.1 launch
-- P2: Should have, add in v1.x polish
+- P1: Must have for v1.2 launch
+- P2: Should have, add in v1.2 polish
 - P3: Nice to have, future consideration
 
 ---
 
 ## Competitor Feature Analysis
 
-How Cromwell, Nextflow, and Snakemake handle the same features:
+How Cromwell, Nextflow, and miniwdl handle S3 storage:
 
-| Feature | Cromwell | Nextflow | Our Approach |
-|---------|----------|----------|--------------|
-| Workflow submission | POST /api/workflows/v1 (multipart: WDL file + inputs JSON + options) | `nextflow run <pipeline>` or NF-Tower API | POST /workflows with shared-FS WDL path + inputs JSON body. Simpler than Cromwell multipart. |
-| Run ID / handle | UUID returned at submit | Session hash | UUID v4. Standard and easy to pass around. |
-| Status endpoint | GET /api/workflows/v1/{id}/status → `{status: "Running"}` | Polled via NF-Tower or log file | GET /workflows/{id}/status → `{status: "Running"}`. Same model as Cromwell. |
-| Workflow states | Submitted, Running, Aborting, Aborted, Failed, Succeeded | queued, running, succeeded, failed, cancelled | Same 6 states as Cromwell. Industry standard. |
-| Worker model | Backend plugins (JES, PAPIv2, TES, local) polled from Cromwell | Executors (local, SLURM, Kubernetes) | Polling daemon model. Simpler than Cromwell backends. Daemon only needs outbound HTTP to server. |
-| Task claiming | Internal actor system (Akka) — not exposed | Internal channel/actor | SQLite `BEGIN IMMEDIATE` transaction. Go-native, no external queuing system. |
-| File staging | Options: `final_workflow_outputs_dir`; GCS/S3 for cloud backends | `stageInMode` (symlink/copy/link), `workDir` | Config-driven `base_dir` on shared FS. Client stages inputs explicitly; daemon writes outputs to convention path. |
-| Persistence | MySQL (production) or in-memory (dev) | In-process only (no server persistence in open-source) | SQLite with WAL mode. Zero external dependencies. |
-| Scatter distribution | Jobs dispatched to cloud batch or HPC scheduler | DataFlow queue (internal) | Multiple daemons claim different shard tasks from SQLite queue. |
-| Synchronous mode | `cromwell run` (run mode, single JVM) | `nextflow run` (blocking) | `flowy run` submits to server + polls until terminal. Spectool-compatible. |
-| Config format | HOCON (complex, JVM-specific) | Groovy DSL or YAML (`nextflow.config`) | TOML or YAML, single file, minimal sections. |
-| Binary separation | Single JAR (server+engine) | Single JAR / script | Three separate Go binaries: flowy, flowy-server, flowy-daemon. Clean process model. |
+| Feature | Cromwell | Nextflow | miniwdl | flowy v1.2 approach |
+|---------|----------|----------|---------|---------------------|
+| Storage abstraction | `filesystems` config stanza; per-backend `PathBuilderFactory` | `Channel.fromPath()` handles `s3://` natively | Plugin interface (`s3:` built-in; `miniwdl-s3upload` plugin for delocalization) | Go `Backend` interface in `internal/storage/`; `LocalStorage` and `S3Storage` implementations |
+| Input staging (localization) | Cromwell localizes files to VM before task; S3 via AWS CLI scripts injected by backend | Nextflow stages non-local files to `work/` dir before process; `stageInMode` controls copy/link | Downloads `s3://` URIs to `{run_dir}/download/` before task; mounts read-only | Daemon downloads `s3://` inputs to temp dir; rewrites paths in `inputs.json`; mounts to container |
+| Output collection (delocalization) | Backend-specific scripts run after task; write to S3 root prefix | `publishDir "s3://bucket/path"` in process def triggers upload | `miniwdl-s3upload` plugin: progressive upload env var `MINIWDL__S3_PROGRESSIVE_UPLOAD__URI_PREFIX` | Daemon uploads `FileValue`/`DirectoryValue` outputs to S3 after `task.RunTask` returns; rewrites paths to `s3://` URIs |
+| `s3://` path resolution | URI detected by `S3PathBuilderFactory`; resolves to `AmazonS3URI` | `s3://` detected in `Channel.fromPath`; transparent to Groovy code | `s3:` built-in: scheme checked before `cleanPath()` | `hasS3Scheme()` check before `filepath.Clean()` in `cleanPath()` |
+| Backend selection | Config file: `filesystems.s3.enabled = true` per backend stanza | `process.executor` in `nextflow.config`; `workDir = "s3://..."` enables S3 | No per-run selection; configured at startup | `--storage=s3` CLI flag at submit; config default `storage.backend`; stored per-run in DB |
+| MinIO / custom endpoint | Custom S3 endpoint via `aws.endpoint_url` in HOCON | `aws.client.endpoint = "http://..."` in `nextflow.config` | `AWS_ENDPOINT_URL` env var or `endpoint_url` in `~/.aws/config` | `storage.s3.endpoint_url` in `flowy.yaml`; passed to `aws.Config` custom resolver |
+| Credentials | AWS CLI chain; IAM roles on EC2 | AWS SDK chain (env vars → `~/.aws` → IAM) | AWS SDK chain + IAM via metadata service | AWS SDK v2 default credentials chain: env vars → `~/.aws/credentials` → IAM instance role |
+| Integration testing | Requires AWS account or LocalStack | Requires AWS account or LocalStack; some NF tests use S3 mock | Uses real S3 or `moto` (Python S3 mock) | MinIO in `docker-compose`; no AWS account needed for CI |
 
 ---
 
-## Engine Reuse Map
+## Storage Interface Design Notes
 
-The v1.0 engine components that the distributed architecture reuses vs. replaces:
+Based on analysis of the existing codebase and competitor patterns, the storage abstraction interface should operate at the **task execution boundary** (daemon), not at the WDL value level. This is because:
 
-| v1.0 Component | Package | v1.1 Reuse Pattern |
-|----------------|---------|-------------------|
-| Parser | `wdl/parser` | Server calls parser to validate WDL on submit |
-| Type checker | `wdl/checker` | Server type-checks WDL on submit (fail fast) |
-| DAG scheduler | `wdl/workflow` | Server runs scheduler in-process; replaces `runTaskFn` with SQLite dispatch |
-| Docker executor | `wdl/task` | Daemon calls `task.RunTask` directly |
-| Expression evaluator | `wdl/eval` | Unchanged; needed by both server (output binding) and daemon (command expansion) |
-| `flowy run` CLI logic | `cmd/flowy` | Refactored: add `--server` flag for distributed mode; defaults to local mode if no server configured |
+1. **Docker containers are storage-agnostic.** Containers operate on local paths. The engine must present local paths to containers regardless of where data lives.
+2. **The daemon is the only component that executes tasks.** `daemon/daemon.go` calls `task.RunTask`. This is the single place to insert staging/delocalization.
+3. **The server manages paths, not data.** `dispatch.go` reads `outputs.json` from a path. The path format (`s3://` vs. local) must be abstracted.
 
-The `runTaskFn` variable in `wdl/workflow/scheduler.go` (line 18) is the exact injection point for replacing local Docker execution with server-side task dispatch. This is the architectural seam that makes the v1.1 refactor clean.
+The interface boundary should be:
+
+```go
+// Backend abstracts storage operations for task I/O.
+// LocalBackend uses the shared filesystem; S3Backend uses AWS S3 / MinIO.
+type Backend interface {
+    // StageInputs downloads any remote (s3://) File/Directory values in inputs
+    // to a local staging directory. Returns rewritten inputs with local paths.
+    StageInputs(ctx context.Context, inputs map[string]interface{}) (map[string]interface{}, string, error)
+
+    // CollectOutputs uploads local File/Directory output values to the configured
+    // backend. Returns rewritten outputs with backend-native paths (s3:// or local).
+    CollectOutputs(ctx context.Context, outputs map[string]values.Value, stagingDir string) (map[string]values.Value, error)
+
+    // WriteJSON writes data to the given logical path (may be local or s3://).
+    WriteJSON(ctx context.Context, path string, data []byte) error
+
+    // ReadJSON reads data from the given logical path (may be local or s3://).
+    ReadJSON(ctx context.Context, path string) ([]byte, error)
+
+    // TaskDir returns the logical path for a task's working directory.
+    TaskDir(runID, taskName string, shardIndex int) string
+
+    // InputsJSONPath returns the logical path for a task's inputs.json.
+    InputsJSONPath(runID, taskName string, shardIndex int) string
+
+    // OutputsJSONPath returns the logical path for a task's outputs.json.
+    OutputsJSONPath(runID, taskName string, shardIndex int) string
+}
+```
+
+**Confidence:** MEDIUM — this is derived from codebase analysis + competitor patterns, not a verified specification. The exact method signatures should be refined during implementation.
 
 ---
 
 ## Sources
 
-- [Cromwell Server Mode — cromwell.readthedocs.io](https://cromwell.readthedocs.io/en/stable/tutorials/ServerMode/) — REST API structure, workflow states (MEDIUM confidence — docs don't specify every endpoint format)
-- [Cromwell Tools API Documentation](https://cromwell-tools.readthedocs.io/en/latest/API/) — full endpoint list: submit, status, metadata, query, abort, health (HIGH confidence)
-- [Nextflow Task Processing and Execution — deepwiki.com](https://deepwiki.com/nextflow-io/nextflow/3.3-task-processing-and-execution) — TaskRun lifecycle, BashWrapperBuilder, task state machine (MEDIUM confidence — third-party analysis of NF source)
-- [SQLite Background Job System — jasongorman.uk](https://jasongorman.uk/writing/sqlite-background-job-system/) — atomic task claim with `BEGIN IMMEDIATE`, WAL pragmas, poll interval patterns (HIGH confidence — primary source with code examples)
-- [Building a Durable Execution Engine with SQLite — morling.dev](https://www.morling.dev/blog/building-durable-execution-engine-with-sqlite/) — PENDING/WAITING/COMPLETE state model, idempotency requirements (HIGH confidence)
-- [goqite — github.com/maragudk/goqite](https://github.com/maragudk/goqite) — Go SQLite-backed queue library, SQS-inspired (MEDIUM confidence)
-- [Temporal Workflow Engine Principles](https://temporal.io/blog/workflow-engine-principles) — task queue decoupling from workflow logic, worker polling patterns (HIGH confidence)
-- [Nextflow Working with Files](https://www.nextflow.io/docs/latest/working-with-files.html) — file staging into work directory, stageInMode patterns (HIGH confidence)
-- [AWS Prescriptive Guidance: Parallelization and scatter-gather patterns](https://docs.aws.amazon.com/prescriptive-guidance/latest/agentic-ai-patterns/parallelization-and-scatter-gather-patterns.html) — scatter-gather design pattern (MEDIUM confidence)
-- flowy source `wdl/workflow/scheduler.go` — `runTaskFn` injection point, existing errgroup concurrency model (HIGH confidence — direct code inspection)
-- flowy source `go.mod` — current dependencies: Go 1.25, Docker SDK, no HTTP router or SQLite yet (HIGH confidence)
+- [Cromwell Filesystems Overview](https://cromwell.readthedocs.io/en/stable/filesystems/Filesystems/) — S3 filesystem is experimental; per-backend filesystem stanza config (MEDIUM confidence)
+- [Cromwell AWS Batch Tutorial](https://cromwell.readthedocs.io/en/stable/tutorials/AwsBatch101/) — S3 root prefix `s3://{bucket}/cromwell-execution`; tasks "write execution files back to S3" (MEDIUM confidence)
+- [Nextflow Amazon S3 Documentation](https://www.nextflow.io/docs/latest/amazons3.html) — `s3://` scheme transparent via `Channel.fromPath`; credentials chain; MinIO custom endpoint config (HIGH confidence)
+- [miniwdl Runner Reference](https://miniwdl.readthedocs.io/en/latest/runner_reference.html) — built-in `s3:` URI support; downloads to `{run_dir}/download/` before task; IAM role support (HIGH confidence)
+- [miniwdl-s3upload (archived)](https://github.com/chanzuckerberg/miniwdl-s3upload) — progressive S3 upload plugin; `MINIWDL__S3_PROGRESSIVE_UPLOAD__URI_PREFIX` env var (MEDIUM confidence — archived, migrated)
+- [AWS SDK for Go v2 — S3 Transfer Manager](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/sdk-utilities-s3.html) — `manager.NewUploader`, `manager.NewDownloader`; `PartSize`, `Concurrency` config; concurrent multipart (HIGH confidence)
+- [pkg.go.dev — s3/manager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager) — Uploader/Downloader API; thread-safe for concurrent calls (HIGH confidence)
+- flowy source `internal/daemon/daemon.go` — `executeTask`: reads `inputs.json`, calls `task.RunTask`, writes `outputs.json`; injection point for staging/delocalization (HIGH confidence — direct code inspection)
+- flowy source `wdl/task/inputs.go` — `cleanPath()`: unconditionally calls `filepath.Clean` + `filepath.Abs`; corrupts `s3://` URIs (HIGH confidence — direct code inspection)
+- flowy source `internal/server/dispatch.go` — `loadTaskOutputs`: calls `os.ReadFile` on `outputs.json`; must be abstracted for S3 (HIGH confidence — direct code inspection)
+- flowy source `internal/config/config.go` — current `Config` struct; no storage section; must be extended (HIGH confidence — direct code inspection)
+- flowy source `internal/api/types.go` — `TaskClaimResponse.InputsDir` / `OutputsDir` are local FS paths; must be generalized for S3 (HIGH confidence — direct code inspection)
 
 ---
 
-*Feature research for: flowy v1.1 distributed WDL workflow execution*
-*Researched: 2026-03-11*
+*Feature research for: flowy v1.2 S3 object storage backend*
+*Researched: 2026-03-12*

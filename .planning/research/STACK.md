@@ -6,6 +6,246 @@
 
 ---
 
+## v1.2 Additions: S3 Object Storage Backend
+
+This section covers NEW libraries needed for the v1.2 S3 milestone.
+The v1.0 and v1.1 stacks are unchanged — see the preserved sections below.
+
+### Core Technologies Added for v1.2
+
+| Layer | Library | Version | Purpose | Why Recommended |
+|-------|---------|---------|---------|-----------------|
+| **S3 client** | `github.com/aws/aws-sdk-go-v2/service/s3` | v1.78.x | S3 API calls (PutObject, GetObject, HeadObject, DeleteObject) | Official AWS SDK; MinIO-compatible via `BaseEndpoint` + `UsePathStyle`; actively maintained (5,200+ importers); modular — only add service packages you use |
+| **SDK config** | `github.com/aws/aws-sdk-go-v2/config` | v1.32.x | Load AWS credentials and region from env/file/instance metadata | Provides the default credential chain; static credentials via `WithCredentialsProvider` for MinIO testing; same package for AWS and local MinIO |
+| **Static credentials** | `github.com/aws/aws-sdk-go-v2/credentials` | v1.17.x | `credentials.NewStaticCredentialsProvider` for test/MinIO config | Needed when bypassing the full credential chain; zero additional transitive dependencies |
+| **Integration testing** | `github.com/testcontainers/testcontainers-go/modules/minio` | v0.36.x | Spin up a real MinIO container during integration tests | Official testcontainers MinIO module; manages container lifecycle automatically; uses Docker (already a hard dependency); no separate mock needed |
+
+### Key Decisions
+
+#### 1. AWS SDK for Go v2 (not v1, not minio-go)
+
+**Recommendation:** Use `github.com/aws/aws-sdk-go-v2/service/s3` as the primary S3 client for both AWS S3 and MinIO.
+
+**Rationale:**
+
+- **AWS SDK v1 is end-of-support.** The `github.com/aws/aws-sdk-go` repository explicitly states it has reached end-of-support. All new Go S3 code should use v2.
+
+- **AWS SDK v2 is MinIO-compatible with two options.** MinIO implements the S3 API. To point the SDK at MinIO:
+  ```go
+  client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+      o.BaseEndpoint = aws.String("http://localhost:9000")
+      o.UsePathStyle = true // required for MinIO without wildcard TLS
+  })
+  ```
+  `UsePathStyle = true` forces `http://host/bucket/key` instead of `http://bucket.host/key`. This is the v2 replacement for the v1 `S3ForcePathStyle` option. Confirmed working in GitHub issue #2573.
+
+- **minio-go (github.com/minio/minio-go/v7) is NOT recommended as primary client.** minio-go is a good library but introduces a second S3 client interface into the codebase. The project needs to work with both AWS S3 and MinIO — maintaining a single abstraction over two different client SDKs doubles the integration surface. AWS SDK v2 speaks to both. Use minio-go only if AWS SDK v2 cannot support a specific MinIO feature needed (none identified for v1.2 scope).
+
+- **AWS SDK v2 is modular.** Only import the packages you need. For flowy's scope:
+  - `service/s3` — core operations
+  - `config` — credential loading
+  - `credentials` — static credentials for MinIO tests
+  - No need for CloudFormation, EC2, IAM, or other service packages.
+
+**Confidence:** HIGH — verified via pkg.go.dev (v1.78.x published March 2026), official GitHub releases, and issue #2573 confirming `UsePathStyle` works.
+
+---
+
+#### 2. Storage Abstraction: Hand-Written Interface (not afero, not vfs, not sajari/storage)
+
+**Recommendation:** Define a narrow `StorageBackend` interface in `internal/storage/` — implement it for shared filesystem and S3. Do not adopt a third-party abstraction library.
+
+**Rationale:**
+
+- **The existing STACK.md v1.1 section (Decision 6) already ruled out afero** for the shared FS case. That reasoning applies here too: afero's interface is wider than needed and designed around `os.File` semantics that don't map cleanly to S3.
+
+- **io/fs.FS is read-only.** The stdlib `io/fs.FS` interface (Go 1.16+) only covers read operations (`Open`). WDL task execution requires write operations (stage inputs to working directory, collect outputs). A read-only interface cannot model the full storage lifecycle.
+
+- **Third-party abstraction libraries are poorly maintained or over-scoped.** From research:
+  - `sajari/storage` — last significant activity 2020; not actively maintained
+  - `spf13/afero` — write operations supported but the interface leaks OS filesystem semantics (file modes, symlinks) that S3 does not have
+  - `c2fo/vfs` — complex multi-backend library with its own URI scheme; far more than needed
+  - None of these are used by reference WDL engines (miniwdl uses Python pathlib + boto3 with a custom abstraction)
+
+- **The required interface is narrow and project-specific:**
+  ```go
+  // internal/storage/storage.go
+  type Backend interface {
+      // Stage a local file to the backend working directory.
+      // Returns the backend path (s3://bucket/key or /shared/fs/path).
+      StageInput(ctx context.Context, localPath string, dest string) (string, error)
+      // Download a backend path to a local file for Docker container access.
+      FetchOutput(ctx context.Context, backendPath string, localDest string) error
+      // Check if a backend path exists.
+      Stat(ctx context.Context, path string) (bool, error)
+      // Delete a backend path (cleanup).
+      Delete(ctx context.Context, path string) error
+      // Return the base URI for a new workflow execution.
+      WorkDir(runID string) string
+  }
+  ```
+  This interface is intentionally minimal. It covers exactly what the DAG scheduler and task executor need. Both `LocalBackend` and `S3Backend` can implement it cleanly.
+
+- **Path scheme resolution** (`s3://` → S3 backend, `/absolute` → local FS, `relative` → default backend) is a routing decision in the input resolver, not in the backend itself. Keep them separate.
+
+**Confidence:** HIGH — based on research of available libraries and analysis of the existing codebase's needs.
+
+---
+
+#### 3. Integration Testing: testcontainers-go MinIO Module (not docker-compose, not mock)
+
+**Recommendation:** Use `github.com/testcontainers/testcontainers-go/modules/minio` for S3 integration tests.
+
+**Rationale:**
+
+- **flowy-daemon already depends on Docker.** The Docker SDK (`github.com/docker/docker`) is a core dependency. testcontainers-go runs MinIO in a Docker container managed from Go test code — no new system dependency.
+
+- **testcontainers provides automatic lifecycle management.** The MinIO container starts before the test and is terminated after (via `defer testcontainers.TerminateContainer(minioContainer)`). No lingering containers from failed test runs.
+
+- **The MinIO module is purpose-built:**
+  ```go
+  minioContainer, err := minio.Run(ctx, "minio/minio:RELEASE.2024-01-16T16-07-38Z",
+      minio.WithUsername("testuser"),
+      minio.WithPassword("testpassword"),
+  )
+  endpoint, err := minioContainer.ConnectionString(ctx)
+  // endpoint = "http://localhost:XXXXX"
+  ```
+  `ConnectionString()` returns the container's port-forwarded endpoint URL, which feeds directly into the S3 client `BaseEndpoint` option.
+
+- **Spectool conformance (156/156) must pass on the S3 backend.** This requires a real S3-compatible server, not a mock. testcontainers + MinIO is the standard Go pattern for this level of integration testing.
+
+- **testcontainers-go v0.36.x** is the pinned version in the modules/ subdirectory. The MinIO module has been available since v0.28.0. Do not use `RunContainer` (deprecated) — use `Run`.
+
+- **CI compatibility:** testcontainers requires a Docker socket. If CI runs in a Docker-in-Docker environment, set `TESTCONTAINERS_RYUK_DISABLED=true` to avoid Ryuk container teardown issues in DinD.
+
+**Confidence:** HIGH — verified via golang.testcontainers.org/modules/minio/ official documentation.
+
+---
+
+#### 4. S3 Transfer Manager: stdlib s3.PutObject / s3.GetObject (not feature/s3/manager)
+
+**Recommendation:** Use `s3.PutObject` and `s3.GetObject` directly for single-file operations. Do NOT add `feature/s3/manager` or `feature/s3/transfermanager`.
+
+**Rationale:**
+
+- **`feature/s3/manager` is deprecated** as of its latest release (v1.22.6, March 2026). It is superseded by `feature/s3/transfermanager`, per AWS's own package documentation.
+
+- **`feature/s3/transfermanager` is pre-1.0 (v0.1.8)** — explicitly unstable. AWS marks it as such on pkg.go.dev. Do not take a pre-1.0 dependency for core functionality.
+
+- **WDL task files in bioinformatics are typically 1 MB – 10 GB.** For files that require multipart upload (> 5 GB), the standard approach is to use `s3.CreateMultipartUpload` / `s3.UploadPart` / `s3.CompleteMultipartUpload` manually, or wrap this in a small helper. This is ~80 lines of Go and avoids a deprecated dependency.
+
+- **Defer multipart until needed.** In v1.2, implement single-part upload/download first (covers files up to 5 GB, which is adequate for initial S3 support). Add multipart in a follow-on milestone if benchmarking shows it is needed.
+
+**Confidence:** HIGH — pkg.go.dev confirmed `feature/s3/manager` deprecated; `transfermanager` is v0.1.8 unstable.
+
+---
+
+### Supporting Libraries (v1.2)
+
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `github.com/aws/aws-sdk-go-v2/aws` | v1.36.x | `aws.String()`, `aws.Bool()` helpers; types shared across SDK packages | Always, when using any aws-sdk-go-v2 package |
+| `github.com/testcontainers/testcontainers-go` | v0.36.x | Base testcontainers runtime (required by MinIO module) | Integration tests only (`_test.go` files) |
+
+---
+
+### Installation (v1.2 new dependencies only)
+
+```bash
+# S3 client and config
+go get github.com/aws/aws-sdk-go-v2/service/s3@latest
+go get github.com/aws/aws-sdk-go-v2/config@latest
+go get github.com/aws/aws-sdk-go-v2/credentials@latest
+go get github.com/aws/aws-sdk-go-v2/aws@latest
+
+# Integration testing (MinIO via testcontainers)
+go get github.com/testcontainers/testcontainers-go@latest
+go get github.com/testcontainers/testcontainers-go/modules/minio@latest
+```
+
+Note: `testcontainers-go` and its MinIO module use separate Go modules. The MinIO module version must match the base testcontainers version.
+
+---
+
+### MinIO Configuration Pattern
+
+The complete pattern for creating an S3 client that works with both AWS and MinIO:
+
+```go
+// For AWS S3 (production)
+cfg, err := config.LoadDefaultConfig(ctx,
+    config.WithRegion("us-east-1"),
+)
+client := s3.NewFromConfig(cfg)
+
+// For MinIO (local / integration tests)
+cfg, err := config.LoadDefaultConfig(ctx,
+    config.WithRegion("us-east-1"),
+    config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+        "minioadmin", "minioadmin", "",
+    )),
+)
+client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+    o.BaseEndpoint = aws.String("http://localhost:9000")
+    o.UsePathStyle = true // required — MinIO lacks wildcard TLS for virtual-host style
+})
+```
+
+This means S3Backend receives `*s3.Client` and a bucket name — the same client type for both AWS and MinIO. The endpoint difference is in construction, not usage.
+
+---
+
+### Alternatives Considered (v1.2)
+
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| AWS SDK v2 for S3 | `minio/minio-go/v7` | Two client SDKs for one protocol; AWS SDK v2 speaks to both AWS and MinIO; single interface in the codebase |
+| Hand-written `StorageBackend` interface | `spf13/afero` | afero leaks OS FS semantics (modes, symlinks) incompatible with S3; narrower interface fits WDL staging lifecycle better |
+| Hand-written `StorageBackend` interface | `sajari/storage` | Unmaintained since 2020; read/write interface but no active community |
+| testcontainers MinIO | docker-compose for tests | docker-compose requires external file, manual teardown, not integrated with `go test`; testcontainers is fully Go-native |
+| testcontainers MinIO | Mock S3 (aws/aws-sdk-go-v2/testing) | Mock does not test real S3 wire protocol; spectool conformance requires real I/O |
+| Direct `PutObject`/`GetObject` | `feature/s3/manager` | Deprecated; superseded by pre-1.0 unstable transfermanager; single-part is sufficient for v1.2 |
+
+---
+
+### What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| **`github.com/aws/aws-sdk-go`** (v1) | End-of-support; no new features; security updates only until EOL | `github.com/aws/aws-sdk-go-v2` |
+| **`feature/s3/manager`** | Deprecated in March 2026; the replacement (`transfermanager`) is pre-1.0 | Direct `PutObject`/`GetObject` with optional manual multipart |
+| **`feature/s3/transfermanager`** | Unstable v0.1.x; API may change; do not build core functionality on pre-1.0 deps | Revisit when it reaches v1.0 |
+| **`minio/minio-go/v7`** (as primary client) | Introduces a second S3 interface; AWS SDK v2 already speaks S3 protocol to MinIO | AWS SDK v2 with `BaseEndpoint` + `UsePathStyle` |
+| **`spf13/afero`** | OS-FS interface incompatible with S3; was deliberately excluded in v1.1 decision | Hand-written `StorageBackend` interface in `internal/storage/` |
+| **MinIO server binary embedded in tests** | Large binary (~100 MB); version pinning is fragile; testcontainers handles this cleanly | `testcontainers-go/modules/minio` |
+
+---
+
+### Version Compatibility (v1.2)
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `aws-sdk-go-v2/service/s3 v1.78.x` | Go 1.21+ | go.mod is `go 1.25.0` — compatible |
+| `aws-sdk-go-v2/config v1.32.x` | Go 1.21+ | Same module group; always update config + credentials + s3 together |
+| `testcontainers-go v0.36.x` | Go 1.21+, Docker 20.10+ | Requires Docker socket; set `TESTCONTAINERS_RYUK_DISABLED=true` in Docker-in-Docker CI |
+| `testcontainers-go/modules/minio v0.36.x` | Must match base testcontainers version | Minor version must match base module |
+
+---
+
+### Sources
+
+- [aws/aws-sdk-go-v2/service/s3 — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3) — v1.78.x latest March 2026; 5,227 importers; HIGH confidence
+- [aws/aws-sdk-go-v2/config — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/config) — v1.32.11 March 2026; credential chain documentation; HIGH confidence
+- [aws/aws-sdk-go-v2 issue #2573 — GitHub](https://github.com/aws/aws-sdk-go-v2/issues/2573) — `UsePathStyle` confirmed working for MinIO; HIGH confidence
+- [aws/aws-sdk-go — GitHub](https://github.com/aws/aws-sdk-go) — v1 end-of-support declaration; HIGH confidence
+- [feature/s3/manager — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager) — deprecated March 2026; superseded by transfermanager; HIGH confidence
+- [feature/s3/transfermanager — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager) — v0.1.8 unstable; HIGH confidence
+- [testcontainers-go/modules/minio — golang.testcontainers.org](https://golang.testcontainers.org/modules/minio/) — available since v0.28.0; `Run()` function signature; HIGH confidence
+- [minio/minio-go/v7 — pkg.go.dev](https://pkg.go.dev/github.com/minio/minio-go/v7) — v7.0.99 March 2026; 3,090 importers; evaluated and not recommended for this use case; MEDIUM confidence
+
+---
+
 ## v1.1 Additions: Distributed Server / Daemon / Client
 
 This section covers NEW libraries needed for the v1.1 distributed architecture milestone.
@@ -281,6 +521,10 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 | `gopkg.in/yaml.v3 v3.0.1` | Go 1.13+ | Stable; no compatibility concerns |
 | `go-chi/httplog/v3 v3.3.0` | Go 1.21+ | Requires log/slog (Go 1.21+); compatible with 1.25 |
 | `golang.org/x/sync v0.20.0` | Already in go.mod | Already a transitive dependency via Docker SDK |
+| `aws-sdk-go-v2/service/s3 v1.78.x` | Go 1.21+ | go.mod is `go 1.25.0` — compatible |
+| `aws-sdk-go-v2/config v1.32.x` | Go 1.21+ | Same module group; update config + credentials + s3 together |
+| `testcontainers-go v0.36.x` | Go 1.21+, Docker 20.10+ | Requires Docker socket; DinD needs `TESTCONTAINERS_RYUK_DISABLED=true` |
+| `testcontainers-go/modules/minio v0.36.x` | Must match base testcontainers version | Minor version must match base module |
 
 ---
 
@@ -295,6 +539,14 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 - [gopkg.in/yaml.v3 — pkg.go.dev](https://pkg.go.dev/gopkg.in/yaml.v3) — v3.0.1 stable
 - [Go's 1.22+ ServeMux vs Chi — calhoun.io](https://www.calhoun.io/go-servemux-vs-chi/) — middleware grouping gap analysis
 - [chi v5 docs — go-chi.io](https://go-chi.io/) — official documentation
+- [aws/aws-sdk-go-v2/service/s3 — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3) — v1.78.x latest March 2026; 5,227 importers
+- [aws/aws-sdk-go-v2/config — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/config) — v1.32.11 March 2026
+- [aws/aws-sdk-go-v2 issue #2573 — GitHub](https://github.com/aws/aws-sdk-go-v2/issues/2573) — UsePathStyle confirmed working for MinIO
+- [aws/aws-sdk-go — GitHub](https://github.com/aws/aws-sdk-go) — v1 end-of-support declaration
+- [feature/s3/manager — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager) — deprecated March 2026
+- [feature/s3/transfermanager — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager) — v0.1.8 unstable
+- [testcontainers-go/modules/minio — golang.testcontainers.org](https://golang.testcontainers.org/modules/minio/) — official documentation
+- [minio/minio-go/v7 — pkg.go.dev](https://pkg.go.dev/github.com/minio/minio-go/v7) — v7.0.99 March 2026; evaluated and not recommended
 
 ---
 
@@ -314,5 +566,5 @@ See the original v1.0 research in git history for full rationale on these choice
 
 ---
 
-*Stack research for: flowy v1.1 distributed server/daemon/client*
-*Researched: 2026-03-11*
+*Stack research for: flowy v1.2 S3 object storage backend*
+*Researched: 2026-03-12*

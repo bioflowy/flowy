@@ -1,585 +1,732 @@
 # Architecture Research
 
-**Domain:** Distributed WDL Workflow Engine — server/daemon/client integration with existing Go monolith
-**Researched:** 2026-03-11
-**Confidence:** HIGH (based on direct codebase analysis + GA4GH TES patterns + Go ecosystem)
+**Domain:** WDL workflow engine — S3/object storage backend integration
+**Researched:** 2026-03-12
+**Confidence:** HIGH (based on direct codebase analysis + AWS SDK Go v2 docs + Cromwell S3 patterns)
 
 ---
 
 ## Standard Architecture
 
-### System Overview
+### System Overview: Current (v1.1 — shared FS only)
 
 ```
-  ┌──────────────────────────────────────────────────────────────────┐
-  │                        CLIENT LAYER                               │
-  │  ┌────────────────────────────────────────────────────────────┐  │
-  │  │  cmd/flowy  (CLI binary)                                    │  │
-  │  │  submit | status | outputs | run (sync mode)                │  │
-  │  └──────────────────────────┬─────────────────────────────────┘  │
-  └─────────────────────────────│────────────────────────────────────┘
-                                │ HTTP REST (JSON)
-  ┌─────────────────────────────▼────────────────────────────────────┐
-  │                        SERVER LAYER                               │
-  │  ┌────────────────────────────────────────────────────────────┐  │
-  │  │  cmd/flowy-server                                           │  │
-  │  │  ┌──────────────────┐  ┌──────────────────────────────┐   │  │
-  │  │  │  HTTP handler    │  │  Workflow orchestrator        │   │  │
-  │  │  │  (net/http)      │  │  (uses wdl/workflow directly) │   │  │
-  │  │  └──────────────────┘  └──────────────────────────────┘   │  │
-  │  │  ┌──────────────────────────────────────────────────────┐  │  │
-  │  │  │  internal/store  (SQLite via database/sql + CGo)     │  │  │
-  │  │  └──────────────────────────────────────────────────────┘  │  │
-  │  └────────────────────────────────────────────────────────────┘  │
-  └──────────────────────────────────────────────────────────────────┘
-           │ shared filesystem           │ HTTP long-poll
-           │ (NFS / local mount)         │
-  ┌────────▼────────────────────────────▼────────────────────────────┐
-  │                        DAEMON LAYER                               │
-  │  ┌────────────────────────────────────────────────────────────┐  │
-  │  │  cmd/flowy-daemon  (one process per worker host)           │  │
-  │  │  ┌──────────────────┐  ┌──────────────────────────────┐   │  │
-  │  │  │  Poll loop       │  │  Task executor                │   │  │
-  │  │  │  GET /tasks/next │  │  wraps wdl/task.RunTask()     │   │  │
-  │  │  └──────────────────┘  └──────────────────────────────┘   │  │
-  │  └────────────────────────────────────────────────────────────┘  │
-  │  [ daemon-A ]      [ daemon-B ]      [ daemon-C ]                 │
-  └──────────────────────────────────────────────────────────────────┘
-           │ reads inputs/  │ writes outputs/
-           │ shared storage │
-  ┌────────▼────────────────▼────────────────────────────────────────┐
-  │                       STORAGE LAYER                               │
-  │  shared_root/                                                     │
-  │    runs/<run_id>/                                                  │
-  │      inputs/          (client copies WDL inputs here)             │
-  │      outputs/         (daemon writes collected outputs here)       │
-  │      working/         (task-level MkdirTemp, same as execRoot)    │
-  │      outputs.json     (final workflow outputs)                    │
-  │      error.json       (failure details if any)                    │
-  └──────────────────────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  flowy (client CLI)                                              │
+  │  submit | status | outputs | run (sync mode)                    │
+  └──────────────────────────┬──────────────────────────────────────┘
+                             │ HTTP REST
+  ┌──────────────────────────▼──────────────────────────────────────┐
+  │  flowy-server                                                    │
+  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
+  │  │ REST API     │  │ DAG Scheduler│  │  Stale Detection      │  │
+  │  │ (handlers.go)│  │ (dispatch.go)│  │  (server.go)          │  │
+  │  └──────────────┘  └──────┬───────┘  └───────────────────────┘  │
+  │                           │ os.WriteFile(inputs.json)            │
+  │  ┌────────────────────────▼────────────────────────────────────┐ │
+  │  │  internal/store/rundir.go  (FS path helpers)                │ │
+  │  │  {baseDir}/runs/{runID}/tasks/{name}_{shard}/inputs.json    │ │
+  │  └────────────────────────────────────────────────────────────┘ │
+  │  ┌──────────────────────────────────────────────┐               │
+  │  │  SQLite (store/sqlite/) — task queue          │               │
+  │  └──────────────────────────────────────────────┘               │
+  └─────────────────────────────────────────────────────────────────┘
+               Shared FS (NFS or local): daemon reads/writes here
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  flowy-daemon (1..N instances)                                   │
+  │  ┌─────────────────────────────────────────────────────────┐    │
+  │  │  workerLoop → executeTask                                │    │
+  │  │  reads inputs.json from shared FS                        │    │
+  │  │  writes outputs.json to shared FS                        │    │
+  │  └─────────────────────────────┬───────────────────────────┘    │
+  │  ┌─────────────────────────────▼───────────────────────────┐    │
+  │  │  wdl/task.RunTask()                                      │    │
+  │  │  BindInputs → PathMap → Docker bind mounts → CollectOutputs│  │
+  │  └────────────────────────────────────────────────────────┘    │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+### System Overview: Target (v1.2 — with S3 backend)
+
+```
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  flowy (client CLI)                                              │
+  │  --storage {local|s3}  (new flag, passed in SubmitRequest)       │
+  └──────────────────────────┬──────────────────────────────────────┘
+                             │ HTTP REST (SubmitRequest.StorageOverride)
+  ┌──────────────────────────▼──────────────────────────────────────┐
+  │  flowy-server                                                    │
+  │  ┌──────────────────────────────────────────────────────────┐   │
+  │  │  Server struct gets:  backend storage.Backend  (injected) │   │
+  │  └───────────────────────────────────────────────────────────┘   │
+  │  ┌──────────────────────────────────────────────────────────┐   │
+  │  │  DAG Scheduler (dispatch.go)                              │   │
+  │  │  backend.WriteTaskInputs() instead of os.WriteFile        │   │
+  │  │  backend.ReadTaskOutputs() instead of os.ReadFile         │   │
+  │  └──────────────────────────────────────────────────────────┘   │
+  │  ┌──────────────────────────────────────────────────────────┐   │
+  │  │  handleClaim: injects storage config into TaskClaimResponse│  │
+  │  │  handleOutputs: backend.ReadRunOutputs()                  │   │
+  │  └──────────────────────────────────────────────────────────┘   │
+  └─────────────────────────────────────────────────────────────────┘
+                             │ TaskClaimResponse + StorageType/Bucket/Endpoint
+  ┌──────────────────────────▼──────────────────────────────────────┐
+  │  flowy-daemon                                                    │
+  │  Builds Backend from claim response config                       │
+  │  ┌──────────────────────────────────────────────────────────┐   │
+  │  │  Download phase (NEW):                                    │   │
+  │  │  localizeInputs(inputsJSON, stagingDir, backend)          │   │
+  │  │  for each s3:// File input → backend.DownloadFile()       │   │
+  │  │  rewrites paths to local temp paths                       │   │
+  │  └────────────────────────────┬─────────────────────────────┘   │
+  │  ┌─────────────────────────────▼───────────────────────────┐    │
+  │  │  wdl/task.RunTask() — UNCHANGED (local paths only)       │    │
+  │  └────────────────────────────┬────────────────────────────┘    │
+  │  ┌─────────────────────────────▼───────────────────────────┐    │
+  │  │  Upload phase (NEW):                                     │    │
+  │  │  delocalizeOutputs(outputs, backend)                     │    │
+  │  │  for each FileValue output → backend.UploadFile()        │    │
+  │  │  rewrites paths to s3:// URIs in outputs.json            │    │
+  │  └────────────────────────────────────────────────────────┘    │
+  └─────────────────────────────────────────────────────────────────┘
+                             │
+  ┌──────────────────────────▼──────────────────────────────────────┐
+  │  internal/storage  (NEW PACKAGE)                                 │
+  │  ┌─────────────────┐  ┌──────────────┐  ┌──────────────────┐    │
+  │  │ Backend         │  │ LocalBackend │  │ S3Backend        │    │
+  │  │ (interface)     │  │ wraps rundir │  │ aws-sdk-go-v2    │    │
+  │  └─────────────────┘  └──────────────┘  └──────────────────┘    │
+  └─────────────────────────────────────────────────────────────────┘
+                             │
+  ┌──────────────────────────▼──────────────────────────────────────┐
+  │  S3 / MinIO                                                      │
+  │  {bucket}/{prefix}/runs/{runID}/tasks/{name}_{shard}/inputs.json │
+  │  {bucket}/{prefix}/runs/{runID}/tasks/{name}_{shard}/outputs/... │
+  └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Existing code it uses |
-|-----------|---------------|----------------------|
-| `cmd/flowy` (client) | CLI UX: submit, poll, display results | parser, checker (for `flowy check`); HTTP client for all run ops |
-| `cmd/flowy-server` | Accept submissions, orchestrate DAG, assign tasks to daemons | `wdl/workflow` (DAG build + topo sort), `wdl/parser`, `wdl/checker`, new `internal/store` |
-| `cmd/flowy-daemon` | Poll server for assigned tasks, execute them, report results | `wdl/task.RunTask` directly (unchanged interface) |
-| `internal/store` | SQLite persistence for runs and tasks | `database/sql` + `mattn/go-sqlite3` |
-| `internal/api` | Shared HTTP request/response types (DTOs) | Used by both client and server to avoid type drift |
-| shared filesystem | File exchange between client and daemon | OS filesystem; no new code needed |
+| Component | Responsibility | New vs Modified |
+|-----------|----------------|-----------------|
+| `internal/storage/` | `Backend` interface + `LocalBackend` + `S3Backend` | NEW |
+| `internal/config.StorageConfig` | S3 endpoint, bucket, credentials, backend type | MODIFIED |
+| `internal/store/rundir.go` | Owns local FS path layout; `LocalBackend` delegates here | UNCHANGED |
+| `internal/api.TaskClaimResponse` | Adds `StorageType`/`StorageBucket`/`StorageEndpoint`/`StoragePrefix` | MODIFIED |
+| `internal/server/server.go` | `Server` struct gets `backend storage.Backend` field | MODIFIED |
+| `internal/server/dispatch.go` | `makeDispatchFn` calls `backend.WriteTaskInputs`; `loadTaskOutputs` calls `backend.ReadTaskOutputs` | MODIFIED |
+| `internal/server/handlers.go` | `handleOutputs` calls `backend.ReadRunOutputs`; `handleClaim` populates storage config in response | MODIFIED |
+| `internal/daemon/daemon.go` | `executeTask` adds download/upload phases around `RunTask` | MODIFIED |
+| `wdl/task/inputs.go` | `cleanPath`: guard for `s3://` prefix (skip filepath resolution) | MODIFIED |
+| `flowy/main.go` | `--storage` flag, passes `StorageOverride` in `SubmitRequest` | MODIFIED |
+
+---
+
+## New Package: `internal/storage`
+
+### Backend Interface
+
+```go
+// Package storage defines the Backend interface and implementations for
+// workflow run data I/O. Implementations: LocalBackend and S3Backend.
+package storage
+
+import "context"
+
+// Backend abstracts file I/O for workflow run task data.
+// All methods are safe for concurrent use.
+type Backend interface {
+    // WriteTaskInputs writes inputs.json for a task shard.
+    // Returns the address string (local path or s3:// URI).
+    WriteTaskInputs(ctx context.Context, runID, taskName string, shardIndex int, data []byte) (addr string, err error)
+
+    // ReadTaskOutputs reads outputs.json for a completed task shard.
+    ReadTaskOutputs(ctx context.Context, runID, taskName string, shardIndex int) ([]byte, error)
+
+    // WriteTaskOutputs writes outputs.json for a completed task shard.
+    WriteTaskOutputs(ctx context.Context, runID, taskName string, shardIndex int, data []byte) error
+
+    // ReadRunOutputs reads the run-level outputs.json.
+    ReadRunOutputs(ctx context.Context, runID string) ([]byte, error)
+
+    // WriteRunOutputs writes the run-level outputs.json.
+    WriteRunOutputs(ctx context.Context, runID string, data []byte) error
+
+    // DownloadFile downloads a file at addr to a local directory.
+    // For LocalBackend: no-op, returns addr unchanged.
+    // For S3Backend: streams s3://bucket/key to localDir/filename.
+    DownloadFile(ctx context.Context, addr string, localDir string) (localPath string, err error)
+
+    // UploadFile uploads a local file to the backend and returns its address.
+    // For LocalBackend: no-op, returns localPath unchanged.
+    // For S3Backend: streams localPath to S3 and returns s3://bucket/key.
+    UploadFile(ctx context.Context, localPath string, runID, taskName string, shardIndex int) (addr string, err error)
+
+    // CreateRunDirs ensures the run's storage container exists.
+    // For LocalBackend: os.MkdirAll.
+    // For S3Backend: validates bucket accessible (no-op — S3 has no directories).
+    CreateRunDirs(ctx context.Context, runID string) error
+}
+```
+
+### Why This Interface Boundary
+
+The interface is coarse-grained (whole-file operations, not streaming primitives) because:
+
+1. `wdl/task.RunTask` must receive **local POSIX paths** — Docker bind mounts cannot accept S3 URIs. All S3 localization happens in the daemon, outside RunTask. The interface does not need to be visible to the `wdl/task` package.
+2. The server only touches `inputs.json`, `outputs.json`, and the run-level `outputs.json` — all small JSON blobs. `GetObject`/`PutObject` with byte slices is sufficient; no streaming needed on the server side.
+3. Large file uploads (BAM, VCF) happen in the daemon's upload phase and are handled by `UploadFile`, which internally uses multipart upload for objects over a configurable threshold.
 
 ---
 
 ## Recommended Project Structure
 
 ```
-flowy/
-├── cmd/
-│   ├── flowy/           # existing client binary (extend with submit/status/outputs)
-│   │   └── main.go
-│   ├── flowy-server/    # NEW: server binary
-│   │   └── main.go
-│   └── flowy-daemon/    # NEW: daemon binary
-│       └── main.go
-├── internal/
-│   ├── api/             # NEW: shared HTTP DTO types (no business logic)
-│   │   ├── types.go     # RunSubmitRequest, RunStatusResponse, TaskAssignment, etc.
-│   │   └── errors.go    # shared error response shape
-│   ├── store/           # NEW: SQLite persistence layer
-│   │   ├── store.go     # Store interface + sqlite implementation
-│   │   ├── schema.sql   # embedded schema (go:embed)
-│   │   └── store_test.go
-│   ├── server/          # NEW: HTTP handler logic (separate from cmd for testability)
-│   │   ├── handler.go   # net/http handlers for all endpoints
-│   │   ├── orchestrator.go  # wraps wdl/workflow, dispatches tasks via store
-│   │   └── handler_test.go
-│   └── config/          # NEW: config file parsing
-│       └── config.go    # flowyconfig.toml / flowyconfig.yaml parsing
-├── wdl/                 # UNCHANGED: existing engine packages
-│   ├── ast/
-│   ├── lexer/
-│   ├── parser/
-│   ├── checker/
-│   ├── eval/
-│   ├── task/            # task.RunTask and task.ContainerRunner are the daemon integration point
-│   ├── types/
-│   ├── values/
-│   └── workflow/        # workflow.RunWorkflow is the server orchestration point
-└── go.mod
+internal/
+├── storage/                    # NEW — storage abstraction package
+│   ├── backend.go              # Backend interface definition
+│   ├── local.go                # LocalBackend: wraps os/filepath + store.rundir helpers
+│   ├── s3.go                   # S3Backend: wraps aws-sdk-go-v2/service/s3
+│   ├── s3_test.go              # Integration tests vs MinIO (build tag: integration)
+│   └── factory.go              # NewBackendFromConfig() convenience constructor
+├── config/
+│   └── config.go               # + StorageConfig struct added
+├── api/
+│   └── types.go                # + StorageType/Bucket/Endpoint/Prefix in TaskClaimResponse
+│                               # + StorageOverride in SubmitRequest
+├── server/
+│   ├── server.go               # + backend storage.Backend field in Server struct
+│   ├── dispatch.go             # inject backend, replace os.WriteFile/os.ReadFile calls
+│   └── handlers.go             # handleOutputs, handleClaim updated
+└── daemon/
+    └── daemon.go               # executeTask: download phase → RunTask → upload phase
 ```
-
-### Structure Rationale
-
-- **`internal/api/`:** Shared DTO types live here so the client binary and server binary use identical wire formats. Prevents type drift between producer and consumer.
-- **`internal/store/`:** Pure persistence, no HTTP or business logic. Allows the orchestrator to be tested without a running HTTP server.
-- **`internal/server/`:** Handlers separated from `cmd/flowy-server/main.go` — enables `httptest.NewServer` in tests without spawning a real process.
-- **`wdl/` untouched:** All existing packages stay unchanged. The distributed layer wraps them — it does not modify them.
-- **`cmd/flowy-daemon/` imports `wdl/task`:** The daemon calls `task.RunTask()` exactly as the monolith did. No new interface needed.
 
 ---
 
 ## Architectural Patterns
 
-### Pattern 1: Server-Side DAG Orchestration (Modified RunWorkflow)
+### Pattern 1: Localize-Execute-Delocalize (Cromwell model)
 
-**What:** The server runs the DAG scheduler from `wdl/workflow` but replaces the `runTaskFn` variable with a function that persists task work to SQLite and blocks until a daemon picks it up and reports completion. The existing in-process goroutine model becomes a database-mediated async handoff.
+**What:** Before running a Docker task, download all S3-addressed `File` inputs to a local staging directory. After Docker completes, upload all `File` outputs back to S3. `RunTask` itself operates entirely on local POSIX paths and is unchanged.
 
-**When to use:** Core pattern for server-side workflow orchestration.
+**When to use:** Required whenever the container runner uses Docker bind mounts (always true for this engine).
 
-**Trade-offs:** The scheduler goroutine in `wdl/workflow.scheduler.run()` blocks on a channel waiting for task completions. In the distributed model the channel message arrives via HTTP callback from the daemon rather than from an in-process goroutine. The scheduler loop itself doesn't change — only the `runTaskFn` changes.
+**Why this pattern fits flowy:** The existing `RunTask` → `PathMap` → Docker bind mount pipeline is clean and heavily tested. Inserting S3 awareness into that pipeline would break the `ContainerRunner` abstraction and make the `wdl/task` package depend on an S3 SDK. Cromwell and miniwdl both use pre/post localization for the same reason.
 
-**How the hook works in the existing code:**
-
-```go
-// wdl/workflow/scheduler.go — already has this variable
-var runTaskFn = task.RunTask  // package-level, overridable
-
-// server/orchestrator.go — override at server startup
-workflow.SetRunTaskFn(func(ctx context.Context, t *ast.Task, inputs map[string]interface{},
-    runner task.ContainerRunner, execRoot string,
-    structDefs ...map[string]*ast.StructDef) (map[string]values.Value, error) {
-
-    taskID := store.InsertTask(runID, t, inputs, execRoot)
-    return waitForDaemonCompletion(ctx, taskID)  // blocks until daemon reports done
-})
-```
-
-The existing `runTaskFn` is a package-level `var` — this is the correct injection point. No changes to `scheduler.go` are needed; a public setter function is added.
-
-**Alternative for scatter:** When scatter creates multiple `g.Go()` goroutines that each call `runTaskFn`, the distributed version creates multiple SQLite task rows simultaneously. Multiple daemons can pick these up in parallel naturally — scatter parallelism maps directly to daemon-level parallelism.
-
-### Pattern 2: Daemon Long-Poll for Task Assignment
-
-**What:** Daemons poll `GET /internal/tasks/next?daemon_id=X` with a long-poll timeout (30s). Server holds the request open until a task is available or the timeout expires. If a task is available, server immediately responds with the task assignment and marks it `ASSIGNED` in SQLite. Daemon executes, reports result via `POST /internal/tasks/{id}/complete`.
-
-**When to use:** Preferred over interval polling (simpler server state, no thundering herd at small scale) and push/websocket (no persistent connection management needed).
-
-**Trade-offs:**
-- Long-poll requires the server to manage open HTTP connections per daemon (one goroutine per waiting daemon). At the scale this project targets (dozens of daemons), this is fine.
-- If the daemon crashes mid-task, the task row stays in `ASSIGNED` state. A reaper goroutine (runs every 60s) claims any task that has been `ASSIGNED` for longer than a configurable timeout and resets it to `QUEUED`.
-- Short interval polling (5s) is the fallback: simpler to implement, acceptable latency for bioinformatics tasks that take minutes.
-
-**Protocol:**
-
-```
-Daemon                                    Server
-  |                                          |
-  |--- GET /internal/tasks/next (hold 30s) ->|
-  |                                          | (waits, no task available)
-  |                       (new task arrives) |
-  |<-- 200 TaskAssignment{id, ast_json, ... }|
-  |                                          |
-  | [executes task.RunTask locally]          |
-  |                                          |
-  |--- POST /internal/tasks/{id}/complete -->|
-  |    {status: "success", outputs_json}     |
-  |                                          |
-  |<-- 200 OK                                |
-  |                                          |
-  | (immediately re-polls)                   |
-  |--- GET /internal/tasks/next (hold 30s) ->|
-```
-
-### Pattern 3: AST Serialization for Daemon Dispatch
-
-**What:** The server needs to send a WDL `*ast.Task` and its resolved inputs to a daemon. Since the AST is a rich Go struct tree, the cleanest approach is to serialize the task definition as JSON using `encoding/json` with the existing AST types, paired with the resolved inputs map.
-
-**When to use:** Task assignment payload.
-
-**Trade-offs:** The `ast` package types are not currently tagged for JSON serialization. Adding `json:` struct tags to `wdl/ast/ast.go` is the minimal change needed. Alternatively, the server can send the raw WDL source + task name + inputs JSON, and the daemon re-parses locally. Re-parsing is simpler (no AST tagging needed) and more robust — the daemon is guaranteed to have the same WDL source available via the shared filesystem.
-
-**Recommended approach: send WDL source path + task name + inputs JSON.**
+**Implementation sketch in daemon.go:**
 
 ```go
-// internal/api/types.go
-type TaskAssignment struct {
-    TaskID      string          `json:"task_id"`
-    RunID       string          `json:"run_id"`
-    WDLPath     string          `json:"wdl_path"`     // absolute path on shared filesystem
-    TaskName    string          `json:"task_name"`    // which task to run in the file
-    InputsJSON  json.RawMessage `json:"inputs_json"`  // resolved inputs as JSON
-    ExecRoot    string          `json:"exec_root"`    // runs/<run_id>/working/ on shared fs
+func (d *Daemon) executeTask(claim *api.TaskClaimResponse) {
+    defer d.wg.Done()
+    taskCtx := context.Background()
+
+    // Build backend from claim config (daemon has its own credentials from config file).
+    backend := storage.NewBackendFromClaim(claim, d.cfg)
+
+    // Read inputs.json from backend.
+    inputsData, err := backend.ReadTaskInputs(taskCtx, claim.RunID, claim.TaskName, claim.ShardIndex)
+
+    // Download phase: rewrite s3:// File paths in inputsJSON to local staging paths.
+    stagingDir, cleanup := d.newStagingDir(claim.TaskID)
+    defer cleanup()  // removes staging dir after upload phase completes
+    localInputsJSON, err := localizeInputs(taskCtx, inputsData, stagingDir, backend)
+
+    // Execute: RunTask sees only local paths (unchanged).
+    outputs, err := task.RunTask(taskCtx, astTask, localInputsJSON, task.NewDockerRunner(),
+        claim.OutputsDir, wdlDir, structDefs)
+
+    // Upload phase: rewrite FileValue paths to s3:// URIs, upload files.
+    remoteOutputs, err := delocalizeOutputs(taskCtx, outputs, backend,
+        claim.RunID, claim.TaskName, claim.ShardIndex)
+
+    // Write outputs.json (with s3:// URIs) to backend.
+    backend.WriteTaskOutputs(taskCtx, claim.RunID, claim.TaskName, claim.ShardIndex, outputsData)
+    d.reportResult(taskCtx, claim.TaskID, "COMPLETED", "")
 }
 ```
 
-The daemon re-parses `WDLPath`, extracts the named task, and calls `task.RunTask()`. This avoids all AST serialization complexity.
+**Trade-off:** Adds latency for large input files. Acceptable for genomics (reference files are large but per-run; output BAMs are written once). The staging directory is cleaned up after delocalization, preventing unbounded disk growth.
 
-### Pattern 4: `flowy run` Synchronous Mode (Spectool Compatibility)
+### Pattern 2: S3 URI Detection at Input Path Binding
 
-**What:** `flowy run` in synchronous mode submits the workflow to the server, then polls `GET /v1/runs/{id}` every 2s, and exits with the same JSON outputs on stdout and the same exit code as the current monolithic implementation.
+**What:** In `wdl/task/inputs.go` `cleanPath`, detect `s3://` prefix and return the path unchanged (skip `filepath.Abs` and `filepath.Clean`). The `s3://` URI is an opaque identifier at this layer; the daemon's download phase translates it to a local path before `RunTask` is called.
 
-**When to use:** Required for spectool conformance — the test harness calls `flowy run` and expects synchronous behavior.
+**When to use:** Whenever inputs.json may contain `s3://bucket/key` strings for `File`-typed inputs.
 
-**Implementation:** The client CLI either (a) detects the presence of a config file pointing to a server and uses HTTP, or (b) falls back to the existing in-process execution when no server is configured. This preserves backward compatibility without breaking spectool.
+**Minimal change (5 lines):**
 
-```
-if config.ServerURL != "" {
-    runDistributed(...)  // submit → poll → print outputs
-} else {
-    runLocal(...)        // existing RunWorkflow directly
+```go
+func cleanPath(p string, wdlDir string) string {
+    if strings.HasPrefix(p, "s3://") {
+        return p  // opaque S3 URI — daemon localizes before RunTask
+    }
+    // existing local-path logic unchanged ...
+    if !filepath.IsAbs(p) { ... }
+    return filepath.Clean(p)
 }
 ```
+
+**Why here:** `cleanPath` is the single choke-point where all `File`/`Directory` string values become canonical paths. Adding the guard here is the minimal, contained change that avoids scattered S3 awareness across the `wdl/task` package.
+
+**Note:** The inputs.json stored in the backend always has the original `s3://` URIs. The daemon's `localizeInputs` helper produces a second in-memory map with local paths for passing to `RunTask`. The s3:// values are never written to the local exec directory.
+
+### Pattern 3: Backend Config Propagation via TaskClaimResponse
+
+**What:** The server includes backend type and S3 config (endpoint, bucket, prefix) in `TaskClaimResponse`. The daemon constructs the appropriate `Backend` from this config. Credentials are NOT included in the claim response.
+
+**Why:** Daemons in a distributed cluster may run on different hosts without access to the server's config file. Embedding storage addressing config (bucket, endpoint, prefix) in the claim response makes the daemon self-contained per task. Credentials come from the daemon's own config file or IAM instance role — they are never serialized into the API.
+
+**Extended `TaskClaimResponse`:**
+
+```go
+type TaskClaimResponse struct {
+    // ... existing fields (TaskID, RunID, TaskName, ShardIndex, WDLPath) ...
+
+    // Storage backend config for this task (credentials not included).
+    StorageType     string `json:"storage_type"`               // "local" or "s3"
+    StorageBucket   string `json:"storage_bucket,omitempty"`   // S3 bucket name
+    StorageEndpoint string `json:"storage_endpoint,omitempty"` // MinIO endpoint URL
+    StoragePrefix   string `json:"storage_prefix,omitempty"`   // key prefix
+}
+```
+
+The `InputsDir`/`OutputsDir` fields in the existing `TaskClaimResponse` become the `StoragePrefix` + task sub-path for S3, or remain local FS paths for `LocalBackend`. The server populates these fields in `handleClaim`.
+
+### Pattern 4: LocalBackend as Zero-Regression Wrapper
+
+**What:** `LocalBackend` wraps the existing `store/rundir.go` functions and `os.ReadFile`/`os.WriteFile`. The server's behavior for the local backend is byte-for-byte identical to v1.1.
+
+**Implementation:**
+
+```go
+type LocalBackend struct{ BaseDir string }
+
+func (b *LocalBackend) WriteTaskInputs(_ context.Context, runID, taskName string, shard int, data []byte) (string, error) {
+    path := filepath.Join(store.TaskDir(b.BaseDir, runID, taskName, shard), "inputs.json")
+    return path, os.WriteFile(path, data, 0o644)
+}
+
+func (b *LocalBackend) DownloadFile(_ context.Context, addr string, _ string) (string, error) {
+    return addr, nil  // local path, no-op
+}
+
+func (b *LocalBackend) UploadFile(_ context.Context, localPath string, _, _ string, _ int) (string, error) {
+    return localPath, nil  // local path, no-op
+}
+```
+
+**Why:** All existing spectool tests run against `LocalBackend` without any changes. If spectool passes after the refactor, the storage abstraction is correct.
+
+### Pattern 5: Input Path Resolution Rules
+
+**What:** Clear precedence rules for how input path strings map to storage backends.
+
+| Input path format | Resolution |
+|-------------------|------------|
+| `s3://bucket/key` | S3Backend downloads to staging dir (daemon localizeInputs) |
+| `/absolute/path` | Local filesystem, passed as-is to RunTask |
+| `relative/path` | Resolved relative to WDL file's parent directory (existing behavior) |
+
+The `--storage` CLI flag selects where the server writes `inputs.json` and `outputs.json`. It does not prevent using `s3://` paths as File input values regardless of backend selection. Example: `--storage local` with `s3://my-bucket/ref.fasta` as a File input is valid — the daemon downloads the S3 file before running the container.
 
 ---
 
 ## Data Flow
 
-### Workflow Submission Flow
+### S3 Backend: Task Dispatch (Server Side)
 
 ```
-User: flowy run workflow.wdl --input inputs.json
-    |
-    | 1. Copy inputs.json + workflow.wdl to shared_root/runs/<id>/inputs/
-    |
-    v
-POST /v1/runs  {wdl_path, inputs_path, workflow_name}
-    |
-    | 2. Server: parse+typecheck WDL (wdl/parser + wdl/checker)
-    | 3. Server: insert run row (status=RUNNING)
-    | 4. Server: launch goroutine running modified workflow.RunWorkflow
-    |
-    v
-[Server goroutine: DAG scheduler]
-    | for each ready Call node:
-    | 5. insert task row (status=QUEUED, task_name, inputs_json, exec_root)
-    | 6. notify waiting long-poll listeners (via channel or cond)
-    | 7. block on completion channel for this task
-    |
-    v
-[Daemon polling loop]
-    | 8. GET /internal/tasks/next  → receives TaskAssignment
-    | 9. daemon: re-parse WDL from WDLPath, extract task
-    | 10. daemon: task.RunTask(ctx, taskDef, inputs, DockerRunner, execRoot)
-    |            writes outputs to shared_root/runs/<id>/working/<task-dir>/
-    | 11. daemon: POST /internal/tasks/{id}/complete  {outputs_json}
-    |
-    v
-[Server goroutine: scheduler unblocks]
-    | 12. update task row (status=COMPLETED, outputs_json)
-    | 13. send outputs back to blocking runTaskFn channel
-    | 14. scheduler binds outputs into workflow env, dispatches next ready nodes
-    |
-    v
-[Workflow completes]
-    | 15. server writes outputs.json to shared_root/runs/<id>/
-    | 16. update run row (status=COMPLETED, outputs_json)
-    |
-    v
-Client: GET /v1/runs/{id}  → {status: COMPLETED, outputs: {...}}
+makeDispatchFn (dispatch.go)
+    ↓
+backend.CreateRunDirs(ctx, runID)        ← validates bucket exists (S3 no-op)
+    ↓
+backend.WriteTaskInputs(ctx, runID, taskName, shard, inputsJSON)
+    → PUT s3://{bucket}/{prefix}/runs/{runID}/tasks/{name}_{shard}/inputs.json
+    returns: "s3://bucket/prefix/runs/..." (addr stored in task record? not needed)
+    ↓
+store.CreateTask(ctx, storeTask)
+    → SQLite: state=PENDING
+    (task will be claimed; claim response includes storage config)
 ```
 
-### State Transitions
+### S3 Backend: Task Execution (Daemon Side)
 
 ```
-Run:   SUBMITTED → RUNNING → COMPLETED | FAILED
-Task:  QUEUED → ASSIGNED → COMPLETED | FAILED
+claimTask()  ← POST /tasks/claim
+    ↓
+TaskClaimResponse{StorageType:"s3", StorageBucket:"my-bucket",
+                  StorageEndpoint:"http://minio:9000", StoragePrefix:"flowy"}
+    ↓
+build S3Backend from claim config + daemon credentials (from daemon config file)
+    ↓
+backend.ReadTaskInputs(ctx, runID, taskName, shard)
+    → GET s3://my-bucket/flowy/runs/{runID}/tasks/{name}_{shard}/inputs.json
+    returns: []byte of inputs.json (with s3:// File paths)
+    ↓
+localizeInputs(ctx, inputsData, stagingDir, backend)
+    parse inputs.json
+    for each FileValue with "s3://..." path:
+        backend.DownloadFile(ctx, "s3://bucket/data/ref.fasta", stagingDir)
+        → streams to /tmp/task-{id}/inputs/ref.fasta
+        replaces path in local inputs map: "s3://..." → "/tmp/task-{id}/inputs/ref.fasta"
+    returns: localInputsJSON (local paths only)
+    ↓
+task.RunTask(ctx, astTask, localInputsJSON, DockerRunner, execDir, wdlDir, structDefs)
+    PathMap.AddFile("/tmp/task-{id}/inputs/ref.fasta") → /mnt/inputs/ref.fasta
+    Docker runs with local bind mounts (UNCHANGED)
+    outputs: {output_bam: FileValue{"/execDir/work/output.bam"}}
+    ↓
+delocalizeOutputs(ctx, outputs, backend, runID, taskName, shard)
+    for each FileValue output:
+        backend.UploadFile(ctx, "/execDir/work/output.bam", runID, taskName, shard)
+        → PUT s3://bucket/flowy/runs/{runID}/tasks/{name}_{shard}/outputs/output.bam
+        rewrite FileValue: "/execDir/work/output.bam" → "s3://bucket/.../output.bam"
+    ↓
+backend.WriteTaskOutputs(ctx, runID, taskName, shard, outputsJSON_with_s3_URIs)
+    → PUT s3://bucket/.../outputs.json
+    ↓
+reportResult(taskCtx, claim.TaskID, "COMPLETED", "")
+    → cleanup(stagingDir)  // defer runs
+```
+
+### S3 Backend: Output Collection (Server Side)
+
+```
+waitForTask (dispatch.go) polls SQLite until TaskCompleted
+    ↓
+backend.ReadTaskOutputs(ctx, runID, taskName, shard)
+    → GET s3://bucket/.../outputs.json
+    ↓
+jsonToValue(raw) — produces FileValue{Value: "s3://bucket/.../output.bam"}
+    (s3:// path treated as opaque string by jsonToValue, no validation)
+    ↓
+workflow engine accumulates outputs (s3:// path strings in FileValues)
+    ↓
+backend.WriteRunOutputs(ctx, runID, runLevelOutputsJSON)
+    → PUT s3://bucket/flowy/runs/{runID}/outputs.json
+    ↓
+store.UpdateRunState(ctx, runID, RunCompleted)
+```
+
+### GET /workflows/{id}/outputs (Server Side)
+
+```
+handleOutputs (handlers.go)
+    ↓
+backend.ReadRunOutputs(ctx, run.ID)
+    → GET s3://bucket/flowy/runs/{runID}/outputs.json (S3)
+    OR os.ReadFile({baseDir}/runs/{runID}/outputs.json) (local)
+    ↓
+json.Unmarshal → return to client
 ```
 
 ---
 
-## SQLite Schema
+## Integration Points: What Changes Where
 
-```sql
--- internal/store/schema.sql
+### `internal/storage/` (NEW — build first)
 
-PRAGMA journal_mode=WAL;   -- required: concurrent readers + writer
-PRAGMA busy_timeout=5000;  -- retry for 5s on write contention
+Dependencies: `internal/store/rundir.go` (LocalBackend only), `github.com/aws/aws-sdk-go-v2/service/s3` (S3Backend only).
 
-CREATE TABLE IF NOT EXISTS runs (
-    id          TEXT PRIMARY KEY,           -- UUID v4
-    status      TEXT NOT NULL DEFAULT 'SUBMITTED',
-    wdl_path    TEXT NOT NULL,
-    inputs_json TEXT NOT NULL DEFAULT '{}',
-    outputs_json TEXT,
-    error_msg   TEXT,
-    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
-CREATE TABLE IF NOT EXISTS tasks (
-    id           TEXT PRIMARY KEY,          -- UUID v4
-    run_id       TEXT NOT NULL REFERENCES runs(id),
-    task_name    TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'QUEUED',
-    daemon_id    TEXT,                      -- which daemon claimed this
-    inputs_json  TEXT NOT NULL DEFAULT '{}',
-    outputs_json TEXT,
-    error_msg    TEXT,
-    exec_root    TEXT NOT NULL,
-    assigned_at  DATETIME,                  -- for reaper timeout detection
-    created_at   DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at   DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_run_id ON tasks(run_id);
-```
-
-**Go SQLite configuration (critical):**
+`factory.go` exports:
 
 ```go
-// internal/store/store.go
-db, err := sql.Open("sqlite3", dsn+"?_journal_mode=WAL&_busy_timeout=5000")
-db.SetMaxOpenConns(1)  // REQUIRED: SQLite allows only one writer; pool causes SQLITE_BUSY
+func NewBackendFromConfig(cfg *config.Config) (Backend, error)
+func NewBackendFromClaim(claim *api.TaskClaimResponse, daemonCfg *config.Config) (Backend, error)
 ```
 
-The `SetMaxOpenConns(1)` requirement is a known Go+SQLite issue. WAL mode allows concurrent reads but serializes writes through a single connection. With `SetMaxOpenConns(1)` all operations serialize through one connection, which avoids `SQLITE_BUSY` errors without meaningful performance loss for this use case.
+### `internal/config/config.go` (MODIFIED)
 
----
-
-## REST API Endpoints
-
-### Client-Facing (public)
-
-```
-POST   /v1/runs                     Submit workflow run
-GET    /v1/runs                     List runs (with pagination)
-GET    /v1/runs/{id}                Get run status and outputs
-DELETE /v1/runs/{id}                Cancel run (best-effort)
-GET    /v1/runs/{id}/outputs        Get final outputs JSON
-```
-
-### Daemon-Facing (internal, no auth initially)
-
-```
-GET    /internal/tasks/next         Long-poll for next assigned task (daemon)
-POST   /internal/tasks/{id}/complete  Report task completion or failure
-POST   /internal/daemons/register   (optional) daemon heartbeat / registration
-```
-
-### Design notes:
-
-- All request/response bodies: `application/json`
-- Error responses: `{"error": "message", "code": "MACHINE_CODE"}`
-- Run and task IDs: UUID v4 (generated by server)
-- Pagination: `GET /v1/runs?limit=50&offset=0`
-- The `/internal/` prefix signals that these endpoints are for daemon use only and may have different auth or network ACL treatment later.
-
-### Response shapes (internal/api/types.go):
+Add `StorageConfig` struct. Default `Type: "local"`.
 
 ```go
-type SubmitRunRequest struct {
-    WDLPath      string          `json:"wdl_path"`
-    InputsJSON   json.RawMessage `json:"inputs_json"`
-    WorkflowName string          `json:"workflow_name,omitempty"`
+type StorageConfig struct {
+    Type      string `yaml:"type"`       // "local" (default) or "s3"
+    Bucket    string `yaml:"bucket"`
+    Prefix    string `yaml:"prefix"`     // key prefix, default "flowy"
+    Endpoint  string `yaml:"endpoint"`   // override for MinIO: "http://localhost:9000"
+    Region    string `yaml:"region"`     // default "us-east-1"
+    AccessKey string `yaml:"access_key"` // not propagated over API
+    SecretKey string `yaml:"secret_key"` // not propagated over API
 }
 
-type RunStatus struct {
-    ID          string          `json:"id"`
-    Status      string          `json:"status"`   // SUBMITTED|RUNNING|COMPLETED|FAILED
-    Outputs     json.RawMessage `json:"outputs,omitempty"`
-    ErrorMsg    string          `json:"error,omitempty"`
-    CreatedAt   time.Time       `json:"created_at"`
-    UpdatedAt   time.Time       `json:"updated_at"`
-}
-
-type TaskAssignment struct {
-    TaskID     string          `json:"task_id"`
-    RunID      string          `json:"run_id"`
-    WDLPath    string          `json:"wdl_path"`
-    TaskName   string          `json:"task_name"`
-    InputsJSON json.RawMessage `json:"inputs_json"`
-    ExecRoot   string          `json:"exec_root"`
-}
-
-type TaskCompleteRequest struct {
-    Status      string          `json:"status"`       // "success" | "failure"
-    OutputsJSON json.RawMessage `json:"outputs_json,omitempty"`
-    ErrorMsg    string          `json:"error,omitempty"`
-    ExitCode    int             `json:"exit_code,omitempty"`
+type Config struct {
+    // ... existing fields ...
+    Storage StorageConfig `yaml:"storage"`
 }
 ```
 
----
+### `internal/api/types.go` (MODIFIED)
 
-## Configuration File Structure
+Two changes:
+1. `SubmitRequest` gets `StorageOverride string` (optional client `--storage` flag).
+2. `TaskClaimResponse` gets four new fields (StorageType, StorageBucket, StorageEndpoint, StoragePrefix).
 
-```toml
-# flowyconfig.toml (searched in: $CWD, $HOME/.flowy/, /etc/flowy/)
+The existing `InputsDir`/`OutputsDir` fields become redundant for the S3 backend (paths are implicit from run/task/shard) but must remain for backward compatibility with the local backend.
 
-[server]
-listen        = "0.0.0.0:8080"   # server bind address
-shared_root   = "/mnt/shared"    # shared filesystem root for runs
-db_path       = "/var/lib/flowy/flowy.db"
+### `internal/server/server.go` (MODIFIED)
 
-[daemon]
-server_url    = "http://flowy-server:8080"
-daemon_id     = ""         # auto-generated UUID if empty (written back to config)
-shared_root   = "/mnt/shared"
-poll_interval = "30s"      # long-poll timeout; also fallback interval
-concurrency   = 4          # max parallel tasks this daemon executes
+```go
+type Server struct {
+    cfg     *config.Config
+    store   store.Store
+    backend storage.Backend  // NEW
+    // ... existing fields ...
+}
 
-[client]
-server_url    = "http://flowy-server:8080"
-shared_root   = "/mnt/shared"
+func New(cfg *config.Config, st store.Store, backend storage.Backend) *Server { ... }
 ```
 
-**Config loading priority:** CLI flags > environment variables > config file > defaults.
+### `internal/server/dispatch.go` (MODIFIED)
 
-**Env var prefix:** `FLOWY_SERVER_LISTEN`, `FLOWY_DAEMON_SERVER_URL`, `FLOWY_CLIENT_SERVER_URL` etc.
+Replace four direct filesystem calls:
 
----
+| Old call | New call |
+|----------|----------|
+| `store.CreateRunDirs(s.cfg.BaseDir, runID)` | `s.backend.CreateRunDirs(ctx, runID)` |
+| `store.CreateTaskDirs(s.cfg.BaseDir, runID, ...)` | `s.backend.CreateTaskDirs(ctx, runID, ...)` (or absorbed into WriteTaskInputs) |
+| `os.WriteFile(inputsPath, inputsData, ...)` | `s.backend.WriteTaskInputs(ctx, runID, taskName, shard, inputsData)` |
+| `os.ReadFile(outputsPath)` in `loadTaskOutputs` | `s.backend.ReadTaskOutputs(ctx, runID, taskName, shard)` |
 
-## Shared Filesystem Layout
+Also: `runWorkflow` writes run-level `outputs.json` via `s.backend.WriteRunOutputs(ctx, runID, data)`.
 
+### `internal/server/handlers.go` (MODIFIED)
+
+- `handleOutputs`: replace `os.ReadFile(outputsPath)` with `s.backend.ReadRunOutputs(r.Context(), run.ID)`.
+- `handleClaim`: populate `StorageType`, `StorageBucket`, `StorageEndpoint`, `StoragePrefix` from `s.cfg.Storage` in the `TaskClaimResponse`.
+- `handleSubmit` + `handleTaskRun`: replace `store.CreateRunDirs(s.cfg.BaseDir, runID)` with `s.backend.CreateRunDirs(r.Context(), runID)`.
+
+### `internal/daemon/daemon.go` (MODIFIED)
+
+`executeTask` gets two new phases. New helpers needed:
+
+```go
+// localizeInputs downloads s3:// File inputs to stagingDir, returns rewritten inputs map.
+func localizeInputs(ctx context.Context, inputsData []byte, stagingDir string, backend storage.Backend) (map[string]interface{}, error)
+
+// delocalizeOutputs uploads File outputs to backend, returns outputs map with s3:// paths.
+func delocalizeOutputs(ctx context.Context, outputs map[string]values.Value,
+    backend storage.Backend, runID, taskName string, shardIndex int) (map[string]values.Value, error)
+
+// newStagingDir creates a temp dir for a task and returns it with a cleanup function.
+func (d *Daemon) newStagingDir(taskID string) (dir string, cleanup func())
 ```
-<shared_root>/
-└── runs/
-    └── <run_id>/           # UUID for each workflow run
-        ├── inputs/         # client copies WDL file and input files here
-        │   ├── workflow.wdl
-        │   ├── inputs.json
-        │   └── ref.fasta   # any File inputs
-        ├── working/        # daemon-side task execution root (= execRoot)
-        │   ├── MyTask-a1b2c3/       # MkdirTemp result per task invocation
-        │   │   ├── work/            # container /mnt/outputs bind
-        │   │   ├── stdout.txt
-        │   │   ├── stderr.txt
-        │   │   └── rc
-        │   └── MyTask-d4e5f6/       # scatter produces multiple per-item dirs
-        ├── outputs/        # workflow-level outputs copied here
-        │   └── result.vcf
-        ├── outputs.json    # final workflow outputs (wdl/workflow writes this)
-        └── error.json      # written on failure
+
+The daemon must read `inputs.json` via the backend now:
+
+```go
+inputsData, err := backend.ReadTaskInputs(taskCtx, claim.RunID, claim.TaskName, claim.ShardIndex)
 ```
 
-**Key constraint:** The `WDLPath` in `TaskAssignment` must be a path on the shared filesystem that all daemons can read. The client copies the WDL file to `runs/<id>/inputs/workflow.wdl` before submitting. The server records this path in the run row and passes it to every task assignment.
+(New method on Backend, or re-read from the address returned in the claim response — ReadTaskInputs is cleaner.)
 
-**File input paths in inputs.json:** All `File` inputs must be absolute paths under `shared_root`. The client is responsible for copying local files to `runs/<id>/inputs/` and rewriting paths in the inputs JSON before submitting.
+### `wdl/task/inputs.go` (MODIFIED)
 
----
+Single addition to `cleanPath`:
 
-## Integration Points with Existing Packages
+```go
+import "strings"
 
-### What is unchanged
+func cleanPath(p string, wdlDir string) string {
+    if strings.HasPrefix(p, "s3://") {
+        return p  // opaque S3 URI — daemon localizes before RunTask
+    }
+    // ... existing logic ...
+}
+```
 
-| Package | Status | Notes |
-|---------|--------|-------|
-| `wdl/ast` | Unchanged | AST node types stay as-is |
-| `wdl/lexer` | Unchanged | |
-| `wdl/parser` | Unchanged | Daemon calls `parser.Parse()` directly |
-| `wdl/checker` | Unchanged | Server calls `checker.Check()` at submission time |
-| `wdl/eval` | Unchanged | |
-| `wdl/types` | Unchanged | |
-| `wdl/values` | Unchanged | |
-| `wdl/task` | Unchanged | Daemon calls `task.RunTask()` with same signature |
+### `flowy/main.go` (MODIFIED)
 
-### What is minimally modified
-
-| Package | Modification | Why |
-|---------|-------------|-----|
-| `wdl/workflow` | Add `SetRunTaskFn(fn)` public setter | Allows server to inject distributed task dispatch without changing internal logic |
-| `cmd/flowy/main.go` | Add `submit`, `status`, `outputs` subcommands; make `run` config-aware | Client UX extension |
-
-### New packages required
-
-| Package | Content | Dependencies |
-|---------|---------|-------------|
-| `internal/api` | HTTP DTO types shared between client and server | `encoding/json`, `time` only |
-| `internal/store` | SQLite persistence | `database/sql`, `mattn/go-sqlite3` (CGo) |
-| `internal/server` | HTTP handlers, orchestrator | `wdl/workflow`, `wdl/parser`, `wdl/checker`, `internal/store`, `internal/api` |
-| `internal/config` | Config file loading | `encoding/json` or `github.com/BurntSushi/toml` |
-| `cmd/flowy-server` | Server binary entry point | `internal/server`, `internal/config` |
-| `cmd/flowy-daemon` | Daemon binary entry point | `wdl/task`, `wdl/parser`, `internal/api`, `internal/config` |
+`runRun` / `runSubmit`: add `--storage {local|s3}` flag, populate `SubmitRequest.StorageOverride`.
 
 ---
 
-## Build Order (dependency-respecting)
+## S3Backend Implementation Notes
 
-The packages form a clear dependency graph with no circular dependencies. Build order for implementation:
+### AWS SDK for Go v2 configuration
+
+```go
+import (
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/credentials"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+func newS3Client(cfg StorageConfig) (*s3.Client, error) {
+    opts := []func(*config.LoadOptions) error{
+        config.WithRegion(cfg.Region),
+    }
+    if cfg.AccessKey != "" {
+        opts = append(opts, config.WithCredentialsProvider(
+            credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+        ))
+    }
+    awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)
+    if err != nil {
+        return nil, err
+    }
+    return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+        if cfg.Endpoint != "" {
+            o.BaseEndpoint = aws.String(cfg.Endpoint)
+            o.UsePathStyle = true  // REQUIRED for MinIO compatibility
+        }
+    }), nil
+}
+```
+
+`UsePathStyle: true` is required for MinIO. AWS S3 uses virtual-hosted style by default but accepts path style too, so this setting is safe for both.
+
+### Streaming download (avoid OOM on large files)
+
+```go
+func (b *S3Backend) DownloadFile(ctx context.Context, addr string, localDir string) (string, error) {
+    bucket, key := parseS3URI(addr)
+    result, err := b.client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &key})
+    if err != nil {
+        return "", err
+    }
+    defer result.Body.Close()
+
+    localPath := filepath.Join(localDir, filepath.Base(key))
+    f, err := os.Create(localPath)
+    if err != nil {
+        return "", err
+    }
+    defer f.Close()
+    _, err = io.Copy(f, result.Body)  // stream, not ReadAll
+    return localPath, err
+}
+```
+
+### Key layout in S3
 
 ```
-Phase 1: Foundation (no external deps)
-  1. internal/api          — DTO types only, no logic
-  2. internal/config        — config file parsing
-
-Phase 2: Persistence
-  3. internal/store         — SQLite schema + CRUD; unit-testable without HTTP
-
-Phase 3: Server logic
-  4. wdl/workflow change    — add SetRunTaskFn() setter (1-line change)
-  5. internal/server        — HTTP handlers + orchestrator
-
-Phase 4: Binaries
-  6. cmd/flowy-server       — thin main() wiring server + store + config
-  7. cmd/flowy-daemon       — poll loop + task.RunTask() invocation
-  8. cmd/flowy (extend)     — add submit/status/outputs subcommands
-
-Phase 5: Integration
-  9. End-to-end test with real shared filesystem
-  10. flowy run sync mode (config-aware dispatch)
+{prefix}/runs/{runID}/tasks/{taskName}_{shardIndex}/inputs.json
+{prefix}/runs/{runID}/tasks/{taskName}_{shardIndex}/outputs.json
+{prefix}/runs/{runID}/tasks/{taskName}_{shardIndex}/outputs/{filename}
+{prefix}/runs/{runID}/outputs.json
 ```
 
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Modifying the DAG Scheduler Internals for Distribution
-
-**What people do:** Gut `wdl/workflow/scheduler.go` and rewrite it with HTTP calls and database state baked in.
-
-**Why it's wrong:** The scheduler is the most complex, most tested part of the codebase (scatter, conditional, errgroup, channel drain). Modifying it introduces regression risk across all existing spectool tests. The `runTaskFn` variable injection point already exists and is specifically designed for substitution.
-
-**Do this instead:** Use `SetRunTaskFn()` to inject a distributed task executor. The scheduler loop, errgroup concurrency, and channel protocol stay exactly as they are.
-
-### Anti-Pattern 2: Requiring CGo in the Daemon Binary
-
-**What people do:** Both `flowy-server` and `flowy-daemon` import `mattn/go-sqlite3` (CGo).
-
-**Why it's wrong:** The daemon does not need SQLite. It only needs the `internal/api` DTO types and `wdl/task`. Pulling in CGo increases binary size, complicates cross-compilation, and makes the daemon harder to deploy on worker nodes.
-
-**Do this instead:** Only `cmd/flowy-server` imports `internal/store` (and thus CGo). The daemon communicates state entirely through the REST API. The daemon build stays CGo-free.
-
-### Anti-Pattern 3: Embedded SQLite in the Daemon (for local caching)
-
-**What people do:** Each daemon maintains its own SQLite file for caching task state locally.
-
-**Why it's wrong:** Creates split-brain state when the server needs authoritative task status. The server cannot recover crashed daemon tasks if state is local to the daemon.
-
-**Do this instead:** All authoritative state lives in the server's SQLite database. Daemons are stateless workers — they poll, execute, and report. The reaper goroutine in the server handles crashed-daemon recovery.
-
-### Anti-Pattern 4: Sending the Full AST Over the Wire
-
-**What people do:** Serialize `*ast.Task` to JSON for the task assignment payload.
-
-**Why it's wrong:** The AST has complex nested types without JSON tags. Adding JSON tags to all AST nodes is a large change that bleeds distribution concerns into the parser/AST layer.
-
-**Do this instead:** Send `WDLPath` + `TaskName` in `TaskAssignment`. The daemon re-parses the WDL file from the shared filesystem. The WDL source is already available there (client copies it on submission). This reuse of the existing parser is correct behavior — same code path as local execution.
-
-### Anti-Pattern 5: Per-Run Goroutines Without Bounded Concurrency
-
-**What people do:** For each submitted workflow, start an uncontrolled goroutine that calls `workflow.RunWorkflow()`.
-
-**Why it's wrong:** Each active workflow holds a goroutine that blocks waiting for task completions. Many concurrent workflow submissions can exhaust memory.
-
-**Do this instead:** Limit active concurrent workflows with a semaphore (`make(chan struct{}, N)`). Default N = 10 (configurable). Submissions beyond the limit queue in SQLite as `SUBMITTED` status and are picked up as slots free.
+This mirrors the local FS layout (`{baseDir}/runs/{runID}/tasks/...`) so the two backends are structurally equivalent.
 
 ---
 
 ## Scaling Considerations
 
-| Scale | Architecture notes |
-|-------|-------------------|
-| 1-4 daemons, single host | Single `flowy-server` + N `flowy-daemon` processes on one machine, `/tmp/flowy-shared` as shared root. SQLite is fully sufficient. |
-| 5-20 daemons, multi-host | NFS mount for shared_root. SQLite WAL handles the server-side write concurrency (one server writer at a time). No change to architecture. |
-| 20+ daemons | SQLite write serialization becomes a bottleneck only if task completion rate is very high (>100 completions/second). At that point, migrate `internal/store` to PostgreSQL behind the same Store interface. No other changes needed. |
+| Concern | Local Backend | S3 Backend |
+|---------|---------------|------------|
+| Cross-host daemons | Requires NFS/POSIX shared mount | No shared FS needed — S3 is the medium |
+| Large File inputs | In-place via bind mount (zero copy) | Downloaded to daemon local disk before run |
+| Scatter parallelism | 100 concurrent local writes | 100 concurrent `PutObject` — S3 scales natively |
+| Daemon disk | exec dir only per task | exec dir + staging dir for inputs (cleaned after delocalize) |
+| Input re-use (reference files) | Instant (already on FS) | Re-downloaded per task — optional local cache deferred to v1.3 |
 
-The architecture is designed so the Store interface is the only boundary that needs to change for database backend migration. The server, daemon, and client are unaffected.
+### Staging Directory Lifecycle
+
+The cleanup function returned by `newStagingDir` must be called after `delocalizeOutputs` completes (not before). The exec dir created by `os.MkdirTemp` inside `RunTask` is separate and is not cleaned up by the daemon (same behavior as v1.1). Both are under a `baseDir` that operators can prune periodically.
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: S3 Awareness Inside `wdl/task`
+
+**What people do:** Modify `PathMap.AddFile` to detect `s3://` and handle downloads inline; or add an S3 download step inside `RunTask`.
+
+**Why it's wrong:** `wdl/task` is a pure execution library. Its only dependencies are stdlib and the `ast`/`eval`/`values` packages. Adding S3 SDK here introduces a heavy external dependency into a package that must remain testable without network access. Docker bind mounts also cannot accept S3 URIs directly.
+
+**Do this instead:** All S3 localization belongs in the daemon's pre-`RunTask` phase. `wdl/task` stays clean.
+
+### Anti-Pattern 2: Credentials in `TaskClaimResponse`
+
+**What people do:** Include `AccessKey`/`SecretKey` in the claim response so the daemon can construct the S3 client from it.
+
+**Why it's wrong:** The claim response travels over HTTP (potentially plain HTTP within a cluster). Any credential in a polling API response is a credential leak risk (logs, network capture, proxy).
+
+**Do this instead:** The claim response carries only addressing config (bucket, endpoint, prefix). Credentials come from the daemon's own config file (`~/.flowy.yaml`) or from IAM instance role (environment variables / EC2 instance metadata). The `factory.go` `NewBackendFromClaim` combines addressing info from the claim with credentials from the daemon config.
+
+### Anti-Pattern 3: `GetObject` → `ioutil.ReadAll` for File Downloads
+
+**What people do:** Buffer the entire `GetObject` response body in memory before writing to disk.
+
+**Why it's wrong:** Genomics files routinely exceed available RAM (multi-GB BAM files). `ReadAll` causes OOM on daemon hosts.
+
+**Do this instead:** Stream from `GetObject` response body to `os.Create` via `io.Copy`. For uploads over ~100MB, use the S3 Transfer Manager (`github.com/aws/aws-sdk-go-v2/feature/s3/manager`) which handles automatic multipart upload.
+
+### Anti-Pattern 4: S3 Operations in `handleClaim` Hot Path
+
+**What people do:** Have `handleClaim` on the server read or write S3 to prepare task data as part of the claim transaction.
+
+**Why it's wrong:** S3 operations add variable latency (10-100ms) to the claim hot path. Daemons poll every 1 second; adding S3 calls slows the entire polling loop and can cause cascading claim timeouts.
+
+**Do this instead:** The server's `makeDispatchFn` writes `inputs.json` to S3 **before** creating the task record in SQLite. By the time the daemon claims the task, `inputs.json` is already in S3. `handleClaim` remains a pure SQLite operation.
+
+### Anti-Pattern 5: Changing `OutputsDir`/`InputsDir` Semantics in `TaskClaimResponse`
+
+**What people do:** Replace the existing `InputsDir`/`OutputsDir` string fields in `TaskClaimResponse` with S3 URIs.
+
+**Why it's wrong:** The daemon's `executeTask` reads `inputs.json` from `claim.InputsDir`. Changing this to an S3 URI would require updating many call sites, risks breaking the local backend, and conflates addressing config with directory semantics.
+
+**Do this instead:** Add new `StorageType`/`StorageBucket`/etc. fields alongside the existing dir fields. For the S3 backend the daemon ignores `InputsDir`/`OutputsDir` and uses the backend directly. For the local backend behavior is unchanged.
+
+---
+
+## Suggested Build Order
+
+Dependency constraints drive this order:
+
+1. `Backend` interface must exist before any component uses it.
+2. `LocalBackend` must pass all existing spectool tests before `S3Backend` is written.
+3. The daemon refactor (download/upload phases) must happen before S3Backend integration tests.
+
+```
+Step 1  internal/storage/backend.go
+        Define Backend interface only. No implementations yet.
+        Unblocks: all subsequent steps (type checking).
+
+Step 2  internal/config — add StorageConfig struct + defaults
+        Unblocks: server construction, factory constructor.
+
+Step 3  internal/storage/local.go  (LocalBackend)
+        internal/storage/factory.go  (NewBackendFromConfig / NewBackendFromClaim)
+        Wire LocalBackend into Server (server.go, dispatch.go, handlers.go).
+        Wire LocalBackend into Daemon (daemon.go — add empty localizeInputs/delocalizeOutputs).
+        Gate: spectool 156/156 still passing.
+
+Step 4  internal/api/types.go — add StorageOverride + storage fields to TaskClaimResponse
+        handleClaim populates storage fields.
+        cleanPath s3:// guard in wdl/task/inputs.go.
+        Gate: spectool 156/156 still passing. No S3 paths in existing tests.
+
+Step 5  internal/storage/s3.go  (S3Backend)
+        Add github.com/aws/aws-sdk-go-v2/service/s3 to go.mod.
+        Implement streaming DownloadFile / UploadFile.
+        Implement ReadTaskInputs — server side also needs this for symmetry.
+        Gate: unit tests with mocked S3 client.
+
+Step 6  Daemon localizeInputs / delocalizeOutputs  (full S3 logic)
+        Gate: integration tests against MinIO (docker-compose MinIO).
+
+Step 7  Client --storage flag + SubmitRequest.StorageOverride
+        MinIO-based spectool conformance run: 156/156 on S3 backend.
+        Gate: full conformance on S3 backend.
+```
+
+Steps 1-4 are pure refactors: observable behavior on the local backend must be identical to v1.1. Step 5 is the first step introducing external network calls. Any conformance regression in steps 1-4 is attributable to the refactor, not S3. This sequencing makes debugging straightforward.
 
 ---
 
 ## Sources
 
-- Codebase analysis: `/home/uehara/flowy/wdl/task/runner.go`, `task/task.go`, `workflow/scheduler.go`, `workflow/workflow.go`, `workflow/dag.go`, `cmd/flowy/main.go`
-- GA4GH Task Execution Service OpenAPI spec: [ga4gh/task-execution-schemas](https://github.com/ga4gh/task-execution-schemas) — informed REST endpoint naming conventions
-- SQLite WAL concurrency in Go: [turso.tech/blog/something-you-probably-want-to-know-about-if-youre-using-sqlite-in-golang](https://turso.tech/blog/something-you-probably-want-to-know-about-if-youre-using-sqlite-in-golang-72547ad625f1) — WAL + SetMaxOpenConns(1) recommendation (HIGH confidence, verified against mattn/go-sqlite3 issue tracker)
-- Cromwell architecture reference: [cromwell.readthedocs.io](https://cromwell.readthedocs.io/en/stable/) — polling interval pattern, task lifecycle states (MEDIUM confidence, different tech stack but same domain)
-- goqite (SQLite queue for Go): [maragudk/goqite](https://github.com/maragudk/goqite) — confirms SQLite-backed task queue is viable pattern in Go
-- miniwdl distributed execution model: [miniwdl-cloud](https://github.com/mlin/miniwdl-cloud) — shared filesystem approach validated for WDL distribution
+- Direct codebase analysis: `internal/store/rundir.go`, `internal/server/dispatch.go`, `internal/server/handlers.go`, `internal/daemon/daemon.go`, `wdl/task/inputs.go`, `wdl/task/pathmap.go`, `wdl/task/task.go`, `internal/api/types.go`, `internal/config/config.go`
+- [AWS SDK for Go v2 S3 package](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3) — HIGH confidence
+- [MinIO with AWS SDK for Go — UsePathStyle requirement](https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html) — MEDIUM confidence (official MinIO docs)
+- [Cromwell S3 file localization model](https://cromwell.readthedocs.io/en/stable/filesystems/Filesystems/) — HIGH confidence (industry-standard WDL executor, same localize-execute-delocalize pattern)
+- [Cromwell FileLocalization.md](https://github.com/broadinstitute/cromwell/blob/develop/docs/optimizations/FileLocalization.md) — confirmed localize-before-Docker approach for S3
 
 ---
 
-*Architecture research for: flowy v1.1 distributed WDL execution*
-*Researched: 2026-03-11*
+*Architecture research for: flowy v1.2 S3 object storage backend*
+*Researched: 2026-03-12*

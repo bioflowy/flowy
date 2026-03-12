@@ -1,465 +1,419 @@
 # Pitfalls Research
 
-**Domain:** Distributed WDL workflow engine — splitting monolithic CLI into server/daemon/client
-**Researched:** 2026-03-11
-**Confidence:** HIGH (patterns verified against Cromwell, Temporal, and distributed systems literature; codebase reviewed directly)
+**Domain:** S3/object storage backend for WDL workflow engine (Go)
+**Researched:** 2026-03-12
+**Confidence:** HIGH (core pitfalls verified against official AWS docs, Cromwell issue tracker, and production post-mortems)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: File Path Assumptions — Absolute Host Paths Embedded in Task Records
+### Pitfall 1: Passing s3:// URIs Into Docker Container Command Templates
 
 **What goes wrong:**
-The monolithic engine uses `os.MkdirTemp(execRoot, task.Name+"-")` to create absolute paths like `/tmp/flowy-20260311-a1b2/task-abc123/work`, then passes those absolute paths through the entire execution pipeline. In the distributed architecture, the server creates these paths when scheduling, then sends them to a daemon running on a different host. The daemon receives `/tmp/flowy-.../work` — a path that does not exist on its filesystem.
-
-The existing `PathMap` in `wdl/task/pathmap.go` resolves relative paths to absolute at call time using the calling process's CWD. When this runs on the daemon host, `filepath.Abs()` resolves against the daemon's CWD, producing daemon-local absolute paths that are meaningless to the server.
+A WDL task's command block refers to `${input_file}` expecting a POSIX path like
+`/inputs/data.bam`. If the storage backend resolves WDL `File` values to `s3://bucket/key`,
+the container receives an s3:// URI as its command argument. Standard bioinformatics tools
+(samtools, bwa, gatk, bcftools) do not understand s3:// URIs and fail with "No such file
+or directory: s3://...". The task appears to start correctly (Docker container runs, exit
+code is non-zero), which looks like a task failure, not an infrastructure bug.
 
 **Why it happens:**
-The in-process model never needs to distinguish "where was this path created" from "where will this path be used." Adding a network boundary makes this invisible assumption explicit and fatal. Developers typically discover this only when the first task runs on a remote daemon.
+It is tempting to make the S3 backend "transparent" by surfacing s3:// URIs as WDL File
+values and letting the container handle them. This works only if every tool in every
+container has s3:// support (via AWS CLI, mountpoint-s3, or similar). In practice, most
+bioinformatics containers do not. Cromwell encountered this exact issue (issue #4356: "S3
+localization not working, mount point missed in localized path").
 
 **How to avoid:**
-Define a shared execution root as a config-driven directory that is the same absolute path on both the server and all daemons (NFS mount, e.g., `/mnt/flowy-shared/runs`). The server creates subdirectories under this root; daemons read files under the same root. Never embed the server's local `/tmp` in task records. The config must enforce this: daemon startup should validate the configured shared root is accessible and writable.
+Use the daemon-downloads-and-mounts pattern that flowy already uses for shared FS.
+The daemon (not the container) owns all S3 access. The execution flow must be:
 
-Document the constraint explicitly: if server and daemon run on the same host (development mode), the shared root can be a local directory, but the code must not assume this.
+1. Server stores task inputs as s3:// URIs in the task record.
+2. Daemon receives task claim containing s3:// URIs for File inputs.
+3. Daemon staging step: for each s3:// input URI, download to `<task_workdir>/inputs/<filename>`.
+4. Daemon replaces s3:// URI with local POSIX path before Docker container launch.
+5. Container sees only POSIX paths; executes as normal.
+6. After container exits, daemon uploads output files from local paths back to s3://.
+
+The WDL `File` type in command templates must always expand to a local POSIX path inside
+the container's working directory, regardless of backend.
 
 **Warning signs:**
-- First remote daemon run fails with "no such file or directory" on input file paths.
-- Works on single-host dev setup, breaks on any two-host deployment.
-- `filepath.Abs()` in `pathmap.go` resolves differently on daemon than on server.
+- Command failures with messages like "No such file or directory: s3://..."
+- Tasks succeed in local FS mode but fail in S3 mode with identical WDL.
+- Container stdout/stderr contains "s3://" in its error messages.
 
-**Phase to address:**
-Phase 1 (Server + Daemon foundation) — The shared filesystem design must be locked before any task record serialization is implemented.
+**Phase to address:** Storage abstraction interface design phase. The abstraction must
+distinguish "backend URI" (used for daemon-level I/O) from "container path" (used in
+command template expansion). Bake this distinction into the initial interface design.
 
 ---
 
-### Pitfall 2: Task State Transition Race — Double-Claim by Multiple Daemons
+### Pitfall 2: Scatter Output Key Collision — Multiple Tasks Writing to the Same S3 Key
 
 **What goes wrong:**
-Multiple daemons polling the server simultaneously can both see a task in `PENDING` state and both attempt to claim it. Without an atomic compare-and-swap on the state transition, both daemons receive the task, run it in parallel, and both report completion. The server either accepts a duplicate result (corrupting outputs) or rejects one (causing spurious failure).
-
-This is the most common race condition in polling-based distributed work queues.
+Multiple scatter tasks may produce output files with identical names (e.g., `output.bam`,
+`result.vcf`). On the shared filesystem, each task runs in its own subdirectory under the
+execution root, so paths are naturally isolated by directory. On S3, if the output key
+prefix is derived from task name alone (e.g., `s3://bucket/<run-id>/MyTask/output.bam`),
+all scatter branches write to the same key. PutObject succeeds silently — last writer wins,
+no error, earlier results are permanently overwritten.
 
 **Why it happens:**
-The naive implementation is: daemon polls → GET /tasks/pending → pick first → POST /tasks/{id}/claim. The GET and the POST are separate HTTP round trips. Between them, another daemon can execute the same sequence.
+The shared filesystem model uses the filesystem directory hierarchy for isolation. S3 has
+no directories — only key strings. Key uniqueness must be enforced explicitly. It is easy
+to generate key names from task names without including the scatter index, because the
+scatter index is implicit in the directory structure on shared FS but must be explicit on S3.
 
 **How to avoid:**
-Implement claiming as a single atomic SQL UPDATE with a WHERE clause that checks the current state:
+Output key structure must include the scatter shard index:
+`<run-id>/<task-name>/<scatter-index>/<filename>`.
 
-```sql
-UPDATE tasks
-SET state = 'RUNNING', daemon_id = ?, claimed_at = ?
-WHERE id = ? AND state = 'PENDING'
+The scatter index (the array position, not a random UUID) must be threaded through from
+the DAG scheduler to the key generation logic. Verify with an explicit integration test:
+scatter over an array of 5 identical items, confirm 5 distinct output objects exist in
+S3 (ListObjectsV2 count == 5), not 1.
+
+**Warning signs:**
+- Scatter output collection returns fewer WDL Array values than the input array length.
+- S3 ListObjects after scatter shows fewer keys than scatter branches.
+- All scatter shards produce outputs with identical content.
+
+**Phase to address:** S3 backend implementation phase, specifically in task output key
+generation. Cannot be fixed as a patch; requires the scatter index to be propagated
+from DAG scheduler to key naming from the start.
+
+---
+
+### Pitfall 3: Incomplete Multipart Upload Parts Accumulating Silently
+
+**What goes wrong:**
+A daemon begins uploading a large task output (e.g., a 20GB BAM file) via S3 multipart
+upload. The daemon host crashes, network drops, or the task is aborted mid-upload.
+The initiated multipart upload is never completed or aborted. The partial parts remain in
+S3 indefinitely — they do not appear in normal ListObjects results (invisible to the
+workflow engine), but AWS charges for storage of every uploaded part. Over many workflow
+runs with failures, hidden costs accumulate.
+
+MinIO in test environments does not bill, so this pitfall is invisible during development
+and only becomes a problem on real AWS S3.
+
+**Why it happens:**
+Developers test the happy path. The incomplete multipart upload cleanup code is the first
+thing cut when under time pressure. The parts are invisible in the S3 console's object
+view (only visible via ListMultipartUploads), so the problem is undetected until a billing
+anomaly or an explicit audit.
+
+**How to avoid:**
+1. Use `manager.Uploader` from `github.com/aws/aws-sdk-go-v2/feature/s3/manager`. It
+   wraps multipart upload and automatically calls AbortMultipartUpload on any upload
+   error, including context cancellation.
+2. In the daemon's task execution error path, always explicitly call AbortMultipartUpload
+   for any uploads in progress when the task is cancelled or fails.
+3. Configure an S3 lifecycle rule on the output bucket:
+   `AbortIncompleteMultipartUploads` after 7 days. This is a safety net for any parts
+   the daemon fails to clean up.
+4. Write an integration test: start a large upload, cancel mid-way, verify
+   ListMultipartUploads returns empty result (or the lifecycle rule is configured).
+
+**Warning signs:**
+- `aws s3api list-multipart-uploads --bucket <bucket>` returns non-empty results
+  after workflow runs.
+- S3 storage costs grow faster than completed output file sizes.
+- No call to AbortMultipartUpload in the daemon's error handling paths.
+
+**Phase to address:** S3 backend implementation phase. Abort-on-error must be in the
+initial implementation; it cannot be added after the happy path is shipped.
+
+---
+
+### Pitfall 4: Using aws-sdk-go v1 Instead of aws-sdk-go-v2
+
+**What goes wrong:**
+aws-sdk-go (v1) reached end-of-support on July 31, 2025. Using v1 means unmaintained
+security vulnerabilities, missing S3 features added since July 2025, and a go.mod entry
+that triggers security scanners. Many tutorial articles, Stack Overflow answers, and
+MinIO code samples still show v1 import paths (`github.com/aws/aws-sdk-go/service/s3`),
+making it easy to import by accident.
+
+**Why it happens:**
+Go's module resolution fetches v1 without any deprecation warning. Search results and
+community code samples have not yet fully migrated to v2. The import path for v1 looks
+almost identical to v2, differing only in the presence of `/v2` in the path.
+
+**How to avoid:**
+Use exclusively `github.com/aws/aws-sdk-go-v2` and its sub-modules:
+- Core: `github.com/aws/aws-sdk-go-v2/aws`
+- Config: `github.com/aws/aws-sdk-go-v2/config`
+- S3 service: `github.com/aws/aws-sdk-go-v2/service/s3`
+- Multipart: `github.com/aws/aws-sdk-go-v2/feature/s3/manager`
+
+For MinIO compatibility, set `UsePathStyle: true` in the S3 client options. MinIO in
+Docker Compose environments does not resolve virtual-hosted-style bucket subdomains
+(`bucket.localhost:9000`) — path-style addressing is required.
+
+Add a `govulncheck` step to CI that will flag v1 use.
+
+**Warning signs:**
+- `go list -m all | grep aws-sdk-go` shows a version without `/v2` in the module path.
+- Import statements containing `github.com/aws/aws-sdk-go/service/s3`.
+
+**Phase to address:** Library selection at the first S3 code commit.
+
+---
+
+### Pitfall 5: Loading Large Files Into Memory for Upload or Download
+
+**What goes wrong:**
+The daemon downloads S3 inputs via `GetObject`, reads the entire response body into a
+`[]byte` with `io.ReadAll`, then writes to disk. For genomic files (BAM files regularly
+exceed 50GB, reference genomes can be 100GB+), this causes OOM on daemon hosts. Similarly,
+uploading via `PutObject` with a preloaded `[]byte` body buffers the entire file in RAM
+before sending.
+
+The failure is silent during development with small test files and explosive in production
+with real genomic data. The daemon host OOM-kills the entire daemon process, leaving
+running tasks orphaned.
+
+**Why it happens:**
+`io.ReadAll` is idiomatic Go for small data and is the first thing that comes to mind.
+The size of bioinformatics data is not obvious from the WDL workflow source — a task that
+processes "one file" may be processing a 100GB reference genome.
+
+**How to avoid:**
+For downloads: stream directly from `GetObject` response body to disk:
+```go
+resp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{...})
+if err != nil { return err }
+defer resp.Body.Close()
+localFile, err := os.Create(localPath)
+if err != nil { return err }
+_, err = io.Copy(localFile, resp.Body)
 ```
 
-Return the number of rows affected. If 0 rows were updated, the claim failed (another daemon won); the daemon must discard this task and poll again. Do not use a SELECT followed by an UPDATE — this is a TOCTOU race even within a single SQLite connection unless the entire sequence is wrapped in an exclusive transaction.
+For uploads: use `manager.Uploader.Upload` with an `os.File` as the body. The manager
+handles chunking automatically with configurable part size and concurrency. Set
+`PartSize: 64 * 1024 * 1024` (64MB parts) for large genomic files.
 
-In WAL mode, SQLite serializes all writes, so the atomic UPDATE is safe. With multiple daemons connecting over the network to the server (not directly to SQLite), this logic lives in the server and is naturally serialized.
+Never use `os.ReadFile` + `bytes.NewReader` for S3 upload of task outputs.
 
 **Warning signs:**
-- The same task appears in `running` state twice in the database.
-- Duplicate output files with conflicting content.
-- Tasks that complete twice: server logs show two `COMPLETED` transitions for the same task ID.
+- Any call to `io.ReadAll(resp.Body)` in the download path.
+- Daemon host RSS grows proportionally to the size of files being staged.
+- OOM errors in daemon logs during large file workflows.
 
-**Phase to address:**
-Phase 1 (Server + Daemon foundation) — The claim endpoint must use this pattern from its first commit.
+**Phase to address:** S3 backend implementation phase, in the initial staging/collection
+implementation.
 
 ---
 
-### Pitfall 3: SQLite Concurrent Access — Server + Background Goroutines Without WAL Mode
+### Pitfall 6: MinIO Repo Archived — Pinning to `latest` Docker Tag in Tests
 
 **What goes wrong:**
-The server uses SQLite for workflow and task state persistence. The server runs multiple goroutines: the HTTP handler goroutine (serving daemon polls), the scheduler goroutine (advancing the DAG), and potentially a heartbeat-checker goroutine. These all write to SQLite concurrently. Without WAL mode, SQLite uses journal mode where a write blocks all readers. Under load, goroutines contend for the write lock, producing `SQLITE_BUSY` errors.
+The flowy test suite plans to use MinIO as the S3-compatible test backend (spectool
+156/156 on S3 backend). The `minio/minio` GitHub repository was archived as read-only
+on February 13, 2026 and is no longer maintained. Pinning to `minio/minio:latest` in
+docker-compose.test.yml means CI may pull a broken or security-vulnerable image whenever
+Docker Hub updates the latest tag, breaking CI without any code change.
 
-The Go `database/sql` connection pool also causes problems: if multiple goroutines hold connections from the pool and one begins a write transaction, others may get `database is locked` even in WAL mode if the connection pool size exceeds SQLite's single-writer limit.
+Furthermore, MinIO's archived state means behavioral bugs will not be fixed. Tests that
+pass on MinIO may silently not catch bugs that would appear on real AWS S3.
 
 **Why it happens:**
-SQLite WAL mode is not the default. Using `database/sql` with the default pool size of N allows N concurrent open transactions, which exceeds SQLite's concurrency model for writers.
+Using `latest` is a convenience default. The project governance change was not publicized
+widely in Go/workflow-engine circles at the time of v1.2 development.
 
 **How to avoid:**
-Enable WAL mode at database open time:
-```sql
-PRAGMA journal_mode=WAL;
-PRAGMA busy_timeout=5000;
-```
-
-Set `db.SetMaxOpenConns(1)` for the write connection (or use a single-connection pool for writes). Reads can use a separate read-only connection pool. Alternatively, use a single goroutine as the database actor (all DB writes go through a channel to this goroutine), which eliminates concurrency entirely.
-
-For the v1.1 milestone with a single server process and a handful of daemons, the simple approach is sufficient: `SetMaxOpenConns(1)`, WAL mode, `busy_timeout=5000ms`.
+1. Pin the MinIO Docker image to a specific release tag in all test configuration:
+   e.g., `minio/minio:RELEASE.2025-12-18T17-24-25Z`. Never use `latest`.
+2. Abstract the S3 test backend: all integration tests read endpoint, access key, and
+   secret key from environment variables (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`).
+   This allows swapping MinIO for Garage, SeaweedFS, or real AWS S3 without changing
+   test code.
+3. Accept that MinIO-based testing covers API compatibility but not all behavioral
+   nuances of production AWS S3 (error code formats, retry semantics differ).
+4. Track alternatives: SeaweedFS and Garage are actively maintained S3-compatible stores
+   that could replace MinIO as the test backend if MinIO Docker images stop working.
 
 **Warning signs:**
-- `database is locked` errors under any concurrent load.
-- Flaky integration tests that pass alone but fail when run in parallel.
-- Server hangs when multiple daemons poll simultaneously.
+- `docker-compose.test.yml` uses `minio/minio:latest`.
+- Integration tests use hardcoded `http://localhost:9000` instead of env var.
+- No documented procedure for swapping the S3-compatible test backend.
 
-**Phase to address:**
-Phase 1 (Server + Daemon foundation) — Configure at database initialization; not something to retrofit.
+**Phase to address:** Integration test setup phase, before writing the first integration test.
 
 ---
 
-### Pitfall 4: Daemon Crash Leaves Tasks in RUNNING State Forever (No Heartbeat)
+### Pitfall 7: Not Implementing a `ParseS3URI` Helper — Scattered Inline String Parsing
 
 **What goes wrong:**
-A daemon claims a task, starts the Docker container, and then crashes (OOM, host reboot, network partition). The task remains in `RUNNING` state in the server's database indefinitely. The server's DAG scheduler waits for this task to complete before advancing, so the entire workflow hangs.
-
-Without a heartbeat mechanism, the server cannot distinguish "daemon is running this task" from "daemon crashed 20 minutes ago."
-
-**Why it happens:**
-In the monolithic model, process death = engine death = clean state. Adding a daemon introduces a separate process whose liveness must be tracked independently.
-
-**How to avoid:**
-Implement a two-level timeout system modeled on Temporal's heartbeat pattern:
-
-1. **Daemon heartbeat**: Daemon sends `POST /tasks/{id}/heartbeat` every N seconds while the task runs. The server records `last_heartbeat_at` on the task row.
-
-2. **Server reaper**: A background goroutine on the server runs every M seconds (M > N) and marks any `RUNNING` task where `last_heartbeat_at < now - timeout` as `FAILED` with reason `daemon_timeout`. This makes the task available for retry or marks the workflow failed.
-
-3. **Task claimed_at safety net**: Even if the heartbeat goroutine is never started, any task stuck in `RUNNING` for more than `max_task_duration` should be reaped.
-
-Timeout values must be configurable (not hardcoded). Reasonable defaults: heartbeat interval 30s, reaper interval 60s, timeout 3x heartbeat interval (90s).
-
-The daemon must send heartbeats from a goroutine separate from the Docker execution goroutine — not after the container exits.
-
-**Warning signs:**
-- Workflows hang indefinitely after a daemon is killed.
-- Tasks remain in `RUNNING` state after daemon process is gone.
-- No `last_heartbeat_at` column in the tasks table.
-
-**Phase to address:**
-Phase 1 (Server + Daemon foundation) — The heartbeat mechanism is load-bearing for correctness; cannot be deferred.
-
----
-
-### Pitfall 5: Orphaned Docker Containers When Daemon Receives SIGTERM
-
-**What goes wrong:**
-The daemon is executing a Docker container when it receives SIGTERM (graceful shutdown signal). If the daemon exits immediately, the Docker container continues running on the host — there is no parent process to reap it. The container accumulates, consuming resources, and its output is never collected. The server marks the task as timed out (via heartbeat reaper), but the container may run for hours.
+S3 URIs must be parsed throughout the codebase: in the storage backend (splitting
+`s3://bucket/key/path` into bucket + key), in the daemon's input staging (detecting whether
+an input is an s3:// URI or a POSIX path), and in output collection (constructing return
+URIs). Without a single helper, each location hand-rolls `strings.TrimPrefix`,
+`strings.SplitN`, or `strings.Split` on the URI. Edge cases differ: what if the key is
+empty? What if there are double slashes? What if the URI has a trailing slash? Each
+location handles these differently, producing inconsistent behavior.
 
 **Why it happens:**
-Graceful shutdown in Go requires explicit signal handling. The default Go behavior on SIGTERM is to terminate immediately. The Docker SDK `Run` method in `docker.go` starts a container and waits on channels — interrupting this mid-flight leaves the container running.
+String splitting is trivial, and developers implement it inline. The inconsistency is not
+visible until an edge case triggers.
 
 **How to avoid:**
-The daemon must:
-
-1. Trap `SIGTERM` / `SIGINT` via `signal.NotifyContext` and cancel the root context.
-
-2. The context cancellation propagates into the Docker `runner.Run(ctx, req)` call, which already handles `ctx.Done()` by calling `cli.ContainerRemove(context.Background(), resp.ID, container.RemoveOptions{Force: true})` (this path is already implemented in `docker.go`).
-
-3. The daemon must wait for all in-flight task goroutines to complete (via `sync.WaitGroup` or `errgroup.Wait()`) before exiting. The shutdown must have a deadline (e.g., 30s) after which the daemon force-exits and relies on the server's heartbeat reaper to clean up state.
-
-4. Before exiting, report task failures to the server for any tasks that were cancelled due to shutdown.
-
-The key insight: `docker.go` already has the cleanup path on `ctx.Done()`. The daemon just needs to (a) pass a cancellable context and (b) wait for that path to execute before the process exits.
-
-**Warning signs:**
-- `docker ps` shows lingering containers after daemon is stopped.
-- Daemon exits instantly when killed; no log message about waiting for in-flight tasks.
-- No `signal.NotifyContext` or `signal.Notify` call in daemon main.
-
-**Phase to address:**
-Phase 2 (Daemon execution) — Implement signal handling before any task execution code.
-
----
-
-### Pitfall 6: Scatter Fan-Out Overwhelming Daemons — No Global Concurrency Limit
-
-**What goes wrong:**
-A WDL scatter over 10,000 items creates 10,000 tasks in `PENDING` state simultaneously. All daemons start claiming tasks as fast as they can poll. Each daemon runs up to its local concurrency limit (currently hardcoded to 8 in the scheduler). With 5 daemons, 40 Docker containers start simultaneously. The host runs out of memory, Docker OOMs containers, and the entire workflow fails.
-
-The current in-process scheduler has `g.SetLimit(8)` as a global limit. In the distributed model, this limit only applies per-daemon and is no longer a system-wide constraint.
-
-**Why it happens:**
-The monolithic scheduler controls total parallelism. The distributed model replaces that single limit with N daemon-local limits that are not coordinated. The server creates all scatter tasks at once with no throttling.
-
-**How to avoid:**
-The server must implement scatter task emission as a rate-limited or semaphore-controlled process rather than creating all N tasks atomically.
-
-Options (in order of implementation complexity):
-1. **Server-side concurrency limit**: The server tracks how many tasks are in `RUNNING` state for a given workflow and only promotes tasks from `QUEUED` to `PENDING` when the running count is below a configured limit. This is the simplest approach and matches how Cromwell handles scatter parallelism.
-
-2. **Per-daemon capacity signaling**: Daemons report their available capacity in the poll response, and the server only marks tasks pending when a daemon has capacity. More complex but more accurate.
-
-For v1.1, option 1 is sufficient. The limit should be configurable per-workflow with a server-wide default.
-
-**Warning signs:**
-- All scatter tasks transition to `PENDING` simultaneously regardless of daemon capacity.
-- Host memory exhaustion when running large scatter workflows.
-- Docker containers being OOM-killed.
-- No concept of "max concurrent tasks" in the server configuration.
-
-**Phase to address:**
-Phase 2 (Daemon execution + scatter) — Must be designed before scatter task creation is implemented.
-
----
-
-### Pitfall 7: Error Serialization Loses Detail Across Network Boundary
-
-**What goes wrong:**
-The existing engine uses Go's `error` interface and `fmt.Errorf("...%w", err)` chains. `TaskError` carries `TaskName`, `ExitCode`, and `Stderr` as structured fields. When a daemon executes a task and it fails, this error must cross the HTTP boundary from daemon to server, and then from server to client.
-
-If the daemon serializes the error as a plain string (JSON `"error": "task X failed: exit 1"`) the server loses the exit code and stderr. The client cannot distinguish "task failed with exit 127 (command not found)" from "task failed with exit 1 (user error)" from "daemon crashed." Spectool conformance tests may fail because they check for specific error semantics.
-
-**Why it happens:**
-Go's `error` interface has no standard JSON serialization. Developers tend to serialize `err.Error()` as a string, losing structure.
-
-**How to avoid:**
-Define an explicit `TaskResult` struct for the daemon → server API response:
+Define one canonical function in the storage package at the start of implementation:
 
 ```go
-type TaskResult struct {
-    State    string `json:"state"`     // "completed" | "failed" | "error"
-    ExitCode int    `json:"exit_code"` // container exit code
-    Stderr   string `json:"stderr"`    // last N bytes of stderr
-    Error    string `json:"error"`     // daemon-level error message (not task failure)
-}
+// ParseS3URI parses an s3://bucket/key URI.
+// Returns an error for any URI that is not a valid s3:// URI.
+func ParseS3URI(uri string) (bucket, key string, err error)
 ```
 
-The server reconstructs a `TaskError` from this payload and stores it in the database. The client receives structured failure information via the status API.
-
-Define error categories: task failure (container exited non-zero), infrastructure failure (daemon couldn't start Docker), and system failure (daemon crashed / heartbeat timeout). Clients need to distinguish these to provide useful diagnostics.
-
-**Warning signs:**
-- Client outputs "task failed" with no exit code or stderr.
-- All failure types look identical from the client's perspective.
-- Daemon response body contains only `{"error": "some string"}`.
-
-**Phase to address:**
-Phase 1 (Server + Daemon API design) — Define the API contract before implementing either side.
-
----
-
-### Pitfall 8: Shared Filesystem Permissions and File Visibility Timing
-
-**What goes wrong:**
-Two subtle problems with NFS or shared directories:
-
-**Problem A — Permissions**: The daemon runs Docker containers as root (or as the image's default user). The container writes output files to `/mnt/outputs` (which is bind-mounted to a shared directory). These files may be created with ownership `root:root` and permissions `0600`, making them unreadable by the server process running as a different user.
-
-**Problem B — NFS metadata caching**: NFS clients cache directory metadata. A daemon writes a file to the shared filesystem, then reports completion to the server. The server immediately tries to read the file for output collection. The server's NFS client has stale cache and reports "file not found." This is the NFS close-to-open coherency window.
-
-**Why it happens:**
-Problem A: Docker container UID/GID does not match host service UIDs.
-Problem B: NFS attribute cache TTL is typically 3-30 seconds by default. The server queries the filesystem before the cache refreshes.
-
-**How to avoid:**
-For Problem A: Configure Docker to run containers with explicit UID/GID matching the service user (`--user $(id -u):$(id -g)`), or use `chmod`/`chown` as a post-execution step in the daemon before reporting completion.
-
-For Problem B: Either (a) the daemon collects and parses outputs locally before reporting completion (pushing output values rather than having the server pull them), or (b) the server retries file existence checks with exponential backoff. Option (a) is architecturally cleaner and matches miniwdl's design where the runner (daemon) collects outputs and returns values.
-
-Document in deployment notes: `noac` NFS mount option disables attribute caching but hurts performance. Prefer the architectural fix (option a) over NFS tuning.
+All S3 URI parsing throughout the codebase must call this function. Test it with empty
+bucket, empty key, trailing slash, double slash, and non-s3 URIs.
 
 **Warning signs:**
-- "Permission denied" when server reads task output files.
-- "File not found" immediately after daemon reports task completion, then file appears 5 seconds later.
-- Works on single-host (local filesystem) but breaks on NFS.
+- Multiple calls to `strings.Split(uri, "/")` or `strings.TrimPrefix(uri, "s3://")` in
+  different files.
+- Different error handling for malformed URIs in different parts of the code.
 
-**Phase to address:**
-Phase 2 (Daemon execution) — Output collection design must be decided before implementation.
-
----
-
-### Pitfall 9: Configuration Drift Between Server and Daemon Versions
-
-**What goes wrong:**
-Server v1.1 is deployed. A daemon running v1.0 (from before the distributed refactor) polls the server. The daemon's API client expects a different JSON schema for task records. Alternatively, a new field is added to the server's task assignment response, and old daemons silently ignore it — but that field is required for correct execution (e.g., a new `env_vars` field for task environment variables).
-
-This is a particularly insidious problem because it produces incorrect silent behavior, not a visible error.
-
-**Why it happens:**
-In the monolithic model, all code runs in one binary — version mismatch is impossible. Adding separate binaries makes independent deployment possible and therefore version drift possible.
-
-**How to avoid:**
-1. The server must include a `version` field in all API responses. Daemons must reject connections to servers with incompatible versions and log a clear error message.
-
-2. Define the API contract as Go structs with `json:"..."` tags shared in a common package (e.g., `pkg/api/types.go`). Both server and daemon import this package. API changes require updating the shared struct and both callers simultaneously.
-
-3. Use explicit versioning in the API path (`/api/v1/tasks/poll`) so future breaking changes can be introduced as `/api/v2/` without breaking existing daemons.
-
-4. Add the daemon's version to every heartbeat and poll request. The server can log version mismatches for visibility.
-
-**Warning signs:**
-- Server and daemon compile independently with no shared API type package.
-- API types defined inline in each binary rather than in a shared package.
-- No version handshake at daemon startup.
-
-**Phase to address:**
-Phase 1 (API design) — Shared types package must be established before either binary is implemented.
-
----
-
-### Pitfall 10: `flowy run` Synchronous Mode — Poll Loop That Never Terminates
-
-**What goes wrong:**
-The `flowy run` command must remain synchronous for spectool compatibility: submit a workflow, poll for completion, print outputs. The naive implementation is a tight `for` loop polling the server every N milliseconds. Two failure modes:
-
-**Mode A**: The workflow fails, the server sets workflow state to `FAILED`, but the client's poll loop only checks for `COMPLETED` and loops forever (100% CPU, no output).
-
-**Mode B**: The server becomes temporarily unreachable (restart, network blip). The poll loop returns a connection error, and the client exits with error — abandoning a workflow that is still running on the server.
-
-**Why it happens:**
-Mode A: Incomplete terminal state handling.
-Mode B: Conflating "server unreachable" (transient) with "workflow failed" (permanent).
-
-**How to avoid:**
-The poll loop must:
-1. Treat `COMPLETED`, `FAILED`, and `ABORTED` as terminal states that exit the loop.
-2. Distinguish connection errors (retry with backoff) from application errors (exit immediately).
-3. Have a maximum total timeout with a clear error message ("timed out waiting for workflow; run ID: X").
-4. Print the workflow run ID to stderr immediately after submit, so the user can reattach if the client is killed.
-
-For spectool compatibility, the synchronous mode must map workflow terminal states to exit codes matching the original `flowy run` behavior (exit 0 for success, exit 1 for task failure).
-
-**Warning signs:**
-- `flowy run` spins at 100% CPU when a workflow fails.
-- Client exits when server is restarted mid-workflow.
-- No run ID printed before polling begins.
-- Poll loop only handles `state == "completed"`.
-
-**Phase to address:**
-Phase 3 (Client CLI + spectool compatibility) — Test all terminal state transitions before declaring spectool compatibility.
+**Phase to address:** Storage abstraction interface phase, as one of the first utilities
+defined before any S3 operations are implemented.
 
 ---
 
 ## Technical Debt Patterns
 
-Shortcuts that seem reasonable but create long-term problems.
-
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Hardcode shared filesystem path in source | Avoids config complexity | Breaks any non-standard deployment; breaks tests on CI without that path | Never — use config from day one |
-| Skip heartbeat, rely on task timeout only | Simpler daemon | Stuck tasks take `max_task_duration` to be reaped (could be hours for genomics) | Never — heartbeat is the correct primitive |
-| Serialize errors as plain strings | Faster to implement | Clients cannot distinguish failure types; spectool test failures are opaque | Never for task results; acceptable for internal logs |
-| Single SQLite connection pool without WAL | Simpler setup | `database is locked` under any concurrent load | Only in single-goroutine server (no concurrent handlers) |
-| Store Docker container ID in memory (not DB) | Simpler daemon state | Container cannot be cleaned up after daemon restart | Only in MVP where daemon restart = workflow restart |
-| Copy all scatter tasks to PENDING at once | Simpler DAG advancement | OOM on large scatters | Only if scatter size is bounded (< 100 items) |
+| `io.ReadAll(getObjectResp.Body)` for download | Simple one-liner | OOM on genomic files >1GB; daemon crash leaves tasks orphaned | Never for task input staging |
+| Skip `AbortMultipartUpload` on error | Less error-handling code | Silent part accumulation; hidden S3 billing cost | Never |
+| Hardcode `UsePathStyle: true` globally | MinIO works in dev | Virtual-hosted-style required by some S3-compatible endpoints | Only acceptable if `UsePathStyle` is config-driven per-backend |
+| Pin `minio/minio:latest` in test docker-compose | No version maintenance | CI breaks on unexpected MinIO update; MinIO repo is now archived | Never in CI |
+| Inline `strings.Split` for s3:// URI parsing | Quick to write | Inconsistent edge case handling across call sites | Never — use `ParseS3URI` helper |
+| Check S3 file existence via ListObjects | One API call | List is eventually consistent in some MinIO versions; `HeadObject` is the correct check | Never — use `HeadObject` |
+| Skip scatter index in output S3 key | Simpler key naming | Silent overwrites when scatter tasks produce same-named outputs | Never for workflow output keys |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting the new distributed components to the existing engine code.
-
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `task.RunTask` reuse in daemon | Call `RunTask` with daemon's local `execRoot`; paths in task record point to shared FS | Daemon must reconstruct `execRoot` from the task's shared-FS execution directory, not from daemon's local temp |
-| PathMap reuse | `PathMap.AddFile` calls `filepath.Abs()` with daemon's CWD — produces daemon-local path | Input files on shared FS are already absolute shared-FS paths; pass them as-is, skip `filepath.Abs()` |
-| `workflow.RunWorkflow` reuse in server | Server calls the existing in-process scheduler, bypassing distributed dispatch | Server scheduler must be replaced or wrapped to dispatch to daemon via HTTP rather than calling `runTaskFn` directly |
-| `docker.go` DockerRunner reuse | Works unchanged on daemon host — Docker SDK uses `DOCKER_HOST` from env | Correct: DockerRunner is already host-agnostic via env config. Document that `DOCKER_HOST` must be set on daemon host. |
-| `outputs.go` output collection | Server calls `CollectOutputs` assuming files are on server's local FS | Daemon must call `CollectOutputs` (files are on daemon host's shared FS mount) and return values via API |
-| SQLite open in multiple goroutines | `sql.Open()` called in each handler; multiple connection objects created | Single `*sql.DB` created at server startup; shared across all handlers via dependency injection |
-| WDL AST parsing | Server parses WDL once at submit time; daemon re-parses at execution time (wasted work, drift risk) | Server parses and serializes the evaluated task inputs as JSON; daemon receives inputs as data, not WDL source |
+| MinIO in Docker Compose | Use virtual-hosted-style URLs (`bucket.localhost:9000`) | Set `UsePathStyle: true` in S3 client options; MinIO in Docker doesn't resolve bucket subdomains without extra DNS config |
+| aws-sdk-go-v2 `GetObject` response | Read body but skip `Close` or leave on error path | Always `defer resp.Body.Close()`; drain body before closing on error paths to allow connection reuse |
+| `manager.Uploader` with unknown-size reader | Pass `io.Reader` from a stream | The uploader needs to seek to detect size for optimal part sizing; pass `os.File` or set explicit `PartSize`; for unseekable readers, set `PartSize` explicitly |
+| MinIO bucket creation | Assume bucket exists | Call `CreateBucket` idempotently; MinIO returns `BucketAlreadyOwnedByYou` which should be treated as success, not error |
+| S3 credentials for daemon | Embed in config YAML | Support env vars first (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) via the SDK's default credential chain; allow explicit `StaticCredentialsProvider` for MinIO in config |
+| Path-style vs virtual-hosted-style | Assume path-style works everywhere | Virtual-hosted-style is the AWS default; path-style is deprecated for new AWS buckets but required for MinIO; make this configurable |
+| Real AWS S3 vs MinIO error codes | Test only on MinIO | Some S3 error responses differ between real AWS and MinIO (e.g., `NoSuchBucket` vs `NoSuchBucketPolicy`); test critical error handling against both |
 
 ---
 
 ## Performance Traps
 
-Patterns that work at small scale but fail as scatter width or workflow count grows.
-
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Polling all PENDING tasks per daemon request | Works fine; at 10K tasks, each poll returns 10K rows | Limit poll response to `min(daemon_capacity, N)` tasks per request | > 1000 pending tasks |
-| Loading full workflow state for each status request | Fast for 1 workflow; slow for 100 concurrent | Index tasks by workflow_id; use aggregated counts not full row scans | > 50 concurrent workflows |
-| Storing full stderr in task row | Convenient; at 1MB stderr × 1000 tasks, SQLite file grows 1GB | Cap stored stderr at 8KB; write full logs to shared FS file | > 100 tasks with verbose output |
-| Scatter tasks all in one SQL INSERT transaction | Fast for 100; at 10K items, single transaction holds write lock for seconds | Batch inserts in chunks of 500 | Scatter width > 500 |
-| Heartbeat reaper scans all RUNNING tasks every N seconds | Fine for 10 running tasks; at 1000, full table scan every 60s | Index `state` and `last_heartbeat_at`; reaper scans only the index | > 100 concurrently running tasks |
+| Sequential download of shared reference inputs across scatter tasks | 100-task scatter, each downloads the same 5GB reference genome sequentially | Cache input files on the daemon host by S3 URI + ETag; skip download if local copy is current | Scatter width > 5 with reference inputs > 500MB |
+| Single-threaded upload of large task outputs | Upload of 20GB BAM file blocks all daemon worker slots during transfer | `manager.Uploader` with `Concurrency: 5`, `PartSize: 64MB`; upload runs concurrently with next task polling | Files > 1GB with default 5MB part size |
+| Copying outputs between prefixes via GetObject+PutObject | Double data transfer cost for same-bucket reorganization | Use `CopyObject` for same-bucket copies; no data leaves S3 | Any file > 100MB copied within same bucket |
+| Buffering `GetObject` body in memory | Daemon RSS grows with file size | `io.Copy(localFile, resp.Body)` — constant memory regardless of file size | Files > available daemon host RAM |
+| Per-task S3 client initialization | Credential refresh overhead, connection pool not reused | Initialize one `s3.Client` per daemon process; inject into task executors; `s3.Client` is safe for concurrent use | Scatter width > 50 |
 
 ---
 
 ## Security Mistakes
 
-Domain-specific security issues for a multi-host execution system.
-
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| No authentication on server REST API | Any process on the network can submit arbitrary WDL workflows and execute Docker containers | Add shared-secret token auth (header: `Authorization: Bearer <token>`) even for v1.1; this is minimal but sufficient for trusted-network HPC |
-| Daemon runs Docker with `--privileged` implicitly | Container escape from task code | Never pass `--privileged`; the existing `docker.go` does not, but any new bind mount helpers must not add it |
-| Task stderr/stdout logged to shared FS world-readable | Workflow data exposed to other users on shared filesystem | Create per-workflow directories with `0700` permissions; daemon must be the only writer |
-| Daemon trusts `task_id` in poll response without validation | Malicious server (or man-in-the-middle) sends daemon a task with crafted file paths that escape shared FS | Validate that all paths in task records are under the configured shared root before executing |
-| Configuration file contains shared secret in plaintext | Secret exposed in logs or version control | Use env variable for secret; document clearly; add shared secret to `.gitignore` template |
+| Store S3 secret key in `flowy.yaml` committed to version control | Credential exfiltration | Use env vars (`AWS_SECRET_ACCESS_KEY`) for credentials; document `flowy.yaml` as containing only non-sensitive config like endpoint and bucket name; add to `.gitignore` template |
+| Use a single bucket root with no per-run prefix isolation | Task A can read or overwrite Task B's outputs | Enforce `<run-id>/` as the mandatory prefix for all S3 read/write operations; reject URIs that do not start with the expected run prefix |
+| Allow arbitrary s3:// URIs from user-supplied WDL input JSON | Path traversal to buckets or prefixes the engine should not access | Validate that s3:// input URIs fall within the configured allowed bucket and optional path prefix; reject others with a clear error |
+| Log presigned URLs at INFO level | URL in log allows unauthorized download for up to 7 days | Never log presigned URLs; log bucket + key as separate fields; never log credential values |
 
 ---
 
 ## UX Pitfalls
 
-Common user experience mistakes specific to distributed workflow execution.
-
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No run ID printed at submit time | User kills `flowy run`, cannot reattach to running workflow | Print run ID to stderr immediately after submit, before polling starts |
-| Opaque "workflow failed" with no task details | User must grep server logs to find which task failed and why | Client status command must show failed task name, exit code, stderr snippet |
-| Daemon startup silently succeeds but shared FS is not mounted | Tasks fail with "file not found" hours later | Daemon startup must validate shared FS access and fail fast with clear error |
-| Server port already in use gives Go default error | "bind: address already in use" is not actionable | Wrap net.Listen error to say "port 8080 is already in use; is flowy-server already running?" |
-| Daemon not running when workflow is submitted | Workflow queued but never executes; user waits forever | Server should warn (not block) when no daemons are registered at submit time |
+| Silent fallback from S3 backend to local FS when S3 is unavailable | User thinks workflow ran on S3; outputs are local; re-runs fail | Fail fast at workflow submit time: "S3 endpoint unreachable: <url>. Verify storage config." |
+| Opaque s3:// paths in error messages | User sees `s3://bucket/uuid/task/output.bam` with no context for which task or scatter shard | Include human-readable task name and scatter index in all error context |
+| No progress indication during large file staging | User sees no activity for minutes while 50GB reference downloads | Log download progress at 10% intervals at INFO level in daemon logs |
+| Require `s3://` prefix even for local absolute paths in input JSON | Breaks existing workflows that use absolute paths | Honor path auto-resolution rules: absolute path = local FS, relative path = default backend, `s3://` = S3 — this is already in the feature spec |
+| Confusing error when `UsePathStyle` is wrong | AWS returns `PermanentRedirect` or `InvalidBucket`; not obvious the issue is path-style vs virtual-hosted | Detect `PermanentRedirect` errors and suggest enabling/disabling `UsePathStyle` in config |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear complete but are missing critical pieces.
-
-- [ ] **Task claiming**: Endpoint exists and returns task — verify the claim is atomic (single UPDATE WHERE state='PENDING'; check rows-affected == 1)
-- [ ] **Heartbeat reaper**: Heartbeat endpoint exists — verify the server background goroutine is actually checking `last_heartbeat_at` and marking timed-out tasks FAILED
-- [ ] **Graceful shutdown**: Daemon handles SIGTERM — verify Docker containers are actually stopped (not orphaned) when daemon is killed mid-task
-- [ ] **Output collection location**: Daemon "reports completion" — verify it has already collected and serialized output values before reporting (server must not re-read files from shared FS)
-- [ ] **`flowy run` spectool mode**: Exits 0 on success — verify exits 1 on task failure, not 0 with empty outputs
-- [ ] **Scatter throttling**: Server creates scatter tasks — verify tasks are throttled (not all created PENDING simultaneously for large scatters)
-- [ ] **Shared FS path validation**: Config accepts `shared_root` — verify daemon validates it is mounted and writable at startup
-- [ ] **Error structure**: Daemon returns task result — verify `exit_code` and `stderr` are present as structured fields, not inside a string message
+- [ ] **S3 backend basic upload/download:** Works for small test files — verify with files
+  > 5GB (multipart threshold; tests real multipart behavior, not just `PutObject`)
+- [ ] **Container path resolution:** s3:// input URIs in task records — verify container
+  command arguments contain POSIX paths, never `s3://` URIs (inspect Docker run args)
+- [ ] **Scatter key isolation:** Multiple scatter branches produce output — verify with
+  `ListObjectsV2` that key count equals scatter array length, not 1
+- [ ] **Multipart cleanup on failure:** Upload starts then task is cancelled — verify
+  `ListMultipartUploads` is empty after cancellation (abort was called)
+- [ ] **MinIO integration tests:** 156/156 spectool passes on MinIO — verify at least a
+  sample of tests pass when pointed at real AWS S3 endpoint
+- [ ] **Credential handling:** S3 client is configured — verify credentials come from env
+  vars or explicit config, not hardcoded in source
+- [ ] **Path-style config:** Works with MinIO (path-style) — verify `UsePathStyle` is
+  configurable and not hardcoded globally
+- [ ] **Error propagation:** S3 upload failure — verify daemon reports task as FAILED to
+  server (not silent success with empty outputs)
 
 ---
 
 ## Recovery Strategies
 
-When pitfalls occur despite prevention, how to recover.
-
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Tasks stuck RUNNING after daemon crash | LOW (if heartbeat reaper exists) | Wait for reaper timeout; or admin endpoint `POST /admin/tasks/{id}/requeue` |
-| Duplicate task execution (double-claim) | MEDIUM | Mark duplicate run FAILED; re-run workflow or resume from last checkpoint (v2 feature) |
-| Shared FS full (large scatter outputs) | HIGH | Pause server, move/delete old runs from shared FS, resume; requires manual intervention |
-| SQLite database locked under load | MEDIUM | Restart server; WAL mode means no corruption; investigate connection pool size |
-| Orphaned Docker containers on daemon host | LOW | `docker rm -f $(docker ps -aq --filter label=flowy-run)` — requires containers to be labeled at creation |
-| Config drift causing API mismatch | MEDIUM | Version check at daemon startup catches this before any work runs; upgrade daemon binary |
-| NFS metadata cache causing "file not found" | LOW (if daemon collects outputs) | Architectural fix (daemon pushes values); retry with backoff as fallback |
+| Incomplete multipart parts in S3 | LOW | Configure `AbortIncompleteMultipartUploads` lifecycle rule (one-time 5-minute fix); use `aws s3api list-multipart-uploads` to audit existing parts; DELETE is free |
+| s3:// URIs reaching container | HIGH | Requires redesign of daemon input staging logic; all S3 integration tests must be re-run from scratch |
+| Scatter output key collision | MEDIUM | Re-run affected workflows; fix key generation to include scatter index; outputs from corrupted runs cannot be recovered (last-writer-wins overwrote them) |
+| aws-sdk-go v1 in go.mod | MEDIUM | `go get github.com/aws/aws-sdk-go-v2/...@latest`; update all import paths; automated but requires re-testing all S3 code paths |
+| MinIO Docker image breaks in CI | LOW | Pin to specific release tag; if image unavailable, switch to Garage or SeaweedFS as S3 test backend (env var config makes this a one-line change) |
+| OOM from large file buffering | MEDIUM | Replace `io.ReadAll` with streaming `io.Copy`; requires identifying every download/upload call site and verifying with large-file integration test |
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
-How roadmap phases should address these pitfalls.
-
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| File path host assumptions | Phase 1: Shared filesystem design | Integration test: server and daemon run in separate directories; task inputs resolve correctly |
-| Task double-claim race | Phase 1: Claim endpoint implementation | Concurrent claim test: 10 goroutines claim same task simultaneously; exactly 1 succeeds |
-| SQLite locking under load | Phase 1: Database initialization | Load test: 10 concurrent daemon polls; no `database is locked` errors |
-| No heartbeat / orphaned tasks | Phase 1: Heartbeat mechanism | Kill daemon mid-task; verify server marks task FAILED within 3x heartbeat interval |
-| Orphaned Docker containers | Phase 2: Daemon graceful shutdown | SIGTERM daemon during task; verify `docker ps` shows container removed |
-| Scatter fan-out overwhelm | Phase 2: Scatter dispatch throttling | Submit scatter over 1000 items; verify max concurrent tasks matches configured limit |
-| Error serialization loss | Phase 1: API contract definition | Daemon returns task with exit code 42 and stderr; client shows both values |
-| Shared FS permissions | Phase 2: Daemon output collection | Container writes root-owned file; server can read it |
-| NFS metadata cache | Phase 2: Output collection design | Daemon collects outputs locally and pushes values; server does not read files directly |
-| Configuration drift | Phase 1: Shared API types package | Both binaries import same `pkg/api` package; compile error if API diverges |
-| `flowy run` poll loop | Phase 3: Client CLI + spectool | Workflow fails mid-run; client exits 1 with task failure details within 5 seconds |
+| s3:// URI reaching container command | Storage abstraction interface design | Integration test: run WDL task with S3 input; inspect Docker container args to confirm POSIX path, never `s3://` |
+| Scatter output key collision | S3 key generation (backend implementation) | Integration test: scatter 5 over same-named output; `ListObjectsV2` count == 5 |
+| Incomplete multipart cleanup | S3 backend implementation (upload error path) | Unit test: AbortMultipartUpload called on cancelled upload; lifecycle rule documented |
+| aws-sdk-go v1 | Library selection (first S3 code commit) | `go list -m all \| grep aws-sdk-go` shows only v2 module paths |
+| MinIO version pinning | Integration test setup | `docker-compose.test.yml` pins MinIO by release tag, not `latest`; env var overrides documented |
+| Large file OOM | S3 backend implementation (download/upload paths) | Memory test: stage 10GB file; verify daemon RSS stays under 500MB during transfer |
+| Inline URI string parsing | Storage abstraction interface (first utility) | `ParseS3URI` exists and is unit-tested; no `strings.Split` on `s3://` outside this function |
+| Credential in config YAML | S3 client initialization | Grep source for hardcoded key strings returns zero results; credentials loaded via env var |
 
 ---
 
 ## Sources
 
-- [Temporal activity heartbeat and timeout documentation](https://docs.temporal.io/encyclopedia/detecting-activity-failures) — heartbeat pattern for daemon liveness
-- [Temporal error handling in distributed systems](https://temporal.io/blog/error-handling-in-distributed-systems) — structured error propagation
-- [SQLite WAL mode documentation](https://sqlite.org/wal.html) — concurrency semantics for server use
-- [SQLite locking and concurrency v3](https://sqlite.org/lockingv3.html) — write serialization model
-- [Abusing SQLite to Handle Concurrency — SkyPilot Blog](https://blog.skypilot.co/abusing-sqlite-to-handle-concurrency/) — practical patterns for Go + SQLite
-- [Graceful Shutdown in Go: Practical Patterns — VictoriaMetrics](https://victoriametrics.com/blog/go-graceful-shutdown/) — signal handling for in-flight tasks
-- [Implementing Graceful Shutdown in Go — RudderStack](https://www.rudderstack.com/blog/implementing-graceful-shutdown-in-go/) — WaitGroup + context cancel pattern
-- [Cromwell backend documentation: file localization](https://cromwell.readthedocs.io/en/stable/backends/HPC/) — how Cromwell handles file staging across hosts
-- [Cromwell task localization: symlink limitation](https://cromwell.readthedocs.io/en/develop/optimizations/FileLocalization/) — NFS hard-link pitfalls
-- [Backpressure in Distributed Systems — DZone](https://dzone.com/articles/backpressure-in-distributed-systems) — scatter fan-out throttling patterns
-- [Building a distributed workflow engine from scratch — DEV Community](https://dev.to/acoh3n/building-a-distributed-workflow-engine-from-scratch-22kl) — polling daemon architecture
-- [QCon SF: Database-Backed Workflow Orchestration — InfoQ](https://www.infoq.com/news/2025/11/database-backed-workflow/) — SQLite-backed workflow engine patterns
-- flowy codebase: `wdl/task/task.go`, `wdl/task/pathmap.go`, `wdl/task/docker.go`, `wdl/workflow/scheduler.go` — existing in-process execution model
+- [Amazon S3 Strong Read-After-Write Consistency (Dec 2020)](https://aws.amazon.com/blogs/aws/amazon-s3-update-strong-read-after-write-consistency/)
+- [AWS All Things Distributed: Diving Deep on S3 Consistency (2021)](https://www.allthingsdistributed.com/2021/04/s3-strong-consistency.html)
+- [AWS SDK for Go V2 — Retries and Timeouts](https://aws.github.io/aws-sdk-go-v2/docs/configuring-sdk/retries-timeouts/)
+- [AWS SDK for Go V2 — S3 Utilities (manager.Uploader)](https://aws.github.io/aws-sdk-go-v2/docs/sdk-utilities/s3/)
+- [AWS: End of Support for aws-sdk-go v1 (July 31, 2025)](https://aws.amazon.com/blogs/developer/announcing-end-of-support-for-aws-sdk-for-go-v1-on-july-31-2025/)
+- [AWS: Discovering and Deleting Incomplete Multipart Uploads](https://aws.amazon.com/blogs/aws-cloud-financial-management/discovering-and-deleting-incomplete-multipart-uploads-to-lower-amazon-s3-costs/)
+- [AWS: Uploading and copying objects using multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)
+- [MinIO GitHub in Maintenance Mode — InfoQ (Dec 2025)](https://www.infoq.com/news/2025/12/minio-s3-api-alternatives/)
+- [MinIO minio/minio repository archived Feb 13, 2026](https://github.com/minio/minio)
+- [MinIO Alternatives (SeaweedFS, Garage, RustFS, Ceph RGW)](https://dev.to/arash_ezazy_f69fb13acdd37/minio-alternatives-open-source-on-prem-real-world-credible-seaweedfs-garage-rustfs-and-ceph-36om)
+- [Cromwell: Add support for staging INPUTS/OUTPUTS from/to AWS S3 (issue #3804)](https://github.com/broadinstitute/cromwell/issues/3804)
+- [Cromwell: S3 localization mount point issue (issue #4356)](https://github.com/broadinstitute/cromwell/issues/4356)
+- [miniwdl-s3upload plugin on PyPI](https://pypi.org/project/miniwdl-s3upload/)
+- [Nextflow + Mountpoint for Amazon S3 on AWS Batch](https://aws.amazon.com/blogs/hpc/optimize-nextflow-workflows-on-aws-batch-with-mountpoint-for-amazon-s3/)
+- [aws-sdk-go S3 manager memory issue (issue #2591)](https://github.com/aws/aws-sdk-go/issues/2591)
+- [aws-sdk-go-v2 S3 upload manager memory discussion (#1650)](https://github.com/aws/aws-sdk-go-v2/discussions/1650)
+- [Exploring S3 Mocking Tools: S3Mock, MinIO, LocalStack comparison](https://blog.localstack.cloud/2024-04-08-exploring-s3-mocking-tools-a-comparative-analysis-of-s3mock-minio-and-localstack/)
 
 ---
-*Pitfalls research for: distributed WDL workflow execution (flowy v1.1 server/daemon/client split)*
-*Researched: 2026-03-11*
+*Pitfalls research for: S3 object storage backend for flowy WDL workflow engine (v1.2)*
+*Researched: 2026-03-12*
