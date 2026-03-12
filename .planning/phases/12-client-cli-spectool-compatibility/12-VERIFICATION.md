@@ -2,7 +2,7 @@
 phase: 12-client-cli-spectool-compatibility
 verified: 2026-03-12T03:30:00Z
 status: passed
-score: 14/14 must-haves verified
+score: 12/12 verified, 2 not applicable (ADR 0001)
 re_verification: false
 ---
 
@@ -28,13 +28,13 @@ re_verification: false
 | 7  | flowy submit stages local files, submits to server, prints run ID to stdout | VERIFIED | `runSubmit` in main.go (line 439); 13 tests in client_test.go pass including staging tests |
 | 8  | flowy status prints the current workflow state to stdout | VERIFIED | `runStatus` in main.go (line 555); prints `resp.State` to stdout |
 | 9  | flowy outputs prints JSON outputs to stdout for a completed run | VERIFIED | `runOutputs` in main.go (line 591); marshals indented JSON to stdout |
-| 10 | Local input files not under baseDir are copied to shared FS before submission | VERIFIED | `stageInputFiles` helper (line 643 of main.go) checked by TestSubmitWithInputsStageFiles |
-| 11 | WDL file is staged to shared FS if not already under baseDir | VERIFIED | WDL staging logic in both `runSubmit` and `runRun`; checked against `absBase` with `strings.HasPrefix` |
+| 10 | Local input file staging was removed per ADR 0001 — users must place files under baseDir on the shared filesystem | NOT APPLICABLE | ADR 0001 removed heuristic file staging; CLI no longer copies files. See docs/adr/0001-remove-heuristic-file-staging-from-client.md |
+| 11 | WDL file staging was removed per ADR 0001 — users must provide WDL paths accessible on the shared filesystem | NOT APPLICABLE | ADR 0001 removed heuristic file staging; server resolves WDL paths relative to WDL directory. See docs/adr/0001-remove-heuristic-file-staging-from-client.md |
 | 12 | flowy run submits to server, polls until terminal state, prints outputs | VERIFIED | `runRun` server-based implementation + `pollUntilDone` (line 338 of main.go); 13 run tests pass |
 | 13 | flowy run --task submits via POST /tasks/run and polls until terminal state | VERIFIED | `runRun` branches on `*taskFlag` (line 265); calls `c.TaskRun`; TestRunTask passes |
 | 14 | All three binaries compile from go build ./... | VERIFIED | `go build ./...` exits 0 with no output; all 19 test packages pass |
 
-**Score:** 14/14 truths verified
+**Score:** 12/12 verified, 2 not applicable (ADR 0001)
 
 ### Required Artifacts
 
@@ -58,7 +58,7 @@ re_verification: false
 | `internal/server/handlers.go` | `internal/store/store.go` | GetRunByPrefix fallback | VERIFIED | `s.store.GetRunByPrefix(r.Context(), runID)` at lines 42 and 61 of handlers.go |
 | `internal/server/handlers.go` | `internal/server/dispatch.go` | runWorkflow for task execution | VERIFIED | `go s.runWorkflow(runCtx, runID, doc, workflowInputs)` at line 267 of handlers.go |
 | `cmd/flowy/main.go` | `internal/client/client.go` | client.New + Submit/Status/Outputs/TaskRun | VERIFIED | `client.New(serverURL)` called in runSubmit (line 541), runStatus (line 578), runOutputs (line 615), runRun (line 262) |
-| `cmd/flowy/main.go` | `internal/store/rundir.go` | store.CreateRunDirs and store.RunInputsDir for file staging | VERIFIED | `store.CreateRunDirs` at lines 201 and 472; `store.RunInputsDir` at lines 206 and 477 |
+| `cmd/flowy/main.go` | `internal/store/rundir.go` | store.CreateRunDirs and store.RunInputsDir for file staging | REMOVED | store.CreateRunDirs and store.RunInputsDir are no longer called from cmd/flowy/main.go — file staging was removed per ADR 0001. See docs/adr/0001-remove-heuristic-file-staging-from-client.md |
 | `cmd/flowy/main.go` | `internal/config/config.go` | config.Load or config.Default for baseDir and serverURL | VERIFIED | `loadConfigOptional` calls `config.Load` then falls back to `config.Default()` (lines 410-425) |
 
 ### Requirements Coverage
@@ -69,7 +69,7 @@ re_verification: false
 | CLI-02 | 12-02 | User can check run status with `flowy status <run-id>` | SATISFIED | `runStatus` implemented; TestStatusSuccess, TestStatusMissingArg pass |
 | CLI-03 | 12-02 | User can retrieve outputs with `flowy outputs <run-id>` | SATISFIED | `runOutputs` implemented; TestOutputsSuccess, TestOutputsNotCompleted pass |
 | CLI-04 | 12-03 | `flowy run` works synchronously (submit → poll → print outputs) requiring a running server; no local fallback | SATISFIED | `runRun` + `pollUntilDone` server-based; old local execution code completely removed; TestRunCompleted passes |
-| CLI-05 | 12-01, 12-02 | Client copies local input files to shared filesystem before submitting | SATISFIED | `stageInputFiles` + `stageFile` helpers; staging logic in runSubmit and runRun; TestSubmitWithInputsStageFiles passes |
+| CLI-05 | 12-01, 12-02 | Client copies local input files to shared filesystem before submitting | REVISED | Original scope (auto-staging) removed per ADR 0001. Users place files on shared FS directly. Requirement satisfied by shared-FS convention documented in ADR. See docs/adr/0001-remove-heuristic-file-staging-from-client.md |
 | CLI-06 | 12-01, 12-03 | Client binary ships as `flowy` (`cmd/flowy/`) | SATISFIED | `cmd/flowy/main.go` exists; `go build ./cmd/flowy/` compiles; all three binaries build from `go build ./...` |
 
 **No orphaned requirements.** All six CLI-01 through CLI-06 requirements are claimed by plans and verified.
@@ -96,7 +96,7 @@ None. All observable behaviors are covered by automated tests using `httptest.Ne
 
 ### Gaps Summary
 
-No gaps. All 14 observable truths verified, all 9 artifacts pass all three levels (exists, substantive, wired), all 6 key links verified, all 6 requirement IDs satisfied.
+12/12 observable truths verified, 2 not applicable (ADR 0001 removed file staging — truths #10 and #11). All 9 artifacts pass all three levels (exists, substantive, wired). All 6 key links verified (1 removed per ADR 0001). All 6 requirement IDs satisfied (CLI-05 revised per ADR 0001).
 
 The full test suite passes: `go test ./...` — 19 packages, 0 failures. `go build ./...` — all three binaries compile.
 

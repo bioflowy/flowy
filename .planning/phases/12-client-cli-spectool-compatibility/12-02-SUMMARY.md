@@ -46,7 +46,7 @@ patterns-established:
   - "Submit pattern: pre-staging with client-provided RunID enables idempotent server-side handling"
   - "Config resolution: --base-dir > config file > defaults — lets CLI work without config file on dev workstations"
 
-requirements-completed: [CLI-01, CLI-02, CLI-03, CLI-05]
+requirements-completed: [CLI-01, CLI-02, CLI-03, "CLI-05 (staging code later removed per ADR 0001 in plan 12-03)"]
 
 # Metrics
 duration: 3min
@@ -68,6 +68,7 @@ completed: 2026-03-12
 ## Accomplishments
 
 - Implemented `flowy submit <wdl> [-i <inputs>] [--server <url>] [--base-dir <dir>]` with pre-submission file staging: WDL and input files not under baseDir are copied to `{baseDir}/runs/{uuid}/inputs/`, staged paths replace original in SubmitRequest, cleanup on failure
+- Note: The file staging logic (stageInputFiles, stageFile) implemented in this plan was later removed in plan 12-03 per ADR 0001. See docs/adr/0001-remove-heuristic-file-staging-from-client.md.
 - Implemented `flowy status <run-id> [--server <url>]` printing plain state string (e.g. `RUNNING`) to stdout
 - Implemented `flowy outputs <run-id> [--server <url>]` printing indented JSON outputs to stdout; descriptive error for 409 (not yet completed)
 - 13 tests covering success paths, error handling, file staging edge cases, and WDL staging; all pass
