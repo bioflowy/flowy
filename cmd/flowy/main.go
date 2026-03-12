@@ -5,38 +5,30 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/bioflowy/flowy/internal/client"
 	"github.com/bioflowy/flowy/internal/api"
+	"github.com/bioflowy/flowy/internal/client"
 	"github.com/bioflowy/flowy/internal/config"
 	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/checker"
 	"github.com/bioflowy/flowy/wdl/parser"
-	"github.com/bioflowy/flowy/wdl/task"
-	"github.com/bioflowy/flowy/wdl/workflow"
 )
 
 // version is set at build time via ldflags. Default is "dev".
 var version = "dev"
-
-// newRunner is a package-level factory for creating ContainerRunner instances.
-// It can be overridden in tests to inject a mock runner without subprocess.
-var newRunner func() task.ContainerRunner = func() task.ContainerRunner {
-	return task.NewDockerRunner()
-}
 
 // run is the testable main function. args is os.Args[1:].
 // Returns exit code: 0 = success, 1 = execution error, 2 = usage error.
@@ -144,21 +136,26 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// runRun implements the "run" subcommand.
-// It parses a WDL file, type-checks it, then executes either a named task
-// or the first workflow using the provided ContainerRunner.
+// runRun implements the "run" subcommand using server-based execution.
+// It stages the WDL file and inputs to the shared filesystem, submits to the server,
+// polls until terminal state, then prints outputs on success.
 //
 // Exit codes: 0 = success, 1 = execution error, 2 = usage error.
 func runRun(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	inputFlag := fs.String("input", "", "JSON input file path")
-	taskFlag := fs.String("task", "", "run only the named task (skip workflow)")
-	dirFlag := fs.String("dir", "", "execution directory (must be empty if it exists)")
+	inputFlag := fs.String("i", "", "JSON input file path")
+	// Also support --input as alias.
+	inputLongFlag := fs.String("input", "", "JSON input file path (alias for -i)")
+	taskFlag := fs.String("task", "", "run only the named task via POST /tasks/run")
 	pathFlag := fs.String("path", "", "additional import search directory")
-	verboseFlag := fs.Bool("verbose", false, "print task stdout/stderr after execution")
+	verboseFlag := fs.Bool("verbose", false, "accepted for compatibility (no-op in server mode)")
 	outputFlag := fs.String("output", "", "write outputs JSON to specified file path instead of stdout")
+	serverFlag := fs.String("server", "", "server URL override")
+	configFlag := fs.String("config", "", "config file path")
+	baseDirFlag := fs.String("base-dir", "", "base directory for staging (overrides config)")
+	quietFlag := fs.Bool("quiet", false, "suppress status lines on stderr during polling")
 
 	// Reorder args so flags after positional args are parsed correctly.
 	// Go's flag package stops parsing at the first non-flag argument,
@@ -171,133 +168,156 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: run requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy run [--input <file>] [--task <name>] [--dir <dir>] [--path <dir>] [--verbose] [--output <file>] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy run [--server <url>] [-i <inputs>] [--task <name>] [--path <dir>] [--output <file>] [--quiet] <file.wdl>")
 		return 2
 	}
 
-	file := fs.Arg(0)
-
-	// Parse the WDL file.
-	var doc *ast.Document
-	var parseErr error
-
-	if *pathFlag != "" {
-		doc, parseErr = parser.ParseWithSearchPaths(file, nil, []string{*pathFlag})
-	} else {
-		doc, parseErr = parser.Parse(file, nil)
+	// --verbose is a no-op in server mode.
+	if *verboseFlag {
+		fmt.Fprintln(stderr, "note: --verbose not yet supported in server mode")
 	}
 
-	if parseErr != nil {
-		fmt.Fprintln(stderr, parseErr.Error())
+	// Resolve effective input flag (--input or -i).
+	effectiveInput := *inputFlag
+	if effectiveInput == "" {
+		effectiveInput = *inputLongFlag
+	}
+
+	wdlArg := fs.Arg(0)
+	cfg := loadConfigOptional(*configFlag, stderr)
+	if *baseDirFlag != "" {
+		cfg.BaseDir = *baseDirFlag
+	}
+	serverURL := resolveServerURL(*serverFlag, cfg)
+
+	// Set up signal-aware context so Ctrl+C interrupts immediately.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Generate a client-side run ID for pre-submission staging.
+	runID := uuid.New().String()
+
+	// Create staging directories.
+	if err := store.CreateRunDirs(cfg.BaseDir, runID); err != nil {
+		fmt.Fprintf(stderr, "error: creating staging dirs: %v\n", err)
 		return 1
 	}
 
-	// Type-check the document.
-	_, typeErrors := checker.Check(doc)
-	if len(typeErrors) > 0 {
-		for _, err := range typeErrors {
-			if te, ok := err.(*checker.TypeError); ok {
-				srcLine := readSourceLine(te.Pos.File, te.Pos.Line)
-				printRustcError(stderr, te.Pos.File, te.Pos.Line, te.Pos.Col, te.Message, srcLine)
-			} else {
-				fmt.Fprintln(stderr, err.Error())
-			}
-		}
-		return 1
+	inputsDir := store.RunInputsDir(cfg.BaseDir, runID)
+	cleanupOnError := func() {
+		os.RemoveAll(filepath.Join(cfg.BaseDir, "runs", runID)) //nolint:errcheck
 	}
 
-	// Load JSON inputs.
-	jsonInputs := map[string]interface{}{}
-	if *inputFlag != "" {
-		data, err := os.ReadFile(*inputFlag)
+	// Stage the WDL file if not already under baseDir.
+	absWDL, err := filepath.Abs(wdlArg)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
+		cleanupOnError()
+		return 1
+	}
+	absBase, err := filepath.Abs(cfg.BaseDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: resolving base dir %q: %v\n", cfg.BaseDir, err)
+		cleanupOnError()
+		return 1
+	}
+	stagedWDLPath := absWDL
+	if !strings.HasPrefix(absWDL, absBase+string(os.PathSeparator)) && absWDL != absBase {
+		stagedWDLPath, err = stageFile(absWDL, inputsDir)
 		if err != nil {
-			fmt.Fprintf(stderr, "error: reading input file %q: %v\n", *inputFlag, err)
+			fmt.Fprintf(stderr, "error: staging WDL file: %v\n", err)
+			cleanupOnError()
+			return 1
+		}
+	}
+
+	// Load and stage input files.
+	jsonInputs := map[string]interface{}{}
+	if effectiveInput != "" {
+		data, err := os.ReadFile(effectiveInput)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: reading inputs file %q: %v\n", effectiveInput, err)
+			cleanupOnError()
 			return 1
 		}
 		if err := json.Unmarshal(data, &jsonInputs); err != nil {
-			fmt.Fprintf(stderr, "error: parsing input JSON %q: %v\n", *inputFlag, err)
+			fmt.Fprintf(stderr, "error: parsing inputs JSON %q: %v\n", effectiveInput, err)
+			cleanupOnError()
+			return 1
+		}
+		jsonInputs, err = stageInputFiles(jsonInputs, inputsDir, absBase)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: staging input files: %v\n", err)
+			cleanupOnError()
 			return 1
 		}
 	}
 
-	// Set up execution directory.
-	execRoot, err := setupExecDir(*dirFlag)
+	// Collect search paths.
+	var searchPaths []string
+	if *pathFlag != "" {
+		searchPaths = []string{*pathFlag}
+	}
+
+	c := client.New(serverURL)
+	var submittedRunID string
+
+	if *taskFlag != "" {
+		// Task mode: submit via POST /tasks/run.
+		req := api.TaskRunRequest{
+			WDLPath:     stagedWDLPath,
+			TaskName:    *taskFlag,
+			InputsJSON:  jsonInputs,
+			RunID:       runID,
+			SearchPaths: searchPaths,
+		}
+		resp, err := c.TaskRun(ctx, req)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: cannot reach server at %s: %v\n", serverURL, err)
+			cleanupOnError()
+			return 1
+		}
+		submittedRunID = resp.RunID
+	} else {
+		// Workflow mode: submit via POST /workflows.
+		req := api.SubmitRequest{
+			RunID:       runID,
+			WDLPath:     stagedWDLPath,
+			InputsJSON:  jsonInputs,
+			SearchPaths: searchPaths,
+		}
+		resp, err := c.Submit(ctx, req)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: cannot reach server at %s: %v\n", serverURL, err)
+			cleanupOnError()
+			return 1
+		}
+		submittedRunID = resp.RunID
+	}
+
+	// Poll until terminal state.
+	finalState, err := pollUntilDone(ctx, c, submittedRunID, *quietFlag, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		fmt.Fprintf(stderr, "error: polling run %s: %v\n", submittedRunID, err)
 		return 1
 	}
 
-	// Print execution directory before any task execution.
-	fmt.Fprintf(stderr, "Execution directory: %s\n", execRoot)
-
-	// Create the runner.
-	runner := newRunner()
-	ctx := context.Background()
-
-	// Execute.
-	var jsonBytes []byte
-	if *taskFlag != "" {
-		// Find the named task.
-		var taskDef *ast.Task
-		for _, t := range doc.Tasks {
-			if t.Name == *taskFlag {
-				taskDef = t
-				break
-			}
-		}
-		if taskDef == nil {
-			fmt.Fprintf(stderr, "error: task %q not found in %s\n", *taskFlag, file)
-			return 1
-		}
-		// Build struct definitions map for struct literal evaluation.
-		structDefs := make(map[string]*ast.StructDef, len(doc.Structs))
-		for _, s := range doc.Structs {
-			structDefs[s.Name] = s
-		}
-		taskOutputs, execErr := task.RunTask(ctx, taskDef, jsonInputs, runner, execRoot, structDefs)
-		if execErr != nil {
-			fmt.Fprintf(stderr, "error: %v\n", execErr)
-			fmt.Fprintf(stderr, "See %s/error.json for details\n", execRoot)
-			return 1
-		}
-		// Serialize task outputs with taskName.outputName keys.
-		var serErr error
-		jsonBytes, serErr = workflow.SerializeOutputs(*taskFlag, taskOutputs)
-		if serErr != nil {
-			fmt.Fprintf(stderr, "error: serializing task outputs: %v\n", serErr)
-			return 1
-		}
-		// Write outputs.json to execRoot for task runs.
-		if err := os.WriteFile(filepath.Join(execRoot, "outputs.json"), jsonBytes, 0644); err != nil {
-			fmt.Fprintf(stderr, "error: writing outputs.json: %v\n", err)
-			return 1
-		}
-	} else {
-		// Execute the first workflow.
-		if len(doc.Workflows) == 0 {
-			fmt.Fprintf(stderr, "error: no workflow defined in %s (use --task to run a task)\n", file)
-			return 1
-		}
-		wfName := doc.Workflows[0].Name
-		wfOutputs, execErr := workflow.RunWorkflow(ctx, doc, wfName, jsonInputs, runner, execRoot)
-		if execErr != nil {
-			fmt.Fprintf(stderr, "error: %v\n", execErr)
-			fmt.Fprintf(stderr, "See %s/error.json for details\n", execRoot)
-			return 1
-		}
-		// Serialize workflow outputs with wfName.outputName keys.
-		// RunWorkflow already wrote outputs.json internally; we just need JSON for stdout.
-		var serErr error
-		jsonBytes, serErr = workflow.SerializeOutputs(wfName, wfOutputs)
-		if serErr != nil {
-			fmt.Fprintf(stderr, "error: serializing workflow outputs: %v\n", serErr)
-			return 1
-		}
+	if finalState != "COMPLETED" {
+		fmt.Fprintf(stderr, "error: workflow %s (run: %s)\n", finalState, submittedRunID)
+		return 1
 	}
 
-	// Print verbose output if requested.
-	if *verboseFlag {
-		printVerboseOutput(execRoot, stderr)
+	// Fetch outputs.
+	outputsResp, err := c.Outputs(ctx, submittedRunID)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: fetching outputs for run %s: %v\n", submittedRunID, err)
+		return 1
+	}
+
+	jsonBytes, err := json.MarshalIndent(outputsResp.Outputs, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "error: serializing outputs: %v\n", err)
+		return 1
 	}
 
 	// Write outputs JSON to --output file or stdout.
@@ -312,75 +332,43 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// setupExecDir prepares the execution directory.
-// If dirFlag is set, it validates the directory is empty (or doesn't exist) and creates it.
-// If dirFlag is empty, it generates a unique temp directory with "flowy-" prefix.
-func setupExecDir(dirFlag string) (string, error) {
-	if dirFlag != "" {
-		// Check if the directory exists and is non-empty.
-		entries, err := os.ReadDir(dirFlag)
-		if err == nil && len(entries) > 0 {
-			return "", fmt.Errorf("execution directory %q is not empty; use an empty or new directory", dirFlag)
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return "", fmt.Errorf("checking execution directory %q: %v", dirFlag, err)
-		}
-		if err := os.MkdirAll(dirFlag, 0755); err != nil {
-			return "", fmt.Errorf("creating execution directory %q: %v", dirFlag, err)
-		}
-		return dirFlag, nil
+// pollUntilDone polls the server for run status until a terminal state is reached.
+// It prints state changes to stderr (unless quiet is true).
+// Returns the terminal state string or an error on context cancellation.
+func pollUntilDone(ctx context.Context, c *client.Client, runID string, quiet bool, stderr io.Writer) (string, error) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	shortID := runID
+	if len(runID) >= 8 {
+		shortID = runID[:8]
 	}
 
-	// Generate a unique temp directory with "flowy-" prefix.
-	suffix, err := randomHex(4)
-	if err != nil {
-		return "", fmt.Errorf("generating execution directory name: %v", err)
-	}
-	dirName := fmt.Sprintf("flowy-%s-%s", time.Now().Format("20060102"), suffix)
-	execRoot := filepath.Join(os.TempDir(), dirName)
-	if err := os.MkdirAll(execRoot, 0755); err != nil {
-		return "", fmt.Errorf("creating execution directory %q: %v", execRoot, err)
-	}
-	return execRoot, nil
-}
-
-// printVerboseOutput walks the execution directory and prints stdout/stderr
-// files from task subdirectories to w. This is the post-hoc approach:
-// output appears after all tasks finish (no API changes to inner packages).
-func printVerboseOutput(execRoot string, w io.Writer) {
-	entries, err := os.ReadDir(execRoot)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		taskDir := filepath.Join(execRoot, entry.Name())
-
-		// Print stdout.
-		stdoutPath := filepath.Join(taskDir, "stdout.txt")
-		if data, err := os.ReadFile(stdoutPath); err == nil && len(data) > 0 {
-			fmt.Fprintf(w, "--- %s stdout ---\n", entry.Name())
-			w.Write(data) //nolint:errcheck
-		}
-
-		// Print stderr.
-		stderrPath := filepath.Join(taskDir, "stderr.txt")
-		if data, err := os.ReadFile(stderrPath); err == nil && len(data) > 0 {
-			fmt.Fprintf(w, "--- %s stderr ---\n", entry.Name())
-			w.Write(data) //nolint:errcheck
+	lastState := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+			resp, err := c.Status(ctx, runID)
+			if err != nil {
+				// Transient network issue — warn and continue.
+				fmt.Fprintf(stderr, "warning: polling run %s: %v\n", shortID, err)
+				continue
+			}
+			state := resp.State
+			if state != lastState {
+				lastState = state
+				if !quiet {
+					fmt.Fprintf(stderr, "run %s: %s\n", shortID, state)
+				}
+			}
+			switch state {
+			case "COMPLETED", "FAILED", "ABORTED":
+				return state, nil
+			}
 		}
 	}
-}
-
-// randomHex generates n random bytes and returns their hex encoding.
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // printRustcError writes a rustc-style error diagnostic to w.
@@ -726,10 +714,8 @@ func stageFile(srcPath, destDir string) (string, error) {
 func reorderArgs(args []string) []string {
 	var flags, positional []string
 	knownValueFlags := map[string]bool{
-		"--input": true, "--task": true, "--dir": true,
-		"--path": true, "--output": true,
-		"-input": true, "-task": true, "-dir": true,
-		"-path": true, "-output": true,
+		"--input": true, "--task": true, "--path": true, "--output": true,
+		"-input": true, "-task": true, "-path": true, "-output": true,
 		// Server-facing subcommand flags.
 		"--server": true, "--config": true, "--base-dir": true,
 		"-server": true, "-config": true, "-base-dir": true,
@@ -749,4 +735,3 @@ func reorderArgs(args []string) []string {
 	}
 	return append(flags, positional...)
 }
-
