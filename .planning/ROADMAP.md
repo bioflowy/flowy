@@ -114,4 +114,4 @@ Plans:
 | 9. API Contract + Persistence Foundation | 2/2 | Complete   | 2026-03-11 | - |
 | 10. Server Binary + DAG Dispatch | 2/2 | Complete    | 2026-03-11 | - |
 | 11. Daemon Binary + Task Execution | 2/2 | Complete    | 2026-03-12 | - |
-| 12. Client CLI + Spectool Compatibility | 3/3 | Complete   | 2026-03-12 | - |
+| 12. Client CLI + Spectool Compatibility | 3/3 | Complete    | 2026-03-12 | - |

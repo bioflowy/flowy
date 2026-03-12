@@ -33,7 +33,7 @@ Requirements for distributed server/daemon/client architecture. Each maps to roa
 - [x] **CLI-01**: User can submit a workflow with `flowy submit <wdl> -i <inputs>`
 - [x] **CLI-02**: User can check run status with `flowy status <run-id>`
 - [x] **CLI-03**: User can retrieve outputs with `flowy outputs <run-id>`
-- [ ] **CLI-04**: `flowy run` works synchronously (submit → poll → print outputs) requiring a running server; no local fallback
+- [x] **CLI-04**: `flowy run` works synchronously (submit → poll → print outputs) requiring a running server; no local fallback
 - [x] **CLI-05**: Client copies local input files to shared filesystem before submitting
 - [x] **CLI-06**: Client binary ships as `flowy` (`cmd/flowy/`)
 
@@ -98,7 +98,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-01 | Phase 12 | Complete |
 | CLI-02 | Phase 12 | Complete |
 | CLI-03 | Phase 12 | Complete |
-| CLI-04 | Phase 12 | Pending |
+| CLI-04 | Phase 12 | Complete |
 | CLI-05 | Phase 12 | Complete |
 | CLI-06 | Phase 12 | Complete |
 | STR-01 | Phase 9 | Complete |
