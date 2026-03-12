@@ -15,3 +15,7 @@ When you apply a temporary or workaround fix just to make tests pass, but a more
 3. **Why it's not sufficient**: What scenarios or edge cases the temporary fix doesn't cover
 4. **Proposed proper fix**: How to fundamentally resolve the issue
 5. **Affected files**: List of files involved in the temporary fix
+
+## Architecture Decision Records
+
+When an architectural discussion reaches a conclusion, record the decision as an ADR (Architecture Decision Record) in `docs/adr/`. Follow the format described at https://adr.github.io/ — each ADR should have a sequential number and contain Title, Context, Decision, Status, and Consequences sections. Keep records concise (1-2 pages) and write in full sentences.

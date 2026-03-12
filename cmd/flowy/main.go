@@ -21,7 +21,6 @@ import (
 	"github.com/bioflowy/flowy/internal/api"
 	"github.com/bioflowy/flowy/internal/client"
 	"github.com/bioflowy/flowy/internal/config"
-	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/checker"
 	"github.com/bioflowy/flowy/wdl/parser"
@@ -137,8 +136,12 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 }
 
 // runRun implements the "run" subcommand using server-based execution.
-// It stages the WDL file and inputs to the shared filesystem, submits to the server,
+// It resolves the WDL file path, loads inputs, submits to the server,
 // polls until terminal state, then prints outputs on success.
+//
+// All referenced files (WDL and input data) must already reside under the
+// shared base_dir or be resolvable relative to the WDL file's parent directory
+// (per WDL 1.2 spec). See docs/adr/0001-remove-heuristic-file-staging-from-client.md.
 //
 // Exit codes: 0 = success, 1 = execution error, 2 = usage error.
 func runRun(args []string, stdout, stderr io.Writer) int {
@@ -154,7 +157,6 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	outputFlag := fs.String("output", "", "write outputs JSON to specified file path instead of stdout")
 	serverFlag := fs.String("server", "", "server URL override")
 	configFlag := fs.String("config", "", "config file path")
-	baseDirFlag := fs.String("base-dir", "", "base directory for staging (overrides config)")
 	quietFlag := fs.Bool("quiet", false, "suppress status lines on stderr during polling")
 
 	// Reorder args so flags after positional args are parsed correctly.
@@ -185,70 +187,32 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	wdlArg := fs.Arg(0)
 	cfg := loadConfigOptional(*configFlag, stderr)
-	if *baseDirFlag != "" {
-		cfg.BaseDir = *baseDirFlag
-	}
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
 	// Set up signal-aware context so Ctrl+C interrupts immediately.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Generate a client-side run ID for pre-submission staging.
+	// Generate a client-side run ID.
 	runID := uuid.New().String()
 
-	// Create staging directories.
-	if err := store.CreateRunDirs(cfg.BaseDir, runID); err != nil {
-		fmt.Fprintf(stderr, "error: creating staging dirs: %v\n", err)
-		return 1
-	}
-
-	inputsDir := store.RunInputsDir(cfg.BaseDir, runID)
-	cleanupOnError := func() {
-		os.RemoveAll(filepath.Join(cfg.BaseDir, "runs", runID)) //nolint:errcheck
-	}
-
-	// Stage the WDL file if not already under baseDir.
+	// Resolve WDL path to absolute.
 	absWDL, err := filepath.Abs(wdlArg)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
-		cleanupOnError()
 		return 1
-	}
-	absBase, err := filepath.Abs(cfg.BaseDir)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: resolving base dir %q: %v\n", cfg.BaseDir, err)
-		cleanupOnError()
-		return 1
-	}
-	stagedWDLPath := absWDL
-	if !strings.HasPrefix(absWDL, absBase+string(os.PathSeparator)) && absWDL != absBase {
-		stagedWDLPath, err = stageFile(absWDL, inputsDir)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: staging WDL file: %v\n", err)
-			cleanupOnError()
-			return 1
-		}
 	}
 
-	// Load and stage input files.
+	// Load input JSON if provided.
 	jsonInputs := map[string]interface{}{}
 	if effectiveInput != "" {
 		data, err := os.ReadFile(effectiveInput)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: reading inputs file %q: %v\n", effectiveInput, err)
-			cleanupOnError()
 			return 1
 		}
 		if err := json.Unmarshal(data, &jsonInputs); err != nil {
 			fmt.Fprintf(stderr, "error: parsing inputs JSON %q: %v\n", effectiveInput, err)
-			cleanupOnError()
-			return 1
-		}
-		jsonInputs, err = stageInputFiles(jsonInputs, inputsDir, absBase)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: staging input files: %v\n", err)
-			cleanupOnError()
 			return 1
 		}
 	}
@@ -265,7 +229,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	if *taskFlag != "" {
 		// Task mode: submit via POST /tasks/run.
 		req := api.TaskRunRequest{
-			WDLPath:     stagedWDLPath,
+			WDLPath:     absWDL,
 			TaskName:    *taskFlag,
 			InputsJSON:  jsonInputs,
 			RunID:       runID,
@@ -274,7 +238,6 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		resp, err := c.TaskRun(ctx, req)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: cannot reach server at %s: %v\n", serverURL, err)
-			cleanupOnError()
 			return 1
 		}
 		submittedRunID = resp.RunID
@@ -282,14 +245,13 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		// Workflow mode: submit via POST /workflows.
 		req := api.SubmitRequest{
 			RunID:       runID,
-			WDLPath:     stagedWDLPath,
+			WDLPath:     absWDL,
 			InputsJSON:  jsonInputs,
 			SearchPaths: searchPaths,
 		}
 		resp, err := c.Submit(ctx, req)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: cannot reach server at %s: %v\n", serverURL, err)
-			cleanupOnError()
 			return 1
 		}
 		submittedRunID = resp.RunID
@@ -336,7 +298,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 // It prints state changes to stderr (unless quiet is true).
 // Returns the terminal state string or an error on context cancellation.
 func pollUntilDone(ctx context.Context, c *client.Client, runID string, quiet bool, stderr io.Writer) (string, error) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	shortID := runID
@@ -345,26 +307,38 @@ func pollUntilDone(ctx context.Context, c *client.Client, runID string, quiet bo
 	}
 
 	lastState := ""
+	poll := func() (string, bool) {
+		resp, err := c.Status(ctx, runID)
+		if err != nil {
+			// Transient network issue — warn and continue.
+			fmt.Fprintf(stderr, "warning: polling run %s: %v\n", shortID, err)
+			return "", false
+		}
+		state := resp.State
+		if state != lastState {
+			lastState = state
+			if !quiet {
+				fmt.Fprintf(stderr, "run %s: %s\n", shortID, state)
+			}
+		}
+		switch state {
+		case "COMPLETED", "FAILED", "ABORTED":
+			return state, true
+		}
+		return "", false
+	}
+
+	// Immediate first poll to avoid waiting for the ticker.
+	if state, done := poll(); done {
+		return state, nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-ticker.C:
-			resp, err := c.Status(ctx, runID)
-			if err != nil {
-				// Transient network issue — warn and continue.
-				fmt.Fprintf(stderr, "warning: polling run %s: %v\n", shortID, err)
-				continue
-			}
-			state := resp.State
-			if state != lastState {
-				lastState = state
-				if !quiet {
-					fmt.Fprintf(stderr, "run %s: %s\n", shortID, state)
-				}
-			}
-			switch state {
-			case "COMPLETED", "FAILED", "ABORTED":
+			if state, done := poll(); done {
 				return state, nil
 			}
 		}
@@ -434,8 +408,9 @@ func resolveServerURL(flagValue string, cfg *config.Config) string {
 }
 
 // runSubmit implements the "submit" subcommand.
-// It stages local input files and the WDL file to the shared filesystem,
-// then submits the workflow to the flowy-server.
+// It resolves the WDL file path and submits the workflow to the flowy-server.
+// All referenced files must already reside under the shared base_dir or be
+// resolvable relative to the WDL file's parent directory.
 func runSubmit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("submit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -443,7 +418,6 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	inputFlag := fs.String("i", "", "JSON inputs file path")
 	serverFlag := fs.String("server", "", "server URL override")
 	configFlag := fs.String("config", "", "config file path")
-	baseDirFlag := fs.String("base-dir", "", "base directory for staging (overrides config)")
 	pathFlag := fs.String("path", "", "additional import search directory")
 
 	args = reorderArgs(args)
@@ -454,72 +428,34 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: submit requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy submit [--server <url>] [-i <inputs>] [--path <dir>] [--base-dir <dir>] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy submit [--server <url>] [-i <inputs>] [--path <dir>] <file.wdl>")
 		return 2
 	}
 
 	wdlArg := fs.Arg(0)
 	cfg := loadConfigOptional(*configFlag, stderr)
-	if *baseDirFlag != "" {
-		cfg.BaseDir = *baseDirFlag
-	}
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
-	// Generate a client-side run ID for pre-submission staging.
+	// Generate a client-side run ID.
 	runID := uuid.New().String()
 
-	// Create staging directories.
-	if err := store.CreateRunDirs(cfg.BaseDir, runID); err != nil {
-		fmt.Fprintf(stderr, "error: creating staging dirs: %v\n", err)
-		return 1
-	}
-
-	inputsDir := store.RunInputsDir(cfg.BaseDir, runID)
-	cleanupOnError := func() {
-		os.RemoveAll(filepath.Join(cfg.BaseDir, "runs", runID)) //nolint:errcheck
-	}
-
-	// Stage the WDL file if not already under baseDir.
+	// Resolve WDL path to absolute.
 	absWDL, err := filepath.Abs(wdlArg)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
-		cleanupOnError()
 		return 1
-	}
-	absBase, err := filepath.Abs(cfg.BaseDir)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: resolving base dir %q: %v\n", cfg.BaseDir, err)
-		cleanupOnError()
-		return 1
-	}
-	stagedWDLPath := absWDL
-	if !strings.HasPrefix(absWDL, absBase+string(os.PathSeparator)) && absWDL != absBase {
-		stagedWDLPath, err = stageFile(absWDL, inputsDir)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: staging WDL file: %v\n", err)
-			cleanupOnError()
-			return 1
-		}
 	}
 
-	// Load and stage input files.
+	// Load input JSON if provided.
 	jsonInputs := map[string]interface{}{}
 	if *inputFlag != "" {
 		data, err := os.ReadFile(*inputFlag)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: reading inputs file %q: %v\n", *inputFlag, err)
-			cleanupOnError()
 			return 1
 		}
 		if err := json.Unmarshal(data, &jsonInputs); err != nil {
 			fmt.Fprintf(stderr, "error: parsing inputs JSON %q: %v\n", *inputFlag, err)
-			cleanupOnError()
-			return 1
-		}
-		jsonInputs, err = stageInputFiles(jsonInputs, inputsDir, absBase)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: staging input files: %v\n", err)
-			cleanupOnError()
 			return 1
 		}
 	}
@@ -533,7 +469,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	// Submit to server.
 	req := api.SubmitRequest{
 		RunID:       runID,
-		WDLPath:     stagedWDLPath,
+		WDLPath:     absWDL,
 		InputsJSON:  jsonInputs,
 		SearchPaths: searchPaths,
 	}
@@ -542,7 +478,6 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	resp, err := c.Submit(context.Background(), req)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: submitting workflow: %v\n", err)
-		cleanupOnError()
 		return 1
 	}
 
@@ -636,77 +571,6 @@ func runOutputs(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// stageInputFiles returns a new map where string values that (a) resolve to
-// existing local files and (b) are not already under baseDir are copied to
-// inputsDir and replaced with their new staged path.
-// Non-string values and non-existent paths are left unchanged.
-func stageInputFiles(inputs map[string]interface{}, inputsDir, baseDir string) (map[string]interface{}, error) {
-	result := make(map[string]interface{}, len(inputs))
-	for k, v := range inputs {
-		strVal, ok := v.(string)
-		if !ok {
-			result[k] = v
-			continue
-		}
-
-		absPath, err := filepath.Abs(strVal)
-		if err != nil {
-			result[k] = v
-			continue
-		}
-
-		// Check if the file exists.
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
-			result[k] = v
-			continue
-		}
-
-		// Check if it is already under baseDir.
-		absBase, err := filepath.Abs(baseDir)
-		if err != nil {
-			result[k] = v
-			continue
-		}
-		if strings.HasPrefix(absPath, absBase+string(os.PathSeparator)) || absPath == absBase {
-			result[k] = v
-			continue
-		}
-
-		// Stage the file.
-		stagedPath, err := stageFile(absPath, inputsDir)
-		if err != nil {
-			return nil, fmt.Errorf("stageInputFiles: staging %q: %w", strVal, err)
-		}
-		result[k] = stagedPath
-	}
-	return result, nil
-}
-
-// stageFile copies a single file to destDir, preserving the filename.
-// Returns the absolute path to the staged file.
-func stageFile(srcPath, destDir string) (string, error) {
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return "", fmt.Errorf("stageFile: create dest dir %q: %w", destDir, err)
-	}
-	destPath := filepath.Join(destDir, filepath.Base(srcPath))
-	src, err := os.Open(srcPath)
-	if err != nil {
-		return "", fmt.Errorf("stageFile: open source %q: %w", srcPath, err)
-	}
-	defer src.Close()
-
-	dst, err := os.Create(destPath)
-	if err != nil {
-		return "", fmt.Errorf("stageFile: create dest %q: %w", destPath, err)
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, src); err != nil {
-		return "", fmt.Errorf("stageFile: copy %q -> %q: %w", srcPath, destPath, err)
-	}
-	return destPath, nil
-}
-
 // reorderArgs moves flags that appear after positional arguments to the front.
 // Go's flag package stops parsing at the first non-flag argument, so
 // "file.wdl --task name" would silently ignore --task. This function
@@ -717,8 +581,8 @@ func reorderArgs(args []string) []string {
 		"--input": true, "--task": true, "--path": true, "--output": true,
 		"-input": true, "-task": true, "-path": true, "-output": true,
 		// Server-facing subcommand flags.
-		"--server": true, "--config": true, "--base-dir": true,
-		"-server": true, "-config": true, "-base-dir": true,
+		"--server": true, "--config": true,
+		"-server": true, "-config": true,
 		"-i": true, "--i": true,
 	}
 	for i := 0; i < len(args); i++ {

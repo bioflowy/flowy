@@ -64,8 +64,7 @@ func TestRunMissingWDLArg(t *testing.T) {
 // TestRunCompleted verifies that "flowy run <wdl> --server <url>" with mock server returning
 // COMPLETED prints JSON outputs to stdout and exits 0.
 func TestRunCompleted(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +77,6 @@ func TestRunCompleted(t *testing.T) {
 	code, stdout, stderr := runArgs([]string{
 		"run", wdlFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q, stdout: %q)", code, stderr, stdout)
@@ -97,8 +95,7 @@ func TestRunCompleted(t *testing.T) {
 
 // TestRunNoInputFlag verifies that "flowy run <wdl>" without --input submits with empty inputs.
 func TestRunNoInputFlag(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +129,6 @@ func TestRunNoInputFlag(t *testing.T) {
 	code, _, stderr := runArgs([]string{
 		"run", wdlFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q)", code, stderr)
@@ -145,8 +141,7 @@ func TestRunNoInputFlag(t *testing.T) {
 // TestRunFailed verifies that "flowy run <wdl>" with server returning FAILED exits 1
 // and prints error with run ID to stderr.
 func TestRunFailed(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +163,6 @@ func TestRunFailed(t *testing.T) {
 	code, _, stderr := runArgs([]string{
 		"run", wdlFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 1 {
 		t.Errorf("expected exit 1 for FAILED workflow, got %d", code)
@@ -184,8 +178,7 @@ func TestRunFailed(t *testing.T) {
 // TestRunUnreachableServer verifies that "flowy run <wdl> --server <unreachable>"
 // exits 1 with a clear error message.
 func TestRunUnreachableServer(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +186,6 @@ func TestRunUnreachableServer(t *testing.T) {
 	code, _, stderr := runArgs([]string{
 		"run", wdlFile,
 		"--server", "http://127.0.0.1:1",
-		"--base-dir", baseDir,
 	})
 	if code != 1 {
 		t.Errorf("expected exit 1 for unreachable server, got %d", code)
@@ -206,12 +198,12 @@ func TestRunUnreachableServer(t *testing.T) {
 // TestRunWithOutputFlag verifies that "flowy run <wdl> --output <file>" writes JSON to file
 // instead of stdout, and stdout is empty.
 func TestRunWithOutputFlag(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	dir := t.TempDir()
+	wdlFile := filepath.Join(dir, "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	outFile := filepath.Join(baseDir, "out.json")
+	outFile := filepath.Join(dir, "out.json")
 
 	const runID = "11111111-2222-3333-4444-555555555555"
 	outputs := map[string]interface{}{"workflow.out": "value"}
@@ -221,7 +213,6 @@ func TestRunWithOutputFlag(t *testing.T) {
 	code, stdout, stderr := runArgs([]string{
 		"run", wdlFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 		"--output", outFile,
 	})
 	if code != 0 {
@@ -242,8 +233,7 @@ func TestRunWithOutputFlag(t *testing.T) {
 // TestRunTask verifies that "flowy run <wdl> --task <name>" submits to POST /tasks/run
 // endpoint, polls, and prints outputs.
 func TestRunTask(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +267,6 @@ func TestRunTask(t *testing.T) {
 		"run", wdlFile,
 		"--task", "say_hello",
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q, stdout: %q)", code, stderr, stdout)
@@ -297,8 +286,7 @@ func TestRunTask(t *testing.T) {
 // TestRunTaskServerError verifies that "flowy run <wdl> --task <name>" with server
 // returning 400 exits 1 with error.
 func TestRunTaskServerError(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +303,6 @@ func TestRunTaskServerError(t *testing.T) {
 		"run", wdlFile,
 		"--task", "nonexistent",
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 1 {
 		t.Errorf("expected exit 1 for task server error, got %d (stderr: %q)", code, stderr)
@@ -324,8 +311,7 @@ func TestRunTaskServerError(t *testing.T) {
 
 // TestRunWithPath verifies that "flowy run <wdl> --path <dir>" sends search_paths in submit request.
 func TestRunWithPath(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +345,6 @@ func TestRunWithPath(t *testing.T) {
 		"run", wdlFile,
 		"--path", libDir,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q)", code, stderr)
@@ -371,8 +356,7 @@ func TestRunWithPath(t *testing.T) {
 
 // TestRunQuiet verifies that "flowy run <wdl> --quiet" suppresses status lines on stderr.
 func TestRunQuiet(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +369,6 @@ func TestRunQuiet(t *testing.T) {
 		"run", wdlFile,
 		"--quiet",
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q)", code, stderr)
@@ -398,8 +381,7 @@ func TestRunQuiet(t *testing.T) {
 
 // TestRunStatusPrintedWithoutQuiet verifies that without --quiet, status changes are printed.
 func TestRunStatusPrintedWithoutQuiet(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +393,6 @@ func TestRunStatusPrintedWithoutQuiet(t *testing.T) {
 	_, _, stderr := runArgs([]string{
 		"run", wdlFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	// Status lines like "run 55555555: PENDING" should appear.
 	// At least one state should be printed.

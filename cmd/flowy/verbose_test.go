@@ -13,8 +13,7 @@ import (
 // TestRunVerboseAccepted verifies that --verbose is accepted (no error) in server mode.
 // In server mode, --verbose is a no-op: a note is printed to stderr.
 func TestRunVerboseAccepted(t *testing.T) {
-	baseDir := t.TempDir()
-	wdlFile := filepath.Join(baseDir, "test.wdl")
+	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +41,6 @@ func TestRunVerboseAccepted(t *testing.T) {
 		"run", wdlFile,
 		"--verbose",
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0 with --verbose in server mode, got %d (stderr: %q)", code, stderr)

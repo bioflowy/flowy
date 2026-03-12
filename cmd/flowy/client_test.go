@@ -59,30 +59,24 @@ func TestSubmitSuccess(t *testing.T) {
 	}
 }
 
-// TestSubmitWithInputsStageFiles verifies that "flowy submit <wdl> -i <inputs> --server <url>"
-// with local input files copies them to baseDir/runs/{uuid}/inputs/ before submitting.
-func TestSubmitWithInputsStageFiles(t *testing.T) {
-	baseDir := t.TempDir()
-	inputsDir := t.TempDir() // separate dir, not under baseDir
+// TestSubmitWithInputs verifies that "flowy submit <wdl> -i <inputs> --server <url>"
+// sends the input JSON to the server as-is (no staging or path rewriting).
+func TestSubmitWithInputs(t *testing.T) {
+	dir := t.TempDir()
 
-	// Create a local input file (not under baseDir).
-	localFile := filepath.Join(inputsDir, "sample.txt")
-	if err := os.WriteFile(localFile, []byte("hello"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	wdlFile := filepath.Join(inputsDir, "test.wdl")
+	wdlFile := filepath.Join(dir, "test.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create inputs JSON that references the local file.
-	inputs := map[string]interface{}{"test.input_file": localFile}
+	// Create inputs JSON with a file path.
+	inputPath := filepath.Join(dir, "data", "sample.txt")
+	inputs := map[string]interface{}{"test.input_file": inputPath}
 	inputsJSON, err := json.Marshal(inputs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inputsFile := filepath.Join(inputsDir, "inputs.json")
+	inputsFile := filepath.Join(dir, "inputs.json")
 	if err := os.WriteFile(inputsFile, inputsJSON, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +98,6 @@ func TestSubmitWithInputsStageFiles(t *testing.T) {
 		"submit", wdlFile,
 		"-i", inputsFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d (stderr: %q)", code, stderr)
@@ -113,19 +106,16 @@ func TestSubmitWithInputsStageFiles(t *testing.T) {
 		t.Errorf("expected run ID %q, got %q", expectedRunID, strings.TrimSpace(stdout))
 	}
 
-	// Verify staged file exists under baseDir/runs/{runID}/inputs/
-	runDir := filepath.Join(baseDir, "runs")
-	entries, err := os.ReadDir(runDir)
-	if err != nil {
-		t.Fatalf("expected runs dir to exist at %q: %v", runDir, err)
+	// Verify the input path was sent as-is (not rewritten).
+	if capturedReq == nil {
+		t.Fatal("no request captured")
 	}
-	if len(entries) == 0 {
-		t.Fatal("expected at least one run directory to be created")
+	capturedInputs, ok := capturedReq["inputs"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected inputs in captured request")
 	}
-	runID := entries[0].Name()
-	stagedPath := filepath.Join(baseDir, "runs", runID, "inputs", "sample.txt")
-	if _, err := os.Stat(stagedPath); os.IsNotExist(err) {
-		t.Errorf("expected staged file at %q, but it does not exist", stagedPath)
+	if capturedInputs["test.input_file"] != inputPath {
+		t.Errorf("expected input path %q to be passed as-is, got %q", inputPath, capturedInputs["test.input_file"])
 	}
 }
 
@@ -146,37 +136,43 @@ func TestSubmitUnreachableServer(t *testing.T) {
 	}
 }
 
-// TestSubmitCleanupOnFailure verifies that staged directories are removed when submission fails.
-func TestSubmitCleanupOnFailure(t *testing.T) {
-	baseDir := t.TempDir()
+// TestSubmitWDLPathIsAbsolute verifies that the WDL path sent to the server is absolute.
+func TestSubmitWDLPathIsAbsolute(t *testing.T) {
+	dir := t.TempDir()
 
-	wdlFile := filepath.Join(t.TempDir(), "test.wdl")
+	wdlFile := filepath.Join(dir, "workflow.wdl")
 	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Server returns an error.
+	const expectedRunID = "cccccccc-dddd-eeee-ffff-000000000000"
+
+	var capturedReq map[string]interface{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/workflows", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		json.NewDecoder(r.Body).Decode(&capturedReq) //nolint:errcheck
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"run_id": expectedRunID}) //nolint:errcheck
 	})
 	srv := newMockServer(mux)
 	defer srv.Close()
 
-	code, _, _ := runArgs([]string{
+	code, _, stderr := runArgs([]string{
 		"submit", wdlFile,
 		"--server", srv.URL,
-		"--base-dir", baseDir,
 	})
-	if code != 1 {
-		t.Errorf("expected exit 1 on server error, got %d", code)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr: %q)", code, stderr)
 	}
 
-	// The runs directory should be empty (cleaned up).
-	runDir := filepath.Join(baseDir, "runs")
-	entries, err := os.ReadDir(runDir)
-	if err == nil && len(entries) > 0 {
-		t.Errorf("expected staged dirs to be cleaned up, but found %d entries in %q", len(entries), runDir)
+	// Verify the WDLPath in the captured request is absolute.
+	if capturedReq == nil {
+		t.Fatal("no request captured")
+	}
+	wdlPath, _ := capturedReq["wdl_path"].(string)
+	if !filepath.IsAbs(wdlPath) {
+		t.Errorf("expected absolute WDL path, got %q", wdlPath)
 	}
 }
 
@@ -268,131 +264,5 @@ func TestOutputsNotCompleted(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(stderr), "not yet completed") && !strings.Contains(strings.ToLower(stderr), "running") {
 		t.Errorf("expected descriptive error about run not being completed, got %q", stderr)
-	}
-}
-
-// TestStagingSkipsAlreadyStagedFiles verifies that files already under baseDir are NOT re-copied.
-func TestStagingSkipsAlreadyStagedFiles(t *testing.T) {
-	baseDir := t.TempDir()
-
-	// Create a file that's already under baseDir.
-	alreadyStagedFile := filepath.Join(baseDir, "already_staged.txt")
-	if err := os.WriteFile(alreadyStagedFile, []byte("already staged"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	stagedMap, err := stageInputFiles(
-		map[string]interface{}{"key": alreadyStagedFile},
-		filepath.Join(baseDir, "runs", "test-run", "inputs"),
-		baseDir,
-	)
-	if err != nil {
-		t.Fatalf("stageInputFiles returned error: %v", err)
-	}
-
-	// The value should remain the same (not re-staged).
-	if stagedMap["key"] != alreadyStagedFile {
-		t.Errorf("expected file under baseDir to keep original path %q, got %q",
-			alreadyStagedFile, stagedMap["key"])
-	}
-}
-
-// TestStagingSkipsNonExistentPaths verifies that string values that look like paths
-// but do not exist on disk are left unchanged.
-func TestStagingSkipsNonExistentPaths(t *testing.T) {
-	baseDir := t.TempDir()
-	inputsDir := filepath.Join(baseDir, "runs", "test-run", "inputs")
-
-	nonExistentPath := "/tmp/does-not-exist-flowy-test.txt"
-	stagedMap, err := stageInputFiles(
-		map[string]interface{}{"key": nonExistentPath},
-		inputsDir,
-		baseDir,
-	)
-	if err != nil {
-		t.Fatalf("stageInputFiles returned error: %v", err)
-	}
-
-	// Non-existent path should remain unchanged.
-	if stagedMap["key"] != nonExistentPath {
-		t.Errorf("expected non-existent path to remain unchanged, got %q", stagedMap["key"])
-	}
-}
-
-// TestStagingCopiesLocalFiles verifies that files outside baseDir are copied to inputsDir.
-func TestStagingCopiesLocalFiles(t *testing.T) {
-	baseDir := t.TempDir()
-	externalDir := t.TempDir() // not under baseDir
-
-	localFile := filepath.Join(externalDir, "myfile.txt")
-	if err := os.WriteFile(localFile, []byte("file content"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	inputsDir := filepath.Join(baseDir, "runs", "test-run", "inputs")
-	if err := os.MkdirAll(inputsDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	stagedMap, err := stageInputFiles(
-		map[string]interface{}{"key": localFile},
-		inputsDir,
-		baseDir,
-	)
-	if err != nil {
-		t.Fatalf("stageInputFiles returned error: %v", err)
-	}
-
-	// The staged path should point to the new location inside inputsDir.
-	expectedStagedPath := filepath.Join(inputsDir, "myfile.txt")
-	if stagedMap["key"] != expectedStagedPath {
-		t.Errorf("expected staged path %q, got %q", expectedStagedPath, stagedMap["key"])
-	}
-
-	// The file should actually exist at the staged path.
-	if _, err := os.Stat(expectedStagedPath); os.IsNotExist(err) {
-		t.Errorf("staged file does not exist at %q", expectedStagedPath)
-	}
-}
-
-// TestWDLStaging verifies that the WDL file is staged to the shared FS if not under baseDir.
-func TestWDLStaging(t *testing.T) {
-	baseDir := t.TempDir()
-	externalDir := t.TempDir()
-
-	wdlFile := filepath.Join(externalDir, "workflow.wdl")
-	if err := os.WriteFile(wdlFile, []byte("workflow test {}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	const expectedRunID = "cccccccc-dddd-eeee-ffff-000000000000"
-
-	var capturedReq map[string]interface{}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/workflows", func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&capturedReq) //nolint:errcheck
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"run_id": expectedRunID}) //nolint:errcheck
-	})
-	srv := newMockServer(mux)
-	defer srv.Close()
-
-	code, _, stderr := runArgs([]string{
-		"submit", wdlFile,
-		"--server", srv.URL,
-		"--base-dir", baseDir,
-	})
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d (stderr: %q)", code, stderr)
-	}
-
-	// Verify the WDLPath in the captured request points under baseDir.
-	if capturedReq == nil {
-		t.Fatal("no request captured")
-	}
-	wdlPath, _ := capturedReq["wdl_path"].(string)
-	if !strings.HasPrefix(wdlPath, baseDir) {
-		t.Errorf("expected WDLPath to be staged under baseDir %q, got %q", baseDir, wdlPath)
 	}
 }
