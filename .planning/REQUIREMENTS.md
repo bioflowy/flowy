@@ -26,7 +26,7 @@ Requirements for distributed server/daemon/client architecture. Each maps to roa
 - [x] **DMN-03**: Daemon sends periodic heartbeat to server for running tasks
 - [x] **DMN-04**: Daemon handles SIGTERM gracefully, completing in-flight tasks before shutdown
 - [x] **DMN-05**: Daemon writes task outputs to shared filesystem convention path
-- [ ] **DMN-06**: Daemon binary ships as `flowy-daemon` (`cmd/flowy-daemon/`)
+- [x] **DMN-06**: Daemon binary ships as `flowy-daemon` (`cmd/flowy-daemon/`)
 
 ### Client
 
@@ -94,7 +94,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DMN-03 | Phase 11 | Complete |
 | DMN-04 | Phase 11 | Complete |
 | DMN-05 | Phase 11 | Complete |
-| DMN-06 | Phase 11 | Pending |
+| DMN-06 | Phase 11 | Complete |
 | CLI-01 | Phase 12 | Pending |
 | CLI-02 | Phase 12 | Pending |
 | CLI-03 | Phase 12 | Pending |
