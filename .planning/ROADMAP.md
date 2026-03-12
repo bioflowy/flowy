@@ -35,7 +35,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 10: Server Binary + DAG Dispatch** - `flowy-server` with REST API, workflow orchestration, and task queue (completed 2026-03-11)
 - [x] **Phase 11: Daemon Binary + Task Execution** - `flowy-daemon` polling worker with Docker execution and heartbeat (completed 2026-03-12)
 - [x] **Phase 12: Client CLI + Spectool Compatibility** - Extended `flowy` with submit/status/outputs commands and synchronous `run` mode (completed 2026-03-12)
-- [ ] **Phase 13: Tech Debt Cleanup** - Documentation fixes, code deduplication, and API surface cleanup from milestone audit
+- [x] **Phase 13: Tech Debt Cleanup** - Documentation fixes, code deduplication, and API surface cleanup from milestone audit (completed 2026-03-12)
 
 ## Phase Details
 
@@ -110,7 +110,7 @@ Plans:
   3. `valueToInterface` exists in exactly one shared location, imported by both `internal/server/dispatch.go` and `internal/daemon/daemon.go`
   4. `store.RunInputsDir` and `store.RunOutputsDir` are either removed or documented as test-only utilities
   5. Daemon's `cfg.BaseDir` usage is documented with a comment explaining paths come from server
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 13-01-PLAN.md — Documentation fixes (VERIFICATION.md, SUMMARY), valueToInterface dedup, API surface cleanup, clarifying comments
 
@@ -130,4 +130,4 @@ Plans:
 | 10. Server Binary + DAG Dispatch | 2/2 | Complete    | 2026-03-11 | - |
 | 11. Daemon Binary + Task Execution | 2/2 | Complete    | 2026-03-12 | - |
 | 12. Client CLI + Spectool Compatibility | 3/3 | Complete    | 2026-03-12 | - |
-| 13. Tech Debt Cleanup | v1.1 | 0/1 | Planned | - |
+| 13. Tech Debt Cleanup | 1/1 | Complete   | 2026-03-12 | - |
