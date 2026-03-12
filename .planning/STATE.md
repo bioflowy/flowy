@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Distributed Execution
 status: planning
-stopped_at: Completed 12-client-cli-spectool-compatibility-01-PLAN.md
-last_updated: "2026-03-12T01:40:05.520Z"
+stopped_at: Completed 12-client-cli-spectool-compatibility-02-PLAN.md
+last_updated: "2026-03-12T01:45:05.295Z"
 last_activity: 2026-03-11 — Roadmap created for v1.1 (4 phases, 25/25 requirements mapped)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 11-daemon-binary-task-execution P01 | 11 | 2 tasks | 4 files |
 | Phase 11-daemon-binary-task-execution P02 | 2 | 2 tasks | 2 files |
 | Phase 12-client-cli-spectool-compatibility P01 | 3 | 3 tasks | 6 files |
+| Phase 12-client-cli-spectool-compatibility P02 | 3 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 12-client-cli-spectool-compatibility]: handleOutputs uses run.ID (resolved full UUID) not raw runID param for outputsPath — correct path when prefix given
 - [Phase 12-client-cli-spectool-compatibility]: handleTaskRun prefixes task inputs as taskName.inputName before passing to runWorkflow — dispatch mechanism expects callAlias.inputName format
 - [Phase 12-client-cli-spectool-compatibility]: internal/client.Client uses 30s HTTP timeout matching daemon pattern; New(serverURL) returns configured client
+- [Phase 12-client-cli-spectool-compatibility]: --base-dir CLI flag overrides cfg.BaseDir for submit subcommand — enables t.TempDir() staging in tests without config files
+- [Phase 12-client-cli-spectool-compatibility]: stageInputFiles silently skips non-existent paths (no error) — WDL inputs can contain non-file string values
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:40:05.516Z
-Stopped at: Completed 12-client-cli-spectool-compatibility-01-PLAN.md
+Last session: 2026-03-12T01:45:05.291Z
+Stopped at: Completed 12-client-cli-spectool-compatibility-02-PLAN.md
 Resume file: None
