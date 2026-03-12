@@ -60,6 +60,31 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// TaskRunRequest is the request body for POST /tasks/run.
+// Runs a single named task from a WDL file (used by flowy run --task).
+type TaskRunRequest struct {
+	// WDLPath is the absolute path to the WDL file on the shared filesystem.
+	WDLPath string `json:"wdl_path"`
+
+	// TaskName is the name of the task to execute from the WDL file.
+	TaskName string `json:"task_name"`
+
+	// InputsJSON contains the task-level input values keyed by input name.
+	InputsJSON map[string]interface{} `json:"inputs"`
+
+	// RunID is an optional client-provided UUID hint (same as SubmitRequest.RunID).
+	RunID string `json:"run_id,omitempty"`
+
+	// SearchPaths are optional import search directories.
+	SearchPaths []string `json:"search_paths,omitempty"`
+}
+
+// TaskRunResponse is the response body for POST /tasks/run.
+type TaskRunResponse struct {
+	// RunID is the UUID assigned to this task run.
+	RunID string `json:"run_id"`
+}
+
 // TaskClaimRequest is the request body for POST /tasks/claim.
 // A daemon sends this to atomically claim a pending task.
 type TaskClaimRequest struct {
