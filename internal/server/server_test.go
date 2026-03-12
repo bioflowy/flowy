@@ -16,6 +16,7 @@ import (
 	"github.com/bioflowy/flowy/internal/api"
 	"github.com/bioflowy/flowy/internal/config"
 	"github.com/bioflowy/flowy/internal/server"
+	"github.com/bioflowy/flowy/internal/storage"
 	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/internal/store/sqlite"
 )
@@ -39,7 +40,8 @@ func newTestServer(t *testing.T) (*server.Server, *sqlite.SQLiteStore, string, f
 		},
 	}
 
-	srv := server.New(cfg, st)
+	backend := storage.NewBackend(cfg)
+	srv := server.New(cfg, st, backend)
 	return srv, st, baseDir, func() {
 		st.Close()
 	}
@@ -545,7 +547,7 @@ func TestStaleDetection(t *testing.T) {
 		BaseDir: t.TempDir(),
 		Server:  config.ServerConfig{HeartbeatTimeoutSec: 1},
 	}
-	srv2 := server.New(cfg, st)
+	srv2 := server.New(cfg, st, storage.NewBackend(cfg))
 	srv2.SetStaleInterval(500 * time.Millisecond) // short interval for test
 	staleCtx, staleCancel := context.WithCancel(context.Background())
 	defer staleCancel()
