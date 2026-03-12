@@ -7,7 +7,7 @@ flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full p
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-8 (shipped 2026-03-11)
-- 🚧 **v1.1 Distributed Execution** — Phases 9-12 (in progress)
+- 🚧 **v1.1 Distributed Execution** — Phases 9-13 (in progress)
 
 ## Phases
 
@@ -35,6 +35,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 10: Server Binary + DAG Dispatch** - `flowy-server` with REST API, workflow orchestration, and task queue (completed 2026-03-11)
 - [x] **Phase 11: Daemon Binary + Task Execution** - `flowy-daemon` polling worker with Docker execution and heartbeat (completed 2026-03-12)
 - [x] **Phase 12: Client CLI + Spectool Compatibility** - Extended `flowy` with submit/status/outputs commands and synchronous `run` mode (completed 2026-03-12)
+- [ ] **Phase 13: Tech Debt Cleanup** - Documentation fixes, code deduplication, and API surface cleanup from milestone audit
 
 ## Phase Details
 
@@ -99,6 +100,18 @@ Plans:
 - [ ] 12-02-PLAN.md — Submit, status, outputs subcommands with file staging
 - [ ] 12-03-PLAN.md — Replace run command with server-based implementation and update tests
 
+### Phase 13: Tech Debt Cleanup
+**Goal**: Close all documentation inconsistencies and minor code quality issues identified by the v1.1 milestone audit
+**Depends on**: Phase 12
+**Gap Closure:** Closes gaps from v1.1 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. Phase 12 VERIFICATION.md truths #10 and #11 accurately reflect that file staging was removed per ADR 0001
+  2. Phase 12-02 SUMMARY CLI-05 annotation correctly describes the ADR-revised scope
+  3. `valueToInterface` exists in exactly one shared location, imported by both `internal/server/dispatch.go` and `internal/daemon/daemon.go`
+  4. `store.RunInputsDir` and `store.RunOutputsDir` are either removed or documented as test-only utilities
+  5. Daemon's `cfg.BaseDir` usage is documented with a comment explaining paths come from server
+**Plans:** 0/1 plans
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -115,3 +128,4 @@ Plans:
 | 10. Server Binary + DAG Dispatch | 2/2 | Complete    | 2026-03-11 | - |
 | 11. Daemon Binary + Task Execution | 2/2 | Complete    | 2026-03-12 | - |
 | 12. Client CLI + Spectool Compatibility | 3/3 | Complete    | 2026-03-12 | - |
+| 13. Tech Debt Cleanup | v1.1 | 0/1 | Planned | - |
