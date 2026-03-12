@@ -1,6 +1,21 @@
 # Build artifacts
 /flowy
+/flowy-daemon
+/flowy-server
 /bin/
+
+# Runtime data
+/flowy-data/
+/cmd/flowy/flowy-data/
+
+# Local config
+/flowy.yaml
+
+# Wrapper scripts
+/flowy-wrapper.sh
+
+# Discussion notes
+/discussion-of-workflowengine*.md
 
 # Serena IDE config
 /.serena/
