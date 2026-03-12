@@ -161,6 +161,114 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, api.SubmitResponse{RunID: runID})
 }
 
+// handleTaskRun handles POST /tasks/run.
+// It runs a single named task from a WDL file by wrapping it in a synthetic
+// workflow document and dispatching it via the normal runWorkflow mechanism.
+func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
+	var req api.TaskRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+	if req.WDLPath == "" {
+		writeError(w, http.StatusBadRequest, "wdl_path is required")
+		return
+	}
+	if req.TaskName == "" {
+		writeError(w, http.StatusBadRequest, "task_name is required")
+		return
+	}
+
+	// Parse the WDL file, honoring client-provided import search paths.
+	var doc *ast.Document
+	var err error
+	if len(req.SearchPaths) > 0 {
+		doc, err = parser.ParseWithSearchPaths(req.WDLPath, nil, req.SearchPaths)
+	} else {
+		doc, err = parser.Parse(req.WDLPath, nil)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse WDL: %v", err))
+		return
+	}
+
+	// Find the named task in the document.
+	var found bool
+	for _, t := range doc.Tasks {
+		if t.Name == req.TaskName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("task not found: %s", req.TaskName))
+		return
+	}
+
+	// Use client-provided run ID if given, otherwise generate a new UUID.
+	runID := req.RunID
+	if runID == "" {
+		runID = uuid.New().String()
+	}
+
+	// Create run directories.
+	if err := store.CreateRunDirs(s.cfg.BaseDir, runID); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run dirs: %v", err))
+		return
+	}
+
+	// Build the inputs for the synthetic workflow. The dispatch mechanism uses
+	// "callAlias.inputName" format when passing inputs to a called task, so we
+	// prefix each task input with the task name (used as the call alias).
+	workflowInputs := make(map[string]interface{}, len(req.InputsJSON))
+	for k, v := range req.InputsJSON {
+		workflowInputs[req.TaskName+"."+k] = v
+	}
+
+	// Marshal inputs to JSON string for the run record.
+	inputsJSON, err := json.Marshal(workflowInputs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("marshal inputs: %v", err))
+		return
+	}
+
+	// Create the run record in the store.
+	run := &store.Run{
+		ID:         runID,
+		WDLPath:    req.WDLPath,
+		InputsJSON: string(inputsJSON),
+		State:      store.RunPending,
+	}
+	if err := s.store.CreateRun(r.Context(), run); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run: %v", err))
+		return
+	}
+
+	// Wrap the named task in a synthetic single-task workflow so runWorkflow
+	// can execute it via the normal dispatch mechanism.
+	syntheticWF := &ast.Workflow{
+		Name: req.TaskName + "_wrapper",
+		Body: []ast.WorkflowNode{
+			&ast.Call{Callee: []string{req.TaskName}, Alias: req.TaskName},
+		},
+	}
+	doc.Workflows = append(doc.Workflows, syntheticWF)
+
+	// Create a run context tied to context.Background() (not r.Context()).
+	runCtx, cancel := context.WithCancel(context.Background())
+
+	// Store the cancel function so handleAbort can cancel the run.
+	s.mu.Lock()
+	s.runs[runID] = cancel
+	s.mu.Unlock()
+
+	// Launch the run goroutine.
+	s.wg.Add(1)
+	go s.runWorkflow(runCtx, runID, doc, workflowInputs)
+
+	writeJSON(w, http.StatusCreated, api.TaskRunResponse{RunID: runID})
+}
+
 // handleAbort handles POST /workflows/{id}/abort.
 func (s *Server) handleAbort(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")

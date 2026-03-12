@@ -78,6 +78,7 @@ func (s *Server) newRouter() *chi.Mux {
 	r.Post("/workflows/{id}/abort", s.handleAbort)
 
 	// Daemon-facing endpoints.
+	r.Post("/tasks/run", s.handleTaskRun)
 	r.Post("/tasks/claim", s.handleClaim)
 	r.Post("/tasks/{id}/result", s.handleResult)
 	r.Post("/heartbeat", s.handleHeartbeat)
