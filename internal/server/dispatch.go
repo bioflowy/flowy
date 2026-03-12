@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"time"
 
+	"github.com/bioflowy/flowy/internal/storage"
 	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/task"
@@ -33,10 +33,10 @@ func (s *Server) makeDispatchFn(runID string) workflow.TaskDispatchFn {
 		shardIndex := int(atomic.AddInt64(&shardCounter, 1) - 1)
 
 		// Create per-task directory.
-		if err := store.CreateTaskDirs(s.cfg.BaseDir, runID, t.Name, shardIndex); err != nil {
+		if err := s.backend.CreateTaskDirs(s.cfg.BaseDir, runID, t.Name, shardIndex); err != nil {
 			return nil, fmt.Errorf("create task dirs for %q: %w", t.Name, err)
 		}
-		taskDir := store.TaskDir(s.cfg.BaseDir, runID, t.Name, shardIndex)
+		taskDir := s.backend.TaskDir(s.cfg.BaseDir, runID, t.Name, shardIndex)
 
 		// Write inputs.json for the daemon to read.
 		inputsData, err := json.Marshal(inputs)
@@ -44,7 +44,7 @@ func (s *Server) makeDispatchFn(runID string) workflow.TaskDispatchFn {
 			return nil, fmt.Errorf("marshal inputs for task %q: %w", t.Name, err)
 		}
 		inputsPath := filepath.Join(taskDir, "inputs.json")
-		if err := os.WriteFile(inputsPath, inputsData, 0o644); err != nil {
+		if err := s.backend.UploadFile(inputsPath, inputsData); err != nil {
 			return nil, fmt.Errorf("write inputs.json for task %q: %w", t.Name, err)
 		}
 
@@ -84,7 +84,7 @@ func (s *Server) waitForTask(ctx context.Context, taskID int64, runID, taskName 
 
 			switch t.State {
 			case store.TaskCompleted:
-				return loadTaskOutputs(s.cfg.BaseDir, runID, taskName, t.ShardIndex)
+				return loadTaskOutputs(s.backend, s.cfg.BaseDir, runID, taskName, t.ShardIndex)
 			case store.TaskFailed:
 				return nil, fmt.Errorf("task %q (id=%d) failed", taskName, taskID)
 			case store.TaskAborted:
@@ -101,11 +101,11 @@ func (s *Server) waitForTask(ctx context.Context, taskID int64, runID, taskName 
 
 // loadTaskOutputs reads and parses outputs.json from the per-task directory.
 // Returns a map of WDL values converted from JSON primitive types.
-func loadTaskOutputs(baseDir, runID, taskName string, shardIndex int) (map[string]values.Value, error) {
-	taskDir := store.TaskDir(baseDir, runID, taskName, shardIndex)
+func loadTaskOutputs(backend storage.Backend, baseDir, runID, taskName string, shardIndex int) (map[string]values.Value, error) {
+	taskDir := backend.TaskDir(baseDir, runID, taskName, shardIndex)
 	outputsPath := filepath.Join(taskDir, "outputs.json")
 
-	data, err := os.ReadFile(outputsPath)
+	data, err := backend.DownloadFile(outputsPath)
 	if err != nil {
 		return nil, fmt.Errorf("read task outputs.json for %q: %w", taskName, err)
 	}
@@ -224,7 +224,7 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 				log.Printf("runWorkflow %s: marshal outputs: %v", runID, marshalErr)
 			} else {
 				outPath := filepath.Join(execRoot, "outputs.json")
-				if writeErr := os.WriteFile(outPath, data, 0o644); writeErr != nil {
+				if writeErr := s.backend.UploadFile(outPath, data); writeErr != nil {
 					log.Printf("runWorkflow %s: write outputs.json: %v", runID, writeErr)
 				}
 			}
@@ -268,7 +268,7 @@ func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskI
 		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
 		return
 	}
-	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+	if err := s.backend.UploadFile(outPath, data); err != nil {
 		log.Printf("runTask %s: write outputs.json: %v", runID, err)
 		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
 		return

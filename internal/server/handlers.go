@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 
@@ -71,7 +70,7 @@ func (s *Server) handleOutputs(w http.ResponseWriter, r *http.Request) {
 
 	// Read outputs.json from the run directory using the resolved full run ID.
 	outputsPath := filepath.Join(s.cfg.BaseDir, "runs", run.ID, "outputs.json")
-	data, err := os.ReadFile(outputsPath)
+	data, err := s.backend.DownloadFile(outputsPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("read outputs: %v", err))
 		return
@@ -121,7 +120,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create run directories.
-	if err := store.CreateRunDirs(s.cfg.BaseDir, runID); err != nil {
+	if err := s.backend.CreateRunDirs(s.cfg.BaseDir, runID); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run dirs: %v", err))
 		return
 	}
@@ -213,17 +212,17 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create run directories.
-	if err := store.CreateRunDirs(s.cfg.BaseDir, runID); err != nil {
+	if err := s.backend.CreateRunDirs(s.cfg.BaseDir, runID); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run dirs: %v", err))
 		return
 	}
 
 	// Create task directories (shard 0 for single-task dispatch).
-	if err := store.CreateTaskDirs(s.cfg.BaseDir, runID, req.TaskName, 0); err != nil {
+	if err := s.backend.CreateTaskDirs(s.cfg.BaseDir, runID, req.TaskName, 0); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create task dirs: %v", err))
 		return
 	}
-	taskDir := store.TaskDir(s.cfg.BaseDir, runID, req.TaskName, 0)
+	taskDir := s.backend.TaskDir(s.cfg.BaseDir, runID, req.TaskName, 0)
 
 	// Write inputs.json directly from client inputs (no prefix transformation).
 	inputsData, err := json.Marshal(req.InputsJSON)
@@ -231,7 +230,7 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("marshal inputs: %v", err))
 		return
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, "inputs.json"), inputsData, 0o644); err != nil {
+	if err := s.backend.UploadFile(filepath.Join(taskDir, "inputs.json"), inputsData); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("write inputs.json: %v", err))
 		return
 	}
@@ -350,7 +349,7 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 		wdlPath = run.WDLPath
 	}
 
-	taskDir := store.TaskDir(s.cfg.BaseDir, task.RunID, task.TaskName, task.ShardIndex)
+	taskDir := s.backend.TaskDir(s.cfg.BaseDir, task.RunID, task.TaskName, task.ShardIndex)
 	writeJSON(w, http.StatusOK, api.TaskClaimResponse{
 		TaskID:     strconv.FormatInt(task.ID, 10),
 		RunID:      task.RunID,

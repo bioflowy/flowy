@@ -15,14 +15,16 @@ import (
 
 	"github.com/bioflowy/flowy/internal/api"
 	"github.com/bioflowy/flowy/internal/config"
+	"github.com/bioflowy/flowy/internal/storage"
 	"github.com/bioflowy/flowy/internal/store"
 )
 
 // Server is the HTTP server for the flowy workflow system.
 // It holds the store reference, run goroutine registry, and the chi router.
 type Server struct {
-	cfg  *config.Config
-	store store.Store
+	cfg     *config.Config
+	store   store.Store
+	backend storage.Backend
 
 	router *chi.Mux
 
@@ -37,12 +39,13 @@ type Server struct {
 	staleInterval time.Duration
 }
 
-// New constructs a new Server with the given config and store.
+// New constructs a new Server with the given config, store, and storage backend.
 // The router is wired immediately; call ServeHTTP or use with http.Server.
-func New(cfg *config.Config, st store.Store) *Server {
+func New(cfg *config.Config, st store.Store, backend storage.Backend) *Server {
 	s := &Server{
 		cfg:           cfg,
 		store:         st,
+		backend:       backend,
 		runs:          make(map[string]context.CancelFunc),
 		staleInterval: 30 * time.Second,
 	}

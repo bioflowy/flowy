@@ -15,6 +15,7 @@ import (
 
 	"github.com/bioflowy/flowy/internal/config"
 	"github.com/bioflowy/flowy/internal/server"
+	"github.com/bioflowy/flowy/internal/storage"
 	"github.com/bioflowy/flowy/internal/store/sqlite"
 )
 
@@ -40,8 +41,11 @@ func main() {
 		}
 	}()
 
+	// Build the storage backend.
+	backend := storage.NewBackend(cfg)
+
 	// Build the server.
-	srv := server.New(cfg, st)
+	srv := server.New(cfg, st, backend)
 
 	// Start stale detection background goroutine.
 	staleCtx, staleCancel := context.WithCancel(context.Background())
