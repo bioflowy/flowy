@@ -1,0 +1,113 @@
+# Requirements: flowy v1.2
+
+**Defined:** 2026-03-12
+**Core Value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
+
+## v1.2 Requirements
+
+Requirements for S3 object storage milestone. Each maps to roadmap phases.
+
+### Storage Abstraction
+
+- [ ] **STOR-01**: Storage Backend interface defined in internal/storage/ with methods for file upload, download, JSON read/write, and directory operations
+- [ ] **STOR-02**: LocalBackend implementation wraps existing shared filesystem code behind the Backend interface with zero behavior change
+- [ ] **STOR-03**: All existing spectool tests (156/156) continue to pass after LocalBackend refactor
+
+### S3 Backend
+
+- [ ] **S3-01**: S3Backend implementation supports file upload to S3 via AWS SDK v2 PutObject
+- [ ] **S3-02**: S3Backend implementation supports file download from S3 via AWS SDK v2 GetObject
+- [ ] **S3-03**: S3Backend supports multipart upload for files exceeding a configurable size threshold
+- [ ] **S3-04**: S3Backend works with MinIO via UsePathStyle and custom endpoint configuration
+- [ ] **S3-05**: Scatter task outputs use shard-indexed S3 keys to prevent key collision
+
+### Path Resolution
+
+- [ ] **PATH-01**: cleanPath() in wdl/task/inputs.go preserves s3:// URIs without corruption
+- [ ] **PATH-02**: Input files with s3:// prefix are resolved via S3 backend regardless of default backend setting
+- [ ] **PATH-03**: Input files with absolute local paths (/mnt/...) are resolved via local filesystem
+- [ ] **PATH-04**: Input files with relative paths are resolved via the configured default backend
+
+### Configuration
+
+- [ ] **CONF-01**: Storage backend type and S3 settings (bucket, endpoint, region) configurable in YAML config file
+- [ ] **CONF-02**: Default storage backend specified in config file (used when --storage flag is not provided)
+- [ ] **CONF-03**: User can specify storage backend per workflow via --storage CLI flag on flowy run/submit
+- [ ] **CONF-04**: TaskClaimResponse extended with storage addressing config (bucket, endpoint, prefix) for daemon
+
+### Daemon Integration
+
+- [ ] **DAEM-01**: Daemon downloads S3 input files to local staging directory before container execution (localize)
+- [ ] **DAEM-02**: Daemon uploads task output files from local directory to S3 after container execution (delocalize)
+- [ ] **DAEM-03**: Daemon cleans up local staging files after successful S3 upload
+- [ ] **DAEM-04**: Daemon handles S3 upload/download failures with proper error reporting to server
+
+### Testing
+
+- [ ] **TEST-01**: MinIO integration tests using testcontainers-go verify end-to-end S3 workflow execution
+- [ ] **TEST-02**: Integration tests cover file upload, download, and intermediate file passing via S3
+
+## Future Requirements
+
+### Performance
+
+- **PERF-01**: Streaming I/O for large files without buffering entire file in memory
+- **PERF-02**: Input file reference caching on daemon hosts (avoid re-downloading same reference files)
+
+### Testing
+
+- **TEST-F01**: Full spectool 156/156 conformance gate on MinIO backend (make spectool with S3)
+- **TEST-F02**: S3Backend unit tests with mocked S3 client for CI without Docker
+
+### Backends
+
+- **BACK-01**: GCS backend implementation
+- **BACK-02**: Azure Blob Storage backend implementation
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Pluggable backend registry | Go interface is sufficient; registry adds unnecessary complexity |
+| Container-level S3 access | Daemon handles all S3 I/O; containers always see local paths |
+| S3 credentials in TaskClaimResponse | Security risk; daemon uses own config/IAM role |
+| HTTP(S) import resolution | Deferred to future milestone |
+| S3 bucket validation at submit time | Nice-to-have but adds latency; fail at task dispatch |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | — | Pending |
+| STOR-02 | — | Pending |
+| STOR-03 | — | Pending |
+| S3-01 | — | Pending |
+| S3-02 | — | Pending |
+| S3-03 | — | Pending |
+| S3-04 | — | Pending |
+| S3-05 | — | Pending |
+| PATH-01 | — | Pending |
+| PATH-02 | — | Pending |
+| PATH-03 | — | Pending |
+| PATH-04 | — | Pending |
+| CONF-01 | — | Pending |
+| CONF-02 | — | Pending |
+| CONF-03 | — | Pending |
+| CONF-04 | — | Pending |
+| DAEM-01 | — | Pending |
+| DAEM-02 | — | Pending |
+| DAEM-03 | — | Pending |
+| DAEM-04 | — | Pending |
+| TEST-01 | — | Pending |
+| TEST-02 | — | Pending |
+
+**Coverage:**
+- v1.2 requirements: 22 total
+- Mapped to phases: 0
+- Unmapped: 22 ⚠️
+
+---
+*Requirements defined: 2026-03-12*
+*Last updated: 2026-03-12 after initial definition*
