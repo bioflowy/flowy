@@ -148,5 +148,5 @@ Plans:
 | 14. Storage Abstraction | 2/2 | Complete    | 2026-03-13 | - |
 | 15. Configuration and Path Resolution | 2/2 | Complete    | 2026-03-13 | - |
 | 16. S3Backend Implementation | 2/2 | Complete    | 2026-03-13 | - |
-| 17. Daemon Staging | 2/2 | Complete   | 2026-03-13 | - |
+| 17. Daemon Staging | 2/2 | Complete    | 2026-03-13 | - |
 | 18. MinIO Integration Testing | v1.2 | 0/TBD | Not started | - |
