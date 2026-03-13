@@ -889,3 +889,131 @@ func TestClaim_StorageType_S3(t *testing.T) {
 		t.Errorf("expected storage_prefix=workflows/, got %q", resp.StoragePrefix)
 	}
 }
+
+// TestHandleClaim_Inputs verifies that handleClaim populates the Inputs field
+// in the TaskClaimResponse from stored task/run data via the API.
+func TestHandleClaim_Inputs(t *testing.T) {
+	srv, st, _, cleanup := newTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	inputsJSON := `{"sample_name":"NA12878","bam_file":"/data/sample.bam"}`
+	run := &store.Run{
+		ID:         "claim-inputs-run",
+		WDLPath:    "/tmp/t.wdl",
+		InputsJSON: inputsJSON,
+		State:      store.RunRunning,
+	}
+	if err := st.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	task := &store.Task{RunID: "claim-inputs-run", TaskName: "align", ShardIndex: 0}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	// Store task-specific inputs to verify task-level inputs take priority.
+	taskInputsJSON := `{"sample_name":"NA12878","bam_file":"/data/task_specific.bam"}`
+	if err := st.UpdateTaskInputs(ctx, task.ID, taskInputsJSON); err != nil {
+		t.Fatalf("UpdateTaskInputs: %v", err)
+	}
+
+	w := doRequest(t, srv, "POST", "/tasks/claim", api.TaskClaimRequest{DaemonID: "d1"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp api.TaskClaimResponse
+	decodeJSON(t, w, &resp)
+
+	// Verify Inputs field is populated.
+	if resp.Inputs == nil {
+		t.Fatal("Inputs field is nil, expected populated map from stored task data")
+	}
+
+	// Verify task-specific inputs are used (not run-level fallback).
+	bamFile, ok := resp.Inputs["bam_file"].(string)
+	if !ok {
+		t.Fatalf("Inputs[bam_file]: got %T, want string", resp.Inputs["bam_file"])
+	}
+	if bamFile != "/data/task_specific.bam" {
+		t.Errorf("Inputs[bam_file]: got %q, want /data/task_specific.bam (task-level inputs should take priority)", bamFile)
+	}
+
+	sampleName, ok := resp.Inputs["sample_name"].(string)
+	if !ok {
+		t.Fatalf("Inputs[sample_name]: got %T, want string", resp.Inputs["sample_name"])
+	}
+	if sampleName != "NA12878" {
+		t.Errorf("Inputs[sample_name]: got %q, want NA12878", sampleName)
+	}
+}
+
+// TestHandleResult_Outputs verifies that handleResult persists the Outputs map
+// sent by the daemon into the task's outputs_json column in SQLite.
+func TestHandleResult_Outputs(t *testing.T) {
+	srv, st, _, cleanup := newTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create run and task.
+	run := &store.Run{ID: "result-outputs-run", WDLPath: "/tmp/t.wdl", InputsJSON: "{}", State: store.RunRunning}
+	if err := st.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	task := &store.Task{RunID: "result-outputs-run", TaskName: "align"}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	// Claim the task.
+	claimed, err := st.ClaimTask(ctx, "daemon-001")
+	if err != nil || claimed == nil {
+		t.Fatalf("ClaimTask: %v, claimed=%v", err, claimed)
+	}
+
+	// Report result with outputs.
+	outputs := map[string]interface{}{
+		"aligned_bam": "s3://bucket/runs/r1/tasks/align_0/output.bam",
+		"read_count":  float64(1000000),
+	}
+	reqBody := api.TaskResultRequest{
+		State:   "COMPLETED",
+		Outputs: outputs,
+	}
+	taskIDStr := strconv.FormatInt(claimed.ID, 10)
+	w := doRequest(t, srv, "POST", fmt.Sprintf("/tasks/%s/result", taskIDStr), reqBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Verify task state is COMPLETED.
+	updatedTask, err := st.GetTaskByID(ctx, claimed.ID)
+	if err != nil {
+		t.Fatalf("GetTaskByID: %v", err)
+	}
+	if updatedTask.State != store.TaskCompleted {
+		t.Errorf("expected COMPLETED task state, got %q", updatedTask.State)
+	}
+
+	// Verify outputs are persisted in OutputsJSON.
+	if updatedTask.OutputsJSON == "" {
+		t.Fatal("OutputsJSON is empty, expected persisted outputs from daemon report")
+	}
+
+	var storedOutputs map[string]interface{}
+	if err := json.Unmarshal([]byte(updatedTask.OutputsJSON), &storedOutputs); err != nil {
+		t.Fatalf("unmarshal OutputsJSON: %v", err)
+	}
+
+	alignedBam, ok := storedOutputs["aligned_bam"].(string)
+	if !ok || alignedBam != "s3://bucket/runs/r1/tasks/align_0/output.bam" {
+		t.Errorf("stored outputs[aligned_bam]: got %v, want s3://bucket/runs/r1/tasks/align_0/output.bam", storedOutputs["aligned_bam"])
+	}
+
+	readCount, ok := storedOutputs["read_count"].(float64)
+	if !ok || readCount != 1000000 {
+		t.Errorf("stored outputs[read_count]: got %v, want 1000000", storedOutputs["read_count"])
+	}
+}

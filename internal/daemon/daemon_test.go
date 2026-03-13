@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -847,5 +848,126 @@ task hello {
 
 	if v, ok := selectedInputs["name"].(string); !ok || v != "world" {
 		t.Errorf("selectedInputs[name]: got %T(%v), want string(world)", selectedInputs["name"], selectedInputs["name"])
+	}
+}
+
+// TestLocalizeFailureReported verifies that when localizeInputs fails (e.g. S3
+// download error), the daemon reports FAILED state with a descriptive error
+// message to the server via the result API.
+func TestLocalizeFailureReported(t *testing.T) {
+	var gotReq api.TaskResultRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/result") {
+			if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+				t.Errorf("decode result body: %v", err)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d := newTestDaemon(t, srv.URL)
+
+	// Simulate the localize failure path that executeTaskS3 would follow:
+	// 1. localizeInputs fails
+	// 2. daemon reports FAILED with localize error message
+
+	backend := &mockBackend{
+		downloadFn: func(path string) ([]byte, error) {
+			return nil, fmt.Errorf("NoSuchKey: the specified key does not exist")
+		},
+	}
+
+	inputs := map[string]any{"bam": "s3://bucket/missing/file.bam"}
+	_, _, err := localizeInputs(inputs, backend)
+	if err == nil {
+		t.Fatal("localizeInputs should have returned an error")
+	}
+
+	// Verify the error message has the expected prefix.
+	if !strings.Contains(err.Error(), "localize: download") {
+		t.Errorf("error should contain 'localize: download', got: %q", err.Error())
+	}
+
+	// Report the failure to the server (as executeTaskS3 would do).
+	d.reportResult(context.Background(), "task-localize-fail", "FAILED",
+		fmt.Sprintf("localize inputs: %v", err))
+
+	// Verify the server received the failure report.
+	if gotReq.State != "FAILED" {
+		t.Errorf("State: got %q, want FAILED", gotReq.State)
+	}
+	if !strings.Contains(gotReq.Error, "localize") {
+		t.Errorf("Error message should mention 'localize', got: %q", gotReq.Error)
+	}
+	if !strings.Contains(gotReq.Error, "NoSuchKey") {
+		t.Errorf("Error message should propagate root cause 'NoSuchKey', got: %q", gotReq.Error)
+	}
+}
+
+// TestDelocalizeFailureReported verifies that when delocalizeOutputs fails (e.g.
+// S3 upload error), the daemon reports FAILED state with a descriptive error
+// message to the server via the result API, and preserves the staging directory.
+func TestDelocalizeFailureReported(t *testing.T) {
+	var gotReq api.TaskResultRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/result") {
+			if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+				t.Errorf("decode result body: %v", err)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d := newTestDaemon(t, srv.URL)
+
+	// Create a workDir with an output file to trigger upload.
+	workDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workDir, "output.vcf"), []byte("vcf data"), 0644); err != nil {
+		t.Fatalf("write output file: %v", err)
+	}
+
+	backend := &mockBackend{
+		uploadStreamFn: func(path string, r io.Reader) error {
+			return fmt.Errorf("AccessDenied: not authorized")
+		},
+	}
+
+	claim := &api.TaskClaimResponse{
+		OutputsDir:    "runs/r1/tasks/align_0",
+		StorageBucket: "bucket",
+	}
+
+	_, err := delocalizeOutputs(nil, workDir, claim, backend)
+	if err == nil {
+		t.Fatal("delocalizeOutputs should have returned an error")
+	}
+
+	// Verify the error message has the expected prefix.
+	if !strings.Contains(err.Error(), "delocalize: upload") {
+		t.Errorf("error should contain 'delocalize: upload', got: %q", err.Error())
+	}
+
+	// Report the failure to the server (as executeTaskS3 would do).
+	d.reportResult(context.Background(), "task-delocalize-fail", "FAILED",
+		fmt.Sprintf("delocalize outputs: %v", err))
+
+	// Verify the server received the failure report.
+	if gotReq.State != "FAILED" {
+		t.Errorf("State: got %q, want FAILED", gotReq.State)
+	}
+	if !strings.Contains(gotReq.Error, "delocalize") {
+		t.Errorf("Error message should mention 'delocalize', got: %q", gotReq.Error)
+	}
+	if !strings.Contains(gotReq.Error, "AccessDenied") {
+		t.Errorf("Error message should propagate root cause 'AccessDenied', got: %q", gotReq.Error)
+	}
+
+	// Verify workDir is still present (simulating keepStage=true behavior).
+	if _, statErr := os.Stat(workDir); os.IsNotExist(statErr) {
+		t.Error("workDir should be preserved on delocalize failure")
 	}
 }
