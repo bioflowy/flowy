@@ -779,3 +779,113 @@ func TestHeartbeat_EmptyDaemon(t *testing.T) {
 		t.Fatalf("expected 400, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }
+
+// ===== Storage field tests =====
+
+// newTestServerWithStorage creates a Server with a custom storage config for testing.
+func newTestServerWithStorage(t *testing.T, storageCfg config.StorageConfig) (*server.Server, *sqlite.SQLiteStore, func()) {
+	t.Helper()
+
+	st, err := sqlite.OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+
+	baseDir := t.TempDir()
+	cfg := &config.Config{
+		BaseDir: baseDir,
+		Server: config.ServerConfig{
+			ListenAddr:          ":0",
+			HeartbeatTimeoutSec: 60,
+		},
+		Storage: storageCfg,
+	}
+
+	backend := storage.NewBackend(cfg)
+	srv := server.New(cfg, st, backend)
+	return srv, st, func() {
+		st.Close()
+	}
+}
+
+// TestClaim_StorageType_Local verifies that handleClaim always includes storage_type="local"
+// in the response JSON when the server has a local storage config.
+func TestClaim_StorageType_Local(t *testing.T) {
+	storageCfg := config.StorageConfig{Type: "local"}
+	srv, st, cleanup := newTestServerWithStorage(t, storageCfg)
+	defer cleanup()
+
+	run := &store.Run{ID: "storage-local-run", WDLPath: "/tmp/t.wdl", InputsJSON: "{}", State: store.RunRunning}
+	if err := st.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	task := &store.Task{RunID: "storage-local-run", TaskName: "t", ShardIndex: 0}
+	if err := st.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	w := doRequest(t, srv, "POST", "/tasks/claim", api.TaskClaimRequest{DaemonID: "d1"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Decode as raw map to verify storage_type key is present even for "local".
+	var raw map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&raw); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	storageType, ok := raw["storage_type"]
+	if !ok {
+		t.Fatal("storage_type field missing from claim response")
+	}
+	if storageType != "local" {
+		t.Errorf("expected storage_type=local, got %v", storageType)
+	}
+
+	// Bucket/endpoint/prefix must not appear for local.
+	if _, exists := raw["storage_bucket"]; exists {
+		t.Error("storage_bucket should be omitted for local backend")
+	}
+}
+
+// TestClaim_StorageType_S3 verifies that handleClaim populates S3 fields from server config.
+func TestClaim_StorageType_S3(t *testing.T) {
+	storageCfg := config.StorageConfig{
+		Type:     "s3",
+		Bucket:   "my-bucket",
+		Endpoint: "http://minio:9000",
+		Prefix:   "workflows/",
+	}
+	srv, st, cleanup := newTestServerWithStorage(t, storageCfg)
+	defer cleanup()
+
+	run := &store.Run{ID: "storage-s3-run", WDLPath: "/tmp/t.wdl", InputsJSON: "{}", State: store.RunRunning}
+	if err := st.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	task := &store.Task{RunID: "storage-s3-run", TaskName: "t", ShardIndex: 0}
+	if err := st.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	w := doRequest(t, srv, "POST", "/tasks/claim", api.TaskClaimRequest{DaemonID: "d1"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp api.TaskClaimResponse
+	decodeJSON(t, w, &resp)
+
+	if resp.StorageType != "s3" {
+		t.Errorf("expected storage_type=s3, got %q", resp.StorageType)
+	}
+	if resp.StorageBucket != "my-bucket" {
+		t.Errorf("expected storage_bucket=my-bucket, got %q", resp.StorageBucket)
+	}
+	if resp.StorageEndpoint != "http://minio:9000" {
+		t.Errorf("expected storage_endpoint=http://minio:9000, got %q", resp.StorageEndpoint)
+	}
+	if resp.StoragePrefix != "workflows/" {
+		t.Errorf("expected storage_prefix=workflows/, got %q", resp.StoragePrefix)
+	}
+}

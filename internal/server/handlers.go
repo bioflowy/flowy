@@ -351,13 +351,17 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 
 	taskDir := s.backend.TaskDir(s.cfg.BaseDir, task.RunID, task.TaskName, task.ShardIndex)
 	writeJSON(w, http.StatusOK, api.TaskClaimResponse{
-		TaskID:     strconv.FormatInt(task.ID, 10),
-		RunID:      task.RunID,
-		TaskName:   task.TaskName,
-		ShardIndex: task.ShardIndex,
-		InputsDir:  taskDir,
-		OutputsDir: taskDir,
-		WDLPath:    wdlPath,
+		TaskID:          strconv.FormatInt(task.ID, 10),
+		RunID:           task.RunID,
+		TaskName:        task.TaskName,
+		ShardIndex:      task.ShardIndex,
+		InputsDir:       taskDir,
+		OutputsDir:      taskDir,
+		WDLPath:         wdlPath,
+		StorageType:     s.cfg.Storage.Type,
+		StorageBucket:   s.cfg.Storage.Bucket,
+		StorageEndpoint: s.cfg.Storage.Endpoint,
+		StoragePrefix:   s.cfg.Storage.Prefix,
 	})
 }
 

@@ -114,6 +114,19 @@ type TaskClaimResponse struct {
 
 	// WDLPath is the absolute path to the WDL file for this run.
 	WDLPath string `json:"wdl_path"`
+
+	// StorageType is the storage backend type: "local" or "s3".
+	// Always populated so the daemon has a consistent contract.
+	StorageType string `json:"storage_type"`
+
+	// StorageBucket is the S3 bucket name. Empty string when StorageType is "local".
+	StorageBucket string `json:"storage_bucket,omitempty"`
+
+	// StorageEndpoint is the custom S3 endpoint URL (for MinIO). Empty for AWS S3.
+	StorageEndpoint string `json:"storage_endpoint,omitempty"`
+
+	// StoragePrefix is the key prefix for all S3 objects in this deployment.
+	StoragePrefix string `json:"storage_prefix,omitempty"`
 }
 
 // HeartbeatRequest is the request body for POST /heartbeat.
