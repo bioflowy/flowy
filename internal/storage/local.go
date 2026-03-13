@@ -4,6 +4,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -69,6 +70,36 @@ func (l *LocalBackend) UploadDirectory(path string, localSrc string) error {
 // DownloadDirectory is a no-op for LocalBackend because the destination path
 // IS the storage path in local mode — no transfer is required.
 func (l *LocalBackend) DownloadDirectory(path string, localDst string) error {
+	return nil
+}
+
+// UploadFileStream reads from r and writes to path, creating intermediate
+// directories as needed. It is a thin wrapper around os.Create + io.Copy.
+func (l *LocalBackend) UploadFileStream(path string, r io.Reader) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("storage: create parent dir for %q: %w", path, err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("storage: create file %q: %w", path, err)
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, r); err != nil {
+		return fmt.Errorf("storage: write stream to %q: %w", path, err)
+	}
+	return nil
+}
+
+// DownloadFileStream opens path and copies its contents to w.
+func (l *LocalBackend) DownloadFileStream(path string, w io.Writer) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("storage: open file %q: %w", path, err)
+	}
+	defer f.Close()
+	if _, err := io.Copy(w, f); err != nil {
+		return fmt.Errorf("storage: read stream from %q: %w", path, err)
+	}
 	return nil
 }
 

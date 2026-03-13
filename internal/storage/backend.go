@@ -5,6 +5,7 @@ package storage
 
 import (
 	"errors"
+	"io"
 	"strings"
 )
 
@@ -38,6 +39,13 @@ type Backend interface {
 	// JSON I/O — marshal/unmarshal a value to/from a storage path.
 	WriteJSON(path string, v interface{}) error
 	ReadJSON(path string, v interface{}) error
+
+	// Streaming I/O — upload and download individual files where callers
+	// control the reader/writer lifecycle. Prefer these over UploadFile and
+	// DownloadFile when the data source is already an io.Reader (e.g. HTTP
+	// response body, pipe) to avoid double-buffering large payloads.
+	UploadFileStream(path string, r io.Reader) error
+	DownloadFileStream(path string, w io.Writer) error
 }
 
 // ParseS3URI parses an S3 URI of the form "s3://bucket/key" and returns the
