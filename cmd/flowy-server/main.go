@@ -29,6 +29,11 @@ func main() {
 		log.Fatalf("flowy-server: load config: %v", err)
 	}
 
+	// Validate configuration (fail fast on invalid storage settings).
+	if err := config.Validate(cfg); err != nil {
+		log.Fatalf("flowy-server: invalid config: %v", err)
+	}
+
 	// Open the SQLite store (runs migrations automatically).
 	dsn := config.DefaultDSN(cfg)
 	st, err := sqlite.Open(dsn)
