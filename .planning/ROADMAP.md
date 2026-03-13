@@ -78,10 +78,11 @@ Plans:
   3. Config YAML with storage.type, storage.bucket, storage.endpoint, storage.region, storage.prefix fields is parsed correctly
   4. TaskClaimResponse includes storage addressing fields (type, bucket, endpoint, prefix) populated from server config
   5. All 156 spectool tests continue to pass with the new config fields and path guard in place
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 15-01: TBD
+- [ ] 15-01-PLAN.md — Create pathutil package with s3:// guard, add StorageConfig to YAML config, update factory
+- [ ] 15-02-PLAN.md — Add --storage CLI flag to run/submit, extend TaskClaimResponse with storage fields
 
 ### Phase 16: S3Backend Implementation
 **Goal**: S3Backend fully implements the Backend interface with streaming I/O, MinIO compatibility, and correct scatter key layout
@@ -143,7 +144,7 @@ Plans:
 | 12. Client CLI + Spectool Compatibility | v1.1 | 3/3 | Complete | 2026-03-12 |
 | 13. Tech Debt Cleanup | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 14. Storage Abstraction | 2/2 | Complete    | 2026-03-13 | - |
-| 15. Configuration and Path Resolution | v1.2 | 0/TBD | Not started | - |
+| 15. Configuration and Path Resolution | v1.2 | 0/2 | Not started | - |
 | 16. S3Backend Implementation | v1.2 | 0/TBD | Not started | - |
 | 17. Daemon Staging | v1.2 | 0/TBD | Not started | - |
 | 18. MinIO Integration Testing | v1.2 | 0/TBD | Not started | - |
