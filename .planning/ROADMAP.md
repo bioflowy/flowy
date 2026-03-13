@@ -94,10 +94,11 @@ Plans:
   3. S3Backend connects to a MinIO server using UsePathStyle and custom endpoint without error
   4. Scatter tasks produce S3 keys containing the shard index, preventing key collision when multiple shards output identically named files
   5. Unit tests with a mocked S3 client cover upload, download, and error paths
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 16-01: TBD
+- [ ] 16-01-PLAN.md — S3Backend implementation with streaming methods, AWS SDK v2, MinIO path-style, factory wiring
+- [ ] 16-02-PLAN.md — S3Backend unit tests with mock client covering upload, download, scatter keys, directory ops
 
 ### Phase 17: Daemon Staging
 **Goal**: The daemon correctly localizes S3 inputs to POSIX paths before container execution and delocalizes container outputs back to S3, with no s3:// URIs reaching Docker containers
@@ -108,7 +109,7 @@ Plans:
   2. Task output files are uploaded to S3 after container exit and the outputs.json contains s3:// URIs for downstream consumers
   3. Local staging files are removed after successful S3 upload
   4. An S3 upload failure during output collection is reported to the server as a task failure with a descriptive error message
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 17-01: TBD
@@ -121,7 +122,7 @@ Plans:
   1. Integration tests spin up a MinIO testcontainer with a pinned image tag and run a full workflow end-to-end via S3 backend without AWS credentials
   2. A WDL workflow that uploads a file, processes it in a task, and passes the output to a downstream task executes correctly via S3 with intermediate files visible in the MinIO bucket
   3. All 156 spectool conformance tests pass when the S3/MinIO backend is configured as the default storage
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 18-01: TBD
