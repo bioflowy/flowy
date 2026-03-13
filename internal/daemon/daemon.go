@@ -397,7 +397,7 @@ func (d *Daemon) executeTask(claim *api.TaskClaimResponse) {
 	var doc *ast.Document
 	var parseErr error
 	if claim.WDLContent != "" {
-		doc, parseErr = parser.Parse("task.wdl", []byte(claim.WDLContent))
+		doc, parseErr = parser.Parse(claim.WDLPath, []byte(claim.WDLContent))
 	} else {
 		doc, parseErr = parser.Parse(claim.WDLPath, nil)
 	}
