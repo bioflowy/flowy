@@ -126,7 +126,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 18-01: TBD
+- [ ] 18-01-PLAN.md — Go integration tests with testcontainers-go MinIO: S3 round-trip and intermediate file passing
+- [ ] 18-02-PLAN.md — Makefile targets: `make integration` and `make spectool-s3` with MinIO lifecycle
 
 ## Progress
 
@@ -149,4 +150,4 @@ Plans:
 | 15. Configuration and Path Resolution | 2/2 | Complete    | 2026-03-13 | - |
 | 16. S3Backend Implementation | 2/2 | Complete    | 2026-03-13 | - |
 | 17. Daemon Staging | 2/2 | Complete    | 2026-03-13 | - |
-| 18. MinIO Integration Testing | v1.2 | 0/TBD | Not started | - |
+| 18. MinIO Integration Testing | v1.2 | 0/2 | Not started | - |
