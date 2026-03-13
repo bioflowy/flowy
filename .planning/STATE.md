@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 Phase: 14 of 18 (Storage Abstraction)
 Plan: 1 of 1 (plan 14-01 complete)
 Status: Phase 14 in progress — plan 14-01 complete
-Last activity: 2026-03-12 — Completed plan 14-01 (Backend interface, LocalBackend, ParseS3URI)
+Last activity: 2026-03-13 - Completed quick task 6: Fix S3 mode spectool failures via DB-based outputs
 
 Progress: [██░░░░░░░░] 20%
 
@@ -104,6 +104,12 @@ None.
 
 - Phase 16 research flag: verify whether any spectool test uses files > 5 GB before deciding multipart scope
 - Phase 18 risk: MinIO testcontainers module may stop working if archived repo breaks; SeaweedFS or Garage as fallback
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 6 | Fix S3 mode spectool failures: save workflow outputs via API/DB instead of local outputs.json | 2026-03-13 | 85adb21 | [6-fix-s3-mode-spectool-failures-save-workf](./quick/6-fix-s3-mode-spectool-failures-save-workf/) |
 
 ## Session Continuity
 
