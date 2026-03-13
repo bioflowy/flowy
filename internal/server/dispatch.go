@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bioflowy/flowy/internal/storage"
 	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/task"
@@ -58,6 +57,12 @@ func (s *Server) makeDispatchFn(runID string) workflow.TaskDispatchFn {
 			return nil, fmt.Errorf("create task record for %q: %w", t.Name, err)
 		}
 
+		// Store inputs in the task record for API-based delivery to the daemon.
+		if updateErr := s.store.UpdateTaskInputs(ctx, storeTask.ID, string(inputsData)); updateErr != nil {
+			log.Printf("makeDispatchFn: UpdateTaskInputs for task %d (%q): %v", storeTask.ID, t.Name, updateErr)
+			// Non-fatal: daemon can still read inputs.json from shared FS (backward compat).
+		}
+
 		// Wait for daemon to complete the task.
 		return s.waitForTask(ctx, storeTask.ID, runID, t.Name)
 	}
@@ -84,7 +89,7 @@ func (s *Server) waitForTask(ctx context.Context, taskID int64, runID, taskName 
 
 			switch t.State {
 			case store.TaskCompleted:
-				return loadTaskOutputs(s.backend, s.cfg.BaseDir, runID, taskName, t.ShardIndex)
+				return s.loadTaskOutputs(ctx, t.ID, runID, taskName, t.ShardIndex)
 			case store.TaskFailed:
 				return nil, fmt.Errorf("task %q (id=%d) failed", taskName, taskID)
 			case store.TaskAborted:
@@ -99,13 +104,30 @@ func (s *Server) waitForTask(ctx context.Context, taskID int64, runID, taskName 
 	}
 }
 
-// loadTaskOutputs reads and parses outputs.json from the per-task directory.
-// Returns a map of WDL values converted from JSON primitive types.
-func loadTaskOutputs(backend storage.Backend, baseDir, runID, taskName string, shardIndex int) (map[string]values.Value, error) {
-	taskDir := backend.TaskDir(baseDir, runID, taskName, shardIndex)
+// loadTaskOutputs reads and parses task outputs.
+// Primary source: OutputsJSON column in the task record (set by daemon via result API).
+// Fallback: outputs.json file in the per-task directory (for backward compatibility
+// with local-mode daemons that write files instead of reporting via API).
+func (s *Server) loadTaskOutputs(ctx context.Context, taskID int64, runID, taskName string, shardIndex int) (map[string]values.Value, error) {
+	// Try store-based outputs first.
+	t, err := s.store.GetTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("loadTaskOutputs: GetTaskByID %d: %w", taskID, err)
+	}
+
+	if t.OutputsJSON != "" {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(t.OutputsJSON), &raw); err != nil {
+			return nil, fmt.Errorf("parse task OutputsJSON for %q: %w", taskName, err)
+		}
+		return rawToValues(raw, taskName)
+	}
+
+	// Fallback to file-based outputs.json (backward compat: local-mode daemon).
+	taskDir := s.backend.TaskDir(s.cfg.BaseDir, runID, taskName, shardIndex)
 	outputsPath := filepath.Join(taskDir, "outputs.json")
 
-	data, err := backend.DownloadFile(outputsPath)
+	data, err := s.backend.DownloadFile(outputsPath)
 	if err != nil {
 		return nil, fmt.Errorf("read task outputs.json for %q: %w", taskName, err)
 	}
@@ -114,7 +136,11 @@ func loadTaskOutputs(backend storage.Backend, baseDir, runID, taskName string, s
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse task outputs.json for %q: %w", taskName, err)
 	}
+	return rawToValues(raw, taskName)
+}
 
+// rawToValues converts a map of JSON-decoded Go values to WDL values.Value entries.
+func rawToValues(raw map[string]interface{}, taskName string) (map[string]values.Value, error) {
 	result := make(map[string]values.Value, len(raw))
 	for k, v := range raw {
 		wv, err := jsonToValue(v)

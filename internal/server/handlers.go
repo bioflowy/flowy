@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -258,6 +259,12 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Store inputs in the task record for API-based delivery to the daemon.
+	if err := s.store.UpdateTaskInputs(r.Context(), storeTask.ID, string(inputsData)); err != nil {
+		log.Printf("handleTaskRun: UpdateTaskInputs for task %d: %v", storeTask.ID, err)
+		// Non-fatal: daemon can still read inputs.json from shared FS (backward compat).
+	}
+
 	// Launch background goroutine to wait for task completion.
 	runCtx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -340,13 +347,37 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Retrieve the WDL path for the parent run so the daemon can parse it.
+	// Retrieve the parent run to get WDL path and inputs.
 	var wdlPath string
+	var wdlContent string
+	var inputs map[string]interface{}
+
 	run, err := s.store.GetRun(r.Context(), task.RunID)
 	if err != nil {
 		log.Printf("handleClaim: GetRun %s: %v — daemon will fail on WDL parse", task.RunID, err)
 	} else {
 		wdlPath = run.WDLPath
+
+		// Read WDL file content so daemon can parse it in-memory without shared FS.
+		if wdlPath != "" {
+			wdlBytes, readErr := os.ReadFile(wdlPath)
+			if readErr != nil {
+				log.Printf("handleClaim: ReadFile %s: %v — WDLContent will be empty", wdlPath, readErr)
+			} else {
+				wdlContent = string(wdlBytes)
+			}
+		}
+
+		// Determine inputs: prefer task-specific InputsJSON, fall back to run InputsJSON.
+		inputsSource := task.InputsJSON
+		if inputsSource == "" {
+			inputsSource = run.InputsJSON
+		}
+		if inputsSource != "" {
+			if unmarshalErr := json.Unmarshal([]byte(inputsSource), &inputs); unmarshalErr != nil {
+				log.Printf("handleClaim: unmarshal inputs for task %d: %v", task.ID, unmarshalErr)
+			}
+		}
 	}
 
 	taskDir := s.backend.TaskDir(s.cfg.BaseDir, task.RunID, task.TaskName, task.ShardIndex)
@@ -358,6 +389,8 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 		InputsDir:       taskDir,
 		OutputsDir:      taskDir,
 		WDLPath:         wdlPath,
+		WDLContent:      wdlContent,
+		Inputs:          inputs,
 		StorageType:     s.cfg.Storage.Type,
 		StorageBucket:   s.cfg.Storage.Bucket,
 		StorageEndpoint: s.cfg.Storage.Endpoint,
@@ -389,6 +422,16 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid state %q: must be COMPLETED or FAILED", req.State))
 		return
+	}
+
+	// Persist outputs if the daemon reported them.
+	if req.Outputs != nil {
+		outputsData, marshalErr := json.Marshal(req.Outputs)
+		if marshalErr != nil {
+			log.Printf("handleResult: marshal outputs for task %d: %v", taskID, marshalErr)
+		} else if updateErr := s.store.UpdateTaskOutputs(r.Context(), taskID, string(outputsData)); updateErr != nil {
+			log.Printf("handleResult: UpdateTaskOutputs for task %d: %v", taskID, updateErr)
+		}
 	}
 
 	if err := s.store.UpdateTaskState(r.Context(), taskID, taskState); err != nil {
