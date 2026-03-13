@@ -6,8 +6,16 @@ import (
 )
 
 // NewBackend returns a Backend appropriate for the given configuration.
-// Currently only LocalBackend is supported. Future phases will inspect cfg
-// (e.g. cfg.Storage.Bucket) to return an S3Backend instead.
+// The backend type is determined by cfg.Storage.Type.
+// Phase 16 will implement S3Backend and plug it in here for the "s3" case.
 func NewBackend(cfg *config.Config) Backend {
-	return &LocalBackend{}
+	switch cfg.Storage.Type {
+	case "s3":
+		// Phase 16 placeholder: S3Backend not yet implemented.
+		// Validate() ensures bucket is set before this is reached in production,
+		// so LocalBackend here is safe for Phase 15 integration tests.
+		return &LocalBackend{}
+	default: // "local" and any zero-value (applyDefaults ensures Type is never empty)
+		return &LocalBackend{}
+	}
 }

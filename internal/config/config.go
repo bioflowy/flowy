@@ -10,6 +10,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// StorageConfig holds configuration for the storage backend.
+type StorageConfig struct {
+	// Type selects the storage backend: "local" (default) or "s3".
+	Type string `yaml:"type"`
+
+	// Bucket is the S3 bucket name. Required when Type is "s3".
+	Bucket string `yaml:"bucket"`
+
+	// Endpoint overrides the S3 endpoint URL (for MinIO or other S3-compatible stores).
+	Endpoint string `yaml:"endpoint"`
+
+	// Region is the AWS region for S3 operations.
+	Region string `yaml:"region"`
+
+	// Prefix is an optional key prefix applied to all S3 keys.
+	Prefix string `yaml:"prefix"`
+
+	// MultipartThreshold is the file size in bytes above which multipart upload is used.
+	// Defaults to 100 MiB (104857600). Used by Phase 16 S3Backend.
+	MultipartThreshold int64 `yaml:"multipart_threshold"`
+}
+
 // Config holds the top-level configuration for all flowy binaries.
 type Config struct {
 	// BaseDir is the root directory for run data (inputs/outputs/db).
@@ -22,9 +44,10 @@ type Config struct {
 	// DBDSN overrides the default SQLite DSN. When empty, DefaultDSN() is used.
 	DBDSN string `yaml:"db_dsn"`
 
-	Server ServerConfig `yaml:"server"`
-	Daemon DaemonConfig `yaml:"daemon"`
-	Client ClientConfig `yaml:"client"`
+	Server  ServerConfig  `yaml:"server"`
+	Daemon  DaemonConfig  `yaml:"daemon"`
+	Client  ClientConfig  `yaml:"client"`
+	Storage StorageConfig `yaml:"storage"`
 }
 
 // ServerConfig holds configuration for the flowy-server binary.
@@ -114,6 +137,28 @@ func applyDefaults(cfg *Config) {
 	if cfg.Client.ServerURL == "" {
 		cfg.Client.ServerURL = "http://localhost:8124"
 	}
+	if cfg.Storage.Type == "" {
+		cfg.Storage.Type = "local"
+	}
+	if cfg.Storage.MultipartThreshold == 0 {
+		cfg.Storage.MultipartThreshold = 100 * 1024 * 1024 // 100 MiB
+	}
+}
+
+// Validate checks cross-field constraints in cfg that cannot be expressed as defaults.
+// It should be called by server binaries after Load() to fail fast on invalid configurations.
+// Returns the first validation error found, or nil if all constraints are satisfied.
+func Validate(cfg *Config) error {
+	switch cfg.Storage.Type {
+	case "local", "s3":
+		// valid
+	default:
+		return fmt.Errorf("config: storage.type %q is not supported (valid values: local, s3)", cfg.Storage.Type)
+	}
+	if cfg.Storage.Type == "s3" && cfg.Storage.Bucket == "" {
+		return fmt.Errorf("config: storage.type is \"s3\" but storage.bucket is not set")
+	}
+	return nil
 }
 
 // Default returns a new Config with all fields set to their default values.

@@ -189,3 +189,122 @@ db_dsn: "file:/custom.db"
 		t.Errorf("DefaultDSN() = %q, want %q", got, "file:/custom.db")
 	}
 }
+
+func TestLoadStorageConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `
+storage:
+  type: s3
+  bucket: my-workflow-bucket
+  endpoint: http://localhost:9000
+  region: us-east-1
+  prefix: flowy-runs/
+  multipart_threshold: 52428800
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	if cfg.Storage.Type != "s3" {
+		t.Errorf("Storage.Type = %q, want %q", cfg.Storage.Type, "s3")
+	}
+	if cfg.Storage.Bucket != "my-workflow-bucket" {
+		t.Errorf("Storage.Bucket = %q, want %q", cfg.Storage.Bucket, "my-workflow-bucket")
+	}
+	if cfg.Storage.Endpoint != "http://localhost:9000" {
+		t.Errorf("Storage.Endpoint = %q, want %q", cfg.Storage.Endpoint, "http://localhost:9000")
+	}
+	if cfg.Storage.Region != "us-east-1" {
+		t.Errorf("Storage.Region = %q, want %q", cfg.Storage.Region, "us-east-1")
+	}
+	if cfg.Storage.Prefix != "flowy-runs/" {
+		t.Errorf("Storage.Prefix = %q, want %q", cfg.Storage.Prefix, "flowy-runs/")
+	}
+	if cfg.Storage.MultipartThreshold != 52428800 {
+		t.Errorf("Storage.MultipartThreshold = %d, want %d", cfg.Storage.MultipartThreshold, 52428800)
+	}
+}
+
+func TestLoadStorageDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := writeYAML(t, dir, `{}`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	if cfg.Storage.Type != "local" {
+		t.Errorf("Storage.Type = %q, want %q", cfg.Storage.Type, "local")
+	}
+	const wantThreshold = int64(104857600)
+	if cfg.Storage.MultipartThreshold != wantThreshold {
+		t.Errorf("Storage.MultipartThreshold = %d, want %d", cfg.Storage.MultipartThreshold, wantThreshold)
+	}
+}
+
+func TestValidateLocalOK(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Storage.Type = "local"
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("Validate() unexpected error for type=local: %v", err)
+	}
+}
+
+func TestValidateS3OK(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Storage.Type = "s3"
+	cfg.Storage.Bucket = "b"
+	if err := config.Validate(cfg); err != nil {
+		t.Errorf("Validate() unexpected error for type=s3 with bucket: %v", err)
+	}
+}
+
+func TestValidateS3MissingBucket(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Storage.Type = "s3"
+	cfg.Storage.Bucket = ""
+	err := config.Validate(cfg)
+	if err == nil {
+		t.Error("Validate() expected error for type=s3 with empty bucket, got nil")
+	}
+	if err != nil && !containsAll(err.Error(), "storage.bucket") {
+		t.Errorf("Validate() error = %q, want it to mention %q", err.Error(), "storage.bucket")
+	}
+}
+
+func TestValidateUnknownType(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Storage.Type = "gcs"
+	err := config.Validate(cfg)
+	if err == nil {
+		t.Error("Validate() expected error for unknown storage type, got nil")
+	}
+	if err != nil && !containsAll(err.Error(), "not supported", "local, s3") {
+		t.Errorf("Validate() error = %q, want it to mention %q and %q", err.Error(), "not supported", "local, s3")
+	}
+}
+
+// containsAll checks that s contains all of the provided substrings.
+func containsAll(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if !contains(s, sub) {
+			return false
+		}
+	}
+	return true
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
+		func() bool {
+			for i := 0; i <= len(s)-len(sub); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+			return false
+		}())
+}
