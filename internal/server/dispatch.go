@@ -123,6 +123,12 @@ func (s *Server) loadTaskOutputs(ctx context.Context, taskID int64, runID, taskN
 		return rawToValues(raw, taskName)
 	}
 
+	// S3 daemon always reports outputs via API. If OutputsJSON is empty, there are no outputs.
+	// The file-based fallback only applies to local-mode daemons that write outputs.json.
+	if s.cfg.Storage.Type == "s3" {
+		return map[string]values.Value{}, nil
+	}
+
 	// Fallback to file-based outputs.json (backward compat: local-mode daemon).
 	taskDir := s.backend.TaskDir(s.cfg.BaseDir, runID, taskName, shardIndex)
 	outputsPath := filepath.Join(taskDir, "outputs.json")

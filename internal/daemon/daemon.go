@@ -464,9 +464,15 @@ func (d *Daemon) executeTaskS3(taskCtx context.Context, claim *api.TaskClaimResp
 		}
 	}()
 
+	// Resolve wdlDir for relative input path resolution (matches executeTaskLocal behavior).
+	wdlDir := ""
+	if claim.WDLPath != "" {
+		wdlDir = filepath.Dir(claim.WDLPath)
+	}
+
 	// Execute: run the task with localized (POSIX) inputs.
-	// execRoot is stageDir; wdlDir is "" since all inputs are absolute staged paths.
-	outputs, err := task.RunTask(taskCtx, astTask, localizedInputs, task.NewDockerRunner(), stageDir, "", structDefs)
+	// execRoot is stageDir; wdlDir resolved from WDLPath for relative file inputs.
+	outputs, err := task.RunTask(taskCtx, astTask, localizedInputs, task.NewDockerRunner(), stageDir, wdlDir, structDefs)
 	if err != nil {
 		log.Printf("daemon: RunTask task_id=%s: %v", claim.TaskID, err)
 		d.reportResult(taskCtx, claim.TaskID, "FAILED", fmt.Sprintf("run task: %v", err))
