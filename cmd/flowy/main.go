@@ -158,6 +158,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	serverFlag := fs.String("server", "", "server URL override")
 	configFlag := fs.String("config", "", "config file path")
 	quietFlag := fs.Bool("quiet", false, "suppress status lines on stderr during polling")
+	storageFlag := fs.String("storage", "", "storage backend: local or s3")
 
 	// Reorder args so flags after positional args are parsed correctly.
 	// Go's flag package stops parsing at the first non-flag argument,
@@ -170,7 +171,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: run requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy run [--server <url>] [-i <inputs>] [--task <name>] [--path <dir>] [--output <file>] [--quiet] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy run [--server <url>] [--storage <type>] [-i <inputs>] [--task <name>] [--path <dir>] [--output <file>] [--quiet] <file.wdl>")
 		return 2
 	}
 
@@ -187,6 +188,18 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	wdlArg := fs.Arg(0)
 	cfg := loadConfigOptional(*configFlag, stderr)
+
+	// Validate storage backend selection.
+	effectiveStorageType := resolveStorageType(*storageFlag, cfg)
+	if err := validateStorageType(effectiveStorageType); err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	if effectiveStorageType == "s3" && cfg.Storage.Bucket == "" {
+		fmt.Fprintln(stderr, "error: --storage s3 requires storage.bucket to be set in config")
+		return 1
+	}
+
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
 	// Set up signal-aware context so Ctrl+C interrupts immediately.
@@ -407,6 +420,25 @@ func resolveServerURL(flagValue string, cfg *config.Config) string {
 	return cfg.Client.ServerURL
 }
 
+// resolveStorageType returns the --storage flag value if non-empty, otherwise
+// falls back to cfg.Storage.Type.
+func resolveStorageType(flagValue string, cfg *config.Config) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return cfg.Storage.Type
+}
+
+// validateStorageType returns an error if t is not a recognised storage backend name.
+func validateStorageType(t string) error {
+	switch t {
+	case "local", "s3":
+		return nil
+	default:
+		return fmt.Errorf("unknown storage backend %q (valid values: local, s3)", t)
+	}
+}
+
 // runSubmit implements the "submit" subcommand.
 // It resolves the WDL file path and submits the workflow to the flowy-server.
 // All referenced files must already reside under the shared base_dir or be
@@ -419,6 +451,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	serverFlag := fs.String("server", "", "server URL override")
 	configFlag := fs.String("config", "", "config file path")
 	pathFlag := fs.String("path", "", "additional import search directory")
+	storageFlag := fs.String("storage", "", "storage backend: local or s3")
 
 	args = reorderArgs(args)
 
@@ -428,12 +461,24 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: submit requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy submit [--server <url>] [-i <inputs>] [--path <dir>] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy submit [--server <url>] [--storage <type>] [-i <inputs>] [--path <dir>] <file.wdl>")
 		return 2
 	}
 
 	wdlArg := fs.Arg(0)
 	cfg := loadConfigOptional(*configFlag, stderr)
+
+	// Validate storage backend selection.
+	effectiveStorageType := resolveStorageType(*storageFlag, cfg)
+	if err := validateStorageType(effectiveStorageType); err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	if effectiveStorageType == "s3" && cfg.Storage.Bucket == "" {
+		fmt.Fprintln(stderr, "error: --storage s3 requires storage.bucket to be set in config")
+		return 1
+	}
+
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
 	// Generate a client-side run ID.
@@ -584,6 +629,8 @@ func reorderArgs(args []string) []string {
 		"--server": true, "--config": true,
 		"-server": true, "-config": true,
 		"-i": true, "--i": true,
+		// Storage backend selection.
+		"--storage": true, "-storage": true,
 	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
