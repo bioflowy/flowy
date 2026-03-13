@@ -1,5 +1,29 @@
 # Milestones
 
+## v1.2 S3 Object Storage (Shipped: 2026-03-13)
+
+**Phases completed:** 5 phases, 10 plans
+**Timeline:** 2 days (2026-03-12 → 2026-03-13)
+**Codebase:** 29,277 lines Go (+14,332 / -1,286), 92 files modified, 81 commits
+**Git range:** `22a01d1..2589b52`
+
+**Key accomplishments:**
+1. Storage Backend interface with 13 methods and LocalBackend — all 156 spectool tests pass unchanged after refactor
+2. S3Backend implementation via AWS SDK v2 with streaming I/O, multipart upload, and MinIO path-style compatibility
+3. `--storage` CLI flag, YAML storage config, and s3:// URI path guard preventing filepath.Clean corruption
+4. Daemon LED pattern (Localize-Execute-Delocalize) with API-based input/output delivery — containers always see local POSIX paths
+5. MinIO integration tests via testcontainers-go and `make spectool-s3` full conformance target
+6. 3 quick-fix tasks for S3 mode spectool compatibility (DB-based outputs, path normalization, URI leak fix)
+
+**Tech debt accepted:**
+- `make integration` excluded daemon LED tests (fixed post-audit)
+- MinIO image tag requires local re-tagging in some environments
+- SUMMARY.md frontmatter missing requirements_completed fields across phases
+
+**Archive:** `.planning/milestones/v1.2-ROADMAP.md`, `.planning/milestones/v1.2-REQUIREMENTS.md`
+
+---
+
 ## v1.1 Distributed Execution (Shipped: 2026-03-12)
 
 **Phases completed:** 5 phases, 10 plans

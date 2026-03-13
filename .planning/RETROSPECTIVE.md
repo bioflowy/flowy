@@ -89,6 +89,52 @@
 
 ---
 
+## Milestone: v1.2 — S3 Object Storage
+
+**Shipped:** 2026-03-13
+**Phases:** 5 | **Plans:** 10 | **Commits:** 81
+
+### What Was Built
+- Storage Backend interface (13 methods) with LocalBackend preserving all existing behavior
+- S3Backend via AWS SDK v2 with streaming I/O, multipart upload, MinIO path-style compatibility
+- `--storage` CLI flag, YAML storage config, s3:// URI path guard in cleanPath
+- Daemon LED pattern (Localize-Execute-Delocalize) with API-based input/output delivery
+- MinIO integration tests via testcontainers-go, `make integration` and `make spectool-s3` targets
+- 3 quick-fix tasks: DB-based run outputs, path normalization, S3 URI leak fix
+
+### What Worked
+- Linear phase dependency chain (14→15→16→17→18) kept each phase focused and testable
+- Backend interface design enabled clean S3 swap without touching server/daemon logic
+- Quick-fix tasks (6, 7, 8) caught real integration issues that phased development missed
+- Milestone audit caught tech debt (stale traceability, missing Makefile targets) before shipping
+- Mock S3 client pattern enabled unit testing without Docker/MinIO infrastructure
+
+### What Was Inefficient
+- STATE.md progress tracking fell behind again (showed 20% despite all phases complete)
+- SUMMARY.md files still lack one_liner frontmatter — pattern not enforced
+- Phase 14 ROADMAP.md showed `[~]` (partial) despite being complete — status sync issue
+- 3 quick-fix tasks needed after Phase 18 — integration issues between phases not caught during phased testing
+
+### Patterns Established
+- LED pattern (Localize-Execute-Delocalize) for backend-agnostic container execution
+- s3:// URI guard as first statement in path processing functions
+- API-based input/output delivery with DB storage and FS fallback
+- testcontainers-go for integration tests with pinned image tags
+- Separate Makefile targets for local vs S3 conformance testing
+
+### Key Lessons
+1. Quick-fix tasks after integration testing are valuable — real multi-component issues only surface in end-to-end scenarios
+2. Backend interface abstraction pays off — S3Backend implementation was clean because interface was well-designed in Phase 14
+3. Path processing is a major source of bugs — s3:// URIs interact poorly with filepath.Clean, filepath.Abs, and filepath.Join
+4. MinIO testcontainers with pinned image tags are reliable for reproducible S3 testing
+
+### Cost Observations
+- Model mix: ~20% opus (orchestration), ~80% sonnet (execution)
+- Timeline: 2 days (matching v1.0 and v1.1 pace)
+- Notable: 10 plans in 5 phases + 3 quick-fix tasks, ~43 min total execution time
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -97,17 +143,21 @@
 |-----------|---------|--------|------------|
 | v1.0 | 160 | 8 | Initial pipeline — linear dependency chain |
 | v1.1 | 64 | 5 | Distributed architecture — server/daemon/client split |
+| v1.2 | 81 | 5 | S3 storage backend — cloud-native WDL execution |
 
 ### Cumulative Quality
 
 | Milestone | Go LOC | Test Files | Spectool |
 |-----------|--------|------------|----------|
 | v1.0 | 17,648 | ~40 | 45/160 (28%) |
-| v1.1 | 25,433 | ~55 | 45/160 (28%) |
+| v1.1 | 25,433 | ~55 | 156/156 (100%) |
+| v1.2 | 29,277 | ~65 | 156/156 (100%) |
 
 ### Top Lessons (Verified Across Milestones)
 
-1. Linear phase dependencies produce clean architecture but limit parallelization
-2. Mock interfaces (ContainerRunner, ShellRunner) are essential for fast test cycles
-3. TDD RED-GREEN pattern catches bugs early and produces well-tested code — verified in both v1.0 and v1.1
-4. Milestone audit as explicit phase catches doc/code drift — established in v1.1, should continue
+1. Linear phase dependencies produce clean architecture but limit parallelization — verified v1.0, v1.1, v1.2
+2. Mock interfaces (ContainerRunner, ShellRunner, mockS3Client) are essential for fast test cycles — verified v1.0, v1.1, v1.2
+3. TDD RED-GREEN pattern catches bugs early and produces well-tested code — verified v1.0, v1.1, v1.2
+4. Milestone audit catches doc/code drift and tech debt — verified v1.1, v1.2
+5. Quick-fix tasks after integration testing catch real cross-component issues — established v1.2
+6. Well-designed interfaces pay off in later phases — Backend interface (Phase 14) made S3Backend (Phase 16) clean

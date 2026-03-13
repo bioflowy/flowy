@@ -125,7 +125,7 @@ spectool: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC_DI
 # testcontainer. The tests manage their own container lifecycle internally.
 
 integration:
-	go test -tags integration -timeout 2m -count=1 ./internal/integration/...
+	go test -tags integration -timeout 2m -count=1 ./internal/integration/... ./internal/daemon/...
 
 # --- Conformance test run with S3/MinIO backend ---
 #
