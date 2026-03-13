@@ -111,9 +111,10 @@ None.
 |---|-------------|------|--------|-----------|
 | 6 | Fix S3 mode spectool failures: save workflow outputs via API/DB instead of local outputs.json | 2026-03-13 | 85adb21 | [6-fix-s3-mode-spectool-failures-save-workf](./quick/6-fix-s3-mode-spectool-failures-save-workf/) |
 | 7 | Fix S3 spectool file-as-directory inputs: wdlDir propagation, outputs.json fallback guard, filepath.Clean normalization | 2026-03-13 | 414a24f | [7-fix-s3-spectool-file-as-directory-inputs](./quick/7-fix-s3-spectool-file-as-directory-inputs/) |
+| 8 | Fix S3 URI leak in file outputs (s3:// -> FileValue) and deterministic map key ordering at all 5 MapValue construction sites | 2026-03-13 | 21b8ade | [8-fix-s3-uri-leak-in-file-outputs-and-dete](./quick/8-fix-s3-uri-leak-in-file-outputs-and-dete/) |
 
 ## Session Continuity
 
-Last session: 2026-03-13T07:43:17Z
-Stopped at: Completed quick-7-PLAN.md
+Last session: 2026-03-13T08:14:59Z
+Stopped at: Completed quick-8-PLAN.md
 Resume file: None
