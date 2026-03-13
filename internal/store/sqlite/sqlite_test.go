@@ -111,6 +111,10 @@ func TestCreateAndGetRun(t *testing.T) {
 	if got.State != store.RunPending {
 		t.Errorf("State: got %q, want PENDING", got.State)
 	}
+	// OutputsJSON should be empty on a newly created run.
+	if got.OutputsJSON != "" {
+		t.Errorf("OutputsJSON should be empty on new run, got %q", got.OutputsJSON)
+	}
 }
 
 // TestGetRunByPrefix verifies prefix lookup and ambiguity detection.
@@ -634,5 +638,30 @@ func TestFindStaleTasksIncludesClaimed(t *testing.T) {
 	}
 	if stale[0].State != store.TaskClaimed {
 		t.Errorf("expected CLAIMED stale task, got %q", stale[0].State)
+	}
+}
+
+// TestUpdateRunOutputs verifies that UpdateRunOutputs stores the outputs JSON
+// in the run record and is readable back via GetRun.
+func TestUpdateRunOutputs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	r := newRun("run-run-outputs-01")
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	outputsJSON := `{"myWf.result": 42}`
+	if err := s.UpdateRunOutputs(ctx, r.ID, outputsJSON); err != nil {
+		t.Fatalf("UpdateRunOutputs: %v", err)
+	}
+
+	got, err := s.GetRun(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.OutputsJSON != outputsJSON {
+		t.Errorf("OutputsJSON: got %q, want %q", got.OutputsJSON, outputsJSON)
 	}
 }

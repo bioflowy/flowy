@@ -23,7 +23,7 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, r *store.Run) error {
 // GetRun returns the run with the given exact ID.
 func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.Run, error) {
 	row := s.reader.QueryRowContext(ctx,
-		`SELECT id, wdl_path, inputs_json, state, created_at, updated_at
+		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at
 		   FROM runs WHERE id = ?`, id)
 	r, err := scanRun(row)
 	if err == sql.ErrNoRows {
@@ -39,7 +39,7 @@ func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.Run, error)
 // Returns an error if zero or more than one run matches.
 func (s *SQLiteStore) GetRunByPrefix(ctx context.Context, prefix string) (*store.Run, error) {
 	rows, err := s.reader.QueryContext(ctx,
-		`SELECT id, wdl_path, inputs_json, state, created_at, updated_at
+		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at
 		   FROM runs WHERE id LIKE ?`, prefix+"%")
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: GetRunByPrefix: %w", err)
@@ -79,15 +79,30 @@ func (s *SQLiteStore) UpdateRunState(ctx context.Context, id string, state store
 	return nil
 }
 
+// UpdateRunOutputs stores the JSON-encoded outputs for a completed run.
+func (s *SQLiteStore) UpdateRunOutputs(ctx context.Context, id string, outputsJSON string) error {
+	_, err := s.writer.ExecContext(ctx,
+		`UPDATE runs SET outputs_json = ?, updated_at = datetime('now') WHERE id = ?`,
+		outputsJSON, id)
+	if err != nil {
+		return fmt.Errorf("sqlite: UpdateRunOutputs: %w", err)
+	}
+	return nil
+}
+
 // scanRun scans a single run from a *sql.Row.
 func scanRun(row *sql.Row) (*store.Run, error) {
 	var r store.Run
 	var state string
-	err := row.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &r.CreatedAt, &r.UpdatedAt)
+	var outputsJSON sql.NullString
+	err := row.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &outputsJSON, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	r.State = store.RunState(state)
+	if outputsJSON.Valid {
+		r.OutputsJSON = outputsJSON.String
+	}
 	return &r, nil
 }
 
@@ -95,10 +110,14 @@ func scanRun(row *sql.Row) (*store.Run, error) {
 func scanRunRows(rows *sql.Rows) (*store.Run, error) {
 	var r store.Run
 	var state string
-	err := rows.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &r.CreatedAt, &r.UpdatedAt)
+	var outputsJSON sql.NullString
+	err := rows.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &outputsJSON, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	r.State = store.RunState(state)
+	if outputsJSON.Valid {
+		r.OutputsJSON = outputsJSON.String
+	}
 	return &r, nil
 }

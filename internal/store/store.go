@@ -33,12 +33,13 @@ const (
 
 // Run holds metadata for a submitted workflow run.
 type Run struct {
-	ID         string
-	WDLPath    string
-	InputsJSON string
-	State      RunState
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID          string
+	WDLPath     string
+	InputsJSON  string
+	State       RunState
+	OutputsJSON string    // JSON-encoded run outputs; empty until set by UpdateRunOutputs
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Task represents a single WDL task execution within a run.
@@ -75,6 +76,8 @@ type Store interface {
 	GetRunByPrefix(ctx context.Context, prefix string) (*Run, error)
 	// UpdateRunState sets the state of a run and updates its updated_at timestamp.
 	UpdateRunState(ctx context.Context, id string, state RunState) error
+	// UpdateRunOutputs stores the JSON-encoded outputs for a completed run.
+	UpdateRunOutputs(ctx context.Context, id string, outputsJSON string) error
 
 	// Task operations
 
