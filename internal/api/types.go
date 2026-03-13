@@ -127,6 +127,15 @@ type TaskClaimResponse struct {
 
 	// StoragePrefix is the key prefix for all S3 objects in this deployment.
 	StoragePrefix string `json:"storage_prefix,omitempty"`
+
+	// Inputs contains the parsed WDL input values for this task.
+	// Populated by the server from stored run/task data so the daemon does
+	// not need to read inputs.json from a shared filesystem.
+	Inputs map[string]interface{} `json:"inputs,omitempty"`
+
+	// WDLContent is the raw WDL file content. The daemon parses this in-memory
+	// instead of reading the WDL file from a shared filesystem.
+	WDLContent string `json:"wdl_content,omitempty"`
 }
 
 // HeartbeatRequest is the request body for POST /heartbeat.
@@ -144,4 +153,8 @@ type TaskResultRequest struct {
 
 	// Error is an optional human-readable error message when State is FAILED.
 	Error string `json:"error,omitempty"`
+
+	// Outputs contains the task output values reported by the daemon after
+	// successful task execution. Keyed by plain output name (no task prefix).
+	Outputs map[string]interface{} `json:"outputs,omitempty"`
 }

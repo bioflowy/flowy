@@ -45,6 +45,8 @@ type Run struct {
 // ID is auto-incremented by the database; ShardIndex distinguishes scatter shards.
 // LastHeartbeatAt is nullable — it is set when a daemon claims the task and
 // periodically updated while the task is running.
+// InputsJSON and OutputsJSON hold JSON-encoded task inputs/outputs stored in
+// the database for API-based delivery (set by UpdateTaskInputs/UpdateTaskOutputs).
 type Task struct {
 	ID              int64
 	RunID           string
@@ -55,6 +57,8 @@ type Task struct {
 	LastHeartbeatAt *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	InputsJSON      string // JSON-encoded task inputs; empty until set by UpdateTaskInputs
+	OutputsJSON     string // JSON-encoded task outputs; empty until set by UpdateTaskOutputs
 }
 
 // Store is the persistence abstraction for runs and tasks.
@@ -96,6 +100,12 @@ type Store interface {
 	// FindStaleTasks returns tasks in CLAIMED or RUNNING state whose
 	// last_heartbeat_at is older than timeoutSec seconds ago.
 	FindStaleTasks(ctx context.Context, timeoutSec int) ([]Task, error)
+	// UpdateTaskOutputs stores the JSON-encoded outputs for a task.
+	// Called by handleResult after the daemon reports task completion.
+	UpdateTaskOutputs(ctx context.Context, taskID int64, outputsJSON string) error
+	// UpdateTaskInputs stores the JSON-encoded inputs for a task.
+	// Called by makeDispatchFn and handleTaskRun after creating the task record.
+	UpdateTaskInputs(ctx context.Context, taskID int64, inputsJSON string) error
 
 	// Lifecycle
 

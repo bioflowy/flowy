@@ -30,7 +30,8 @@ func (s *SQLiteStore) CreateTask(ctx context.Context, t *store.Task) error {
 func (s *SQLiteStore) ListTasksByRun(ctx context.Context, runID string) ([]store.Task, error) {
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT id, run_id, task_name, state, shard_index, daemon_id,
-		        last_heartbeat_at, created_at, updated_at
+		        last_heartbeat_at, created_at, updated_at,
+		        inputs_json, outputs_json
 		   FROM tasks WHERE run_id = ? ORDER BY id`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: ListTasksByRun: %w", err)
@@ -68,7 +69,8 @@ func (s *SQLiteStore) ClaimTask(ctx context.Context, daemonID string) (*store.Ta
 		        SELECT id FROM tasks WHERE state = 'PENDING' ORDER BY id LIMIT 1
 		  )
 		  RETURNING id, run_id, task_name, state, shard_index, daemon_id,
-		            last_heartbeat_at, created_at, updated_at`,
+		            last_heartbeat_at, created_at, updated_at,
+		            inputs_json, outputs_json`,
 		daemonID,
 	)
 	if err != nil {
@@ -103,7 +105,8 @@ func (s *SQLiteStore) UpdateTaskState(ctx context.Context, taskID int64, state s
 func (s *SQLiteStore) GetTaskByID(ctx context.Context, taskID int64) (*store.Task, error) {
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT id, run_id, task_name, state, shard_index, daemon_id,
-		        last_heartbeat_at, created_at, updated_at
+		        last_heartbeat_at, created_at, updated_at,
+		        inputs_json, outputs_json
 		   FROM tasks WHERE id = ?`, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: GetTaskByID: %w", err)
@@ -158,7 +161,8 @@ func (s *SQLiteStore) FindStaleTasks(ctx context.Context, timeoutSec int) ([]sto
 
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT id, run_id, task_name, state, shard_index, daemon_id,
-		        last_heartbeat_at, created_at, updated_at
+		        last_heartbeat_at, created_at, updated_at,
+		        inputs_json, outputs_json
 		   FROM tasks
 		  WHERE state IN ('CLAIMED', 'RUNNING')
 		    AND last_heartbeat_at < datetime('now', ?)
@@ -182,14 +186,21 @@ func (s *SQLiteStore) FindStaleTasks(ctx context.Context, timeoutSec int) ([]sto
 }
 
 // scanTask scans a single task row from *sql.Rows.
+// The SELECT must include columns in this order:
+//
+//	id, run_id, task_name, state, shard_index, daemon_id,
+//	last_heartbeat_at, created_at, updated_at, inputs_json, outputs_json
 func scanTask(rows *sql.Rows) (store.Task, error) {
 	var t store.Task
 	var state string
 	var daemonID sql.NullString
 	var heartbeat sql.NullTime
+	var inputsJSON sql.NullString
+	var outputsJSON sql.NullString
 	err := rows.Scan(
 		&t.ID, &t.RunID, &t.TaskName, &state, &t.ShardIndex,
 		&daemonID, &heartbeat, &t.CreatedAt, &t.UpdatedAt,
+		&inputsJSON, &outputsJSON,
 	)
 	if err != nil {
 		return t, err
@@ -202,5 +213,33 @@ func scanTask(rows *sql.Rows) (store.Task, error) {
 		hb := heartbeat.Time
 		t.LastHeartbeatAt = &hb
 	}
+	if inputsJSON.Valid {
+		t.InputsJSON = inputsJSON.String
+	}
+	if outputsJSON.Valid {
+		t.OutputsJSON = outputsJSON.String
+	}
 	return t, nil
+}
+
+// UpdateTaskOutputs stores the JSON-encoded outputs for a task.
+func (s *SQLiteStore) UpdateTaskOutputs(ctx context.Context, taskID int64, outputsJSON string) error {
+	_, err := s.writer.ExecContext(ctx,
+		`UPDATE tasks SET outputs_json = ?, updated_at = datetime('now') WHERE id = ?`,
+		outputsJSON, taskID)
+	if err != nil {
+		return fmt.Errorf("sqlite: UpdateTaskOutputs: %w", err)
+	}
+	return nil
+}
+
+// UpdateTaskInputs stores the JSON-encoded inputs for a task.
+func (s *SQLiteStore) UpdateTaskInputs(ctx context.Context, taskID int64, inputsJSON string) error {
+	_, err := s.writer.ExecContext(ctx,
+		`UPDATE tasks SET inputs_json = ?, updated_at = datetime('now') WHERE id = ?`,
+		inputsJSON, taskID)
+	if err != nil {
+		return fmt.Errorf("sqlite: UpdateTaskInputs: %w", err)
+	}
+	return nil
 }

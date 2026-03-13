@@ -481,6 +481,121 @@ func TestUpdateHeartbeatByDaemon(t *testing.T) {
 	}
 }
 
+// TestUpdateTaskOutputs verifies that UpdateTaskOutputs stores the outputs JSON
+// in the task record and is readable back via GetTaskByID.
+func TestUpdateTaskOutputs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	r := newRun("run-outputs-01")
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	task := &store.Task{RunID: r.ID, TaskName: "output-task", ShardIndex: 0}
+	if err := s.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	outputsJSON := `{"out_file": "/tmp/result.txt"}`
+	if err := s.UpdateTaskOutputs(ctx, task.ID, outputsJSON); err != nil {
+		t.Fatalf("UpdateTaskOutputs: %v", err)
+	}
+
+	got, err := s.GetTaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTaskByID: %v", err)
+	}
+	if got.OutputsJSON != outputsJSON {
+		t.Errorf("OutputsJSON: got %q, want %q", got.OutputsJSON, outputsJSON)
+	}
+}
+
+// TestUpdateTaskInputs verifies that UpdateTaskInputs stores the inputs JSON
+// in the task record and is readable back via GetTaskByID.
+func TestUpdateTaskInputs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	r := newRun("run-inputs-01")
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	task := &store.Task{RunID: r.ID, TaskName: "input-task", ShardIndex: 0}
+	if err := s.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	inputsJSON := `{"name": "world"}`
+	if err := s.UpdateTaskInputs(ctx, task.ID, inputsJSON); err != nil {
+		t.Fatalf("UpdateTaskInputs: %v", err)
+	}
+
+	got, err := s.GetTaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTaskByID: %v", err)
+	}
+	if got.InputsJSON != inputsJSON {
+		t.Errorf("InputsJSON: got %q, want %q", got.InputsJSON, inputsJSON)
+	}
+}
+
+// TestCreateTask_EmptyInputsOutputs verifies that CreateTask works with
+// empty inputs_json/outputs_json (they default to empty string).
+func TestCreateTask_EmptyInputsOutputs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	r := newRun("run-empty-io-01")
+	if err := s.CreateRun(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	task := &store.Task{RunID: r.ID, TaskName: "task-no-io", ShardIndex: 0}
+	if err := s.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	got, err := s.GetTaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTaskByID: %v", err)
+	}
+	// InputsJSON and OutputsJSON should be empty strings (not set).
+	if got.InputsJSON != "" {
+		t.Errorf("InputsJSON should be empty on new task, got %q", got.InputsJSON)
+	}
+	if got.OutputsJSON != "" {
+		t.Errorf("OutputsJSON should be empty on new task, got %q", got.OutputsJSON)
+	}
+}
+
+// TestSchema_InputsOutputsColumns verifies that the migration adds inputs_json
+// and outputs_json columns to the tasks table.
+func TestSchema_InputsOutputsColumns(t *testing.T) {
+	s := openTestStore(t)
+	db := s.WriterDB()
+
+	rows, err := db.QueryContext(context.Background(),
+		"SELECT name FROM pragma_table_info('tasks')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	colSet := make(map[string]bool)
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			t.Fatal(err)
+		}
+		colSet[col] = true
+	}
+
+	for _, required := range []string{"inputs_json", "outputs_json"} {
+		if !colSet[required] {
+			t.Errorf("tasks table missing column %q (migration 00002 not applied?)", required)
+		}
+	}
+}
+
 // TestFindStaleTasksIncludesClaimed verifies that CLAIMED tasks with expired
 // heartbeats are included in FindStaleTasks results.
 func TestFindStaleTasksIncludesClaimed(t *testing.T) {

@@ -120,3 +120,83 @@ func TestAPITypesJSON(t *testing.T) {
 		}
 	})
 }
+
+// TestTaskClaimResponse_InputsAndWDLContent verifies that TaskClaimResponse
+// carries Inputs map and WDLContent string and they round-trip through JSON.
+func TestTaskClaimResponse_InputsAndWDLContent(t *testing.T) {
+	in := api.TaskClaimResponse{
+		TaskID:     "42",
+		RunID:      "abc-123",
+		TaskName:   "hello",
+		ShardIndex: 0,
+		InputsDir:  "/data/runs/abc-123/tasks/hello_0",
+		OutputsDir: "/data/runs/abc-123/tasks/hello_0",
+		WDLContent: "version 1.0\ntask hello { command <<< echo hi >>> }",
+		Inputs: map[string]interface{}{
+			"name": "world",
+		},
+	}
+	out := roundTrip(t, in)
+	if out.WDLContent != in.WDLContent {
+		t.Errorf("WDLContent = %q, want %q", out.WDLContent, in.WDLContent)
+	}
+	if out.Inputs == nil {
+		t.Fatal("Inputs is nil after round-trip")
+	}
+	if out.Inputs["name"] != "world" {
+		t.Errorf("Inputs[name] = %v, want %q", out.Inputs["name"], "world")
+	}
+}
+
+// TestTaskResultRequest_Outputs verifies that TaskResultRequest carries
+// Outputs map and it round-trips through JSON.
+func TestTaskResultRequest_Outputs(t *testing.T) {
+	in := api.TaskResultRequest{
+		State: "COMPLETED",
+		Outputs: map[string]interface{}{
+			"out_file": "/tmp/result.txt",
+		},
+	}
+	out := roundTrip(t, in)
+	if out.Outputs == nil {
+		t.Fatal("Outputs is nil after round-trip")
+	}
+	if out.Outputs["out_file"] != "/tmp/result.txt" {
+		t.Errorf("Outputs[out_file] = %v, want %q", out.Outputs["out_file"], "/tmp/result.txt")
+	}
+}
+
+// TestTaskClaimResponse_OmitEmptyInputs verifies that nil Inputs and empty
+// WDLContent are omitted from JSON (omitempty behavior).
+func TestTaskClaimResponse_OmitEmptyInputs(t *testing.T) {
+	in := api.TaskClaimResponse{
+		TaskID:   "1",
+		RunID:    "run-1",
+		TaskName: "t",
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	raw := string(data)
+	// nil Inputs and empty WDLContent must not appear in JSON due to omitempty.
+	if contains(raw, `"inputs"`) {
+		t.Error("nil Inputs should be omitted from JSON (omitempty)")
+	}
+	if contains(raw, `"wdl_content"`) {
+		t.Error("empty WDLContent should be omitted from JSON (omitempty)")
+	}
+}
+
+// contains is a helper since strings.Contains is not imported.
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
+		func() bool {
+			for i := 0; i <= len(s)-len(sub); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+			return false
+		}())
+}
