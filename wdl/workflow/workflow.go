@@ -137,12 +137,6 @@ func runWorkflowInternal(
 	}
 
 	if err := s.run(ctx); err != nil {
-		// On failure, write error.json and return without writing outputs.json.
-		errPath := filepath.Join(execRoot, "error.json")
-		if writeErr := writeErrorJSON(err, errPath); writeErr != nil {
-			// Best-effort: log error writing failure but return the original error.
-			return nil, fmt.Errorf("workflow execution: %w (also failed to write error.json: %v)", err, writeErr)
-		}
 		return nil, fmt.Errorf("workflow execution: %w", err)
 	}
 
@@ -156,12 +150,6 @@ func runWorkflowInternal(
 		}
 		outputs[outDecl.Name] = v
 		env.Define(outDecl.Name, v)
-	}
-
-	// On success, write outputs.json.
-	outPath := filepath.Join(execRoot, "outputs.json")
-	if err := writeOutputsJSON(wf.Name, outputs, outPath); err != nil {
-		return nil, fmt.Errorf("writing outputs.json: %w", err)
 	}
 
 	return outputs, nil

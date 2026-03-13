@@ -239,7 +239,7 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 			_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
 		}
 	} else {
-		// Write run-level outputs.json with "workflowName.outputName" keys.
+		// Write run-level outputs with "workflowName.outputName" keys.
 		if outputs != nil {
 			jsonOutputs := make(map[string]interface{}, len(outputs))
 			for k, v := range outputs {
@@ -249,6 +249,11 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 			if marshalErr != nil {
 				log.Printf("runWorkflow %s: marshal outputs: %v", runID, marshalErr)
 			} else {
+				// Save outputs to DB first (works in both local and S3 mode).
+				if err := s.store.UpdateRunOutputs(context.Background(), runID, string(data)); err != nil {
+					log.Printf("runWorkflow %s: UpdateRunOutputs: %v", runID, err)
+				}
+				// Also write outputs.json file as non-fatal backward compat (local mode).
 				outPath := filepath.Join(execRoot, "outputs.json")
 				if writeErr := s.backend.UploadFile(outPath, data); writeErr != nil {
 					log.Printf("runWorkflow %s: write outputs.json: %v", runID, writeErr)
@@ -281,9 +286,8 @@ func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskI
 		return
 	}
 
-	// Write run-level outputs.json with "taskName.outputName" keys.
+	// Write run-level outputs with "taskName.outputName" keys.
 	execRoot := filepath.Join(s.cfg.BaseDir, "runs", runID)
-	outPath := filepath.Join(execRoot, "outputs.json")
 	jsonOutputs := make(map[string]interface{}, len(outputs))
 	for k, v := range outputs {
 		jsonOutputs[taskName+"."+k] = values.ValueToInterface(v)
@@ -294,10 +298,16 @@ func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskI
 		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
 		return
 	}
-	if err := s.backend.UploadFile(outPath, data); err != nil {
-		log.Printf("runTask %s: write outputs.json: %v", runID, err)
-		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
-		return
+
+	// Save outputs to DB first (works in both local and S3 mode).
+	if err := s.store.UpdateRunOutputs(context.Background(), runID, string(data)); err != nil {
+		log.Printf("runTask %s: UpdateRunOutputs: %v", runID, err)
+	}
+
+	// Also write outputs.json file as non-fatal backward compat (local mode).
+	outPath := filepath.Join(execRoot, "outputs.json")
+	if writeErr := s.backend.UploadFile(outPath, data); writeErr != nil {
+		log.Printf("runTask %s: write outputs.json: %v", runID, writeErr)
 	}
 
 	_ = s.store.UpdateRunState(context.Background(), runID, store.RunCompleted)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -754,8 +753,8 @@ func readJSONFileStr(t *testing.T, path string) map[string]interface{} {
 	return result
 }
 
-// TestRunWorkflow_OutputsJSON: successful workflow -> outputs.json written in execRoot.
-func TestRunWorkflow_OutputsJSON(t *testing.T) {
+// TestRunWorkflow_OutputsReturned: successful workflow -> outputs returned as map.
+func TestRunWorkflow_OutputsReturned(t *testing.T) {
 	execRoot := t.TempDir()
 
 	origFn := runTaskFn
@@ -783,24 +782,22 @@ func TestRunWorkflow_OutputsJSON(t *testing.T) {
 		t.Fatal("expected non-nil outputs map")
 	}
 
-	// outputs.json must exist.
-	outPath := filepath.Join(execRoot, "outputs.json")
-	if _, err := os.Stat(outPath); os.IsNotExist(err) {
-		t.Fatal("outputs.json not written")
-	}
-
-	got := readJSONFileStr(t, outPath)
-	v, ok := got["myWf.answer"]
+	// Verify the returned outputs map contains the expected value.
+	v, ok := outputs["answer"]
 	if !ok {
-		t.Fatal("expected key 'myWf.answer' in outputs.json")
+		t.Fatal("expected key 'answer' in returned outputs")
 	}
-	if v.(float64) != 99 {
-		t.Errorf("expected 99, got %v", v)
+	iv, ok := v.(values.IntValue)
+	if !ok {
+		t.Fatalf("expected IntValue, got %T", v)
+	}
+	if iv.Value != 99 {
+		t.Errorf("expected 99, got %v", iv.Value)
 	}
 }
 
-// TestRunWorkflow_FailFast_ErrorJSON: task fails -> error.json written, outputs.json absent.
-func TestRunWorkflow_FailFast_ErrorJSON(t *testing.T) {
+// TestRunWorkflow_FailFast: task fails -> RunWorkflow returns an error.
+func TestRunWorkflow_FailFast(t *testing.T) {
 	execRoot := t.TempDir()
 
 	origFn := runTaskFn
@@ -816,26 +813,6 @@ func TestRunWorkflow_FailFast_ErrorJSON(t *testing.T) {
 	_, err := RunWorkflow(context.Background(), doc, "wf", nil, &noopRunner{}, execRoot)
 	if err == nil {
 		t.Fatal("expected error from RunWorkflow when task fails")
-	}
-
-	// error.json must exist.
-	errPath := filepath.Join(execRoot, "error.json")
-	if _, err := os.Stat(errPath); os.IsNotExist(err) {
-		t.Fatal("error.json not written")
-	}
-
-	got := readJSONFileStr(t, errPath)
-	if got["task"].(string) != "fail_task" {
-		t.Errorf("expected task='fail_task', got %v", got["task"])
-	}
-	if got["exit_code"].(float64) != 2 {
-		t.Errorf("expected exit_code=2, got %v", got["exit_code"])
-	}
-
-	// outputs.json must NOT exist.
-	outPath := filepath.Join(execRoot, "outputs.json")
-	if _, statErr := os.Stat(outPath); !os.IsNotExist(statErr) {
-		t.Error("outputs.json should NOT be written when task fails")
 	}
 }
 
@@ -876,7 +853,7 @@ func TestRunWorkflow_FailFast_CancelsOthers(t *testing.T) {
 }
 
 // TestRunWorkflow_WorkflowOutputs_JSON: workflow with output section ->
-// outputs.json has 'wfName.outputName' key.
+// returned outputs map has the expected keys.
 func TestRunWorkflow_WorkflowOutputs_JSON(t *testing.T) {
 	execRoot := t.TempDir()
 
@@ -897,19 +874,21 @@ func TestRunWorkflow_WorkflowOutputs_JSON(t *testing.T) {
 	}
 	doc := makeDoc("pipeline", []ast.WorkflowNode{call}, wfOutputs, myTask)
 
-	_, err := RunWorkflow(context.Background(), doc, "pipeline", nil, &noopRunner{}, execRoot)
+	outputs, err := RunWorkflow(context.Background(), doc, "pipeline", nil, &noopRunner{}, execRoot)
 	if err != nil {
 		t.Fatalf("RunWorkflow: %v", err)
 	}
 
-	outPath := filepath.Join(execRoot, "outputs.json")
-	got := readJSONFileStr(t, outPath)
-	v, ok := got["pipeline.result"]
+	v, ok := outputs["result"]
 	if !ok {
-		t.Fatal("expected key 'pipeline.result' in outputs.json")
+		t.Fatal("expected key 'result' in returned outputs")
 	}
-	if v.(float64) != 42 {
-		t.Errorf("expected 42, got %v", v)
+	iv, ok := v.(values.IntValue)
+	if !ok {
+		t.Fatalf("expected IntValue, got %T", v)
+	}
+	if iv.Value != 42 {
+		t.Errorf("expected 42, got %v", iv.Value)
 	}
 }
 
@@ -970,26 +949,15 @@ func TestRunWorkflow_EndToEnd(t *testing.T) {
 	if len(arr.Items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(arr.Items))
 	}
-
-	// Check outputs.json file.
-	outPath := filepath.Join(execRoot, "outputs.json")
-	got := readJSONFileStr(t, outPath)
-	jsonArr, ok := got["e2e_wf.results"]
-	if !ok {
-		t.Fatal("expected key 'e2e_wf.results' in outputs.json")
-	}
-	jsonItems, ok := jsonArr.([]interface{})
-	if !ok {
-		t.Fatalf("expected array for 'e2e_wf.results', got %T", jsonArr)
-	}
-	if len(jsonItems) != 3 {
-		t.Fatalf("expected 3 items in outputs.json array, got %d", len(jsonItems))
-	}
 	// Expected doubled values: [2, 4, 6].
-	want := []float64{2, 4, 6}
-	for i, item := range jsonItems {
-		if item.(float64) != want[i] {
-			t.Errorf("item[%d]: expected %v, got %v", i, want[i], item)
+	want := []int64{2, 4, 6}
+	for i, item := range arr.Items {
+		iv, ok := item.(values.IntValue)
+		if !ok {
+			t.Fatalf("item[%d]: expected IntValue, got %T", i, item)
+		}
+		if iv.Value != want[i] {
+			t.Errorf("item[%d]: expected %v, got %v", i, want[i], iv.Value)
 		}
 	}
 }

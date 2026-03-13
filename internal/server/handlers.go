@@ -69,7 +69,21 @@ func (s *Server) handleOutputs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read outputs.json from the run directory using the resolved full run ID.
+	// Try DB-stored outputs first (S3 mode and new local-mode runs).
+	if run.OutputsJSON != "" {
+		var outputs map[string]interface{}
+		if err := json.Unmarshal([]byte(run.OutputsJSON), &outputs); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("parse DB outputs: %v", err))
+			return
+		}
+		writeJSON(w, http.StatusOK, api.OutputsResponse{
+			RunID:   run.ID,
+			Outputs: outputs,
+		})
+		return
+	}
+
+	// Fallback: read outputs.json from the run directory (backward compat for older runs).
 	outputsPath := filepath.Join(s.cfg.BaseDir, "runs", run.ID, "outputs.json")
 	data, err := s.backend.DownloadFile(outputsPath)
 	if err != nil {
