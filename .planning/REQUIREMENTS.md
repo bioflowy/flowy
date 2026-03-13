@@ -37,10 +37,10 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 ### Daemon Integration
 
-- [ ] **DAEM-01**: Daemon downloads S3 input files to local staging directory before container execution (localize)
-- [ ] **DAEM-02**: Daemon uploads task output files from local directory to S3 after container execution (delocalize)
+- [x] **DAEM-01**: Daemon downloads S3 input files to local staging directory before container execution (localize)
+- [x] **DAEM-02**: Daemon uploads task output files from local directory to S3 after container execution (delocalize)
 - [ ] **DAEM-03**: Daemon cleans up local staging files after successful S3 upload
-- [ ] **DAEM-04**: Daemon handles S3 upload/download failures with proper error reporting to server
+- [x] **DAEM-04**: Daemon handles S3 upload/download failures with proper error reporting to server
 
 ### Testing
 
@@ -96,10 +96,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-02 | Phase 15 | Complete |
 | CONF-03 | Phase 15 | Complete |
 | CONF-04 | Phase 15 | Complete |
-| DAEM-01 | Phase 17 | Pending |
-| DAEM-02 | Phase 17 | Pending |
+| DAEM-01 | Phase 17 | Complete |
+| DAEM-02 | Phase 17 | Complete |
 | DAEM-03 | Phase 17 | Pending |
-| DAEM-04 | Phase 17 | Pending |
+| DAEM-04 | Phase 17 | Complete |
 | TEST-01 | Phase 18 | Pending |
 | TEST-02 | Phase 18 | Pending |
 
