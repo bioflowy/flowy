@@ -110,9 +110,10 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 6 | Fix S3 mode spectool failures: save workflow outputs via API/DB instead of local outputs.json | 2026-03-13 | 85adb21 | [6-fix-s3-mode-spectool-failures-save-workf](./quick/6-fix-s3-mode-spectool-failures-save-workf/) |
+| 7 | Fix S3 spectool file-as-directory inputs: wdlDir propagation, outputs.json fallback guard, filepath.Clean normalization | 2026-03-13 | 414a24f | [7-fix-s3-spectool-file-as-directory-inputs](./quick/7-fix-s3-spectool-file-as-directory-inputs/) |
 
 ## Session Continuity
 
-Last session: 2026-03-13T06:51:10.471Z
-Stopped at: Completed quick-6-PLAN.md
+Last session: 2026-03-13T07:43:17Z
+Stopped at: Completed quick-7-PLAN.md
 Resume file: None
