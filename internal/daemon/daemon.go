@@ -261,7 +261,10 @@ func localizeInputs(inputs map[string]any, backend storage.Backend) (localizedIn
 func rewriteOutputPaths(v any, localToS3 map[string]string) any {
 	switch val := v.(type) {
 	case string:
-		if s3URI, ok := localToS3[val]; ok {
+		// Use filepath.Clean so normalization differences (extra /./,  //, trailing slash)
+		// do not cause staging paths to miss the map and leak into output values.
+		cleaned := filepath.Clean(val)
+		if s3URI, ok := localToS3[cleaned]; ok {
 			return s3URI
 		}
 		return val
@@ -321,8 +324,9 @@ func delocalizeOutputs(outputs map[string]values.Value, workDir string, claim *a
 		}
 
 		// Record the mapping: local path -> s3:// URI
+		// Use filepath.Clean on the key so lookup normalization matches.
 		s3URI := "s3://" + claim.StorageBucket + "/" + s3Key
-		localToS3[filePath] = s3URI
+		localToS3[filepath.Clean(filePath)] = s3URI
 		return nil
 	})
 	if err != nil {
