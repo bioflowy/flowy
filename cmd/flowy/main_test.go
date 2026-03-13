@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/bioflowy/flowy/internal/config"
 )
 
 // testdataDir returns the absolute path to the testdata directory for this test package.
@@ -104,5 +106,56 @@ func TestCheckNonexistent(t *testing.T) {
 	}
 	if stderr == "" {
 		t.Error("expected non-empty stderr for missing file")
+	}
+}
+
+// ===== Storage flag unit tests =====
+
+// TestValidateStorageType verifies that known values are accepted and unknowns rejected.
+func TestValidateStorageType(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantErr bool
+	}{
+		{"local", false},
+		{"s3", false},
+		{"gcs", true},
+		{"", true},
+		{"S3", true},
+	}
+	for _, tc := range tests {
+		err := validateStorageType(tc.input)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("validateStorageType(%q): got err=%v, wantErr=%v", tc.input, err, tc.wantErr)
+		}
+	}
+}
+
+// TestResolveStorageType verifies flag-wins-over-config behavior.
+func TestResolveStorageType(t *testing.T) {
+	cfgLocal := &config.Config{Storage: config.StorageConfig{Type: "local"}}
+	cfgS3 := &config.Config{Storage: config.StorageConfig{Type: "s3"}}
+
+	if got := resolveStorageType("s3", cfgLocal); got != "s3" {
+		t.Errorf("flag should win: expected s3, got %q", got)
+	}
+	if got := resolveStorageType("", cfgS3); got != "s3" {
+		t.Errorf("config fallback: expected s3, got %q", got)
+	}
+	if got := resolveStorageType("", cfgLocal); got != "local" {
+		t.Errorf("config fallback: expected local, got %q", got)
+	}
+}
+
+// TestReorderArgsStorage verifies that --storage and its value are treated as flags.
+func TestReorderArgsStorage(t *testing.T) {
+	input := []string{"workflow.wdl", "--storage", "s3"}
+	result := reorderArgs(input)
+	// After reorder: flags come first, positional last.
+	if len(result) != 3 {
+		t.Fatalf("expected 3 elements, got %d: %v", len(result), result)
+	}
+	if result[0] != "--storage" || result[1] != "s3" || result[2] != "workflow.wdl" {
+		t.Errorf("unexpected order: %v", result)
 	}
 }
