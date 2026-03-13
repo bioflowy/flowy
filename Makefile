@@ -9,6 +9,7 @@ CARGO         := $(HOME)/.cargo/bin/cargo
 # Comma-separated list of test name substrings to skip.
 # Loaded from spectool-exclude.txt (strips comments and blank lines).
 EXCLUDE_PATTERNS := $(shell grep -v '^\s*\#' spectool-exclude.txt 2>/dev/null | grep -v '^\s*$$' | paste -sd ',' -)
+S3_EXCLUDE_PATTERNS := $(shell cat spectool-exclude.txt spectool-s3-exclude.txt 2>/dev/null | grep -v '^\s*\#' | grep -v '^\s*$$' | paste -sd ',' -)
 
 # PID files for server/daemon lifecycle management.
 SERVER_PID := .server.pid
@@ -196,7 +197,7 @@ spectool-s3: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC
 	@sleep 1
 	@echo "flowy-daemon (S3 mode) started."
 	@# Run spectool tests against S3 backend; capture exit code so we always clean up.
-	$(eval EXCL := $(EXCLUDE_PATTERNS))
+	$(eval EXCL := $(S3_EXCLUDE_PATTERNS))
 	$(SPECTOOL_BIN) test \
 		"$(abspath $(FLOWY_BIN)) run -config $(S3_CONFIG) --input ~{input} ~{path}" \
 		--redirect-stdout \

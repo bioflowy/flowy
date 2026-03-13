@@ -1,0 +1,3 @@
+# S3-specific spectool exclusions (in addition to spectool-exclude.txt)
+# File-type workflow outputs return s3:// URIs which spectool compares as plain strings
+primitive_literals
