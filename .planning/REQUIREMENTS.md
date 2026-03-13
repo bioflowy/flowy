@@ -15,11 +15,11 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 ### S3 Backend
 
-- [ ] **S3-01**: S3Backend implementation supports file upload to S3 via AWS SDK v2 PutObject
-- [ ] **S3-02**: S3Backend implementation supports file download from S3 via AWS SDK v2 GetObject
-- [ ] **S3-03**: S3Backend supports multipart upload for files exceeding a configurable size threshold
-- [ ] **S3-04**: S3Backend works with MinIO via UsePathStyle and custom endpoint configuration
-- [ ] **S3-05**: Scatter task outputs use shard-indexed S3 keys to prevent key collision
+- [x] **S3-01**: S3Backend implementation supports file upload to S3 via AWS SDK v2 PutObject
+- [x] **S3-02**: S3Backend implementation supports file download from S3 via AWS SDK v2 GetObject
+- [x] **S3-03**: S3Backend supports multipart upload for files exceeding a configurable size threshold
+- [x] **S3-04**: S3Backend works with MinIO via UsePathStyle and custom endpoint configuration
+- [x] **S3-05**: Scatter task outputs use shard-indexed S3 keys to prevent key collision
 
 ### Path Resolution
 
@@ -83,11 +83,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-01 | Phase 14 | Pending |
 | STOR-02 | Phase 14 | Complete |
 | STOR-03 | Phase 14 | Complete |
-| S3-01 | Phase 16 | Pending |
-| S3-02 | Phase 16 | Pending |
-| S3-03 | Phase 16 | Pending |
-| S3-04 | Phase 16 | Pending |
-| S3-05 | Phase 16 | Pending |
+| S3-01 | Phase 16 | Complete |
+| S3-02 | Phase 16 | Complete |
+| S3-03 | Phase 16 | Complete |
+| S3-04 | Phase 16 | Complete |
+| S3-05 | Phase 16 | Complete |
 | PATH-01 | Phase 15 | Complete |
 | PATH-02 | Phase 15 | Complete |
 | PATH-03 | Phase 15 | Complete |
