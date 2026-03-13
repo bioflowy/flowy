@@ -44,8 +44,8 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 ### Testing
 
-- [ ] **TEST-01**: MinIO integration tests using testcontainers-go verify end-to-end S3 workflow execution
-- [ ] **TEST-02**: Integration tests cover file upload, download, and intermediate file passing via S3
+- [x] **TEST-01**: MinIO integration tests using testcontainers-go verify end-to-end S3 workflow execution
+- [x] **TEST-02**: Integration tests cover file upload, download, and intermediate file passing via S3
 
 ## Future Requirements
 
@@ -100,8 +100,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DAEM-02 | Phase 17 | Complete |
 | DAEM-03 | Phase 17 | Complete |
 | DAEM-04 | Phase 17 | Complete |
-| TEST-01 | Phase 18 | Pending |
-| TEST-02 | Phase 18 | Pending |
+| TEST-01 | Phase 18 | Complete |
+| TEST-02 | Phase 18 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 22 total
