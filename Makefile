@@ -14,7 +14,15 @@ EXCLUDE_PATTERNS := $(shell grep -v '^\s*\#' spectool-exclude.txt 2>/dev/null | 
 SERVER_PID := .server.pid
 DAEMON_PID := .daemon.pid
 
-.PHONY: build spectool test clean
+# MinIO container and S3 integration variables.
+MINIO_IMAGE  := minio/minio:RELEASE.2024-11-07T00-52-28Z
+MINIO_PORT   := 9000
+MINIO_CID    := .minio.cid
+TEST_BUCKET  := flowy-spectool-test
+S3_CONFIG    := /tmp/flowy-s3.yaml
+S3_PORT      := 8125
+
+.PHONY: build spectool spectool-s3 integration test clean
 
 # --- Build targets ---
 
@@ -107,6 +115,105 @@ spectool: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC_DI
 	kill $$(cat $(DAEMON_PID)) 2>/dev/null; rm -f $(DAEMON_PID); \
 	echo "Stopping flowy-server (PID $$(cat $(SERVER_PID)))..."; \
 	kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); \
+	wait; \
+	exit $$SPECTOOL_EXIT
+
+# --- Integration tests ---
+#
+# Runs Go integration tests tagged with `integration` against a real MinIO
+# testcontainer. The tests manage their own container lifecycle internally.
+
+integration:
+	go test -tags integration -timeout 2m -count=1 ./internal/integration/...
+
+# --- Conformance test run with S3/MinIO backend ---
+#
+# spectool-s3 mirrors the spectool target but routes all storage through a
+# real MinIO container to exercise the S3 backend end-to-end.
+#
+# Lifecycle:
+#   1. Start MinIO Docker container (pinned image, --cidfile for clean teardown)
+#   2. Wait for MinIO health endpoint
+#   3. Create test bucket via aws CLI
+#   4. Generate /tmp/flowy-s3.yaml with S3 storage config on port $(S3_PORT)
+#   5. Start flowy-server and flowy-daemon with -c $(S3_CONFIG) and AWS credentials
+#   6. Run spectool (same args as regular target)
+#   7. Tear down daemon, server, MinIO regardless of spectool exit code
+
+spectool-s3: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC_DIR)
+	@# Clean up stale data from previous runs.
+	@docker run --rm -v $(abspath .)/flowy-data-s3:/data alpine sh -c "rm -rf /data/*" 2>/dev/null || true
+	@rm -rf ./flowy-data-s3
+	@mkdir -p ./flowy-data-s3
+	@# Remove any leftover MinIO container from a previous interrupted run.
+	@if [ -f $(MINIO_CID) ]; then docker rm -f $$(cat $(MINIO_CID)) 2>/dev/null || true; rm -f $(MINIO_CID); fi
+	@# Start MinIO container in the background; --cidfile records the container ID.
+	docker run --rm -d --cidfile $(MINIO_CID) \
+		-e MINIO_ROOT_USER=minioadmin \
+		-e MINIO_ROOT_PASSWORD=minioadmin \
+		-p $(MINIO_PORT):9000 \
+		$(MINIO_IMAGE) server /data
+	@echo "Waiting for MinIO to be ready..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s -o /dev/null http://localhost:$(MINIO_PORT)/minio/health/live 2>/dev/null; then \
+			echo "MinIO is ready."; \
+			break; \
+		fi; \
+		if [ $$i -eq 10 ]; then \
+			echo "ERROR: MinIO failed to start"; \
+			docker rm -f $$(cat $(MINIO_CID)) 2>/dev/null; rm -f $(MINIO_CID); \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+	@# Create the test bucket.
+	AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
+		aws --endpoint-url http://localhost:$(MINIO_PORT) s3 mb s3://$(TEST_BUCKET) --region us-east-1
+	@# Generate temporary S3 config on port $(S3_PORT) (avoids conflict with regular spectool on 8124).
+	@printf 'base_dir: ./flowy-data-s3\nstorage:\n  type: s3\n  bucket: %s\n  endpoint: http://localhost:%s\n  region: us-east-1\nserver:\n  listen_addr: ":%s"\ndaemon:\n  server_url: "http://localhost:%s"\n  workers: 4\nclient:\n  server_url: "http://localhost:%s"\n' \
+		$(TEST_BUCKET) $(MINIO_PORT) $(S3_PORT) $(S3_PORT) $(S3_PORT) > $(S3_CONFIG)
+	@# Start flowy-server with S3 config and AWS credentials.
+	AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
+		$(SERVER_BIN) -c $(S3_CONFIG) &  echo $$! > $(SERVER_PID)
+	@echo "Waiting for flowy-server (S3 mode) to be ready..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s -o /dev/null http://localhost:$(S3_PORT)/runs 2>/dev/null; then \
+			echo "flowy-server is ready."; \
+			break; \
+		fi; \
+		if [ $$i -eq 10 ]; then \
+			echo "ERROR: flowy-server (S3 mode) failed to start"; \
+			kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); \
+			docker rm -f $$(cat $(MINIO_CID)) 2>/dev/null; rm -f $(MINIO_CID); \
+			rm -f $(S3_CONFIG); \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+	@# Start flowy-daemon with S3 config and AWS credentials.
+	AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
+		$(DAEMON_BIN) -c $(S3_CONFIG) --workers 4 &  echo $$! > $(DAEMON_PID)
+	@sleep 1
+	@echo "flowy-daemon (S3 mode) started."
+	@# Run spectool tests against S3 backend; capture exit code so we always clean up.
+	$(eval EXCL := $(EXCLUDE_PATTERNS))
+	$(SPECTOOL_BIN) test \
+		"$(abspath $(FLOWY_BIN)) run -c $(S3_CONFIG) --input ~{input} ~{path}" \
+		--redirect-stdout \
+		--all-capabilities \
+		--workflow-target-args="" \
+		--task-target-args="--task ~{target}" \
+		-s $(WDL_SPEC_DIR) \
+		-c ./flowy-data-s3/spectool \
+		$(if $(EXCL),--exclude "$(EXCL)",) \
+	; SPECTOOL_EXIT=$$?; \
+	echo "Stopping flowy-daemon (PID $$(cat $(DAEMON_PID)))..."; \
+	kill $$(cat $(DAEMON_PID)) 2>/dev/null; rm -f $(DAEMON_PID); \
+	echo "Stopping flowy-server (PID $$(cat $(SERVER_PID)))..."; \
+	kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); \
+	echo "Stopping MinIO container..."; \
+	docker rm -f $$(cat $(MINIO_CID)) 2>/dev/null; rm -f $(MINIO_CID); \
+	rm -f $(S3_CONFIG); \
 	wait; \
 	exit $$SPECTOOL_EXIT
 
