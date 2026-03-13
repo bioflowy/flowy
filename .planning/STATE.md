@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: S3 Object Storage
 status: executing
-stopped_at: Phase 15 context gathered
-last_updated: "2026-03-13T01:01:35.861Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-03-13T01:32:41.440Z"
 last_activity: 2026-03-12 — Completed plan 14-01 (Backend interface, LocalBackend, ParseS3URI)
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 20
 ---
 
@@ -47,6 +47,7 @@ Progress: [██░░░░░░░░] 20%
 
 *Updated after each plan completion*
 | Phase 14-storage-abstraction P14-02 | 3 min | 2 tasks | 5 files |
+| Phase 15-configuration-and-path-resolution P01 | 3min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Phase 14-01 decisions:
 - storage package imports store (one-way dependency enforced)
 - [Phase 14-storage-abstraction]: store import kept in dispatch.go/handlers.go for store.Task/Run types and state constants
 - [Phase 14-storage-abstraction]: filepath.Join kept for sub-path construction within task dirs; Backend handles I/O not sub-path logic
+- [Phase 15-configuration-and-path-resolution]: s3:// guard is first statement in CleanPath — before any filepath call — to prevent filepath.Clean corrupting s3://bucket/key to s3:/bucket/key
+- [Phase 15-configuration-and-path-resolution]: Validate() is called in server main.go only, not inside Load() — client CLI and tests use Load() without S3 config
+- [Phase 15-configuration-and-path-resolution]: NewBackend() returns LocalBackend for s3 case in Phase 15 — Phase 16 inserts real S3Backend here
 
 ### Pending Todos
 
@@ -79,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T01:01:35.857Z
-Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-configuration-and-path-resolution/15-CONTEXT.md
+Last session: 2026-03-13T01:32:41.436Z
+Stopped at: Completed 15-01-PLAN.md
+Resume file: None

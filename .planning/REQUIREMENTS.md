@@ -23,15 +23,15 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 ### Path Resolution
 
-- [ ] **PATH-01**: cleanPath() in wdl/task/inputs.go preserves s3:// URIs without corruption
-- [ ] **PATH-02**: Input files with s3:// prefix are resolved via S3 backend regardless of default backend setting
-- [ ] **PATH-03**: Input files with absolute local paths (/mnt/...) are resolved via local filesystem
-- [ ] **PATH-04**: Input files with relative paths are resolved via the configured default backend
+- [x] **PATH-01**: cleanPath() in wdl/task/inputs.go preserves s3:// URIs without corruption
+- [x] **PATH-02**: Input files with s3:// prefix are resolved via S3 backend regardless of default backend setting
+- [x] **PATH-03**: Input files with absolute local paths (/mnt/...) are resolved via local filesystem
+- [x] **PATH-04**: Input files with relative paths are resolved via the configured default backend
 
 ### Configuration
 
-- [ ] **CONF-01**: Storage backend type and S3 settings (bucket, endpoint, region) configurable in YAML config file
-- [ ] **CONF-02**: Default storage backend specified in config file (used when --storage flag is not provided)
+- [x] **CONF-01**: Storage backend type and S3 settings (bucket, endpoint, region) configurable in YAML config file
+- [x] **CONF-02**: Default storage backend specified in config file (used when --storage flag is not provided)
 - [ ] **CONF-03**: User can specify storage backend per workflow via --storage CLI flag on flowy run/submit
 - [ ] **CONF-04**: TaskClaimResponse extended with storage addressing config (bucket, endpoint, prefix) for daemon
 
@@ -88,12 +88,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | S3-03 | Phase 16 | Pending |
 | S3-04 | Phase 16 | Pending |
 | S3-05 | Phase 16 | Pending |
-| PATH-01 | Phase 15 | Pending |
-| PATH-02 | Phase 15 | Pending |
-| PATH-03 | Phase 15 | Pending |
-| PATH-04 | Phase 15 | Pending |
-| CONF-01 | Phase 15 | Pending |
-| CONF-02 | Phase 15 | Pending |
+| PATH-01 | Phase 15 | Complete |
+| PATH-02 | Phase 15 | Complete |
+| PATH-03 | Phase 15 | Complete |
+| PATH-04 | Phase 15 | Complete |
+| CONF-01 | Phase 15 | Complete |
+| CONF-02 | Phase 15 | Complete |
 | CONF-03 | Phase 15 | Pending |
 | CONF-04 | Phase 15 | Pending |
 | DAEM-01 | Phase 17 | Pending |
