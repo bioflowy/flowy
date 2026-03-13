@@ -3,10 +3,10 @@ package task
 import (
 	"fmt"
 	"math"
-	"path/filepath"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
+	"github.com/bioflowy/flowy/wdl/pathutil"
 	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
 )
@@ -105,7 +105,7 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 			return nil, fmt.Errorf("expected string for File, got %T", v)
 		}
 		// Resolve relative paths to absolute and canonicalize.
-		s = cleanPath(s, wdlDir)
+		s = pathutil.CleanPath(s, wdlDir)
 		return values.FileValue{Type: dt, Value: s}, nil
 
 	case types.DirectoryType:
@@ -114,7 +114,7 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 			return nil, fmt.Errorf("expected string for Directory, got %T", v)
 		}
 		// Resolve relative paths to absolute and canonicalize.
-		s = cleanPath(s, wdlDir)
+		s = pathutil.CleanPath(s, wdlDir)
 		return values.DirectoryValue{Type: dt, Value: s}, nil
 
 	case types.StringType:
@@ -274,21 +274,6 @@ func jsonToValueUntyped(v interface{}) values.Value {
 	default:
 		return values.NullValue{}
 	}
-}
-
-// cleanPath resolves relative paths to absolute and canonicalizes ".." components.
-// If wdlDir is non-empty, relative paths are resolved relative to it (the WDL
-// file's parent directory, per WDL 1.2 spec). Otherwise, falls back to CWD.
-func cleanPath(p string, wdlDir string) string {
-	if !filepath.IsAbs(p) {
-		if wdlDir != "" {
-			return filepath.Clean(filepath.Join(wdlDir, p))
-		}
-		if abs, err := filepath.Abs(p); err == nil {
-			return filepath.Clean(abs)
-		}
-	}
-	return filepath.Clean(p)
 }
 
 // collectPaths walks a WDL value and registers all FileValue and DirectoryValue

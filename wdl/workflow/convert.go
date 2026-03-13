@@ -2,10 +2,10 @@ package workflow
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
+	"github.com/bioflowy/flowy/wdl/pathutil"
 	"github.com/bioflowy/flowy/wdl/types"
 	"github.com/bioflowy/flowy/wdl/values"
 )
@@ -137,21 +137,6 @@ func bindWorkflowInputs(wf *ast.Workflow, jsonInputs map[string]interface{}, wdl
 	return env, nil
 }
 
-// cleanPath resolves relative paths to absolute and canonicalizes ".." components.
-// If wdlDir is non-empty, relative paths are resolved relative to it (the WDL
-// file's parent directory, per WDL 1.2 spec). Otherwise, falls back to CWD.
-func cleanPath(p string, wdlDir string) string {
-	if !filepath.IsAbs(p) {
-		if wdlDir != "" {
-			return filepath.Clean(filepath.Join(wdlDir, p))
-		}
-		if abs, err := filepath.Abs(p); err == nil {
-			return filepath.Clean(abs)
-		}
-	}
-	return filepath.Clean(p)
-}
-
 // jsonToValueTyped converts a JSON-decoded value to a WDL Value using the
 // declaration type for type-aware conversions (File, Directory, Struct, etc.).
 func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]*ast.StructDef, wdlDir string) values.Value {
@@ -162,13 +147,13 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 	switch dt := declType.(type) {
 	case types.FileType:
 		if s, ok := v.(string); ok {
-			return values.FileValue{Type: dt, Value: cleanPath(s, wdlDir)}
+			return values.FileValue{Type: dt, Value: pathutil.CleanPath(s, wdlDir)}
 		}
 		return jsonToValueUntyped(v)
 
 	case types.DirectoryType:
 		if s, ok := v.(string); ok {
-			return values.DirectoryValue{Type: dt, Value: cleanPath(s, wdlDir)}
+			return values.DirectoryValue{Type: dt, Value: pathutil.CleanPath(s, wdlDir)}
 		}
 		return jsonToValueUntyped(v)
 
