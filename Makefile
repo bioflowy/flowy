@@ -136,7 +136,7 @@ integration:
 #   2. Wait for MinIO health endpoint
 #   3. Create test bucket via aws CLI
 #   4. Generate /tmp/flowy-s3.yaml with S3 storage config on port $(S3_PORT)
-#   5. Start flowy-server and flowy-daemon with -c $(S3_CONFIG) and AWS credentials
+#   5. Start flowy-server and flowy-daemon with -config $(S3_CONFIG) and AWS credentials
 #   6. Run spectool (same args as regular target)
 #   7. Tear down daemon, server, MinIO regardless of spectool exit code
 
@@ -174,7 +174,7 @@ spectool-s3: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC
 		$(TEST_BUCKET) $(MINIO_PORT) $(S3_PORT) $(S3_PORT) $(S3_PORT) > $(S3_CONFIG)
 	@# Start flowy-server with S3 config and AWS credentials.
 	AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
-		$(SERVER_BIN) -c $(S3_CONFIG) &  echo $$! > $(SERVER_PID)
+		$(SERVER_BIN) -config $(S3_CONFIG) &  echo $$! > $(SERVER_PID)
 	@echo "Waiting for flowy-server (S3 mode) to be ready..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		if curl -s -o /dev/null http://localhost:$(S3_PORT)/runs 2>/dev/null; then \
@@ -192,13 +192,13 @@ spectool-s3: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC
 	done
 	@# Start flowy-daemon with S3 config and AWS credentials.
 	AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
-		$(DAEMON_BIN) -c $(S3_CONFIG) --workers 4 &  echo $$! > $(DAEMON_PID)
+		$(DAEMON_BIN) -config $(S3_CONFIG) --workers 4 &  echo $$! > $(DAEMON_PID)
 	@sleep 1
 	@echo "flowy-daemon (S3 mode) started."
 	@# Run spectool tests against S3 backend; capture exit code so we always clean up.
 	$(eval EXCL := $(EXCLUDE_PATTERNS))
 	$(SPECTOOL_BIN) test \
-		"$(abspath $(FLOWY_BIN)) run -c $(S3_CONFIG) --input ~{input} ~{path}" \
+		"$(abspath $(FLOWY_BIN)) run -config $(S3_CONFIG) --input ~{input} ~{path}" \
 		--redirect-stdout \
 		--all-capabilities \
 		--workflow-target-args="" \
