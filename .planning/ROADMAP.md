@@ -47,7 +47,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 - [~] **Phase 14: Storage Abstraction** - Define the Backend interface and wrap existing shared FS as LocalBackend (plan 1/2 complete)
 - [x] **Phase 15: Configuration and Path Resolution** - Add --storage flag, S3 config, and s3:// URI detection (completed 2026-03-13)
-- [ ] **Phase 16: S3Backend Implementation** - Implement S3Backend using AWS SDK v2 with streaming I/O and MinIO compatibility
+- [x] **Phase 16: S3Backend Implementation** - Implement S3Backend using AWS SDK v2 with streaming I/O and MinIO compatibility (completed 2026-03-13)
 - [ ] **Phase 17: Daemon Staging** - Implement localize/delocalize pattern in daemon for S3-backed task execution
 - [ ] **Phase 18: MinIO Integration Testing** - End-to-end MinIO testcontainer tests and spectool conformance on S3 backend
 
@@ -146,6 +146,6 @@ Plans:
 | 13. Tech Debt Cleanup | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 14. Storage Abstraction | 2/2 | Complete    | 2026-03-13 | - |
 | 15. Configuration and Path Resolution | 2/2 | Complete    | 2026-03-13 | - |
-| 16. S3Backend Implementation | 1/2 | In Progress|  | - |
+| 16. S3Backend Implementation | 2/2 | Complete   | 2026-03-13 | - |
 | 17. Daemon Staging | v1.2 | 0/TBD | Not started | - |
 | 18. MinIO Integration Testing | v1.2 | 0/TBD | Not started | - |

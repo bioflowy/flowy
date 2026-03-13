@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: S3 Object Storage
 status: executing
-stopped_at: Completed 16-01 S3Backend implementation
-last_updated: "2026-03-13T03:24:19.331Z"
+stopped_at: Completed 16-02 S3Backend unit tests
+last_updated: "2026-03-13T03:27:57.937Z"
 last_activity: 2026-03-12 — Completed plan 14-01 (Backend interface, LocalBackend, ParseS3URI)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 20
 ---
 
@@ -50,6 +50,7 @@ Progress: [██░░░░░░░░] 20%
 | Phase 15-configuration-and-path-resolution P01 | 3min | 3 tasks | 8 files |
 | Phase 15-configuration-and-path-resolution P02 | 3min | 2 tasks | 5 files |
 | Phase 16-s3backend-implementation P01 | 10min | 3 tasks | 6 files |
+| Phase 16-s3backend-implementation P02 | 5min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,7 @@ Phase 14-01 decisions:
 - [Phase 15-configuration-and-path-resolution]: StorageType has no omitempty — always appears in JSON for consistent daemon contract
 - [Phase 16-s3backend-implementation]: transfermanager.UploadObject used for all uploads (no manual threshold branching)
 - [Phase 16-s3backend-implementation]: factory.go panics on S3Backend construction failure — config.Validate() guards bucket presence at startup
+- [Phase 16-s3backend-implementation]: mockTransferManager reads and captures Body bytes so assertions can inspect upload content after UploadObject returns
 
 ### Pending Todos
 
@@ -90,6 +92,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T03:24:19.327Z
-Stopped at: Completed 16-01 S3Backend implementation
+Last session: 2026-03-13T03:27:57.932Z
+Stopped at: Completed 16-02 S3Backend unit tests
 Resume file: None
