@@ -49,7 +49,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 15: Configuration and Path Resolution** - Add --storage flag, S3 config, and s3:// URI detection (completed 2026-03-13)
 - [x] **Phase 16: S3Backend Implementation** - Implement S3Backend using AWS SDK v2 with streaming I/O and MinIO compatibility (completed 2026-03-13)
 - [x] **Phase 17: Daemon Staging** - Implement localize/delocalize pattern in daemon for S3-backed task execution (completed 2026-03-13)
-- [ ] **Phase 18: MinIO Integration Testing** - End-to-end MinIO testcontainer tests and spectool conformance on S3 backend
+- [x] **Phase 18: MinIO Integration Testing** - End-to-end MinIO testcontainer tests and spectool conformance on S3 backend (completed 2026-03-13)
 
 ## Phase Details
 
@@ -150,4 +150,4 @@ Plans:
 | 15. Configuration and Path Resolution | 2/2 | Complete    | 2026-03-13 | - |
 | 16. S3Backend Implementation | 2/2 | Complete    | 2026-03-13 | - |
 | 17. Daemon Staging | 2/2 | Complete    | 2026-03-13 | - |
-| 18. MinIO Integration Testing | 1/2 | In Progress|  | - |
+| 18. MinIO Integration Testing | 2/2 | Complete   | 2026-03-13 | - |
