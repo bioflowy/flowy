@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
@@ -201,10 +202,15 @@ func jsonToValueTyped(v interface{}, declType types.Type, structDefs map[string]
 
 	case types.MapType:
 		if m, ok := v.(map[string]interface{}); ok {
+			keys := make([]string, 0, len(m))
+			for k := range m {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
 			entries := make([]values.MapEntry, 0, len(m))
-			for k, mv := range m {
+			for _, k := range keys {
 				kv := jsonToValueTyped(k, dt.KeyType, structDefs, wdlDir)
-				vv := jsonToValueTyped(mv, dt.ValType, structDefs, wdlDir)
+				vv := jsonToValueTyped(m[k], dt.ValType, structDefs, wdlDir)
 				entries = append(entries, values.MapEntry{Key: kv, Value: vv})
 			}
 			return values.MapValue{Type: dt, Entries: entries}
@@ -278,11 +284,16 @@ func jsonToValueUntyped(v interface{}) values.Value {
 		}
 		return values.ArrayValue{Items: items}
 	case map[string]interface{}:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
 		entries := make([]values.MapEntry, 0, len(x))
-		for k, mv := range x {
+		for _, k := range keys {
 			entries = append(entries, values.MapEntry{
 				Key:   values.StringValue{Value: k},
-				Value: jsonToValueUntyped(mv),
+				Value: jsonToValueUntyped(x[k]),
 			})
 		}
 		return values.MapValue{Entries: entries}

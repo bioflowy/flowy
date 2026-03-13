@@ -3,6 +3,7 @@ package task
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/eval"
@@ -173,13 +174,18 @@ func jsonToWDLValue(v interface{}, declType types.Type, structDefs map[string]*a
 		if !ok {
 			return nil, fmt.Errorf("expected object for Map[...], got %T", v)
 		}
+		mapKeys := make([]string, 0, len(m))
+		for k := range m {
+			mapKeys = append(mapKeys, k)
+		}
+		sort.Strings(mapKeys)
 		entries := make([]values.MapEntry, 0, len(m))
-		for k, mv := range m {
+		for _, k := range mapKeys {
 			kv, err := jsonToWDLValue(k, dt.KeyType, structDefs, wdlDir)
 			if err != nil {
 				return nil, fmt.Errorf("map key %q: %w", k, err)
 			}
-			vv, err := jsonToWDLValue(mv, dt.ValType, structDefs, wdlDir)
+			vv, err := jsonToWDLValue(m[k], dt.ValType, structDefs, wdlDir)
 			if err != nil {
 				return nil, fmt.Errorf("map value for key %q: %w", k, err)
 			}
@@ -260,11 +266,16 @@ func jsonToValueUntyped(v interface{}) values.Value {
 			Items: items,
 		}
 	case map[string]interface{}:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
 		entries := make([]values.MapEntry, 0, len(x))
-		for k, val := range x {
+		for _, k := range keys {
 			entries = append(entries, values.MapEntry{
 				Key:   values.StringValue{Type: types.StringType{}, Value: k},
-				Value: jsonToValueUntyped(val),
+				Value: jsonToValueUntyped(x[k]),
 			})
 		}
 		return values.MapValue{
