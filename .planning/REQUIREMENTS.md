@@ -32,8 +32,8 @@ Requirements for S3 object storage milestone. Each maps to roadmap phases.
 
 - [x] **CONF-01**: Storage backend type and S3 settings (bucket, endpoint, region) configurable in YAML config file
 - [x] **CONF-02**: Default storage backend specified in config file (used when --storage flag is not provided)
-- [ ] **CONF-03**: User can specify storage backend per workflow via --storage CLI flag on flowy run/submit
-- [ ] **CONF-04**: TaskClaimResponse extended with storage addressing config (bucket, endpoint, prefix) for daemon
+- [x] **CONF-03**: User can specify storage backend per workflow via --storage CLI flag on flowy run/submit
+- [x] **CONF-04**: TaskClaimResponse extended with storage addressing config (bucket, endpoint, prefix) for daemon
 
 ### Daemon Integration
 
@@ -94,8 +94,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PATH-04 | Phase 15 | Complete |
 | CONF-01 | Phase 15 | Complete |
 | CONF-02 | Phase 15 | Complete |
-| CONF-03 | Phase 15 | Pending |
-| CONF-04 | Phase 15 | Pending |
+| CONF-03 | Phase 15 | Complete |
+| CONF-04 | Phase 15 | Complete |
 | DAEM-01 | Phase 17 | Pending |
 | DAEM-02 | Phase 17 | Pending |
 | DAEM-03 | Phase 17 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: S3 Object Storage
 status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-03-13T01:32:41.440Z"
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-03-13T01:36:53.894Z"
 last_activity: 2026-03-12 — Completed plan 14-01 (Backend interface, LocalBackend, ParseS3URI)
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 20
 ---
 
@@ -48,6 +48,7 @@ Progress: [██░░░░░░░░] 20%
 *Updated after each plan completion*
 | Phase 14-storage-abstraction P14-02 | 3 min | 2 tasks | 5 files |
 | Phase 15-configuration-and-path-resolution P01 | 3min | 3 tasks | 8 files |
+| Phase 15-configuration-and-path-resolution P02 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,9 @@ Phase 14-01 decisions:
 - [Phase 15-configuration-and-path-resolution]: s3:// guard is first statement in CleanPath — before any filepath call — to prevent filepath.Clean corrupting s3://bucket/key to s3:/bucket/key
 - [Phase 15-configuration-and-path-resolution]: Validate() is called in server main.go only, not inside Load() — client CLI and tests use Load() without S3 config
 - [Phase 15-configuration-and-path-resolution]: NewBackend() returns LocalBackend for s3 case in Phase 15 — Phase 16 inserts real S3Backend here
+- [Phase 15-configuration-and-path-resolution]: validateStorageType is standalone function — keeps CLI logic testable without config loading
+- [Phase 15-configuration-and-path-resolution]: effectiveStorageType not sent to server in SubmitRequest — server reads own config per Phase 15 design
+- [Phase 15-configuration-and-path-resolution]: StorageType has no omitempty — always appears in JSON for consistent daemon contract
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T01:32:41.436Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-03-13T01:36:53.890Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
