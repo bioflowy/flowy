@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -147,9 +149,14 @@ func (s *Server) loadTaskOutputs(ctx context.Context, taskID int64, runID, taskN
 
 // rawToValues converts a map of JSON-decoded Go values to WDL values.Value entries.
 func rawToValues(raw map[string]interface{}, taskName string) (map[string]values.Value, error) {
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	result := make(map[string]values.Value, len(raw))
-	for k, v := range raw {
-		wv, err := jsonToValue(v)
+	for _, k := range keys {
+		wv, err := jsonToValue(raw[k])
 		if err != nil {
 			return nil, fmt.Errorf("task %q output %q: %w", taskName, k, err)
 		}
@@ -162,6 +169,9 @@ func rawToValues(raw map[string]interface{}, taskName string) (map[string]values
 func jsonToValue(v interface{}) (values.Value, error) {
 	switch val := v.(type) {
 	case string:
+		if strings.HasPrefix(val, "s3://") {
+			return values.FileValue{Type: types.FileType{}, Value: val}, nil
+		}
 		return values.StringValue{Type: types.StringType{}, Value: val}, nil
 	case bool:
 		return values.BooleanValue{Type: types.BooleanType{}, Value: val}, nil
@@ -189,9 +199,14 @@ func jsonToValue(v interface{}) (values.Value, error) {
 			Items: items,
 		}, nil
 	case map[string]interface{}:
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
 		entries := make([]values.MapEntry, 0, len(val))
-		for k, v := range val {
-			ev, err := jsonToValue(v)
+		for _, k := range keys {
+			ev, err := jsonToValue(val[k])
 			if err != nil {
 				return nil, err
 			}
