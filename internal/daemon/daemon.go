@@ -33,14 +33,40 @@ type Daemon struct {
 	wg       sync.WaitGroup
 }
 
+// bearerTransport is an http.RoundTripper that injects an Authorization: Bearer
+// header on every request when token is non-empty.
+type bearerTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+// RoundTrip adds the Authorization header (if token is set) and delegates to base.
+// The request is cloned before modification to avoid mutating the caller's request.
+func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.token != "" {
+		req = req.Clone(req.Context())
+		req.Header.Set("Authorization", "Bearer "+t.token)
+	}
+	return t.base.RoundTrip(req)
+}
+
 // New constructs a new Daemon. The daemonID should be unique per process
 // (e.g. "hostname-PID", generated in main.go).
 // HTTP client timeout is set to 35 seconds to accommodate long-poll responses.
+// When cfg.Auth.DaemonToken is non-empty, all HTTP requests will include an
+// Authorization: Bearer header for authenticated daemon-to-server communication.
 func New(cfg *config.Config, daemonID string) *Daemon {
+	transport := http.RoundTripper(http.DefaultTransport)
+	if cfg.Auth.DaemonToken != "" {
+		transport = &bearerTransport{
+			token: cfg.Auth.DaemonToken,
+			base:  http.DefaultTransport,
+		}
+	}
 	return &Daemon{
 		cfg:      cfg,
 		daemonID: daemonID,
-		client:   &http.Client{Timeout: 35 * time.Second},
+		client:   &http.Client{Timeout: 35 * time.Second, Transport: transport},
 	}
 }
 
