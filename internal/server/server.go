@@ -103,12 +103,6 @@ func (s *Server) newRouter() *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(JWTMiddleware(s.jwtSecret))
 
-			// Workflow routes (existing).
-			r.Post("/workflows", s.handleSubmit)
-			r.Get("/workflows/{id}/status", s.handleStatus)
-			r.Get("/workflows/{id}/outputs", s.handleOutputs)
-			r.Post("/workflows/{id}/abort", s.handleAbort)
-
 			// User management routes.
 			r.Get("/users/me", s.handleGetMe)
 			r.Put("/users/me/password", s.handleChangePassword)
@@ -135,6 +129,15 @@ func (s *Server) newRouter() *chi.Mux {
 				r.With(s.projectRoleRequired("admin")).Post("/members", s.handleAddMember)
 				r.With(s.projectRoleRequired("admin")).Put("/members/{username}", s.handleUpdateMember)
 				r.With(s.projectRoleRequired("admin")).Delete("/members/{username}", s.handleRemoveMember)
+
+				// Runs sub-resource (project-scoped workflow runs).
+				r.Route("/runs", func(r chi.Router) {
+					r.With(s.projectRoleRequired("executor")).Post("/submit", s.handleSubmit)
+					r.With(s.projectRoleRequired("executor")).Post("/task-run", s.handleTaskRun)
+					r.With(s.projectRoleRequired("viewer")).Get("/{id}/status", s.handleStatus)
+					r.With(s.projectRoleRequired("viewer")).Get("/{id}/outputs", s.handleOutputs)
+					r.With(s.projectRoleRequired("executor")).Post("/{id}/abort", s.handleAbort)
+				})
 			})
 		})
 

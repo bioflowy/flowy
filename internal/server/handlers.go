@@ -103,6 +103,17 @@ func (s *Server) handleOutputs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// projectIDFromContext returns the project ID when a project is in the request
+// context (injected by projectContext middleware). Returns an empty string when
+// auth is disabled or the request is not project-scoped.
+func projectIDFromContext(ctx context.Context) string {
+	proj := projectFromContext(ctx)
+	if proj == nil {
+		return ""
+	}
+	return proj.ID
+}
+
 // handleSubmit handles POST /workflows.
 func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	var req api.SubmitRequest
@@ -148,8 +159,10 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the run record in the store.
+	// ProjectID is empty when auth is disabled; set from context when project-scoped.
 	run := &store.Run{
 		ID:         runID,
+		ProjectID:  projectIDFromContext(r.Context()),
 		WDLPath:    req.WDLPath,
 		InputsJSON: string(inputsJSON),
 		State:      store.RunPending,
