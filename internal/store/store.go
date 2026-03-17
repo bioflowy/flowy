@@ -46,9 +46,32 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
+// Project represents a project workspace that groups workflow runs and controls
+// membership access. Slug is a human-readable unique identifier for the project.
+// IsActive is false for deactivated (soft-deleted) projects.
+type Project struct {
+	ID          string
+	Slug        string
+	Description string
+	IsActive    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ProjectMember represents a user's membership in a project.
+// Role is one of "admin", "executor", or "viewer".
+type ProjectMember struct {
+	ProjectID string
+	UserID    string
+	Role      string // "admin", "executor", or "viewer"
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // Run holds metadata for a submitted workflow run.
 type Run struct {
 	ID          string
+	ProjectID   string    // Empty when auth is disabled; set to project UUID when auth is enabled
 	WDLPath     string
 	InputsJSON  string
 	State       RunState
@@ -145,6 +168,44 @@ type Store interface {
 	UpdateUser(ctx context.Context, u *User) error
 	// CountUsers returns the total number of user records (including inactive).
 	CountUsers(ctx context.Context) (int, error)
+
+	// Project operations
+
+	// CreateProject persists a new project record. p.ID must be set by the caller.
+	// Returns an error if the slug is already taken.
+	CreateProject(ctx context.Context, p *Project) error
+	// GetProjectBySlug returns the active project with the given slug, or an error if not found.
+	GetProjectBySlug(ctx context.Context, slug string) (*Project, error)
+	// GetProjectByID returns the active project with the given ID, or an error if not found.
+	GetProjectByID(ctx context.Context, id string) (*Project, error)
+	// ListProjectsForUser returns all active projects where the user is a member, ordered by created_at ascending.
+	ListProjectsForUser(ctx context.Context, userID string) ([]Project, error)
+	// ListAllProjects returns all active projects ordered by created_at ascending.
+	ListAllProjects(ctx context.Context) ([]Project, error)
+	// UpdateProject persists description changes to an existing project record.
+	UpdateProject(ctx context.Context, p *Project) error
+	// DeactivateProject sets is_active=false for the project with the given ID.
+	DeactivateProject(ctx context.Context, id string) error
+
+	// Membership operations
+
+	// AddMember adds a user to a project with the given role.
+	// Returns an error if the user is already a member.
+	AddMember(ctx context.Context, m *ProjectMember) error
+	// GetProjectMember returns the membership record for the given project and user.
+	GetProjectMember(ctx context.Context, projectID, userID string) (*ProjectMember, error)
+	// UpdateMemberRole changes the role of an existing project member.
+	UpdateMemberRole(ctx context.Context, projectID, userID, role string) error
+	// RemoveMember removes a user from a project unconditionally.
+	// Callers should use RemoveMemberIfNotLastAdmin when admin protection is needed.
+	RemoveMember(ctx context.Context, projectID, userID string) error
+	// ListMembers returns all members of a project ordered by created_at ascending.
+	ListMembers(ctx context.Context, projectID string) ([]ProjectMember, error)
+	// CountProjectAdmins returns the number of members with role "admin" in a project.
+	CountProjectAdmins(ctx context.Context, projectID string) (int, error)
+	// RemoveMemberIfNotLastAdmin removes a member only if doing so would not leave
+	// the project with zero admins. Returns an error if the target is the last admin.
+	RemoveMemberIfNotLastAdmin(ctx context.Context, projectID, userID string) error
 
 	// Server config operations (key-value store for auto-generated secrets)
 
