@@ -92,7 +92,11 @@ Plans:
   2. Project admin can add a member with a specific role and change or remove that membership
   3. A viewer-role member can read project details but cannot update or delete the project
   4. Workflow runs submitted within a project context are associated with that project (project_id present on run records)
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 20-01-PLAN.md — Models, migration 00005, and SQLite store layer for projects and membership
+- [ ] 20-02-PLAN.md — Project CRUD handlers, membership handlers, RBAC middleware, and route registration
+- [ ] 20-03-PLAN.md — Project-scoped run routes and backward-compatible auth-disabled path
 
 ### Phase 21: WDL Registry
 **Goal**: Executors can push versioned WDL tool and workflow files to a project registry and retrieve them by tag or immutable digest
@@ -148,8 +152,8 @@ Plans:
 | 16. S3Backend Implementation | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
-| 19. User Authentication | 3/3 | Complete    | 2026-03-17 | - |
-| 20. Projects and RBAC | v1.3 | 0/TBD | Not started | - |
+| 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
+| 20. Projects and RBAC | v1.3 | 0/3 | Planning | - |
 | 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
