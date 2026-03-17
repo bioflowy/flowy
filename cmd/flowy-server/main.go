@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bioflowy/flowy/internal/auth"
 	"github.com/bioflowy/flowy/internal/config"
 	"github.com/bioflowy/flowy/internal/server"
 	"github.com/bioflowy/flowy/internal/storage"
@@ -21,6 +22,9 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "./flowy.yaml", "path to YAML configuration file")
+	initAdmin := flag.Bool("init-admin", false, "create initial admin user and exit")
+	username := flag.String("username", "", "admin username (for --init-admin)")
+	password := flag.String("password", "", "admin password (for --init-admin)")
 	flag.Parse()
 
 	// Load configuration.
@@ -45,6 +49,21 @@ func main() {
 			log.Printf("flowy-server: close store: %v", closeErr)
 		}
 	}()
+
+	// Handle --init-admin before starting the HTTP server.
+	// This solves the chicken-and-egg problem: POST /users is admin-only,
+	// but no admin exists yet. --init-admin runs outside the HTTP stack.
+	if *initAdmin {
+		iac := InitAdminConfig{
+			Username:   *username,
+			Password:   *password,
+			BcryptCost: auth.DefaultBcryptCost,
+		}
+		if err := runInitAdmin(context.Background(), &storeAdapter{st: st}, iac); err != nil {
+			log.Fatalf("flowy-server: init-admin: %v", err)
+		}
+		os.Exit(0)
+	}
 
 	// Build the storage backend.
 	backend := storage.NewBackend(cfg)
