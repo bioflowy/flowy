@@ -77,7 +77,11 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   3. On first server start, an initial admin user exists and can log in without any setup step
   4. Admin can create new user accounts and list or delete existing users
   5. When `auth.enabled: false` is set in config, all existing spectool conformance tests pass unchanged
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 19-01-PLAN.md — Config, migration, store layer foundation (User model, server_config)
+- [ ] 19-02-PLAN.md — Auth package, middleware, handlers, and server router restructure
+- [ ] 19-03-PLAN.md — CLI --init-admin command and daemon bearer token injection
 
 ### Phase 20: Projects and RBAC
 **Goal**: Users can create isolated project workspaces and control who can do what via role-based membership
@@ -144,7 +148,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 16. S3Backend Implementation | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
-| 19. User Authentication | v1.3 | 0/TBD | Not started | - |
+| 19. User Authentication | v1.3 | 0/3 | In Progress | - |
 | 20. Projects and RBAC | v1.3 | 0/TBD | Not started | - |
 | 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
