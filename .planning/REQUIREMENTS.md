@@ -85,37 +85,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| AUTH-06 | — | Pending |
-| PROJ-01 | — | Pending |
-| PROJ-02 | — | Pending |
-| PROJ-03 | — | Pending |
-| PROJ-04 | — | Pending |
-| PROJ-05 | — | Pending |
-| PROJ-06 | — | Pending |
-| PROJ-07 | — | Pending |
-| REG-01 | — | Pending |
-| REG-02 | — | Pending |
-| REG-03 | — | Pending |
-| REG-04 | — | Pending |
-| REG-05 | — | Pending |
-| REG-06 | — | Pending |
-| EXEC-01 | — | Pending |
-| EXEC-02 | — | Pending |
-| PROV-01 | — | Pending |
-| PROV-02 | — | Pending |
-| PROV-03 | — | Pending |
-| PROV-04 | — | Pending |
+| AUTH-01 | Phase 19 | Pending |
+| AUTH-02 | Phase 19 | Pending |
+| AUTH-03 | Phase 19 | Pending |
+| AUTH-04 | Phase 19 | Pending |
+| AUTH-05 | Phase 19 | Pending |
+| AUTH-06 | Phase 19 | Pending |
+| PROJ-01 | Phase 20 | Pending |
+| PROJ-02 | Phase 20 | Pending |
+| PROJ-03 | Phase 20 | Pending |
+| PROJ-04 | Phase 20 | Pending |
+| PROJ-05 | Phase 20 | Pending |
+| PROJ-06 | Phase 20 | Pending |
+| PROJ-07 | Phase 20 | Pending |
+| REG-01 | Phase 21 | Pending |
+| REG-02 | Phase 21 | Pending |
+| REG-03 | Phase 21 | Pending |
+| REG-04 | Phase 21 | Pending |
+| REG-05 | Phase 21 | Pending |
+| REG-06 | Phase 21 | Pending |
+| EXEC-01 | Phase 22 | Pending |
+| EXEC-02 | Phase 22 | Pending |
+| PROV-01 | Phase 23 | Pending |
+| PROV-02 | Phase 23 | Pending |
+| PROV-03 | Phase 23 | Pending |
+| PROV-04 | Phase 23 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25 ⚠️
+- Mapped to phases: 25
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-17*
-*Last updated: 2026-03-17 after initial definition*
+*Last updated: 2026-03-17 after roadmap creation (phases 19-23)*

@@ -5,9 +5,9 @@ milestone_name: Project & Registry
 status: active
 stopped_at: null
 last_updated: "2026-03-17"
-last_activity: 2026-03-17 — Milestone v1.3 started
+last_activity: 2026-03-17 — Roadmap created; phases 19-23 defined; ready to plan Phase 19
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,20 +21,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Milestone v1.3 — Project & Registry
+**Current focus:** Phase 19 — User Authentication
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-17 — Milestone v1.3 started
+Phase: 19 of 23 (User Authentication)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
+
+Progress: [░░░░░░░░░░] 0% (0/5 v1.3 phases complete)
 
 ## Accumulated Context
 
 ### Decisions
 
 Key decisions archived in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- v1.3: golang-jwt/jwt/v5 for JWT (zero deps, HS256); bcrypt cost 12 (~300ms)
+- v1.3: Hand-rolled ~50-line RBAC middleware (no Casbin); three static roles admin/executor/viewer
+- v1.3: WDL source stored as TEXT in SQLite — registry works in local-only deployments
+- v1.3: Three-table registry schema (registry_entries/registry_versions/registry_tags) per Docker distribution model
+- v1.3: auth.enabled defaults false — all 156 spectool tests continue to pass unchanged
+- v1.3: Daemon routes in separate sub-router — must be structured before any JWT middleware is added
 
 ### Pending Todos
 
@@ -42,10 +52,11 @@ None.
 
 ### Blockers/Concerns
 
-None.
+- [Phase 19] Admin seed decision: POST /users is admin-only (chicken-and-egg). Must decide between migration-seeded default admin or --init-admin CLI flag before implementation.
+- [Phase 21] Registry schema canonical version: three-table schema (registry_entries/registry_versions/registry_tags) chosen; must be finalized before migrations are written.
 
 ## Session Continuity
 
 Last session: 2026-03-17
-Stopped at: Milestone v1.3 started
+Stopped at: Roadmap created for v1.3 (phases 19-23). Ready to plan Phase 19.
 Resume file: None
