@@ -1,199 +1,197 @@
 # Project Research Summary
 
 **Project:** flowy — WDL 1.2 workflow engine (Go)
-**Domain:** S3/object storage backend for distributed WDL execution engine
-**Researched:** 2026-03-12
+**Domain:** Multi-user bioinformatics workflow engine — user auth, project RBAC, WDL registry, provenance tracking (v1.3)
+**Researched:** 2026-03-17
 **Confidence:** HIGH
 
 ## Executive Summary
 
-flowy v1.2 adds S3/MinIO object storage as an alternative backend to the existing shared-filesystem model. The core challenge is not the S3 API itself — it is the impedance mismatch between S3 (remote, key-value store) and Docker container execution (local POSIX filesystem, bind mounts). The industry-standard answer, validated by Cromwell, Nextflow, and miniwdl, is the Localize-Execute-Delocalize (LED) pattern: the daemon downloads S3 inputs to a local staging directory before launching the container, invokes the container against local POSIX paths (unchanged), then uploads outputs back to S3 after the container exits. The `wdl/task` execution layer remains entirely storage-agnostic.
+flowy v1.3 adds four interconnected features to an existing, working WDL workflow engine: user authentication, project-scoped RBAC, a WDL content-addressed registry, and run provenance tracking. The codebase already ships a solid foundation — chi v5 router, SQLite/WAL with goose migrations, a `Store` interface with injected dependencies, and an S3 storage backend — so v1.3 is a layered addition, not a rewrite. The recommended approach is sequential: auth first, projects and RBAC second, WDL registry third, registry-based execution fourth, and provenance as a capstone that ties all prior layers together. Every feature from v1.3 is either blocked by auth or blocks provenance, so the dependency chain drives the phase order unambiguously.
 
-The recommended approach centers on a narrow `Backend` interface in a new `internal/storage/` package. A `LocalBackend` wraps existing `store/rundir.go` logic (zero regression on all 156 spectool tests), and an `S3Backend` uses AWS SDK for Go v2 with streaming I/O. Storage backend selection flows from a `--storage` CLI flag through `SubmitRequest` to the server, which embeds addressing config (bucket, endpoint, prefix — but never credentials) in `TaskClaimResponse`. Daemons load credentials independently from their own config or IAM role. The build order is strict: interface first, then `LocalBackend` with spectool gate, then API extension, then `S3Backend`, then daemon staging logic, then full MinIO conformance.
+The key technical decisions are already settled. No substantial new third-party libraries are required: `github.com/golang-jwt/jwt/v5` (one new direct dep, v5.3.1 January 2026), `golang.org/x/crypto/bcrypt` (already transitive via Docker SDK), and `github.com/opencontainers/go-digest` (already transitive) cover the full stack. RBAC is implemented as a ~50-line hand-rolled chi middleware — the static three-role system (admin/executor/viewer) does not warrant Casbin or any external RBAC library. WDL source is stored as `TEXT` directly in SQLite rather than in S3, because WDL files are small (typically < 50 KB) and keeping them in the database removes cross-service dependencies and allows registry to work in local-only deployments. The content-addressed registry follows the Docker distribution model: blobs are immutable and addressed by SHA-256 digest; tags are mutable pointers to a blob version.
 
-The top risks are well-defined and preventable at design time. The most severe is allowing `s3://` URIs to reach Docker container command templates — bioinformatics tools do not understand S3 URIs and this failure mode is indistinguishable from a task failure. The second is scatter output key collision when the shard index is omitted from S3 key names (silent last-writer-wins overwrites). The MinIO GitHub repository was archived in February 2026, requiring all test configuration to pin to a specific MinIO release tag rather than use `minio:latest`. All three are architecture-time decisions, not patch-time decisions, and must be baked into the initial interface design.
-
----
+The primary risks are architectural and must be resolved before writing any handler code. The highest-risk decision is daemon authentication: the server has two distinct clients (human users and automated daemons), and adding JWT middleware without first structuring the router into separate sub-groups will silently break all task execution. The second critical risk is provenance granularity — run-level provenance cannot later answer "which tool version produced this file?" if a workflow calls multiple registered tools, and schema migrations to fix this are classified as HIGH recovery cost. Both pitfalls have documented avoidance strategies and are addressed directly by the phase ordering recommended below.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The v1.0/v1.1 stack (Go 1.25, cobra CLI, chi v5, modernc.org/sqlite, goose, Docker SDK, testify, slog) is unchanged and carries forward. For v1.2, three package groups are added. The primary S3 client is `github.com/aws/aws-sdk-go-v2/service/s3` (v1.78.x) — the official AWS SDK that is also MinIO-compatible via `BaseEndpoint` + `UsePathStyle: true` options. Credentials loading uses `github.com/aws/aws-sdk-go-v2/config` (v1.32.x) with `credentials` for static/MinIO configuration. Integration testing uses `github.com/testcontainers/testcontainers-go/modules/minio` (v0.36.x) which manages MinIO container lifecycle within `go test` — no separate docker-compose file needed. Key rejections: aws-sdk-go v1 (end-of-support July 2025), `feature/s3/manager` (deprecated March 2026; superseded by pre-1.0 `transfermanager`), and `minio/minio-go/v7` as primary client (introduces a second S3 interface when AWS SDK v2 already speaks S3 to both AWS and MinIO). No third-party storage abstraction libraries (afero leaks POSIX semantics incompatible with S3; sajari/storage is unmaintained since 2020).
+The v1.3 stack adds minimally on top of the existing v1.2 foundation. All auth and registry capabilities are covered by the existing dependency graph plus one new direct dependency. The `golang-jwt/jwt/v5` library (v5.3.1, January 28, 2026) is the maintained successor to the archived `dgrijalva/jwt-go`; it has zero runtime dependencies and is used by 13,000+ Go modules. RBAC is hand-rolled — three static roles at compile time do not justify a policy DSL. The content digest format (`sha256:<hex>`) reuses `github.com/opencontainers/go-digest`, already present via the Docker SDK. The key rejection is `go-chi/jwtauth/v5`, which depends on the full `lestrrat-go/jwx` JOSE implementation — 50x the needed surface area for HS256 token sign/verify.
 
-**Core technologies (v1.2 additions):**
-- `aws-sdk-go-v2/service/s3` v1.78.x: S3 API — sole client for both AWS S3 and MinIO; v1 is end-of-support; verified March 2026
-- `aws-sdk-go-v2/config` v1.32.x + `credentials` v1.17.x: credential chain (env vars, ~/.aws, IAM, static for MinIO) — same package for AWS and MinIO
-- `testcontainers-go/modules/minio` v0.36.x: real S3-compatible server in CI — Docker-native lifecycle; spectool conformance requires real wire-protocol I/O, not mocks
-- Hand-written `Backend` interface in `internal/storage/`: storage abstraction — narrower than any third-party library; covers exactly the staging lifecycle WDL needs
-- Direct `PutObject`/`GetObject` with streaming `io.Copy`: single-part I/O; multipart deferred until transfer manager reaches v1.0 stability
+See `.planning/research/STACK.md` for full library comparison, rejected alternatives, and exact API usage patterns.
 
-See `.planning/research/STACK.md` for full rationale, version compatibility, and what NOT to use.
+**Core technologies:**
+- `github.com/golang-jwt/jwt/v5` v5.3.1: JWT sign/verify — zero deps, HS256, maintained community successor to dgrijalva
+- `golang.org/x/crypto/bcrypt` (already in go.mod): password hashing — cost 12 (~300ms), Go team maintained
+- `github.com/opencontainers/go-digest` (already in go.mod): SHA-256 content digest — canonical `sha256:<hex>` format
+- Hand-rolled `internal/auth/rbac.go` (~50 lines): three-role RBAC — no Casbin, no gorbac, static enum
+- `crypto/sha256` (stdlib): WDL content hashing — no external dep for content addressing
 
 ### Expected Features
 
-The v1.2 MVP consists of 8 P1 deliverables. All are required for the milestone. The dependency chain is strictly ordered: storage abstraction interface must exist before any other feature. `LocalBackend` must pass the spectool gate before `S3Backend` code is written.
+See `.planning/research/FEATURES.md` for full feature table, schema sketch, competitor analysis (Terra, Dockstore, Cromwell), and complete feature dependency graph.
 
-**Must have (table stakes):**
-- Storage abstraction interface (`Backend` in `internal/storage/`) — foundation for all other v1.2 features
-- `LocalBackend` wrapping existing `rundir.go` — preserves v1.1 behavior byte-for-byte; spectool gate
-- `s3://` URI detection in `cleanPath()` (`wdl/task/inputs.go`) — correctness prerequisite; current code corrupts S3 URIs via `filepath.Abs`/`filepath.Clean`
-- `S3Backend`: input staging (download to temp dir) and output collection (upload to S3) — core LED implementation
-- `StorageConfig` struct in `config.go` with `type`, `bucket`, `region`, `endpoint`, `prefix`, `path_style` — MinIO compatibility
-- `--storage` flag on `flowy submit`/`flowy run`, stored per-run in DB, forwarded in `TaskClaimResponse` — per-run backend control
-- MinIO integration testing (testcontainers with pinned image tag) — CI without AWS credentials
-- Spectool 156/156 passing on both local and S3 backends — non-negotiable quality gate
+**Must have (table stakes) — all P1 for v1.3:**
+- Username/password login returning a signed JWT — entry point for all auth
+- JWT middleware protecting all non-public routes — without this, auth is theater
+- User creation and listing (admin-only) — lifecycle management
+- Projects as isolation boundaries — every team workflow platform requires this
+- Three-tier RBAC per project (admin/executor/viewer) — maps directly to workflow engine operations
+- WDL registry push with SHA-256 content digest — core registry write
+- WDL registry pull by tag or digest — tag is mutable, digest is immutable
+- Execute a registered workflow/tool by registry ref — the purpose of the registry
+- Run-level provenance record — audit trail linking run to registry version, inputs, submitting user
+- Provenance read endpoints — reproducibility query surface
 
-**Should have (competitive):**
-- Path-scheme auto-routing: `s3://` URI = S3 backend regardless of default, absolute path = local FS, relative = default backend — enables mixed-source inputs without per-input configuration
-- Concurrent multipart upload/download tuning (part size, concurrency) — performance for large genomic files; defer until benchmarks show need
+**Should have (differentiators):**
+- Content-hash (digest) addressing guaranteeing byte-identical WDL retrieval
+- Provenance stores digest, not tag — tag can be moved, digest cannot
+- Registry entries project-scoped — no cross-team name collisions
+- Registry-ref execution requires no shared filesystem — already unlocked by v1.2 `WDLContent` field in `TaskClaimResponse`
 
-**Defer (v2+):**
-- GCS / Azure Blob Storage backends — separate SDK integrations; GCS supports S3-compatible API as a bridge path
-- Reference data cache (skip re-download of unchanged `s3://` inputs across runs) — requires input hashing
-- Pre-signed URL output sharing — useful for result distribution; not needed for correctness
-- Execution cache with S3-backed call cache — complex input fingerprinting
-
-See `.planning/research/FEATURES.md` for the full feature dependency graph and competitor feature analysis (Cromwell, Nextflow, miniwdl).
+**Defer (v1.x or v2+):**
+- OAuth2/SSO — enormous scope, no current requirement; username/password + JWT is stable and extendable
+- Refresh token rotation — disproportionate for batch workflow API used via scripting, not interactive sessions
+- Per-task provenance (W3C PROV graph) — research-grade, 3-5x the scope of run-level provenance
+- PostgreSQL migration — no measurable write contention at current scale; SQLite WAL is sufficient
+- GA4GH TRS API compatibility — defer until Dockstore/Terra interoperability is explicitly requested
 
 ### Architecture Approach
 
-The architecture introduces a new `internal/storage/` package as the sole boundary between workflow orchestration and object storage. The server gains a `backend storage.Backend` field injected at startup; `dispatch.go` replaces four direct `os.ReadFile`/`os.WriteFile` calls with backend method calls. The daemon gains two new phases around the existing `task.RunTask()` invocation: `localizeInputs` (downloads `s3://` File inputs to a per-task staging dir, rewrites paths to local POSIX paths) and `delocalizeOutputs` (uploads local output files to S3, rewrites paths to `s3://` URIs in outputs.json). The `wdl/task` package and `RunTask` are untouched — they see only local POSIX paths regardless of backend. Storage addressing config flows to the daemon via new fields in `TaskClaimResponse`; credentials never travel over the API (daemon reads credentials from its own config file or IAM role).
+v1.3 follows an additive architecture: three new internal packages (`internal/auth/`, `internal/registry/`, `internal/provenance/`) are added, the `store.Store` interface gains four new method groups (user, project, registry, provenance), and the chi router is restructured into explicit sub-routers (public, user-JWT, daemon-token). The WDL parser, storage backend, and daemon execution loop are untouched. The `auth.enabled` config flag (default `false`) ensures all existing spectool conformance tests continue to pass without modification when auth is not configured.
+
+See `.planning/research/ARCHITECTURE.md` for full component map, all five migration scripts, store interface extensions, data flow diagrams, and the seven-step build order.
 
 **Major components:**
-1. `internal/storage/backend.go` — `Backend` interface: WriteTaskInputs, ReadTaskOutputs, WriteTaskOutputs, ReadRunOutputs, WriteRunOutputs, DownloadFile, UploadFile, CreateRunDirs
-2. `internal/storage/local.go` — `LocalBackend`: wraps `store/rundir.go`; DownloadFile/UploadFile are no-ops returning the local path unchanged; enables spectool gating before any S3 code
-3. `internal/storage/s3.go` — `S3Backend`: AWS SDK v2 client; streaming `io.Copy` for downloads; `PutObject` for uploads; key layout mirrors local FS (`{prefix}/runs/{runID}/tasks/{name}_{shard}/...`)
-4. `internal/storage/factory.go` — `NewBackendFromConfig` (server startup) and `NewBackendFromClaim` (daemon per-task); credential injection separated from addressing config
-5. `internal/daemon/daemon.go` (modified) — `localizeInputs` and `delocalizeOutputs` helpers bracket the existing `RunTask` call; staging dir cleaned up after delocalization
-6. `internal/server/dispatch.go` (modified) — writes `inputs.json` to backend before creating the task in SQLite; reads `outputs.json` via backend after task completes
+1. `internal/auth/` (NEW) — JWT sign/verify, bcrypt hashing, chi middleware for JWT and daemon auth
+2. `internal/registry/` (NEW) — SHA-256 content hashing, push/pull logic, tag resolution
+3. `internal/provenance/` (NEW) — record construction, linking run completion to registry digest
+4. `internal/store/Store` interface (MODIFIED) — extended with user/project/registry/provenance method groups; existing methods untouched
+5. `internal/server/server.go` (MODIFIED) — `jwtSecret` field, structured route groups, backwards-compat `auth.enabled` flag
 
-See `.planning/research/ARCHITECTURE.md` for full data flow diagrams, component change table, anti-patterns, and the 7-step suggested build order.
+**Build order driven by strict dependencies:**
+1. `internal/auth/jwt.go`, `password.go` — no internal deps; unblocks all middleware
+2. Store interface + migration 00004 (users) — unblocks auth handlers
+3. Auth middleware + config + router restructure — spectool gate: `auth.enabled=false` passes all existing tests
+4. Migration 00005 (projects/members) + auth/project handlers + CLI login commands
+5. Migration 00006 (registry) + `internal/registry/` + registry handlers + CLI registry commands
+6. Migrations 00007-00008 (runs project linkage, provenance) + `internal/provenance/` + dispatch integration
+7. Daemon token auth — minimal change to `daemon.go` and config
 
 ### Critical Pitfalls
 
-1. **s3:// URI reaching Docker container command** — daemon must download and rewrite all File inputs to local POSIX paths before `RunTask`; this must be baked into the initial `Backend` interface contract, not added as a patch; verify with an integration test that inspects actual Docker run arguments; Cromwell encountered this exact issue (issue #4356)
-2. **Scatter output key collision** — shard index must be in every S3 output key (`{prefix}/runs/{runID}/tasks/{name}_{shard}/outputs/{file}`); omitting it causes silent last-writer-wins overwrites when scatter tasks produce identically named outputs; verify with ListObjectsV2 count == scatter array length
-3. **Incomplete multipart upload parts accumulating** — always call `AbortMultipartUpload` on any upload error or context cancellation; add S3 lifecycle rule `AbortIncompleteMultipartUploads` after 7 days as a safety net; this is invisible during MinIO testing (no billing) but a real cost on AWS S3
-4. **Large file OOM** — never use `io.ReadAll(getObjectResp.Body)` for downloads; always stream via `io.Copy(localFile, resp.Body)`; genomic files routinely exceed available daemon host RAM; also pass `os.File` to upload, not a preloaded `[]byte`
-5. **MinIO repo archived (Feb 2026), `minio:latest` unsafe** — pin the MinIO Docker image to a specific release tag (e.g., `RELEASE.2025-12-18T17-24-25Z`); read endpoint/credentials from env vars so the test backend is swappable to SeaweedFS or Garage if needed
+See `.planning/research/PITFALLS.md` for full detail including recovery costs, verification checklists, integration gotchas, and security mistakes.
 
-See `.planning/research/PITFALLS.md` for 2 additional critical pitfalls (aws-sdk-go v1 import, inline URI string parsing), full integration gotchas, performance traps, security mistakes, and the "looks done but isn't" checklist.
-
----
+1. **Daemon endpoints left unauthenticated when user JWT is added** — design the three sub-router groups (public, user-JWT, daemon-token) in `newRouter()` before writing any JWT code; if daemon routes fall under JWT middleware, all task execution silently stops with runs stuck in PENDING; verified as the top auth retrofit failure mode
+2. **Object-level authorization (BOLA) missing** — JWT verification confirms authentication but not authorization; every handler that fetches a resource by UUID must verify `resource.project_id` matches the caller's project membership; OWASP API Security Top 10 #1 risk; cannot be fixed solely with middleware
+3. **Mutable tag overwrites breaking reproducibility** — implement `UNIQUE(entry_id, tag)` constraint at migration time and return HTTP 409 on re-tag; always store the resolved SHA-256 digest (not the tag string) in provenance records; silent overwrite is how bioinformatics tool versioning breaks downstream reproducibility
+4. **Store interface bypassed with raw SQL in handlers** — establish the `store.Store` extension pattern with the very first User entity in Phase 1; no `*sql.DB` references or SQL string literals belong in handler files; this pattern prevents fragmented query logic and enables testing
+5. **SQLite write transaction held open during expensive operations** — compute SHA-256 of WDL content before opening a write transaction; never hold a write lock across CPU-intensive work; long transactions block daemon heartbeats under concurrent load, causing tasks to be incorrectly marked stale
 
 ## Implications for Roadmap
 
-Based on combined research, five phases with a strict dependency chain. Phases 1-2 are pure refactors with spectool gates. Phases 3-5 introduce external network I/O. Any spectool regression in phases 1-2 is attributable to the refactor, not S3, which isolates debugging.
+Based on combined research, the feature dependency chain is linear and non-negotiable: auth enables projects, projects enable RBAC, RBAC guards the registry, and the registry enables provenance. No phase can be reordered without breaking a downstream dependency.
 
-### Phase 1: Storage Abstraction Interface and LocalBackend
+### Phase 1: User Authentication Foundation
 
-**Rationale:** Every subsequent component depends on the `Backend` interface existing and `LocalBackend` passing all 156 spectool tests. This phase proves the abstraction does not regress existing behavior before any S3 code is written. It is the highest-leverage, lowest-risk starting point and unblocks all other phases for parallel development.
-**Delivers:** `Backend` interface definition, `LocalBackend` wrapping `store/rundir.go`, `factory.go` with `NewBackendFromConfig`, `StorageConfig` struct with defaults in `config.go`, server `Server` struct wired to use `LocalBackend`, daemon with empty `localizeInputs`/`delocalizeOutputs` stubs that pass through, `ParseS3URI` canonical helper with edge-case tests.
-**Addresses:** Storage abstraction interface (P1), LocalBackend (P1), StorageConfig (P1 partial), ParseS3URI utility (prevents Pitfall 7)
-**Avoids:** S3 awareness inside `wdl/task` (Anti-Pattern 1 in ARCHITECTURE.md — baked out by interface boundary), inline URI string parsing scattered across call sites (Pitfall 7)
-**Gate:** spectool 156/156 passing against LocalBackend with no behavior change from v1.1
+**Rationale:** Auth is the prerequisite for every other v1.3 feature. JWT claims carry `user_id` and `role` that all subsequent phases read from request context. The route group restructure must happen here to permanently avoid the daemon authentication pitfall — it cannot be deferred to "after auth works."
+**Delivers:** `users` table (migration 00004), `POST /auth/login`, `GET /auth/whoami`, `POST /users` (admin), `internal/auth/` package (jwt.go, password.go, middleware.go, rbac.go), JWT middleware on user routes, daemon shared-secret middleware on daemon routes, `~/.flowy-token` management in CLI, startup validation rejecting empty or short `FLOWY_JWT_SECRET`.
+**Addresses:** Username/password login, JWT session, user lifecycle management (table stakes).
+**Avoids:** Pitfall 1 (daemon auth — route groups defined here), Pitfall 6 (JWT secret in source — env var required at startup), Pitfall 7 (bcrypt cost — named constant `bcryptCost = 12`), Pitfall 8 (store interface pattern established with first entity).
 
-### Phase 2: API Extension and s3:// Path Guard
+### Phase 2: Projects and RBAC
 
-**Rationale:** The client `--storage` flag, the `TaskClaimResponse` storage fields, and the `cleanPath` guard must exist before daemon S3 logic is written. These are pure interface/data changes with no network calls. Must be gated by spectool to confirm local backend still works. Adding new fields alongside existing `InputsDir`/`OutputsDir` (not replacing them) preserves backward compatibility.
-**Delivers:** `SubmitRequest.StorageOverride` field, `TaskClaimResponse` four new storage fields (StorageType, StorageBucket, StorageEndpoint, StoragePrefix), `handleClaim` populates storage fields from server config, `cleanPath` s3:// guard in `wdl/task/inputs.go`, `--storage {local|s3}` CLI flag wired through `flowy submit`/`flowy run`, `storage_backend` column in runs table.
-**Addresses:** Workflow-level backend selection (P1), s3:// scheme detection (P1)
-**Avoids:** Anti-Pattern 5 (replacing InputsDir/OutputsDir with S3 URIs — adds new fields alongside existing ones), credential leak in claim response (Anti-Pattern 2 — storage addressing only, no credentials)
-**Gate:** spectool 156/156; confirm `s3://` path survives `cleanPath` without corruption
+**Rationale:** Projects are the isolation boundary that all registry and provenance features require. RBAC middleware must exist before any project-scoped resource endpoint is written, or object-level authorization gaps will be retrofitted rather than designed in.
+**Delivers:** `projects` and `project_members` tables (migration 00005), `POST/GET /projects`, `GET /projects/{id}`, `POST /projects/{id}/members`, `DELETE /projects/{id}/members/{uid}`, `RequireProjectRole` chi middleware applied to route groups, `project_id` nullable FK added to `runs` table (migration 00007 partial).
+**Addresses:** Projects as isolation boundaries, three-tier RBAC per project (table stakes).
+**Avoids:** Pitfall 2 (BOLA — every resource gets `project_id` FK before any resource handler is written).
 
-### Phase 3: S3Backend Core Implementation
+### Phase 3: WDL Registry
 
-**Rationale:** First phase introducing external network calls. Isolated in `internal/storage/s3.go`. Unit-tested with a mocked or minimal S3 client before wiring into daemon. All streaming and error-path patterns (OOM, abort on cancel) must be correct in this phase — they cannot be retrofitted.
-**Delivers:** `S3Backend` implementing full `Backend` interface, streaming `DownloadFile` via `io.Copy` (not `io.ReadAll`), `UploadFile` via `PutObject` with `os.File` body, `WriteTaskInputs`/`ReadTaskOutputs`/`WriteRunOutputs`/`ReadRunOutputs` for JSON blobs, S3 client constructor with `UsePathStyle: true` for MinIO, `NewBackendFromClaim` factory combining claim addressing + daemon credentials.
-**Uses:** aws-sdk-go-v2/service/s3 v1.78.x, aws-sdk-go-v2/config, aws-sdk-go-v2/credentials
-**Avoids:** Large file OOM (Pitfall 5 — streaming from the start), aws-sdk-go v1 (Pitfall 4), credentials in TaskClaimResponse (Anti-Pattern 2), S3 operations in handleClaim hot path (Anti-Pattern 4)
-**Gate:** Unit tests with mocked S3 client; `ParseS3URI` edge-case tests passing (empty bucket, empty key, trailing slash, double slash)
+**Rationale:** Registry is the core deliverable of v1.3. Requires users (`pushed_by` FK) and projects (`project_id` FK). The three-table schema (registry_entries/registry_versions/registry_tags) must be designed before any push endpoint is implemented to avoid the content-hash type collision and mutable tag overwrite pitfalls.
+**Delivers:** `registry_entries`, `registry_versions`, `registry_tags` tables (migration 00006), push endpoint (`POST /projects/{pid}/registry`, executor+), pull by tag and digest (`GET /projects/{pid}/registry/{name}/{ref}`, viewer+), list endpoints, CLI `registry push/pull/list` subcommands, idempotent re-upload of identical WDL content (UNIQUE on `(entry_id, digest)`), SHA-256 computed before transaction opens.
+**Addresses:** WDL registry push/pull with SHA-256 content digest, digest-based immutable addressing (table stakes + differentiator).
+**Avoids:** Pitfall 3 (content hash type collision — three-table schema separates blobs from named entries), Pitfall 4 (mutable tags — UNIQUE constraint + HTTP 409 on re-tag), Pitfall 9 (SQLite writer contention — hash computed before write transaction).
 
-### Phase 4: Daemon Staging and Delocalization Logic
+### Phase 4: Registry-Based Execution
 
-**Rationale:** Wires `S3Backend` into the daemon execution loop. This is the phase where the LED pattern is fully implemented and all three critical pitfalls (Pitfalls 1, 2, 3) can manifest. Must be tested against a real MinIO instance. The `localizeInputs` function must produce local POSIX paths only — no `s3://` URIs must reach `RunTask`. Scatter output keys must include shard index from the first implementation.
-**Delivers:** `localizeInputs` (detects `s3://` inputs, downloads to staging dir, rewrites to local paths), `delocalizeOutputs` (uploads local File/Directory outputs, rewrites to `s3://` URIs), `newStagingDir` with deferred cleanup, daemon reads `inputs.json` via `backend.ReadTaskInputs`, daemon writes `outputs.json` with `s3://` paths via backend, S3 output key includes `{taskName}_{shardIndex}` to prevent scatter collision.
-**Implements:** Localize-Execute-Delocalize pattern (Pattern 1 in ARCHITECTURE.md)
-**Avoids:** s3:// URI in container command (Pitfall 1 — CRITICAL), scatter key collision (Pitfall 2 — shard index in key naming from start), incomplete multipart cleanup (Pitfall 3 — AbortMultipartUpload in error paths)
-**Gate:** Integration tests against MinIO testcontainer; Docker run args inspection confirms no `s3://` in container paths; scatter test: ListObjectsV2 count == scatter array width after scatter workflow
+**Rationale:** Registry ref submission connects the registry to the existing execution engine. Requires registry (ref resolution) and projects (executor role check). The `WDLContent` field in `TaskClaimResponse` already exists from v1.2, so the daemon side requires zero changes — this phase is primarily wiring.
+**Delivers:** Registry ref resolution in submit handler, `registry_ref` column on `runs` table (migration 00007 remainder), `POST /projects/{pid}/workflows` accepting `{"registry_ref": "name:tag", "inputs": {...}}` alongside existing `wdl_path` submission, CLI `--registry ref` flag on submit/run commands, backward-compatible `wdl_path` submission continues to work unchanged.
+**Addresses:** Execute registered workflow/tool by registry ref (table stakes).
+**Uses:** Existing `WDLContent` field in `TaskClaimResponse` (v1.2 mechanism, no daemon changes required).
 
-### Phase 5: MinIO Integration Testing and Spectool Conformance on S3
+### Phase 5: Provenance Tracking
 
-**Rationale:** End-to-end validation. Spectool 156/156 on S3 backend is the non-negotiable milestone quality gate. MinIO test infrastructure must use a pinned image (not `latest`) and read endpoint/credentials from env vars to be swappable. All previous phases must pass their gates before this phase begins.
-**Delivers:** MinIO testcontainer configuration with pinned image tag (`RELEASE.2025-12-18T17-24-25Z` or similar), spectool harness pointed at MinIO endpoint, 156/156 spectool passing on S3 backend, CI configuration with `TESTCONTAINERS_RYUK_DISABLED=true` for Docker-in-Docker environments, env var overrides (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`) documented for alternative backends.
-**Addresses:** MinIO compatibility (P1), spectool 156/156 on S3 (P1), MinIO integration testing infrastructure (P1)
-**Avoids:** MinIO `latest` pinning (Pitfall 6), silent fallback from S3 to local FS (UX pitfall)
-**Gate:** spectool 156/156 on both local and S3 backends; CI passes without AWS credentials
+**Rationale:** Provenance is the capstone feature. It requires a completed run (dispatch.go integration), a registry version (`version_id` FK), a user identity (`submitted_by` FK), and a project (`project_id` FK). All four prior phases must be complete. The schema granularity decision must be made at schema design time — retrofitting task-level granularity after deployment is a HIGH-cost recovery.
+**Delivers:** `provenance` table (migration 00008), provenance record written in `dispatch.go` after successful run completion (non-fatal — logs on error, does not fail the run), `GET /projects/{pid}/provenance` (list), `GET /projects/{pid}/provenance/{id}` (single), digest stored in record (not just tag string at submission time), provenance daemon token auth (step 7 of build order).
+**Addresses:** Run-level provenance write and read, digest-linked provenance (table stakes + differentiator).
+**Avoids:** Pitfall 5 (provenance granularity — schema references `version_id` carrying an immutable digest, not a mutable tag; both tag-at-submit and resolved digest are stored).
 
 ### Phase Ordering Rationale
 
-- Phases 1 and 2 have zero external network calls. Any spectool regression in these phases is attributable to the storage abstraction refactor alone, not S3 I/O. This isolation makes failures fast to diagnose.
-- Phase 3 introduces external I/O but only within `internal/storage/s3.go`. Unit tests with mocked clients can verify the streaming and error-path patterns before wiring into daemon, keeping the feedback loop short.
-- Phase 4 is the only phase that can trigger the three critical pitfalls (Pitfalls 1, 2, 3). Running it after Phase 3 unit tests ensures the S3Backend implementation is correct before the daemon wiring is added to the debugging surface.
-- Phase 5 is purely verification. It cannot succeed until all previous phases pass their gates. Running spectool last means any failure is in end-to-end wiring or MinIO-specific behavior, not in component logic.
+- Auth must come first: JWT claims carry `user_id` that every downstream feature reads from context; no project membership, registry push, or provenance record can exist without a user identity.
+- Projects before registry: `registry_entries.project_id` is a NOT NULL FK; registry cannot exist without projects; RBAC must be in place before registry write endpoints go live.
+- Registry before execution-from-ref: The submit handler must resolve `registry_ref` to WDL content before it can create a run.
+- Registry before provenance: `provenance.version_id` is a FK into `registry_versions`; provenance rows cannot be written without the registry.
+- Daemon auth wired in Phase 1 because the route group restructure enabling daemon-token middleware must happen before any JWT middleware is deployed. This is the single highest-risk ordering constraint — getting it wrong causes silent, total execution failure.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 3 (S3Backend):** `feature/s3/manager` is deprecated and `transfermanager` is pre-1.0 unstable. For files > 5 GB, manual multipart upload (~80 lines) is required. Validate whether any spectool conformance test uses files > 5 GB before finalizing whether multipart is in Phase 3 scope or deferred. If spectool uses large files, multipart must move to Phase 3 core.
-- **Phase 4 (Daemon staging):** The `AbortMultipartUpload` cancel-path test requires MinIO. MinIO's behavior on partial upload cleanup may differ from AWS S3 error codes. Plan a dedicated cancel-mid-upload integration test and verify against both MinIO and real AWS S3 before declaring Phase 4 complete.
-- **Phase 5 (Conformance on S3):** MinIO repo was archived February 2026. If the pinned MinIO testcontainers module stops working in CI, a fallback decision between SeaweedFS and Garage is needed. Confirm testcontainers module availability for these alternatives before locking in MinIO as the sole test backend.
+Phases with standard, well-documented patterns (likely no need for `/gsd:research-phase`):
+- **Phase 1 (Auth):** chi middleware, golang-jwt/jwt v5, bcrypt — thoroughly documented; exact implementation spelled out in ARCHITECTURE.md including full token design and rbac.go implementation.
+- **Phase 2 (Projects + RBAC):** Standard CRUD with chi route groups and RBAC middleware — no novel patterns; ARCHITECTURE.md has the full router structure.
+- **Phase 4 (Registry Execution):** Reuses existing `WDLContent` path — primarily wiring, minimal new design surface.
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (Storage abstraction + LocalBackend):** Pure Go refactor wrapping existing `store/rundir.go`. Established interface pattern. No new external dependencies. Direct codebase analysis already identifies all 4 call sites in `dispatch.go` and `handlers.go` that need updating.
-- **Phase 2 (API extension + path guard):** Struct field additions and a 5-line guard in `cleanPath`. chi + JSON patterns are established in the existing codebase. No novel decisions.
-
----
+Phases that benefit from deeper review before implementation:
+- **Phase 3 (WDL Registry):** The three-table blob/entry/tag schema has subtle correctness requirements (idempotent re-upload, tag immutability invariant, UNIQUE constraint semantics in SQLite with upsert). Review PITFALLS.md Pitfalls 3 and 4 carefully before schema finalization. The distinction between FEATURES.md schema (separate `registry_versions` table with UUID PK) and ARCHITECTURE.md schema (content hash as PK on `registry_entries`) must be resolved to a single canonical design before migrations are written.
+- **Phase 5 (Provenance):** Granularity decision (run-level vs task-level) has HIGH recovery cost if wrong. The PITFALLS.md "Looks Done But Isn't" checklist should be used as the acceptance criterion. Decision: run-level provenance linking to a single workflow registry entry is the v1.3 scope; task-level lineage is v2.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All v1.2 libraries verified via pkg.go.dev (March 2026). Key deprecations (aws-sdk-go v1, feature/s3/manager) confirmed from official sources. MinIO testcontainers module verified via official docs. UsePathStyle workaround confirmed via GitHub issue #2573. |
-| Features | HIGH | Feature set derived from direct codebase analysis of 6 source files plus 3 competitor engines (Cromwell, Nextflow, miniwdl). Interface method signatures are MEDIUM confidence — exact signatures should be finalized in Phase 1 implementation using ARCHITECTURE.md as the starting point. |
-| Architecture | HIGH | Based on direct codebase analysis of `internal/daemon/daemon.go`, `internal/server/dispatch.go`, `wdl/task/inputs.go`, `internal/api/types.go`, `internal/config/config.go`, `internal/store/rundir.go`. Build order derived from actual code dependency analysis. LED pattern validated against Cromwell and miniwdl. |
-| Pitfalls | HIGH | 7 pitfalls verified against official AWS docs, Cromwell issue tracker (#3804, #4356), and production post-mortems. MinIO archive status confirmed from GitHub (Feb 13, 2026) and InfoQ (Dec 2025). OOM pitfall confirmed from aws-sdk-go GitHub issue #2591. |
+| Stack | HIGH | All libraries verified at pkg.go.dev; two are already in go.mod as transitive deps; golang-jwt/jwt v5.3.1 published January 28, 2026 — confirmed current |
+| Features | HIGH | Auth/RBAC patterns HIGH (official docs, production patterns); registry design HIGH (Docker distribution spec is the canonical reference); provenance schema MEDIUM-HIGH (run-level well-established; task-level granularity adds implementation complexity deferred to v2) |
+| Architecture | HIGH | Based on direct codebase analysis of all files in `internal/server/`, `internal/store/`, `internal/api/`, `internal/config/`, `internal/daemon/`, `cmd/flowy/main.go` |
+| Pitfalls | HIGH | Auth/RBAC pitfalls from OWASP and production experience; registry pitfalls from Docker distribution spec and CAS literature; provenance pitfalls from bioinformatics workflow community (CWLProv, Seqera); SQLite contention from official SQLite WAL docs and production post-mortems |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Exact `Backend` interface method signatures:** FEATURES.md and ARCHITECTURE.md show two slightly different interface designs. The canonical design must be finalized in Phase 1. ARCHITECTURE.md's version (coarse-grained whole-file operations with explicit `ReadTaskInputs`) is more complete and should be preferred. Difference: FEATURES.md uses `StageInputs`/`CollectOutputs` aggregate methods; ARCHITECTURE.md uses individual `DownloadFile`/`UploadFile` primitives. Individual primitives are easier to test in isolation.
-- **Multipart upload threshold and spectool file sizes:** Whether single-part upload (covers files up to 5 GB) is sufficient for all 156 spectool tests must be verified before Phase 3 begins. If any spectool test uses files > 5 GB, manual multipart must be in Phase 3 core scope.
-- **testcontainers-go vs. docker-compose:** STACK.md recommends testcontainers-go/modules/minio; FEATURES.md mentions docker-compose. Standardize on testcontainers (already a project dependency via v0.36.x in existing go.mod) for Phase 5. Use docker-compose only as a documented fallback.
-- **MinIO alternative readiness:** If pinned MinIO release breaks in CI before v1.2 ships, the contingency is SeaweedFS or Garage. Verify testcontainers module availability for the chosen alternative before committing to MinIO as the sole CI backend.
-
----
+- **Registry schema canonical version:** FEATURES.md and ARCHITECTURE.md describe slightly different registry schemas. FEATURES.md uses a separate `registry_versions` table with a UUID primary key (more normalized, supports future metadata per version). ARCHITECTURE.md uses `content_hash` as the primary key directly on `registry_entries` (simpler, fewer joins). The roadmap plan for Phase 3 must pick one and commit before migrations are written. ARCHITECTURE.md's content-hash-as-PK approach is simpler; FEATURES.md's version-table approach is more extensible. Recommendation: use the FEATURES.md three-table schema (`registry_entries`, `registry_versions`, `registry_tags`) as it maps more cleanly to the Docker distribution spec.
+- **Admin seed on first run:** FEATURES.md lists `POST /users` as admin-only, which creates a chicken-and-egg problem. Either a migration seeds a default admin user with a configurable password, or a `flowy-server --init-admin` CLI flag is provided. This decision must be explicit in Phase 1 planning before any implementation begins.
+- **Backward-compatible route transition:** When `auth.enabled: true`, the existing unauthenticated routes (`POST /workflows`, `GET /workflows/{id}/status`) must still pass spectool conformance. The `auth.enabled` config flag handles this, but the transition path for existing API clients needs to be documented in the Phase 1 plan.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- flowy codebase (direct inspection): `internal/daemon/daemon.go`, `wdl/task/inputs.go`, `internal/server/dispatch.go`, `internal/config/config.go`, `internal/api/types.go`, `internal/store/rundir.go`
-- [pkg.go.dev: aws-sdk-go-v2/service/s3 v1.78.x](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3) — S3 client API verified March 2026; 5,227 importers
-- [pkg.go.dev: feature/s3/manager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager) — deprecated March 2026 status confirmed
-- [pkg.go.dev: feature/s3/transfermanager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager) — v0.1.8 unstable status confirmed
-- [golang.testcontainers.org/modules/minio](https://golang.testcontainers.org/modules/minio/) — Run() function signature, MinIO module docs
-- [github.com/aws/aws-sdk-go-v2 issue #2573](https://github.com/aws/aws-sdk-go-v2/issues/2573) — UsePathStyle confirmed working for MinIO
-- [github.com/aws/aws-sdk-go](https://github.com/aws/aws-sdk-go) — v1 end-of-support declaration
-- [AWS: end-of-support for aws-sdk-go v1 (July 31, 2025)](https://aws.amazon.com/blogs/developer/announcing-end-of-support-for-aws-sdk-for-go-v1-on-july-31-2025/)
-- [AWS: Discovering and Deleting Incomplete Multipart Uploads](https://aws.amazon.com/blogs/aws-cloud-financial-management/discovering-and-deleting-incomplete-multipart-uploads-to-lower-amazon-s3-costs/)
-- [Cromwell issue #4356: S3 localization mount point missed](https://github.com/broadinstitute/cromwell/issues/4356) — s3:// URI in container commands confirmed real production issue
-- [Cromwell filesystems overview](https://cromwell.readthedocs.io/en/stable/filesystems/Filesystems/) — LED pattern validated
+
+- Direct codebase analysis (`internal/server/`, `internal/store/`, `internal/api/`, `internal/config/`, `internal/daemon/`, `cmd/flowy/`) — architecture and integration points
+- [golang-jwt/jwt/v5 pkg.go.dev](https://pkg.go.dev/github.com/golang-jwt/jwt/v5) — v5.3.1 API, `WithValidMethods`, `RegisteredClaims`
+- [golang.org/x/crypto/bcrypt pkg.go.dev](https://pkg.go.dev/golang.org/x/crypto/bcrypt) — Go team maintained, already in go.mod
+- [Docker Distribution Specification](https://distribution.github.io/distribution/spec/api/) — immutable digest vs mutable tag semantics
+- [chi v5 middleware documentation](https://go-chi.io/#/pages/middleware) — route groups, middleware ordering
+- [OWASP API Security Top 10 — BOLA](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/) — object-level authorization is the #1 API security risk
+- [SQLite Write-Ahead Logging](https://sqlite.org/wal.html) — single writer, WAL semantics
+- [GA4GH Tool Registry Service (TRS) data model](https://ga4gh.github.io/tool-registry-service-schemas/DataModel/) — registry versioning reference
+- [golang-jwt/jwt v5.3.1 release — January 28, 2026](https://pkg.go.dev/github.com/golang-jwt/jwt/v5) — confirmed current maintained fork
 
 ### Secondary (MEDIUM confidence)
-- [miniwdl runner reference](https://miniwdl.readthedocs.io/en/latest/runner_reference.html) — built-in `s3:` URI support; download-to-run-dir pattern
-- [Nextflow Amazon S3 docs](https://www.nextflow.io/docs/latest/amazons3.html) — transparent s3:// path handling; MinIO custom endpoint config
-- [Cromwell issue #3804: S3 input/output staging](https://github.com/broadinstitute/cromwell/issues/3804)
-- [MinIO docs: UsePathStyle requirement](https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html)
-- [aws-sdk-go-v2 discussions #1650: S3 upload manager memory](https://github.com/aws/aws-sdk-go-v2/discussions/1650)
 
-### Tertiary (supporting/informational)
-- [InfoQ Dec 2025: MinIO in maintenance mode](https://www.infoq.com/news/2025/12/minio-s3-api-alternatives/)
-- [github.com/minio/minio archived Feb 13, 2026](https://github.com/minio/minio)
-- [MinIO alternatives: SeaweedFS, Garage, RustFS, Ceph RGW](https://dev.to/arash_ezazy_f69fb13acdd37/minio-alternatives-open-source-on-prem-real-world-credible-seaweedfs-garage-rustfs-and-ceph-36om)
-- [aws-sdk-go issue #2591: S3 manager OOM](https://github.com/aws/aws-sdk-go/issues/2591)
+- [Dockstore introduction](https://docs.dockstore.org/en/develop/dockstore-introduction.html) — organization/collection scoping model, four-tier role reference
+- [Terra pipeline versioning](https://support.terra.bio/hc/en-us/articles/360037484111) — Docker digest resolved at submit; three-tier role reference
+- [CWLProv — W3C PROV workflow provenance](https://academic.oup.com/gigascience/article/8/11/giz095/5611001) — task-level granularity requirement for scientific reproducibility
+- [Seqera Community — provenance discussion](https://community.seqera.io/t/provenance-or-audit-trail-of-computation/1174) — bioinformatics community expectations for provenance
+- [10 RBAC Best Practices — Oso](https://www.osohq.com/learn/rbac-best-practices) — scoped roles, role proliferation anti-patterns
+- [Role-based access control in Golang with jwt-go and chi](https://dev.to/bensonmacharia/role-based-access-control-in-golang-with-jwt-go-ijn) — chi middleware RBAC pattern
+
+### Tertiary (LOW confidence)
+
+- CNCF 2024 survey (via PITFALLS.md) — "65% of organizations experienced breakages from mutable tags" — directional, validates immutable tag enforcement requirement
+- [Cromwell SecurityRecommendations.md](https://cromwell.readthedocs.io/en/stable/CommandLine/) — "Cromwell is NOT on its own a security appliance" — confirms auth must be layered explicitly on workflow engines
 
 ---
-*Research completed: 2026-03-12*
+*Research completed: 2026-03-17*
 *Ready for roadmap: yes*

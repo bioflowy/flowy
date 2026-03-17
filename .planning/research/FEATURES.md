@@ -1,9 +1,25 @@
 # Feature Research
 
-**Domain:** S3/object storage backend for WDL workflow execution engine
-**Researched:** 2026-03-12
-**Confidence:** HIGH (storage abstraction interface, S3 staging/delocalization patterns), MEDIUM (MinIO-specific behaviors, config-driven backend selection details)
-**Scope:** v1.2 milestone only. All v1.0/v1.1 features (parser, evaluator, Docker executor, DAG scheduler, REST API, distributed daemon) are already built and must remain fully functional.
+**Domain:** Multi-user WDL workflow engine — user auth, project RBAC, WDL registry, provenance tracking
+**Researched:** 2026-03-17
+**Confidence:** HIGH (auth/RBAC patterns in Go+chi), MEDIUM (registry design), MEDIUM (provenance schema)
+
+---
+
+## Existing Baseline (Do Not Re-implement)
+
+The following are already shipped and are dependencies for v1.3 features:
+
+- WDL 1.2 parsing, type-checking, execution via Docker (v1.0)
+- flowy-server REST API with chi v5, SQLite/WAL, goose migrations (v1.1)
+- S3/MinIO storage backend with LED daemon pattern (v1.2)
+- `runs` and `tasks` tables, `Store` interface with `CreateRun`/`GetRun`/`UpdateRunState` etc. (v1.1)
+- `WDLContent` field in `TaskClaimResponse` already allows daemons to receive WDL inline — no shared FS needed for registry-sourced runs (v1.2 already unlocked this)
+
+**Library choices already confirmed by ecosystem research:**
+- `golang-jwt/jwt/v5` — the maintained fork of the abandoned `dgrijalva/jwt-go`; standard for Go JWT (HIGH confidence)
+- `go-chi/jwtauth/v5` — chi-native JWT middleware; direct fit for the existing chi v5 router (HIGH confidence)
+- `bcrypt` via `golang.org/x/crypto/bcrypt` — the standard Go password hashing approach (HIGH confidence)
 
 ---
 
@@ -11,129 +27,126 @@
 
 ### Table Stakes (Users Expect These)
 
-Features that any S3-enabled WDL engine must have. Missing any one makes the S3 backend incomplete or unusable.
+Features without which the v1.3 milestone is incomplete or unusable.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Storage abstraction interface | All WDL engines (Cromwell, Nextflow, miniwdl) abstract filesystem access behind an interface so shared-FS and S3 backends are interchangeable. Without it, S3 is a bolt-on, not a real backend. | MEDIUM | Go interface with methods: `StageInputs(ctx, runID, inputs) error`, `CollectOutputs(ctx, runID, taskName, shardIndex) error`, `WriteInputsJSON(ctx, path, data) error`, `ReadOutputsJSON(ctx, path) ([]byte, error)`, `TaskDir(runID, taskName, shardIndex) string`. Existing shared-FS path logic moves into a concrete `LocalStorage` implementation. |
-| S3 input staging (localization) | Cromwell, Nextflow, and miniwdl all download `s3://` File inputs to a local working directory before the Docker container starts. Containers cannot reach S3 directly in typical HPC setups. | HIGH | Before Docker task launch, daemon downloads all `s3://` paths in inputs.json to a local temp dir. Rewrites `FileValue.Value` to local path. Uses `github.com/aws/aws-sdk-go-v2/feature/s3/manager` Downloader for concurrent multipart download. |
-| S3 output collection (delocalization) | After Docker task completes, output files must be uploaded to S3. The output paths returned to the scheduler become `s3://` URIs. This is the standard post-task step in every cloud workflow engine. | HIGH | After `task.RunTask` returns, daemon uploads each `FileValue` and `DirectoryValue` in the outputs map to `s3://{bucket}/{run_id}/tasks/{task_name}_{shard}/outputs/{filename}`. Rewrites value paths to `s3://` URIs. Uses `manager.Uploader` for concurrent multipart upload. |
-| `s3://` scheme detection in path resolution | WDL engines treat `s3://bucket/key` URIs as distinct from local paths. Cromwell configures per-filesystem handlers; Nextflow treats `s3://` as transparent. flowy needs to dispatch to the S3 backend when the scheme is `s3://`. | MEDIUM | `cleanPath()` in `wdl/task/inputs.go` currently only handles local paths. Must be extended: if path starts with `s3://`, leave as-is and defer to the storage backend for download. Affects `jsonToWDLValue` for `FileType` and `DirectoryType`. |
-| Workflow-level backend selection via `--storage` flag | Users need to specify `--storage=s3` for S3 and `--storage=local` (default) for shared FS at submit time. Cromwell uses configuration-file backend selection; Nextflow uses `process.executor`. A CLI flag is simpler and sufficient for flowy's use case. | MEDIUM | `flowy submit --storage s3` passes the backend selection through `SubmitRequest` to the server. Server stores `storage_backend` in the runs table and passes it to the dispatch function. Daemon reads backend from `TaskClaimResponse`. |
-| Config-driven S3 defaults (bucket, region, endpoint, credentials) | Without a config default, every submit requires explicit `--storage` and `--bucket` flags. Production deployments configure once and run. Cromwell uses HOCON `filesystems.s3`; Nextflow uses `aws` config block. | LOW | New `StorageConfig` in `config.go`: `storage.backend` (default `"local"`), `storage.s3.bucket`, `storage.s3.region`, `storage.s3.endpoint_url` (for MinIO), `storage.s3.prefix` (key prefix, default `"flowy-runs"`). Credentials via standard AWS SDK chain: env vars → `~/.aws/credentials` → IAM role. |
-| MinIO compatibility | MinIO is the standard self-hosted S3-compatible object store used in HPC environments without AWS access. All of miniwdl-aws, Cromwell, and Nextflow support MinIO via custom endpoint configuration. | MEDIUM | AWS SDK v2 supports custom endpoints via `aws.Config.EndpointResolverWithOptions`. Set `endpoint_url` in config to `http://minio:9000`. Must also set `UsePathStyle: true` (MinIO requires path-style addressing). |
-| Spectool conformance on S3 backend (156/156) | The spectool conformance suite is the authoritative compliance benchmark for flowy. Running 156/156 on S3 means the S3 backend is a true drop-in for shared FS, not a partial implementation. | HIGH | Requires a MinIO instance in the test environment. Test harness substitutes MinIO endpoint + bucket for `base_dir`. Tests must pass without WDL changes — the S3 backend must be transparent to WDL tasks. |
+| Username/password login returning a JWT | Every multi-user REST API needs a login endpoint; JWT is the stateless standard for Go REST APIs | LOW | `POST /auth/login` → `{token, expires_at}`. bcrypt for password hash. HS256 signing sufficient for single-server; RS256 only needed for multi-service token delegation (out of scope per PROJECT.md). |
+| JWT middleware protecting all non-public routes | Without this, auth is theater — existing endpoints become unguarded | LOW | `go-chi/jwtauth/v5` attaches as chi group middleware wrapping all existing and new protected routes. Public routes: `POST /auth/login`, `GET /health`. |
+| User creation and listing (admin-only) | Multi-user system needs lifecycle management | LOW | `POST /users` (admin only) + `GET /users` (admin only). Seed an initial `admin` user via a migration with a configurable password, or a `flowy-server --init-admin` flag. |
+| Projects as isolation boundaries | Every bioinformatics platform groups work into projects/workspaces: Terra uses Workspaces, Cromwell-as-a-service uses namespaces. Without projects, all runs are globally visible. | MEDIUM | A project owns runs, registry entries, and provenance records. `runs` table gains a `project_id` FK (nullable for backward compat with pre-v1.3 runs). |
+| Three-tier RBAC per project: admin / executor / viewer | Terra uses Owner/Writer/Reader; Dockstore uses Admin/Maintainer/Member. Three tiers covers 95% of team workflows without complexity overhead. | MEDIUM | Admin: manage members, delete project, delete registry entries. Executor: submit runs, push registry versions. Viewer: read runs, pull registry content, read provenance. Roles are per-project (user can be executor in project A and viewer in project B). |
+| WDL registry: push a versioned entry | The core deliverable. Users need a canonical place to store and retrieve WDL by content hash or tag. Terra/Dockstore are external services; flowy should have a built-in registry for self-hosted use. | HIGH | Two entry types mirror Docker Hub concepts: Tool (WDL task) and Workflow (WDL workflow). Each push stores raw WDL bytes, computes SHA-256 content hash (digest), records a version row. Tag is optional — if provided, the tag pointer is updated to the new version. |
+| Registry pull by tag or digest | Pull must resolve `name:tag` or `name@sha256:abc` to exact WDL content. Same model as Docker image tags vs digests: tags are mutable pointers, digests are immutable content addresses. | MEDIUM | `GET /projects/{pid}/registry/{name}/versions/{ref}` where `ref` is a tag string or `sha256:hex`. Tags are mutable — pushing a new version with the same tag moves the pointer. Digests are immutable — once a digest exists, it always returns the same bytes. (HIGH confidence — verified Docker registry pattern) |
+| Execute a registered workflow/tool by reference | The purpose of a registry is to submit by name rather than filesystem path. | MEDIUM | `POST /projects/{pid}/workflows` accepts `{"registry_ref": "name:tag", "inputs": {...}}` in addition to the existing `{"wdl_path": "...", "inputs": {...}}`. Server resolves ref → WDL bytes, passes via existing `WDLContent` field in `TaskClaimResponse` (v1.2 already supports this path). |
+| Provenance record per run | Every scientific workflow platform records what ran, with what inputs, producing which outputs. Cromwell writes per-run metadata JSON; CWLProv uses W3C PROV; Terra records submission history. | MEDIUM | A `provenance` table: `run_id`, `project_id`, `entry_id`, `version_id` (FK to registry_versions — immutable digest), `submitted_by` (user_id), `inputs_snapshot` (JSON), `outputs_snapshot` (JSON — populated on completion), `submitted_at`, `completed_at`. |
+| Provenance read endpoints | Users need to audit what ran and reproduce results by referencing the exact WDL version used. | LOW | `GET /projects/{pid}/provenance` (list) and `GET /workflows/{run_id}/provenance` (single). Returns registry name, tag at submission time, digest, inputs snapshot, outputs snapshot, submitting user. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that go beyond the baseline S3 integration and add value specific to flowy's architecture.
+Features that create real value beyond baseline compliance and distinguish flowy from just running WDL files.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Path-scheme auto-routing (relative → default backend, `s3://` → S3, absolute → local) | miniwdl requires explicit URI inputs; Cromwell requires per-backend config. Auto-routing based on URI scheme means users can mix local and S3 paths in the same workflow without configuration changes. | MEDIUM | Resolution logic: (1) if value starts with `s3://` → S3 backend regardless of default; (2) if value is an absolute local path → local FS; (3) if value is relative → resolve against `wdlDir` (existing behavior). This matches miniwdl's "built-in s3: support" pattern. |
-| MinIO integration testing as part of CI | Most WDL engines (including miniwdl) rely on AWS accounts for S3 integration tests. A local MinIO container in `docker-compose` enables S3 tests without AWS credentials, which is critical for open-source CI. | MEDIUM | `docker-compose.yml` with MinIO service. Test harness starts MinIO, creates a test bucket, runs spectool against flowy with `--storage s3 --endpoint http://localhost:9000`. Teardown removes bucket. |
-| No WDL change required for S3 backend | Cromwell requires different task `runtime` sections for cloud vs. local backends. Nextflow requires `publishDir` with S3 URI. In flowy, the storage backend is configured at runtime (`--storage` flag), not in the WDL source. A single WDL file runs on both local and S3. | LOW | This is a consequence of doing staging/delocalization in the engine layer (daemon), not in the WDL task. The design decision to keep WDL tasks storage-agnostic should be explicit and documented. |
+| Content-hash (digest) addressing for WDL versions | Guarantees exact reproducibility — `name@sha256:abc` always returns byte-identical WDL, unlike mutable tags. Identical to the Docker content-addressable layer model that made container registries trustworthy. | LOW | SHA-256 of the raw WDL bytes. Computed on push, stored as `digest` column. Immutable once stored — same bytes pushed twice is idempotent (UNIQUE on `(entry_id, digest)`). |
+| Provenance links digest (not tag) | A run's provenance record stores the immutable `version_id` (which carries the digest), not just the tag string. Tags can be moved; digests cannot. Six months later, an analyst can pull the exact WDL that produced a result. | LOW | `provenance.version_id` is a FK to `registry_versions.id`. That row carries the `digest`. Provenance response includes both the tag string at submission time (recorded in the provenance row) and the digest. |
+| Registry entries are project-scoped (not global) | Prevents name collisions across teams. Mirrors Dockstore's organization model and Docker Hub's user/org namespaces. Teams can have their own `align:latest` without conflicting. | LOW | `registry_entries.project_id` FK. Permissions enforced via RBAC: executor+ can push, viewer+ can pull, admin can delete. |
+| Execution from registry ref requires no shared FS | Resolving a registry ref to in-memory WDL content lets daemons on remote hosts execute without needing access to the server's filesystem. Already unlocked by v1.2's `WDLContent` field in `TaskClaimResponse`. | LOW | No new mechanism needed — the registry lookup in the submit handler simply sets `WDLContent`. Daemons already handle this path. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Mount S3 bucket as filesystem via Mountpoint or s3fs | "S3 as a directory" feels simpler than explicit staging/delocalization | Mountpoint has read-only or limited write semantics; s3fs has performance problems with small files and rename operations; Docker containers cannot use host-mounted S3 without privileged mode or custom driver | Explicit staging (download before task) and delocalization (upload after task). The industry-standard WDL approach used by Cromwell, Nextflow, and miniwdl. |
-| Streaming S3 inputs directly into containers | Avoids staging latency for large files | Docker containers cannot directly access S3 without AWS CLI or SDK; WDL tasks are user-defined and cannot be assumed to have AWS credentials; breaks portability | Stage to local temp dir before container start. Add a "reference data cache" optimization in v2 for frequently reused large files. |
-| Per-task S3 backend (different tasks use different buckets) | Maximum flexibility for complex pipelines | WDL doesn't have per-task storage configuration; task declarations are storage-agnostic by design; adds complexity to dispatch logic and task claim protocol | Workflow-level backend selection. A single bucket per workflow run is sufficient and matches how Cromwell and Nextflow work. |
-| Client-side input upload to S3 before submit | Mirrors the shared-FS pattern where the client stages files to `base_dir/runs/{id}/inputs/` | In the shared-FS model the client uploads because only the client has the files locally. For S3 inputs, files are already in S3 (that's why the user is using S3). Pre-upload from client duplicates data. | For S3 backend: inputs with `s3://` URIs are left as-is. The daemon downloads them at task execution time. Local inputs (absolute paths) are uploaded by the daemon to S3 before running the container. |
-| GCS / Azure Blob Storage backend | Multi-cloud support | Tripling the storage backend implementations for a v1.2 milestone is out of scope; GCS and Azure have different SDK patterns | S3-compatible interface covers AWS S3 and MinIO. GCS supports S3-compatible API via interoperability mode. Defer native GCS/Azure support to v2+. |
+| OAuth2 / LDAP / SSO | Teams want SSO for single sign-on convenience | Enormous scope: external IdP dependency, token exchange flows, PKCE, refresh token rotation. PROJECT.md explicitly defers this. | Username/password + JWT covers v1.3. Internal claims structure stays stable, so OAuth2 can be layered later by having an OAuth2 proxy issue JWTs in the same format. |
+| Refresh tokens and token rotation | Production security best practice for Web UIs | Adds a second token type, a token revocation store, and client-side refresh logic. Disproportionate for a batch-workflow API where tokens are scripted (not interactive). | Use reasonably long-lived JWTs (8–24h) for v1.3. Add `POST /auth/refresh` when a Web UI with session UX is added. |
+| Semantic versioning enforcement on registry tags | Dockstore and WARP pipelines use semver; users expect it | Enforcing semver at the API level (rejecting non-semver tags) breaks scripting, CI pipelines, and any workflow that tags by git SHA. | Accept any tag string. Document semver as a recommended convention. The engine has no semantic need to parse version numbers. |
+| Per-task provenance (W3C PROV Entity-Activity-Agent graph) | CWLProv and academic publishing workflows want fine-grained lineage at the task level | The task table already has inputs/outputs per task; building a full W3C PROV graph is a research-grade feature that is 3–5x the scope of run-level provenance. | Run-level provenance (what workflow version, which inputs, which outputs, who submitted) covers 95% of audit and reproducibility needs. Per-task lineage is a future milestone. |
+| Global (cross-project) registry namespace | Simpler: one place to find all WDL tools | Name collisions, access control complexity, accidental overwrites across teams. Dockstore learned this and added org/namespace scoping. | Project-scoped registry. A future `is_public` flag can make a project's registry readable globally without merging namespaces. |
+| Real-time execution events (WebSocket / SSE) | Nicer UX for long-running workflows | PROJECT.md explicitly defers WebSocket/SSE. Polling is sufficient for batch workflows. | Polling `GET /workflows/{id}/status`. SSE is a future milestone when a Web UI is added. |
+| PostgreSQL migration for new tables | Scale concerns | The existing system already uses SQLite with WAL and has 100% spectool conformance. Adding tables to SQLite is straightforward with goose. PostgreSQL is a major dependency addition for no current benefit. | SQLite with goose migrations. Revisit when concurrent write load or team size justifies it. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Storage abstraction interface]
-    └──required by──> [LocalStorage implementation (wraps existing rundir.go logic)]
-    └──required by──> [S3Storage implementation (new)]
-    └──required by──> [Daemon: storage-aware task execution]
-    └──required by──> [Server: storage-aware dispatch]
+User Auth (users table, bcrypt, login endpoint, JWT middleware)
+    └──required by──> All protected API routes (existing + new)
+    └──required by──> Project membership (members reference user IDs)
+    └──required by──> Provenance "submitted_by" field
 
-[S3 input staging (localization)]
-    └──requires──> [Storage abstraction interface]
-    └──requires──> [s3:// scheme detection in path resolution]
-    └──requires──> [AWS SDK v2: s3/manager.Downloader]
-    └──requires──> [Config: S3 bucket + region + endpoint]
+Projects (projects table, CRUD endpoints)
+    └──required by──> Project RBAC (roles are per-project)
+    └──required by──> Registry entries (project-scoped)
+    └──required by──> Provenance (project_id FK)
+    └──required by──> Runs (project_id FK on existing runs table)
 
-[S3 output collection (delocalization)]
-    └──requires──> [Storage abstraction interface]
-    └──requires──> [S3 input staging] (same SDK config, same session)
-    └──requires──> [AWS SDK v2: s3/manager.Uploader]
+Project RBAC (project_members table, role middleware)
+    └──required by──> Registry push/delete (executor+ only)
+    └──required by──> Run submission within project context
+    └──required by──> Provenance read (viewer+)
 
-[s3:// scheme detection]
-    └──requires──> [Storage abstraction interface]
-    └──enhances──> [Path-scheme auto-routing differentiator]
+WDL Registry (registry_entries + registry_versions tables, push/pull endpoints)
+    └──required by──> Execution from registry ref
+    └──required by──> Provenance (version_id FK)
 
-[Workflow-level backend selection (--storage flag)]
-    └──requires──> [Storage abstraction interface]
-    └──requires──> [Config: StorageConfig struct in config.go]
-    └──requires──> [API: SubmitRequest gains StorageBackend field]
-    └──requires──> [API: TaskClaimResponse gains StorageBackend + S3Config fields]
-    └──requires──> [DB: runs table gains storage_backend column]
+Execution from registry ref
+    └──enhances──> Existing run submission (POST /workflows)
+    └──depends on──> WDL Registry (ref → WDL content lookup)
+    └──depends on──> Projects (run associated with project)
+    └──uses──> Existing WDLContent path in TaskClaimResponse (v1.2)
 
-[Config-driven S3 defaults]
-    └──requires──> [Config: StorageConfig struct]
-    └──enhances──> [Workflow-level backend selection] (flag overrides config default)
-
-[MinIO compatibility]
-    └──requires──> [Config: endpoint_url + path_style settings]
-    └──requires──> [AWS SDK v2: custom EndpointResolver]
-    └──enhances──> [S3 input staging + output collection]
-
-[Spectool on S3 backend]
-    └──requires──> [All above S3 features complete]
-    └──requires──> [MinIO integration testing infrastructure]
-
-[Path-scheme auto-routing (differentiator)]
-    └──requires──> [s3:// scheme detection]
-    └──requires──> [Storage abstraction interface]
+Provenance Tracking (provenance table, write on submit, update on completion)
+    └──depends on──> Existing runs table (run_id FK)
+    └──depends on──> WDL Registry (version_id FK → immutable digest)
+    └──depends on──> User Auth (submitted_by FK → user_id)
+    └──depends on──> Projects (project_id FK)
 ```
 
 ### Dependency Notes
 
-- **Storage abstraction interface must come first.** All other features depend on it. The interface defines the contract; both `LocalStorage` and `S3Storage` implement it. This is the single most important architectural decision for v1.2.
-- **`s3://` scheme detection requires changes in `wdl/task/inputs.go`.** The `cleanPath()` function currently unconditionally calls `filepath.Clean()` and `filepath.Abs()`, which corrupts `s3://` URIs. This must be fixed as part of the abstraction work.
-- **Daemon needs storage config from TaskClaimResponse.** The daemon is storage-agnostic in v1.1; it reads paths from `claim.InputsDir` and writes to `claim.OutputsDir`. For S3, the daemon needs to know the backend type and S3 config. `TaskClaimResponse` must be extended or a separate config endpoint added.
-- **MinIO integration testing requires `outputs.json` path handling.** In the S3 backend, `outputs.json` is stored at `s3://bucket/prefix/runs/{id}/tasks/{name}_{shard}/outputs.json`. The server's `loadTaskOutputs()` in `dispatch.go` reads this via the storage interface, not `os.ReadFile`. This is a non-trivial change to `dispatch.go`.
-- **Spectool tests pass local file paths.** Spectool generates inputs with local paths. With S3 backend, the daemon must upload those local inputs to S3 before running the container. This is a behavior change that must not break the `local` backend path (where local inputs are bind-mounted directly).
+- **User auth is the foundation.** Every other feature enforces access via the JWT user identity. Auth must be buildable and testable before RBAC middleware is wired.
+- **Projects require auth.** `project_members` rows reference `users.id`. Projects can be scaffolded once users exist.
+- **Registry requires projects.** Registry entries carry `project_id`. The registry push endpoint must enforce RBAC (executor role), so project membership must be queryable first.
+- **Provenance requires registry, auth, and projects.** The provenance row needs `version_id` (from registry), `submitted_by` (from auth), and `project_id` (from projects). All three must exist.
+- **Execution from registry ref requires registry but not provenance.** Provenance is written alongside execution; the execution path itself only needs the WDL content resolved from the registry.
+- **Existing `runs` table gets `project_id` (nullable).** Pre-v1.3 runs (no project) are represented as `project_id = NULL`. New project-scoped submissions require a non-null `project_id`.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.2)
+### Launch With (v1.3)
 
-Minimum viable set for the S3 storage milestone.
+Minimum viable set for the milestone to be complete and useful.
 
-- [ ] Storage abstraction interface (`internal/storage/storage.go`) with `Backend` interface — *foundation for everything else*
-- [ ] `LocalStorage` implementation wrapping existing `store/rundir.go` logic — *preserves v1.1 behavior exactly*
-- [ ] `s3://` scheme detection: fix `cleanPath()` to not corrupt S3 URIs — *correctness prerequisite*
-- [ ] `S3Storage` implementation: S3 input staging (download to temp dir), output collection (upload to S3), `outputs.json` read/write via S3 — *core S3 feature*
-- [ ] Config: `StorageConfig` struct with `backend`, `s3.bucket`, `s3.region`, `s3.endpoint_url`, `s3.prefix`, `s3.path_style` — *MinIO compatibility*
-- [ ] Workflow-level backend selection: `--storage` flag on `flowy submit` and `flowy run`, stored in runs table, forwarded to daemon via `TaskClaimResponse` — *per-run control*
-- [ ] MinIO integration testing: `docker-compose.yml` with MinIO, test harness that runs spectool against S3 backend — *compliance verification*
-- [ ] Spectool 156/156 passing on both local and S3 backends — *non-negotiable quality gate*
+- [ ] `users` table + bcrypt password hash + seed admin on first run — foundation for all auth
+- [ ] `POST /auth/login` returning a signed JWT (golang-jwt/jwt/v5) — entry point
+- [ ] JWT middleware (go-chi/jwtauth/v5) protecting all existing and new routes — security boundary
+- [ ] `POST /users` and `GET /users` (admin role only) — user lifecycle management
+- [ ] `projects` table + `POST /projects`, `GET /projects`, `GET /projects/{id}` — isolation boundary
+- [ ] `project_members` table + `POST /projects/{id}/members`, `GET /projects/{id}/members` — RBAC foundation
+- [ ] RBAC middleware enforcing admin/executor/viewer per project on relevant routes — access control
+- [ ] `registry_entries` + `registry_versions` tables with SHA-256 digest on WDL content — core registry schema
+- [ ] `POST /projects/{pid}/registry/{name}/versions` (push, executor+) — registry write
+- [ ] `GET /projects/{pid}/registry/{name}/versions/{ref}` (pull by tag or digest, viewer+) — registry read
+- [ ] Run submission by registry ref: `POST /projects/{pid}/workflows` accepting `registry_ref` — wires registry to execution
+- [ ] `provenance` table + write on project-scoped run submission, update outputs on completion — audit trail
+- [ ] `GET /projects/{pid}/provenance` and `GET /workflows/{run_id}/provenance` — provenance read
 
 ### Add After Validation (v1.x)
 
-Features to add once core S3 backend is working.
-
-- [ ] Path-scheme auto-routing for mixed local/S3 inputs in the same workflow — *convenience; needs correctness validation first*
-- [ ] Concurrent multipart upload/download tuning (part size, concurrency config) — *performance; not needed for correctness*
-- [ ] Pre-signed URL support for output download without AWS credentials — *useful for sharing results*
+- [ ] `is_public` flag on registry entries — add when cross-project sharing is requested
+- [ ] `POST /auth/refresh` (refresh token) — add when a Web UI with session UX is introduced
+- [ ] Per-task provenance (task-level lineage) — add when compliance requirements demand it
+- [ ] `DELETE /projects/{pid}/registry/{name}` with cascade — add when registry cleanup becomes a pain point
 
 ### Future Consideration (v2+)
 
-- [ ] GCS / Azure Blob Storage backends — *multi-cloud; requires separate SDK integrations*
-- [ ] Reference data cache: skip re-download of unchanged `s3://` inputs across runs — *performance optimization; requires input hashing*
-- [ ] HTTP import resolution for WDL files — *separate feature, not storage-related*
-- [ ] Execution cache with S3-backed call cache — *complex; requires stable input fingerprinting*
+- [ ] OAuth2 / SSO integration — defer until enterprise customers require it
+- [ ] W3C PROV export (CWLProv-style research objects) — defer until academic publishing workflow is needed
+- [ ] GA4GH TRS API compatibility — defer until interoperability with Dockstore/Terra is required
+- [ ] PostgreSQL storage backend — defer until SQLite write contention becomes measurable
 
 ---
 
@@ -141,104 +154,144 @@ Features to add once core S3 backend is working.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Storage abstraction interface | HIGH | MEDIUM | P1 |
-| `s3://` scheme detection fix | HIGH | LOW | P1 |
-| `LocalStorage` implementation | HIGH | LOW | P1 |
-| `S3Storage`: input staging (download) | HIGH | HIGH | P1 |
-| `S3Storage`: output collection (upload) | HIGH | HIGH | P1 |
-| Config: `StorageConfig` | HIGH | LOW | P1 |
-| `--storage` CLI flag + `TaskClaimResponse` extension | HIGH | MEDIUM | P1 |
-| MinIO compatibility (`endpoint_url`, path-style) | HIGH | LOW | P1 |
-| MinIO integration test infrastructure | HIGH | MEDIUM | P1 |
-| Spectool 156/156 on S3 backend | HIGH | MEDIUM | P1 |
-| Path-scheme auto-routing | MEDIUM | MEDIUM | P2 |
-| Multipart upload/download tuning | LOW | LOW | P2 |
-| Pre-signed URL output sharing | LOW | MEDIUM | P3 |
-| GCS backend | MEDIUM | HIGH | P3 |
+| User auth (login + JWT middleware) | HIGH | LOW | P1 |
+| Projects CRUD | HIGH | LOW | P1 |
+| Project RBAC (3 roles) | HIGH | MEDIUM | P1 |
+| WDL registry push (with SHA-256 digest) | HIGH | MEDIUM | P1 |
+| WDL registry pull (tag + digest resolution) | HIGH | LOW | P1 |
+| Execution from registry ref | HIGH | MEDIUM | P1 |
+| Run-level provenance write | HIGH | MEDIUM | P1 |
+| Provenance read endpoints | HIGH | LOW | P1 |
+| Public registry entries flag | MEDIUM | LOW | P2 |
+| Refresh tokens | LOW | MEDIUM | P3 |
+| Per-task provenance | LOW | HIGH | P3 |
+| OAuth2/SSO | LOW | HIGH | P3 |
 
-**Priority key:**
-- P1: Must have for v1.2 launch
-- P2: Should have, add in v1.2 polish
-- P3: Nice to have, future consideration
+**Priority key:** P1 = must have for v1.3 launch, P2 = next minor release, P3 = future milestone
 
 ---
 
 ## Competitor Feature Analysis
 
-How Cromwell, Nextflow, and miniwdl handle S3 storage:
-
-| Feature | Cromwell | Nextflow | miniwdl | flowy v1.2 approach |
-|---------|----------|----------|---------|---------------------|
-| Storage abstraction | `filesystems` config stanza; per-backend `PathBuilderFactory` | `Channel.fromPath()` handles `s3://` natively | Plugin interface (`s3:` built-in; `miniwdl-s3upload` plugin for delocalization) | Go `Backend` interface in `internal/storage/`; `LocalStorage` and `S3Storage` implementations |
-| Input staging (localization) | Cromwell localizes files to VM before task; S3 via AWS CLI scripts injected by backend | Nextflow stages non-local files to `work/` dir before process; `stageInMode` controls copy/link | Downloads `s3://` URIs to `{run_dir}/download/` before task; mounts read-only | Daemon downloads `s3://` inputs to temp dir; rewrites paths in `inputs.json`; mounts to container |
-| Output collection (delocalization) | Backend-specific scripts run after task; write to S3 root prefix | `publishDir "s3://bucket/path"` in process def triggers upload | `miniwdl-s3upload` plugin: progressive upload env var `MINIWDL__S3_PROGRESSIVE_UPLOAD__URI_PREFIX` | Daemon uploads `FileValue`/`DirectoryValue` outputs to S3 after `task.RunTask` returns; rewrites paths to `s3://` URIs |
-| `s3://` path resolution | URI detected by `S3PathBuilderFactory`; resolves to `AmazonS3URI` | `s3://` detected in `Channel.fromPath`; transparent to Groovy code | `s3:` built-in: scheme checked before `cleanPath()` | `hasS3Scheme()` check before `filepath.Clean()` in `cleanPath()` |
-| Backend selection | Config file: `filesystems.s3.enabled = true` per backend stanza | `process.executor` in `nextflow.config`; `workDir = "s3://..."` enables S3 | No per-run selection; configured at startup | `--storage=s3` CLI flag at submit; config default `storage.backend`; stored per-run in DB |
-| MinIO / custom endpoint | Custom S3 endpoint via `aws.endpoint_url` in HOCON | `aws.client.endpoint = "http://..."` in `nextflow.config` | `AWS_ENDPOINT_URL` env var or `endpoint_url` in `~/.aws/config` | `storage.s3.endpoint_url` in `flowy.yaml`; passed to `aws.Config` custom resolver |
-| Credentials | AWS CLI chain; IAM roles on EC2 | AWS SDK chain (env vars → `~/.aws` → IAM) | AWS SDK chain + IAM via metadata service | AWS SDK v2 default credentials chain: env vars → `~/.aws/credentials` → IAM instance role |
-| Integration testing | Requires AWS account or LocalStack | Requires AWS account or LocalStack; some NF tests use S3 mock | Uses real S3 or `moto` (Python S3 mock) | MinIO in `docker-compose`; no AWS account needed for CI |
+| Feature | Terra / Cromwell-as-a-service | Dockstore | Our Approach |
+|---------|-------------------------------|-----------|--------------|
+| Authentication | Google OAuth2 / workspace login | GitHub OAuth2 | Username/password + JWT — no external IdP, self-hosted friendly |
+| Project/workspace isolation | Workspace per project, Google IAM backend | Organization + collection scoping | `projects` table with `project_members` rows and per-project roles |
+| RBAC roles | Owner / Writer / Reader (3 tiers) | Admin / Maintainer / Member / Reader (4 tiers) | Admin / Executor / Viewer (3 tiers — maps directly to workflow engine operations) |
+| Workflow registry | Uses Dockstore or GitHub for registry | Registers Docker+WDL/CWL/Nextflow; GA4GH TRS API | Project-scoped WDL-only registry with SHA-256 content-hash versioning |
+| Versioning model | Semver + GitHub tags; Terra resolves Docker digest before run | Tool versions tied to GitHub repo tags; DOI per version | Content-hash (SHA-256 of WDL bytes) + mutable tags pointing to a version row |
+| Immutable addressing | Docker image digest resolved at job submission | Version ID stable once created | `sha256:hex` digest stable and immutable; tag is a mutable pointer |
+| Provenance / metadata | Cromwell metadata API: run-level inputs/outputs, call-level stdout/stderr | DOI per version; no run-level execution provenance | `provenance` table: run → registry version digest → inputs snapshot → submitting user → outputs snapshot |
+| Per-task lineage | Cromwell stores call-level inputs/outputs/returncode per task | Not applicable | Deferred; existing `tasks` table already has `inputs_json`/`outputs_json` per task |
 
 ---
 
-## Storage Interface Design Notes
+## Schema Sketch
 
-Based on analysis of the existing codebase and competitor patterns, the storage abstraction interface should operate at the **task execution boundary** (daemon), not at the WDL value level. This is because:
+New tables required (goose migrations):
 
-1. **Docker containers are storage-agnostic.** Containers operate on local paths. The engine must present local paths to containers regardless of where data lives.
-2. **The daemon is the only component that executes tasks.** `daemon/daemon.go` calls `task.RunTask`. This is the single place to insert staging/delocalization.
-3. **The server manages paths, not data.** `dispatch.go` reads `outputs.json` from a path. The path format (`s3://` vs. local) must be abstracted.
+```sql
+-- Migration 00004
+CREATE TABLE users (
+    id           TEXT PRIMARY KEY,  -- UUID v4
+    username     TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,    -- bcrypt hash
+    global_role  TEXT NOT NULL DEFAULT 'user',  -- 'admin' | 'user'
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 
-The interface boundary should be:
+-- Migration 00005
+CREATE TABLE projects (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL UNIQUE,
+    description  TEXT NOT NULL DEFAULT '',
+    created_by   TEXT NOT NULL REFERENCES users(id),
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 
-```go
-// Backend abstracts storage operations for task I/O.
-// LocalBackend uses the shared filesystem; S3Backend uses AWS S3 / MinIO.
-type Backend interface {
-    // StageInputs downloads any remote (s3://) File/Directory values in inputs
-    // to a local staging directory. Returns rewritten inputs with local paths.
-    StageInputs(ctx context.Context, inputs map[string]interface{}) (map[string]interface{}, string, error)
+CREATE TABLE project_members (
+    project_id  TEXT NOT NULL REFERENCES projects(id),
+    user_id     TEXT NOT NULL REFERENCES users(id),
+    role        TEXT NOT NULL,  -- 'admin' | 'executor' | 'viewer'
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (project_id, user_id)
+);
 
-    // CollectOutputs uploads local File/Directory output values to the configured
-    // backend. Returns rewritten outputs with backend-native paths (s3:// or local).
-    CollectOutputs(ctx context.Context, outputs map[string]values.Value, stagingDir string) (map[string]values.Value, error)
+-- Migration 00006
+CREATE TABLE registry_entries (
+    id           TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL REFERENCES projects(id),
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    entry_type   TEXT NOT NULL,  -- 'tool' | 'workflow'
+    created_by   TEXT NOT NULL REFERENCES users(id),
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (project_id, name)
+);
 
-    // WriteJSON writes data to the given logical path (may be local or s3://).
-    WriteJSON(ctx context.Context, path string, data []byte) error
+CREATE TABLE registry_versions (
+    id          TEXT PRIMARY KEY,
+    entry_id    TEXT NOT NULL REFERENCES registry_entries(id),
+    digest      TEXT NOT NULL,   -- 'sha256:' + hex(SHA256(wdl_content))
+    wdl_content TEXT NOT NULL,   -- raw WDL source bytes
+    created_by  TEXT NOT NULL REFERENCES users(id),
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (entry_id, digest)    -- same content pushed twice is idempotent
+);
 
-    // ReadJSON reads data from the given logical path (may be local or s3://).
-    ReadJSON(ctx context.Context, path string) ([]byte, error)
+CREATE TABLE registry_tags (
+    entry_id    TEXT NOT NULL REFERENCES registry_entries(id),
+    tag         TEXT NOT NULL,
+    version_id  TEXT NOT NULL REFERENCES registry_versions(id),
+    updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (entry_id, tag)  -- tag is mutable: upsert to move tag
+);
 
-    // TaskDir returns the logical path for a task's working directory.
-    TaskDir(runID, taskName string, shardIndex int) string
+-- Migration 00007
+-- Add project_id to existing runs table (nullable for backward compat)
+ALTER TABLE runs ADD COLUMN project_id TEXT REFERENCES projects(id);
 
-    // InputsJSONPath returns the logical path for a task's inputs.json.
-    InputsJSONPath(runID, taskName string, shardIndex int) string
-
-    // OutputsJSONPath returns the logical path for a task's outputs.json.
-    OutputsJSONPath(runID, taskName string, shardIndex int) string
-}
+CREATE TABLE provenance (
+    id               TEXT PRIMARY KEY,
+    run_id           TEXT NOT NULL REFERENCES runs(id),
+    project_id       TEXT NOT NULL REFERENCES projects(id),
+    entry_id         TEXT NOT NULL REFERENCES registry_entries(id),
+    version_id       TEXT NOT NULL REFERENCES registry_versions(id),
+    tag_at_submit    TEXT,       -- tag string at submission time; NULL if submitted by digest
+    submitted_by     TEXT NOT NULL REFERENCES users(id),
+    inputs_snapshot  TEXT NOT NULL,  -- JSON snapshot of inputs at submission
+    outputs_snapshot TEXT,           -- JSON snapshot of outputs; NULL until run completes
+    submitted_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    completed_at     DATETIME
+);
 ```
 
-**Confidence:** MEDIUM — this is derived from codebase analysis + competitor patterns, not a verified specification. The exact method signatures should be refined during implementation.
+The `registry_tags` table is split from `registry_versions` to make the tag-pointer-update an upsert
+(`INSERT OR REPLACE`) rather than an UPDATE that could conflict with the immutability invariant of
+`registry_versions`. This mirrors the Docker registry's separation of manifest (immutable) from tag
+(mutable pointer).
 
 ---
 
 ## Sources
 
-- [Cromwell Filesystems Overview](https://cromwell.readthedocs.io/en/stable/filesystems/Filesystems/) — S3 filesystem is experimental; per-backend filesystem stanza config (MEDIUM confidence)
-- [Cromwell AWS Batch Tutorial](https://cromwell.readthedocs.io/en/stable/tutorials/AwsBatch101/) — S3 root prefix `s3://{bucket}/cromwell-execution`; tasks "write execution files back to S3" (MEDIUM confidence)
-- [Nextflow Amazon S3 Documentation](https://www.nextflow.io/docs/latest/amazons3.html) — `s3://` scheme transparent via `Channel.fromPath`; credentials chain; MinIO custom endpoint config (HIGH confidence)
-- [miniwdl Runner Reference](https://miniwdl.readthedocs.io/en/latest/runner_reference.html) — built-in `s3:` URI support; downloads to `{run_dir}/download/` before task; IAM role support (HIGH confidence)
-- [miniwdl-s3upload (archived)](https://github.com/chanzuckerberg/miniwdl-s3upload) — progressive S3 upload plugin; `MINIWDL__S3_PROGRESSIVE_UPLOAD__URI_PREFIX` env var (MEDIUM confidence — archived, migrated)
-- [AWS SDK for Go v2 — S3 Transfer Manager](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/sdk-utilities-s3.html) — `manager.NewUploader`, `manager.NewDownloader`; `PartSize`, `Concurrency` config; concurrent multipart (HIGH confidence)
-- [pkg.go.dev — s3/manager](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/manager) — Uploader/Downloader API; thread-safe for concurrent calls (HIGH confidence)
-- flowy source `internal/daemon/daemon.go` — `executeTask`: reads `inputs.json`, calls `task.RunTask`, writes `outputs.json`; injection point for staging/delocalization (HIGH confidence — direct code inspection)
-- flowy source `wdl/task/inputs.go` — `cleanPath()`: unconditionally calls `filepath.Clean` + `filepath.Abs`; corrupts `s3://` URIs (HIGH confidence — direct code inspection)
-- flowy source `internal/server/dispatch.go` — `loadTaskOutputs`: calls `os.ReadFile` on `outputs.json`; must be abstracted for S3 (HIGH confidence — direct code inspection)
-- flowy source `internal/config/config.go` — current `Config` struct; no storage section; must be extended (HIGH confidence — direct code inspection)
-- flowy source `internal/api/types.go` — `TaskClaimResponse.InputsDir` / `OutputsDir` are local FS paths; must be generalized for S3 (HIGH confidence — direct code inspection)
+- [GA4GH Tool Registry Service (TRS) — data model and versioning](https://ga4gh.github.io/tool-registry-service-schemas/DataModel/)
+- [Dockstore — workflow versioning and GA4GH TRS API](https://docs.dockstore.org/en/develop/dockstore-introduction.html)
+- [Terra — how pipeline versioning works (Docker digest at submit)](https://support.terra.bio/hc/en-us/articles/360037484111-How-does-pipeline-versioning-work)
+- [Docker tagging best practices — immutable digest vs mutable tag model](https://stevelasker.blog/2018/03/01/docker-tagging-best-practices-for-tagging-and-versioning-docker-images/)
+- [How to handle JWT authentication securely in Go — golang-jwt/jwt/v5](https://oneuptime.com/blog/post/2026-01-07-go-jwt-authentication/view)
+- [go-chi/jwtauth/v5 — chi-native JWT middleware package](https://pkg.go.dev/github.com/go-chi/jwtauth/v5)
+- [Role-based access control in Golang with jwt-go and chi](https://dev.to/bensonmacharia/role-based-access-control-in-golang-with-jwt-go-ijn)
+- [Protect your Chi API with RBAC and JWT validation](https://docs.logto.io/api-protection/go/chi)
+- [CWLProv — W3C PROV-based interoperable workflow provenance](https://academic.oup.com/gigascience/article/8/11/giz095/5611001)
+- [FAIR cookbook — provenance information for scientific workflows](https://fairplus.github.io/the-fair-cookbook/content/recipes/reusability/provenance.html)
+- [Cromwell metadata API — run-level provenance pattern](https://cromwell.readthedocs.io/en/stable/CommandLine/)
+- flowy source `internal/api/types.go` — `WDLContent` field in `TaskClaimResponse` already enables in-memory WDL delivery to daemons (HIGH confidence — direct inspection)
+- flowy source `internal/store/sqlite/migrations/` — existing schema; new migrations must extend it (HIGH confidence — direct inspection)
 
 ---
 
-*Feature research for: flowy v1.2 S3 object storage backend*
-*Researched: 2026-03-12*
+*Feature research for: flowy v1.3 — user auth, project RBAC, WDL registry, provenance tracking*
+*Researched: 2026-03-17*

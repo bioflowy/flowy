@@ -1,8 +1,371 @@
 # Stack Research: WDL Workflow Engine (Go)
 
 **Project:** flowy — WDL 1.2 workflow engine (Go port of miniwdl)
-**Researched:** 2026-03-11 (v1.1 update; v1.0 stack preserved below)
+**Researched:** 2026-03-17 (v1.3 update; v1.0–v1.2 stacks preserved below)
 **Overall confidence:** HIGH
+
+---
+
+## v1.3 Additions: User Auth, Project RBAC, WDL Registry, Provenance
+
+This section covers NEW libraries needed for the v1.3 milestone.
+The v1.0, v1.1, and v1.2 stacks are unchanged — see preserved sections below.
+
+### Core Technologies Added for v1.3
+
+| Layer | Library | Version | Purpose | Why Recommended |
+|-------|---------|---------|---------|-----------------|
+| **JWT** | `github.com/golang-jwt/jwt/v5` | v5.3.1 | Sign and verify user session tokens | Zero dependencies; focused JWT-only library; HS256 with one secret is all flowy needs; `RegisteredClaims` struct covers exp/sub/iat out of the box |
+| **Password hashing** | `golang.org/x/crypto/bcrypt` | v0.49.0 (already transitive) | Hash and verify user passwords | Already in go.mod as transitive dep via Docker SDK; bcrypt is the idiomatic Go choice; cost=12 provides ~300ms verification, acceptable for login |
+| **Content digest** | `github.com/opencontainers/go-digest` | v1.0.0 (already transitive) | SHA256 content-hash for WDL source blobs | Already in go.mod as transitive dep via Docker SDK; `digest.FromBytes()` returns `sha256:<hex>` format matching Docker/OCI conventions; immutable content addressing |
+
+No new third-party libraries are required beyond what is already in go.mod. All capabilities are covered by the existing dependency graph plus two packages that are already transitive dependencies.
+
+### Key Decisions
+
+---
+
+#### 1. JWT: golang-jwt/jwt v5 directly (not go-chi/jwtauth, not lestrrat-go/jwx)
+
+**Recommendation:** Use `github.com/golang-jwt/jwt/v5` v5.3.1 directly. Do NOT use the `go-chi/jwtauth` middleware wrapper.
+
+**Rationale:**
+
+- **go-chi/jwtauth v5 depends on lestrrat-go/jwx v3**, not golang-jwt. This is a substantial dependency: lestrrat-go/jwx is a full JOSE implementation covering JWE, JWK, JWS, and JWT. For flowy's requirement — sign a `{"sub": userID, "role": "admin"}` token with HMAC-SHA256 — this is 50x the needed surface area.
+
+- **golang-jwt/jwt v5 has zero runtime dependencies.** The entire library is stdlib-only. v5.3.1 was published January 28, 2026. This is the natural successor to the dgrijalva/jwt-go library that most Go JWT tutorials reference. 13,000+ importers.
+
+- **Writing JWT middleware for chi is 30 lines of Go.** chi's middleware contract is a plain `func(http.Handler) http.Handler`. Extract the `Authorization: Bearer <token>` header, call `jwt.ParseWithClaims`, put the claims on `context.Context`. No magic needed. Go's chi v1.1 decision (section below) already established that the codebase uses minimal middleware.
+
+- **HS256 with a server secret is correct for this use case.** flowy uses username/password auth, not a federated identity provider. RS256 (asymmetric) is necessary when tokens must be verified by a third party. Here the server both issues and verifies all tokens — HS256 is simpler and sufficient.
+
+- **Token design:**
+  ```go
+  // internal/auth/token.go
+  type Claims struct {
+      jwt.RegisteredClaims
+      UserID string `json:"uid"`
+      Role   string `json:"role"` // "admin" | "executor" | "viewer"
+  }
+
+  func IssueToken(secret []byte, userID, role string, ttl time.Duration) (string, error) {
+      claims := Claims{
+          RegisteredClaims: jwt.RegisteredClaims{
+              Subject:   userID,
+              IssuedAt:  jwt.NewNumericDate(time.Now()),
+              ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+          },
+          UserID: userID,
+          Role:   role,
+      }
+      return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).
+          SignedString(secret)
+  }
+  ```
+
+- **Security: always use `jwt.WithValidMethods([]string{"HS256"})`** in `ParseWithClaims` to prevent algorithm substitution (alg=none attack).
+
+**Confidence:** HIGH — pkg.go.dev v5.3.1 published January 28, 2026; official docs verified.
+
+---
+
+#### 2. Password Hashing: golang.org/x/crypto/bcrypt (already in go.mod)
+
+**Recommendation:** Use `golang.org/x/crypto/bcrypt` — the package is already a transitive dependency (via Docker SDK). Promote it to a direct `require` in go.mod when first used.
+
+**Rationale:**
+
+- **Already present.** `go.mod` lists `golang.org/x/crypto v0.48.0` as an indirect dependency. Upgrading to `v0.49.0` (latest as of March 11, 2026) adds no new module.
+
+- **bcrypt is the standard Go answer for password hashing.** The `golang.org/x/crypto` package is maintained by the Go team. It provides `GenerateFromPassword` and `CompareHashAndPassword`. No third-party library is needed.
+
+- **Use cost 12.** Default is 10 (~100ms on modern hardware). Cost 12 (~300ms) is a reasonable tradeoff between security and UX for an admin tool. This is not a high-throughput login endpoint.
+
+- **72-byte limit.** bcrypt silently truncates passwords longer than 72 bytes. For flowy (admin/HPC tool), this is not a concern in practice. Document it; do not pre-hash.
+
+- **Alternatives explicitly rejected:**
+  - `argon2id` (`golang.org/x/crypto/argon2`) — more memory-hard than bcrypt but adds complexity; bcrypt is sufficient and universally understood
+  - Third-party wrappers — no value added over the x/crypto package for this use case
+
+**Confidence:** HIGH — golang.org/x/crypto is maintained by the Go team; bcrypt package verified at pkg.go.dev.
+
+---
+
+#### 3. RBAC: Hand-Written Middleware (not Casbin, not gorbac)
+
+**Recommendation:** Implement RBAC as a single ~50-line Go file in `internal/auth/`. No external RBAC library.
+
+**Rationale:**
+
+- **flowy has exactly three roles: admin, executor, viewer.** The role model does not have inheritance, resource-level policies, or dynamic rule evaluation. It is a static enum. This is the simplest case of RBAC.
+
+- **Casbin is designed for complex policy models.** It uses a configuration DSL (`.conf` files) to describe access control models. For three static roles, this is accidental complexity that makes the code harder to read and reason about, not easier.
+
+- **gorbac and similar libraries** add an in-memory role store with runtime mutation. flowy roles are fixed at compile time — there is nothing to store or mutate.
+
+- **The complete implementation:**
+  ```go
+  // internal/auth/rbac.go
+  type Role string
+
+  const (
+      RoleAdmin    Role = "admin"
+      RoleExecutor Role = "executor"
+      RoleViewer   Role = "viewer"
+  )
+
+  // RequireRole returns a chi middleware that enforces minimum role.
+  // Role ordering: viewer < executor < admin.
+  func RequireRole(minimum Role) func(http.Handler) http.Handler {
+      return func(next http.Handler) http.Handler {
+          return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+              claims, ok := ClaimsFromContext(r.Context())
+              if !ok || !hasRole(Role(claims.Role), minimum) {
+                  http.Error(w, "forbidden", http.StatusForbidden)
+                  return
+              }
+              next.ServeHTTP(w, r)
+          })
+      }
+  }
+
+  func hasRole(actual, minimum Role) bool {
+      order := map[Role]int{RoleViewer: 0, RoleExecutor: 1, RoleAdmin: 2}
+      return order[actual] >= order[minimum]
+  }
+  ```
+  This is the entire authorization layer. Wire it as chi middleware on protected route groups.
+
+- **Project membership** (user X has role Y in project Z) is a database concern, not a library concern. Store it in a `project_members` table. The middleware reads the project context from the URL, fetches the member role, and enforces it.
+
+**Confidence:** HIGH — hand-rolled RBAC is idiomatic Go for fixed role sets; Casbin overhead verified via documentation and community comparisons.
+
+---
+
+#### 4. WDL Registry Content-Hash Versioning: stdlib crypto/sha256 + opencontainers/go-digest (already in go.mod)
+
+**Recommendation:** Use Go's stdlib `crypto/sha256` for hashing and `github.com/opencontainers/go-digest` for the canonical `sha256:<hex>` digest string format. Do not use a Docker registry client library.
+
+**Rationale:**
+
+- **opencontainers/go-digest is already a transitive dependency.** `go.mod` lists `github.com/opencontainers/go-digest v1.0.0` (via Docker SDK). The library provides `digest.FromBytes(content)` which returns a `Digest` of the form `sha256:7173b809ca12ec5dee4506cd86be934c4596dd234ee82c0662eac04a8c2c71dc`. This is the same format Docker uses for image layers.
+
+- **Content-addressing pattern for WDL registry:**
+  ```
+  // Content table stores WDL source by hash — immutable
+  wdl_blobs: (digest TEXT PK, content TEXT, size_bytes INT, created_at DATETIME)
+
+  // Registry entries link human-readable names+tags to digests
+  registry_items: (id, name, kind, created_at)  // kind: "tool" | "workflow"
+  registry_versions: (id, item_id, tag, digest, created_at)
+  ```
+  `tag` is mutable (can be re-pointed to a new digest, like Docker `latest`). `digest` is immutable. Looking up by digest is always unambiguous; looking up by tag is a soft reference. This exactly mirrors the Docker registry model.
+
+- **The registry does NOT need to implement the Docker Distribution HTTP API.** flowy's WDL registry is a first-party service with its own REST API. Using go-containerregistry or distribution/distribution would be enormous over-engineering — those libraries implement the full OCI distribution spec for container images.
+
+- **Deduplication is free.** If the same WDL source is registered under two different names/versions, the blob is stored once. The `wdl_blobs` table is an append-only content store; `registry_versions` is the mutable index.
+
+**Confidence:** HIGH — opencontainers/go-digest already in go.mod; pattern verified against Docker/OCI conventions.
+
+---
+
+#### 5. Provenance Tracking: SQLite + New Tables (no external lineage library)
+
+**Recommendation:** Store provenance as relational data in SQLite using new migration files. No external lineage tracking library (no OpenLineage, no OpenMetadata).
+
+**Rationale:**
+
+- **Provenance requirements are narrow and well-defined.** Each output file needs: which tool/workflow produced it, which version (digest + tag), which run ID, which input files were consumed. This is 2-3 tables with foreign keys.
+
+- **External lineage tools (OpenLineage, OpenMetadata) are infrastructure products.** They require running separate services, have their own API, and target data engineering pipelines with hundreds of jobs. For flowy's use case — "which WDL tool produced this output file?" — they are vastly over-scoped.
+
+- **Schema:**
+  ```sql
+  -- New migration: 00004_registry_and_provenance.sql
+  CREATE TABLE registry_items (
+      id          TEXT PRIMARY KEY,  -- UUID
+      name        TEXT NOT NULL,
+      kind        TEXT NOT NULL,     -- 'tool' | 'workflow'
+      created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE registry_versions (
+      id          TEXT PRIMARY KEY,
+      item_id     TEXT NOT NULL REFERENCES registry_items(id),
+      tag         TEXT,              -- nullable; mutable pointer
+      digest      TEXT NOT NULL,     -- sha256:<hex>; immutable
+      created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(item_id, tag)
+  );
+
+  CREATE TABLE wdl_blobs (
+      digest      TEXT PRIMARY KEY,  -- sha256:<hex>
+      content     TEXT NOT NULL,
+      size_bytes  INTEGER NOT NULL,
+      created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE provenance (
+      id              TEXT PRIMARY KEY,
+      run_id          TEXT NOT NULL REFERENCES runs(id),
+      registry_version_id TEXT REFERENCES registry_versions(id),
+      output_path     TEXT NOT NULL,  -- backend path of the output file
+      created_at      DATETIME NOT NULL DEFAULT (datetime('now'))
+  );
+  ```
+
+- **goose handles migrations** as it did for v1.1–v1.2. Add migration `00004_registry_and_provenance.sql` following the existing pattern.
+
+- **Provenance is append-only.** Never update or delete provenance records. If a run is re-executed, create a new provenance row. This is sufficient for audit purposes and avoids concurrency issues.
+
+**Confidence:** HIGH — design is a direct extension of the existing SQLite schema; no new libraries needed.
+
+---
+
+#### 6. Project Management: SQLite + chi sub-routers (no external project management library)
+
+**Recommendation:** Add project and membership tables via goose migration. No external library.
+
+**Rationale:**
+
+- **Schema extension:**
+  ```sql
+  -- Part of 00004_registry_and_provenance.sql or a separate 00004_projects.sql
+  CREATE TABLE users (
+      id            TEXT PRIMARY KEY,
+      username      TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at    DATETIME NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE projects (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL UNIQUE,
+      created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE project_members (
+      project_id  TEXT NOT NULL REFERENCES projects(id),
+      user_id     TEXT NOT NULL REFERENCES users(id),
+      role        TEXT NOT NULL,  -- 'admin' | 'executor' | 'viewer'
+      PRIMARY KEY (project_id, user_id)
+  );
+  ```
+
+- **Route structure with chi:**
+  ```
+  POST   /auth/login                  -- returns JWT; no auth required
+  POST   /auth/register               -- create user (admin only in production)
+
+  POST   /projects                    -- JWT required; admin role
+  GET    /projects/{projectID}        -- JWT required; project member (any role)
+  POST   /projects/{projectID}/members -- JWT required; project admin role
+
+  POST   /projects/{projectID}/registry/tools     -- register WDL tool
+  GET    /projects/{projectID}/registry/tools     -- list tools
+  POST   /projects/{projectID}/workflows          -- submit workflow (executor+)
+  GET    /projects/{projectID}/workflows/{id}     -- status (viewer+)
+  ```
+  Use chi's `r.Route("/projects/{projectID}", ...)` to group project-scoped endpoints under shared JWT + project membership middleware.
+
+- **The existing `Store` interface** needs new methods for user, project, and registry CRUD. Extend `internal/store/store.go` with new interfaces following the same pattern as `Run` and `Task` operations.
+
+**Confidence:** HIGH — direct extension of the established chi + SQLite pattern.
+
+---
+
+### Supporting Libraries (v1.3)
+
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `golang-jwt/jwt/v5` | v5.3.1 | JWT token generation and validation | New direct dependency; all auth handlers |
+| `golang.org/x/crypto/bcrypt` | v0.49.0 | Password hashing | Promote from indirect to direct; login + registration handlers |
+| `opencontainers/go-digest` | v1.0.0 | Canonical sha256 digest string format | Promote from indirect to direct; WDL blob storage |
+| `github.com/google/uuid` | v1.6.0 (already direct) | UUID generation for user/project/registry IDs | Already in go.mod; use for all new entity IDs |
+
+---
+
+### Installation (v1.3 new dependencies only)
+
+```bash
+# JWT library (new direct dependency)
+go get github.com/golang-jwt/jwt/v5@v5.3.1
+
+# Promote existing transitive deps to direct (no version bump needed)
+# golang.org/x/crypto is already v0.48.0; consider upgrading to v0.49.0
+go get golang.org/x/crypto@v0.49.0
+
+# opencontainers/go-digest is already v1.0.0; no version change needed
+# Just add an import in the registry code and run go mod tidy
+```
+
+After adding imports for `golang.org/x/crypto/bcrypt` and `opencontainers/go-digest`, run `go mod tidy` to reclassify them from `// indirect` to direct dependencies in go.mod. No new module downloads are needed.
+
+---
+
+### Alternatives Considered (v1.3)
+
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| `golang-jwt/jwt/v5` direct | `go-chi/jwtauth/v5` | jwtauth depends on lestrrat-go/jwx v3 (full JOSE suite); ~10 new transitive deps for a feature that needs 30 lines of custom middleware |
+| `golang-jwt/jwt/v5` direct | `lestrrat-go/jwx/v3` directly | Same issue; JWE/JWK/JWS features are not needed; JWT-only library is the right scope |
+| Hand-rolled RBAC | Casbin | Policy DSL configuration (.conf files) is overhead for a 3-role static model; Casbin is designed for complex attribute-based policies |
+| Hand-rolled RBAC | gorbac | In-memory runtime role store is unnecessary when roles are a compile-time constant |
+| `crypto/sha256` + `go-digest` | OCI registry client (`go-containerregistry`) | Implements full OCI distribution spec; the WDL registry is a custom REST API, not a Docker-compatible registry |
+| bcrypt cost=12 | argon2id | More memory-hard but requires tuning memory/iterations per deployment; bcrypt is universally understood and sufficient |
+| SQLite provenance tables | OpenLineage/OpenMetadata | External infrastructure services; multi-service deployment for a feature that needs 3 tables and a SELECT |
+
+---
+
+### What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| **`go-chi/jwtauth`** | Brings lestrrat-go/jwx v3 (full JOSE) as a dependency; overkill for HS256 token check | `golang-jwt/jwt/v5` + 30-line custom chi middleware |
+| **`apache/casbin`** | Policy DSL and persistence adapter overhead for 3 static roles | Hand-written `RequireRole` middleware in `internal/auth/` |
+| **`go-containerregistry`** | Full OCI client; the WDL registry is not a Docker-protocol registry | `opencontainers/go-digest` (already in go.mod) + custom REST API |
+| **OAuth2 / SSO libraries** | Out of scope per PROJECT.md — username/password is sufficient for v1.3 | `golang-jwt/jwt/v5` + bcrypt |
+| **session store (Redis, memcached)** | Stateless JWT is sufficient; server does not need to track sessions | JWT with expiry in claims; client refreshes by re-logging in |
+| **GORM / sqlc** | Already rejected in v1.1 section; same reasoning applies to the new tables | `database/sql` + hand-written queries following existing store patterns |
+
+---
+
+### Version Compatibility (v1.3)
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `golang-jwt/jwt/v5 v5.3.1` | Go 1.18+ | NEW direct dependency; go.mod is `go 1.25.0` — compatible |
+| `golang.org/x/crypto v0.49.0` | Go 1.20+ | Promote from indirect; already in module graph at v0.48.0 |
+| `opencontainers/go-digest v1.0.0` | Go 1.13+ | Already in go.mod; promote to direct by adding an import |
+| `github.com/google/uuid v1.6.0` | Go 1.15+ | Already a direct dependency; use for all new entity IDs |
+
+---
+
+### Integration Points for v1.3
+
+The new capabilities plug into the existing server architecture at specific seams:
+
+1. **JWT middleware** wraps the chi router's user-facing route group. The existing daemon-facing routes (`/tasks/*`, `/heartbeat`) continue to use the static bearer token from v1.1.
+
+2. **Project membership check** is a second middleware layer inside project-scoped routes. Reads `{projectID}` from the URL, queries `project_members`, sets the effective role on context. This runs after JWT validation.
+
+3. **Registry** is a new set of handlers in `internal/server/handlers_registry.go`. Uses the existing `Store` interface extended with registry methods.
+
+4. **Provenance** is recorded in `handleResult` (in `internal/server/handlers.go`) when a task completes. If the run was submitted with a registry version reference, write a `provenance` row linking the output paths to that version.
+
+5. **Workflow submission** gains an optional `registry_version_id` field. When present, the server resolves the WDL content from `wdl_blobs` instead of reading from the filesystem. Backward-compatible: existing `wdl_path` submissions continue to work.
+
+---
+
+### Sources
+
+- [golang-jwt/jwt v5 — pkg.go.dev](https://pkg.go.dev/github.com/golang-jwt/jwt/v5) — v5.3.1 published January 28, 2026; 13,000+ importers; HIGH confidence
+- [golang-jwt/jwt releases — GitHub](https://github.com/golang-jwt/jwt/releases) — v5.3.1 confirmed latest stable; HIGH confidence
+- [golang.org/x/crypto/bcrypt — pkg.go.dev](https://pkg.go.dev/golang.org/x/crypto/bcrypt) — v0.49.0 March 11, 2026; Go team maintained; HIGH confidence
+- [opencontainers/go-digest — pkg.go.dev](https://pkg.go.dev/github.com/opencontainers/go-digest) — v1.0.0 stable; already in go.mod as transitive dep; HIGH confidence
+- [go-chi/jwtauth v5 — pkg.go.dev](https://pkg.go.dev/github.com/go-chi/jwtauth/v5) — v5.4.0 February 26, 2026; depends on lestrrat-go/jwx; evaluated and not recommended; MEDIUM confidence
+- [lestrrat-go/jwx releases — GitHub](https://github.com/lestrrat-go/jwx/releases) — v3.0.13 released; full JOSE suite; too broad for this use case; MEDIUM confidence
+- [apache/casbin — casbin.org](https://casbin.org/) — policy DSL for complex RBAC; overhead not justified for 3 static roles; HIGH confidence assessment
 
 ---
 
@@ -525,6 +888,9 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 | `aws-sdk-go-v2/config v1.32.x` | Go 1.21+ | Same module group; update config + credentials + s3 together |
 | `testcontainers-go v0.36.x` | Go 1.21+, Docker 20.10+ | Requires Docker socket; DinD needs `TESTCONTAINERS_RYUK_DISABLED=true` |
 | `testcontainers-go/modules/minio v0.36.x` | Must match base testcontainers version | Minor version must match base module |
+| `golang-jwt/jwt/v5 v5.3.1` | Go 1.18+ | NEW v1.3 direct dependency; compatible with Go 1.25 |
+| `golang.org/x/crypto v0.49.0` | Go 1.20+ | Promote from indirect in v1.3; bcrypt for password hashing |
+| `opencontainers/go-digest v1.0.0` | Go 1.13+ | Already transitive; promote to direct in v1.3 for registry content hashing |
 
 ---
 
@@ -547,6 +913,12 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 - [feature/s3/transfermanager — pkg.go.dev](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager) — v0.1.8 unstable
 - [testcontainers-go/modules/minio — golang.testcontainers.org](https://golang.testcontainers.org/modules/minio/) — official documentation
 - [minio/minio-go/v7 — pkg.go.dev](https://pkg.go.dev/github.com/minio/minio-go/v7) — v7.0.99 March 2026; evaluated and not recommended
+- [golang-jwt/jwt v5 — pkg.go.dev](https://pkg.go.dev/github.com/golang-jwt/jwt/v5) — v5.3.1 January 28, 2026; 13,000+ importers; HIGH confidence
+- [golang-jwt/jwt releases — GitHub](https://github.com/golang-jwt/jwt/releases) — v5.3.1 confirmed latest stable
+- [golang.org/x/crypto/bcrypt — pkg.go.dev](https://pkg.go.dev/golang.org/x/crypto/bcrypt) — v0.49.0 March 11, 2026; Go team maintained
+- [opencontainers/go-digest — pkg.go.dev](https://pkg.go.dev/github.com/opencontainers/go-digest) — v1.0.0 stable; already in go.mod
+- [go-chi/jwtauth v5 — pkg.go.dev](https://pkg.go.dev/github.com/go-chi/jwtauth/v5) — v5.4.0 February 26, 2026; depends on lestrrat-go/jwx; evaluated and not recommended
+- [lestrrat-go/jwx releases — GitHub](https://github.com/lestrrat-go/jwx/releases) — v3.0.13 released; full JOSE suite; too broad for this use case
 
 ---
 
@@ -566,5 +938,5 @@ See the original v1.0 research in git history for full rationale on these choice
 
 ---
 
-*Stack research for: flowy v1.2 S3 object storage backend*
-*Researched: 2026-03-12*
+*Stack research for: flowy v1.3 user auth, project RBAC, WDL registry, provenance tracking*
+*Researched: 2026-03-17*
