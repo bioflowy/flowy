@@ -7,8 +7,98 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/bioflowy/flowy/internal/auth"
+	"github.com/bioflowy/flowy/internal/store"
 )
+
+// projectContextKey is the unexported type for project context keys.
+type projectContextKey int
+
+// projectKey is the context key used to store the resolved *store.Project.
+const projectKey projectContextKey = 0
+
+// roleRank maps project role names to their numeric rank for comparison.
+// Higher rank = more privileged.
+var roleRank = map[string]int{
+	"viewer":   1,
+	"executor": 2,
+	"admin":    3,
+}
+
+// roleAtLeast returns true if actual satisfies the minRole requirement.
+func roleAtLeast(actual, minRole string) bool {
+	return roleRank[actual] >= roleRank[minRole]
+}
+
+// projectContext is a middleware that resolves the {slug} URL parameter to a
+// *store.Project and injects it into the request context. Returns 404 if the
+// project is not found or is inactive.
+func (s *Server) projectContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug := chi.URLParam(r, "slug")
+		proj, err := s.store.GetProjectBySlug(r.Context(), slug)
+		if err != nil || proj == nil || !proj.IsActive {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		ctx := context.WithValue(r.Context(), projectKey, proj)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// projectFromContext extracts the *store.Project injected by projectContext.
+// Returns nil if no project is present in the context.
+func projectFromContext(ctx context.Context) *store.Project {
+	v := ctx.Value(projectKey)
+	if v == nil {
+		return nil
+	}
+	p, _ := v.(*store.Project)
+	return p
+}
+
+// projectRoleRequired returns a middleware that enforces per-project RBAC.
+// Global admins (claims.Role == "admin") bypass the membership check entirely.
+// For all other users, the project must be in context (injected by projectContext)
+// and the user must have a project role satisfying minRole.
+func (s *Server) projectRoleRequired(minRole string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims := claimsFromContext(r.Context())
+			if claims == nil {
+				writeError(w, http.StatusUnauthorized, "not authenticated")
+				return
+			}
+
+			// Global admin bypasses project membership check (per research pitfall 2).
+			if claims.Role == "admin" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			proj := projectFromContext(r.Context())
+			if proj == nil {
+				writeError(w, http.StatusNotFound, "project not found")
+				return
+			}
+
+			member, err := s.store.GetProjectMember(r.Context(), proj.ID, claims.UserID)
+			if err != nil || member == nil {
+				writeError(w, http.StatusForbidden, "not a project member")
+				return
+			}
+
+			if !roleAtLeast(member.Role, minRole) {
+				writeError(w, http.StatusForbidden, "insufficient project role")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 // JWTMiddleware returns a middleware that validates the Bearer JWT in the
 // Authorization header. On success, it injects *auth.Claims into the request

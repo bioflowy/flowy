@@ -183,6 +183,56 @@ type HeartbeatRequest struct {
 	DaemonID string `json:"daemon_id"`
 }
 
+// CreateProjectRequest is the request body for POST /projects.
+type CreateProjectRequest struct {
+	// Slug is the unique human-readable identifier for the project.
+	// Must be lowercase alphanumeric with hyphens, max 64 chars.
+	Slug string `json:"slug"`
+
+	// Description is an optional human-readable description of the project.
+	Description string `json:"description"`
+}
+
+// UpdateProjectRequest is the request body for PUT /projects/{slug}.
+type UpdateProjectRequest struct {
+	// Description is the new description for the project.
+	Description string `json:"description"`
+}
+
+// ProjectResponse is the response body for project-related endpoints.
+type ProjectResponse struct {
+	ID          string `json:"id"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"is_active"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// AddMemberRequest is the request body for POST /projects/{slug}/members.
+type AddMemberRequest struct {
+	// Username is the username of the user to add to the project.
+	Username string `json:"username"`
+
+	// Role is the role to assign: "admin", "executor", or "viewer".
+	Role string `json:"role"`
+}
+
+// UpdateMemberRequest is the request body for PUT /projects/{slug}/members/{username}.
+type UpdateMemberRequest struct {
+	// Role is the new role for the member: "admin", "executor", or "viewer".
+	Role string `json:"role"`
+}
+
+// MemberResponse is the response body for membership-related endpoints.
+type MemberResponse struct {
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 // TaskResultRequest is the request body for POST /tasks/{task_id}/result.
 // A daemon sends this after task execution completes (or fails).
 type TaskResultRequest struct {
