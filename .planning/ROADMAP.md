@@ -148,7 +148,7 @@ Plans:
 | 16. S3Backend Implementation | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
-| 19. User Authentication | 3/3 | Complete   | 2026-03-17 | - |
+| 19. User Authentication | 3/3 | Complete    | 2026-03-17 | - |
 | 20. Projects and RBAC | v1.3 | 0/TBD | Not started | - |
 | 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
