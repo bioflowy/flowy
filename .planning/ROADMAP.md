@@ -60,7 +60,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 **Milestone Goal:** Add multi-user authentication, project-scoped RBAC, a content-addressed WDL registry, registry-based execution, and run provenance tracking.
 
 - [x] **Phase 19: User Authentication** — Users can log in with username/password and receive JWT tokens; all routes protected; admin seeds on first run (completed 2026-03-17)
-- [ ] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles
+- [x] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles (completed 2026-03-17)
 - [ ] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project
 - [ ] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths
 - [ ] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run
@@ -92,7 +92,7 @@ Plans:
   2. Project admin can add a member with a specific role and change or remove that membership
   3. A viewer-role member can read project details but cannot update or delete the project
   4. Workflow runs submitted within a project context are associated with that project (project_id present on run records)
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 20-01-PLAN.md — Models, migration 00005, and SQLite store layer for projects and membership
 - [ ] 20-02-PLAN.md — Project CRUD handlers, membership handlers, RBAC middleware, and route registration
@@ -153,7 +153,7 @@ Plans:
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
-| 20. Projects and RBAC | 2/3 | In Progress|  | - |
+| 20. Projects and RBAC | 3/3 | Complete   | 2026-03-17 | - |
 | 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
