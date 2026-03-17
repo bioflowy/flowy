@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: planning
-stopped_at: Phase 19 context gathered
-last_updated: "2026-03-17T13:42:31.798Z"
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-03-17T14:00:58.775Z"
 last_activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -45,6 +45,8 @@ Recent decisions affecting current work:
 - v1.3: Three-table registry schema (registry_entries/registry_versions/registry_tags) per Docker distribution model
 - v1.3: auth.enabled defaults false — all 156 spectool tests continue to pass unchanged
 - v1.3: Daemon routes in separate sub-router — must be structured before any JWT middleware is added
+- [Phase 19]: AuthConfig defaults Enabled=false (bool zero value) — no applyDefaults change needed; spectool tests pass unchanged
+- [Phase 19]: GetUserByUsername filters is_active=1; GetUserByID returns regardless of active state
 
 ### Pending Todos
 
@@ -57,6 +59,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T13:42:31.795Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-user-authentication/19-CONTEXT.md
+Last session: 2026-03-17T14:00:58.771Z
+Stopped at: Completed 19-01-PLAN.md
+Resume file: None

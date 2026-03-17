@@ -14,7 +14,7 @@ Requirements for Project & Registry milestone. Each maps to roadmap phases.
 - [ ] **AUTH-03**: Server seeds an initial admin user on first run
 - [ ] **AUTH-04**: Admin can create new users with username and password
 - [ ] **AUTH-05**: Admin can list and delete users
-- [ ] **AUTH-06**: Auth can be disabled via config flag (`auth.enabled: false`) for backward compatibility
+- [x] **AUTH-06**: Auth can be disabled via config flag (`auth.enabled: false`) for backward compatibility
 
 ### Projects
 
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03 | Phase 19 | Pending |
 | AUTH-04 | Phase 19 | Pending |
 | AUTH-05 | Phase 19 | Pending |
-| AUTH-06 | Phase 19 | Pending |
+| AUTH-06 | Phase 19 | Complete |
 | PROJ-01 | Phase 20 | Pending |
 | PROJ-02 | Phase 20 | Pending |
 | PROJ-03 | Phase 20 | Pending |
