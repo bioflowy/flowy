@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: planning
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-03-17T19:24:30.746Z"
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-03-17T19:29:33.133Z"
 last_activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Recent decisions affecting current work:
 - [Phase 19]: GetUserByUsernameAny added to Store — login distinguishes inactive vs not-found without username enumeration
 - [Phase 19]: UpdateUser added to Store interface for password change support
 - [Phase 20-projects-and-rbac]: project_id on runs nullable in SQL, enforced at app layer; RemoveMemberIfNotLastAdmin uses writer connection for count+delete serialization
+- [Phase 20-projects-and-rbac]: /projects route group has its own JWTMiddleware invocation; handleCreateProject reads claims directly since no project slug is known yet
 
 ### Pending Todos
 
@@ -64,6 +65,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:24:30.742Z
-Stopped at: Completed 20-01-PLAN.md
+Last session: 2026-03-17T19:29:33.129Z
+Stopped at: Completed 20-02-PLAN.md
 Resume file: None
