@@ -92,7 +92,7 @@ Plans:
   2. Project admin can add a member with a specific role and change or remove that membership
   3. A viewer-role member can read project details but cannot update or delete the project
   4. Workflow runs submitted within a project context are associated with that project (project_id present on run records)
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 Plans:
 - [ ] 20-01-PLAN.md — Models, migration 00005, and SQLite store layer for projects and membership
 - [ ] 20-02-PLAN.md — Project CRUD handlers, membership handlers, RBAC middleware, and route registration
@@ -153,7 +153,7 @@ Plans:
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
-| 20. Projects and RBAC | v1.3 | 0/3 | Planning | - |
+| 20. Projects and RBAC | 1/3 | In Progress|  | - |
 | 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |

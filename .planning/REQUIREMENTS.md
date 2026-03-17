@@ -18,13 +18,13 @@ Requirements for Project & Registry milestone. Each maps to roadmap phases.
 
 ### Projects
 
-- [ ] **PROJ-01**: User can create a project with name and description
-- [ ] **PROJ-02**: User can list projects they are a member of
-- [ ] **PROJ-03**: User can view project details
-- [ ] **PROJ-04**: Project admin can update or delete a project
-- [ ] **PROJ-05**: Project admin can add/remove members with role (admin/executor/viewer)
-- [ ] **PROJ-06**: Project admin can change a member's role
-- [ ] **PROJ-07**: Workflow runs are scoped to a project (project_id on runs table)
+- [x] **PROJ-01**: User can create a project with name and description
+- [x] **PROJ-02**: User can list projects they are a member of
+- [x] **PROJ-03**: User can view project details
+- [x] **PROJ-04**: Project admin can update or delete a project
+- [x] **PROJ-05**: Project admin can add/remove members with role (admin/executor/viewer)
+- [x] **PROJ-06**: Project admin can change a member's role
+- [x] **PROJ-07**: Workflow runs are scoped to a project (project_id on runs table)
 
 ### Registry
 
@@ -91,13 +91,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-04 | Phase 19 | Complete |
 | AUTH-05 | Phase 19 | Complete |
 | AUTH-06 | Phase 19 | Complete |
-| PROJ-01 | Phase 20 | Pending |
-| PROJ-02 | Phase 20 | Pending |
-| PROJ-03 | Phase 20 | Pending |
-| PROJ-04 | Phase 20 | Pending |
-| PROJ-05 | Phase 20 | Pending |
-| PROJ-06 | Phase 20 | Pending |
-| PROJ-07 | Phase 20 | Pending |
+| PROJ-01 | Phase 20 | Complete |
+| PROJ-02 | Phase 20 | Complete |
+| PROJ-03 | Phase 20 | Complete |
+| PROJ-04 | Phase 20 | Complete |
+| PROJ-05 | Phase 20 | Complete |
+| PROJ-06 | Phase 20 | Complete |
+| PROJ-07 | Phase 20 | Complete |
 | REG-01 | Phase 21 | Pending |
 | REG-02 | Phase 21 | Pending |
 | REG-03 | Phase 21 | Pending |

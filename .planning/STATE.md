@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: planning
-stopped_at: Phase 20 context gathered
-last_updated: "2026-03-17T18:58:27.849Z"
+stopped_at: Completed 20-01-PLAN.md
+last_updated: "2026-03-17T19:24:30.746Z"
 last_activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 6
+  completed_plans: 4
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Recent decisions affecting current work:
 - [Phase 19]: bearerTransport clones request before mutation; daemon.New() uses plain transport when token is empty
 - [Phase 19]: GetUserByUsernameAny added to Store — login distinguishes inactive vs not-found without username enumeration
 - [Phase 19]: UpdateUser added to Store interface for password change support
+- [Phase 20-projects-and-rbac]: project_id on runs nullable in SQL, enforced at app layer; RemoveMemberIfNotLastAdmin uses writer connection for count+delete serialization
 
 ### Pending Todos
 
@@ -63,6 +64,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T18:58:27.845Z
-Stopped at: Phase 20 context gathered
-Resume file: .planning/phases/20-projects-and-rbac/20-CONTEXT.md
+Last session: 2026-03-17T19:24:30.742Z
+Stopped at: Completed 20-01-PLAN.md
+Resume file: None
