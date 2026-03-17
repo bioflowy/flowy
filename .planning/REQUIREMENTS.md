@@ -9,11 +9,11 @@ Requirements for Project & Registry milestone. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: User can log in with username and password, receiving a JWT token
-- [ ] **AUTH-02**: All API routes (except login and health) are protected by JWT middleware
-- [ ] **AUTH-03**: Server seeds an initial admin user on first run
-- [ ] **AUTH-04**: Admin can create new users with username and password
-- [ ] **AUTH-05**: Admin can list and delete users
+- [x] **AUTH-01**: User can log in with username and password, receiving a JWT token
+- [x] **AUTH-02**: All API routes (except login and health) are protected by JWT middleware
+- [x] **AUTH-03**: Server seeds an initial admin user on first run
+- [x] **AUTH-04**: Admin can create new users with username and password
+- [x] **AUTH-05**: Admin can list and delete users
 - [x] **AUTH-06**: Auth can be disabled via config flag (`auth.enabled: false`) for backward compatibility
 
 ### Projects
@@ -85,11 +85,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 19 | Pending |
-| AUTH-02 | Phase 19 | Pending |
-| AUTH-03 | Phase 19 | Pending |
-| AUTH-04 | Phase 19 | Pending |
-| AUTH-05 | Phase 19 | Pending |
+| AUTH-01 | Phase 19 | Complete |
+| AUTH-02 | Phase 19 | Complete |
+| AUTH-03 | Phase 19 | Complete |
+| AUTH-04 | Phase 19 | Complete |
+| AUTH-05 | Phase 19 | Complete |
 | AUTH-06 | Phase 19 | Complete |
 | PROJ-01 | Phase 20 | Pending |
 | PROJ-02 | Phase 20 | Pending |

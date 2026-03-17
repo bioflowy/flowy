@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: planning
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-03-17T14:00:58.775Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-03-17T14:10:01.361Z"
 last_activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 3
   percent: 0
 ---
 
@@ -47,6 +47,10 @@ Recent decisions affecting current work:
 - v1.3: Daemon routes in separate sub-router — must be structured before any JWT middleware is added
 - [Phase 19]: AuthConfig defaults Enabled=false (bool zero value) — no applyDefaults change needed; spectool tests pass unchanged
 - [Phase 19]: GetUserByUsername filters is_active=1; GetUserByID returns regardless of active state
+- [Phase 19]: InitAdminStore defined as minimal interface for testability; storeAdapter bridges store.Store in production
+- [Phase 19]: bearerTransport clones request before mutation; daemon.New() uses plain transport when token is empty
+- [Phase 19]: GetUserByUsernameAny added to Store — login distinguishes inactive vs not-found without username enumeration
+- [Phase 19]: UpdateUser added to Store interface for password change support
 
 ### Pending Todos
 
@@ -59,6 +63,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T14:00:58.771Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-03-17T14:10:01.357Z
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None

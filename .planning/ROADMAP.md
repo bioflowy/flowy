@@ -59,7 +59,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 
 **Milestone Goal:** Add multi-user authentication, project-scoped RBAC, a content-addressed WDL registry, registry-based execution, and run provenance tracking.
 
-- [ ] **Phase 19: User Authentication** — Users can log in with username/password and receive JWT tokens; all routes protected; admin seeds on first run
+- [x] **Phase 19: User Authentication** — Users can log in with username/password and receive JWT tokens; all routes protected; admin seeds on first run (completed 2026-03-17)
 - [ ] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles
 - [ ] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project
 - [ ] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths
@@ -77,7 +77,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   3. On first server start, an initial admin user exists and can log in without any setup step
   4. Admin can create new user accounts and list or delete existing users
   5. When `auth.enabled: false` is set in config, all existing spectool conformance tests pass unchanged
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 19-01-PLAN.md — Config, migration, store layer foundation (User model, server_config)
 - [ ] 19-02-PLAN.md — Auth package, middleware, handlers, and server router restructure
@@ -148,7 +148,7 @@ Plans:
 | 16. S3Backend Implementation | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
-| 19. User Authentication | 1/3 | In Progress|  | - |
+| 19. User Authentication | 3/3 | Complete   | 2026-03-17 | - |
 | 20. Projects and RBAC | v1.3 | 0/TBD | Not started | - |
 | 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
