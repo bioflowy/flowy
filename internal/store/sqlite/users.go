@@ -50,6 +50,21 @@ func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*
 	return u, nil
 }
 
+// GetUserByUsernameAny returns the user with the given username regardless of active state.
+// Used by login to distinguish inactive accounts from non-existent accounts.
+func (s *SQLiteStore) GetUserByUsernameAny(ctx context.Context, username string) (*store.User, error) {
+	row := s.reader.QueryRowContext(ctx,
+		`SELECT id, username, password_hash, display_name, email, global_role, is_active, created_at, updated_at
+		 FROM users WHERE username = ?`,
+		username,
+	)
+	u, err := scanUser(row)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: GetUserByUsernameAny %q: %w", username, err)
+	}
+	return u, nil
+}
+
 // GetUserByID returns the user with the given ID regardless of active state.
 // Returns an error if the user does not exist.
 func (s *SQLiteStore) GetUserByID(ctx context.Context, id string) (*store.User, error) {
@@ -107,6 +122,27 @@ func (s *SQLiteStore) DeactivateUser(ctx context.Context, id string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite: DeactivateUser %q: %w", id, err)
+	}
+	return nil
+}
+
+// UpdateUser persists changes to an existing user record.
+// Updates all mutable fields: password_hash, display_name, email, global_role, is_active.
+func (s *SQLiteStore) UpdateUser(ctx context.Context, u *store.User) error {
+	now := time.Now().UTC()
+	u.UpdatedAt = now
+	isActive := 0
+	if u.IsActive {
+		isActive = 1
+	}
+	_, err := s.writer.ExecContext(ctx,
+		`UPDATE users SET password_hash = ?, display_name = ?, email = ?, global_role = ?, is_active = ?, updated_at = ?
+		 WHERE id = ?`,
+		u.PasswordHash, u.DisplayName, u.Email, u.GlobalRole, isActive,
+		u.UpdatedAt.Format(time.RFC3339), u.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("sqlite: UpdateUser %q: %w", u.ID, err)
 	}
 	return nil
 }

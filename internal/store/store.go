@@ -131,12 +131,18 @@ type Store interface {
 	CreateUser(ctx context.Context, u *User) error
 	// GetUserByUsername returns the active user with the given username, or an error if not found.
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
+	// GetUserByUsernameAny returns the user with the given username regardless of active state.
+	// Used by login to distinguish inactive accounts from non-existent accounts.
+	GetUserByUsernameAny(ctx context.Context, username string) (*User, error)
 	// GetUserByID returns the user with the given ID regardless of active state, or an error if not found.
 	GetUserByID(ctx context.Context, id string) (*User, error)
 	// ListUsers returns all users ordered by created_at ascending.
 	ListUsers(ctx context.Context) ([]User, error)
 	// DeactivateUser sets is_active=false for the user with the given ID.
 	DeactivateUser(ctx context.Context, id string) error
+	// UpdateUser persists changes to an existing user record.
+	// Used to update fields such as PasswordHash after a password change.
+	UpdateUser(ctx context.Context, u *User) error
 	// CountUsers returns the total number of user records (including inactive).
 	CountUsers(ctx context.Context) (int, error)
 

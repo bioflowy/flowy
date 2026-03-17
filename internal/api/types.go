@@ -60,6 +60,44 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// LoginRequest is the request body for POST /auth/login.
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// LoginResponse is the response body for a successful POST /auth/login.
+type LoginResponse struct {
+	Token string `json:"token"`
+}
+
+// CreateUserRequest is the request body for POST /users (admin only).
+type CreateUserRequest struct {
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	GlobalRole  string `json:"global_role"`
+}
+
+// UserResponse is the response body for user-related endpoints.
+type UserResponse struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	GlobalRole  string `json:"global_role"`
+	IsActive    bool   `json:"is_active"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// ChangePasswordRequest is the request body for PUT /users/me/password.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 // TaskRunRequest is the request body for POST /tasks/run.
 // Runs a single named task from a WDL file (used by flowy run --task).
 type TaskRunRequest struct {

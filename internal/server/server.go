@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/bioflowy/flowy/internal/api"
+	"github.com/bioflowy/flowy/internal/auth"
 	"github.com/bioflowy/flowy/internal/config"
 	"github.com/bioflowy/flowy/internal/storage"
 	"github.com/bioflowy/flowy/internal/store"
@@ -37,6 +38,10 @@ type Server struct {
 	// staleInterval is the interval between stale task checks.
 	// Defaults to 30 seconds. Tests may override via SetStaleInterval.
 	staleInterval time.Duration
+
+	// jwtSecret is the resolved HMAC-SHA256 signing key for JWT tokens.
+	// Set only when cfg.Auth.Enabled is true.
+	jwtSecret []byte
 }
 
 // New constructs a new Server with the given config, store, and storage backend.
@@ -49,6 +54,13 @@ func New(cfg *config.Config, st store.Store, backend storage.Backend) *Server {
 		runs:          make(map[string]context.CancelFunc),
 		staleInterval: 30 * time.Second,
 	}
+	if cfg.Auth.Enabled {
+		secret, err := auth.ResolveJWTSecret(context.Background(), cfg.Auth.JWTSecret, st)
+		if err != nil {
+			log.Printf("server: resolve jwt secret: %v", err)
+		}
+		s.jwtSecret = secret
+	}
 	s.router = s.newRouter()
 	return s
 }
@@ -60,6 +72,13 @@ func (s *Server) SetStaleInterval(d time.Duration) {
 }
 
 // newRouter creates and configures the chi.Mux with all routes.
+// When auth.enabled=true, routes are split into three groups:
+//   - Public: /health, /auth/login (no auth required)
+//   - User-authenticated: workflow and user management routes (JWT middleware)
+//   - Daemon-authenticated: task and heartbeat routes (daemon token middleware)
+//
+// When auth.enabled=false, all routes are registered flat with no middleware
+// to preserve backward-compatible behavior.
 func (s *Server) newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -73,18 +92,53 @@ func (s *Server) newRouter() *chi.Mux {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
 
-	// User-facing endpoints.
+	// Public routes — always available regardless of auth.enabled.
 	r.Get("/health", s.handleHealth)
-	r.Post("/workflows", s.handleSubmit)
-	r.Get("/workflows/{id}/status", s.handleStatus)
-	r.Get("/workflows/{id}/outputs", s.handleOutputs)
-	r.Post("/workflows/{id}/abort", s.handleAbort)
 
-	// Daemon-facing endpoints.
-	r.Post("/tasks/run", s.handleTaskRun)
-	r.Post("/tasks/claim", s.handleClaim)
-	r.Post("/tasks/{id}/result", s.handleResult)
-	r.Post("/heartbeat", s.handleHeartbeat)
+	if s.cfg.Auth.Enabled {
+		// POST /auth/login is always public.
+		r.Post("/auth/login", s.handleLogin)
+
+		// User-authenticated routes (JWT middleware).
+		r.Group(func(r chi.Router) {
+			r.Use(JWTMiddleware(s.jwtSecret))
+
+			// Workflow routes (existing).
+			r.Post("/workflows", s.handleSubmit)
+			r.Get("/workflows/{id}/status", s.handleStatus)
+			r.Get("/workflows/{id}/outputs", s.handleOutputs)
+			r.Post("/workflows/{id}/abort", s.handleAbort)
+
+			// User management routes.
+			r.Get("/users/me", s.handleGetMe)
+			r.Put("/users/me/password", s.handleChangePassword)
+			r.With(roleRequired("admin")).Post("/users", s.handleCreateUser)
+			r.With(roleRequired("admin")).Get("/users", s.handleListUsers)
+			r.With(roleRequired("admin")).Delete("/users/{id}", s.handleDeleteUser)
+		})
+
+		// Daemon-authenticated routes (pre-shared token).
+		r.Group(func(r chi.Router) {
+			r.Use(DaemonAuthMiddleware(s.cfg.Auth.DaemonToken))
+			r.Post("/tasks/run", s.handleTaskRun)
+			r.Post("/tasks/claim", s.handleClaim)
+			r.Post("/tasks/{id}/result", s.handleResult)
+			r.Post("/heartbeat", s.handleHeartbeat)
+		})
+	} else {
+		// Auth disabled: flat registration with no middleware (current behavior preserved).
+		r.Post("/auth/login", s.handleLoginDisabled)
+
+		r.Post("/workflows", s.handleSubmit)
+		r.Get("/workflows/{id}/status", s.handleStatus)
+		r.Get("/workflows/{id}/outputs", s.handleOutputs)
+		r.Post("/workflows/{id}/abort", s.handleAbort)
+
+		r.Post("/tasks/run", s.handleTaskRun)
+		r.Post("/tasks/claim", s.handleClaim)
+		r.Post("/tasks/{id}/result", s.handleResult)
+		r.Post("/heartbeat", s.handleHeartbeat)
+	}
 
 	return r
 }
