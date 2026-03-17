@@ -2,7 +2,7 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and tags, and execution provenance tracking for output files.
 
 ## Core Value
 
@@ -37,7 +37,11 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-(None — next milestone requirements to be defined via `/gsd:new-milestone`)
+- [ ] User authentication (username/password, JWT tokens)
+- [ ] Project management with role-based access control (admin/executor/viewer)
+- [ ] WDL tool/workflow registry with content-hash versioning and tags
+- [ ] Execution integration with registered tools/workflows
+- [ ] Provenance tracking for execution output files
 
 ### Out of Scope
 
@@ -48,10 +52,21 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - Execution cache (task output reuse) — deferred to future milestone
 - Workflow resume from checkpoint — deferred to future milestone
 - Docker-alternative backends (Podman, Singularity) — deferred to future milestone
-- WebSocket/SSE for status — no web UI; polling sufficient for batch workflows
-- JWT/OAuth2 authentication — HPC clusters use network-level security; add later if needed
+- WebSocket/SSE for status — polling sufficient for batch workflows; revisit when Web UI added
+- OAuth2/LDAP/SSO authentication — simple username/password sufficient for now
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
+
+## Current Milestone: v1.3 Project & Registry
+
+**Goal:** Add multi-user project management, Docker-registry-style WDL tool/workflow versioning, and execution provenance tracking.
+
+**Target features:**
+- User authentication with username/password and JWT tokens
+- Projects with role-based access (admin, executor, viewer)
+- WDL tool (task) and workflow registry with content-hash + tag versioning
+- Execution of registered tools/workflows within project context
+- Provenance tracking linking output files to their source tool/workflow, version, and inputs
 
 ## Context
 
@@ -93,4 +108,4 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | API-based input/output delivery | DB stores inputs/outputs for S3 mode; FS fallback for local | ✓ Good — works for both backends |
 
 ---
-*Last updated: 2026-03-13 after v1.2 milestone*
+*Last updated: 2026-03-17 after v1.3 milestone start*
