@@ -1,0 +1,121 @@
+# Requirements: flowy
+
+**Defined:** 2026-03-17
+**Core Value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
+
+## v1.3 Requirements
+
+Requirements for Project & Registry milestone. Each maps to roadmap phases.
+
+### Authentication
+
+- [ ] **AUTH-01**: User can log in with username and password, receiving a JWT token
+- [ ] **AUTH-02**: All API routes (except login and health) are protected by JWT middleware
+- [ ] **AUTH-03**: Server seeds an initial admin user on first run
+- [ ] **AUTH-04**: Admin can create new users with username and password
+- [ ] **AUTH-05**: Admin can list and delete users
+- [ ] **AUTH-06**: Auth can be disabled via config flag (`auth.enabled: false`) for backward compatibility
+
+### Projects
+
+- [ ] **PROJ-01**: User can create a project with name and description
+- [ ] **PROJ-02**: User can list projects they are a member of
+- [ ] **PROJ-03**: User can view project details
+- [ ] **PROJ-04**: Project admin can update or delete a project
+- [ ] **PROJ-05**: Project admin can add/remove members with role (admin/executor/viewer)
+- [ ] **PROJ-06**: Project admin can change a member's role
+- [ ] **PROJ-07**: Workflow runs are scoped to a project (project_id on runs table)
+
+### Registry
+
+- [ ] **REG-01**: Executor can push a WDL file to the project registry, auto-computing SHA-256 digest
+- [ ] **REG-02**: Executor can assign a tag to a registry version (mutable pointer)
+- [ ] **REG-03**: Viewer can pull WDL content by tag (`name:tag`) or digest (`name@sha256:hex`)
+- [ ] **REG-04**: Viewer can list registry entries, versions, and tags in a project
+- [ ] **REG-05**: Registry entries are classified as tool (WDL task) or workflow (WDL workflow)
+- [ ] **REG-06**: Project admin can delete registry entries
+
+### Execution
+
+- [ ] **EXEC-01**: Executor can submit a run by registry reference (`project/name:tag` or `project/name@sha256:hex`)
+- [ ] **EXEC-02**: Server resolves registry ref to WDL content and delivers via existing `WDLContent` path
+
+### Provenance
+
+- [ ] **PROV-01**: System records provenance on run submission (registry version digest, inputs, submitting user)
+- [ ] **PROV-02**: System updates provenance with outputs when run completes
+- [ ] **PROV-03**: Viewer can list provenance records for a project
+- [ ] **PROV-04**: Viewer can get provenance for a specific run (version, digest, inputs, outputs, user)
+
+## Future Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### Authentication
+
+- **AUTH-F01**: User can refresh an expiring JWT token via refresh token endpoint
+- **AUTH-F02**: OAuth2/LDAP/SSO integration for enterprise single sign-on
+
+### Registry
+
+- **REG-F01**: Registry entries can be marked as public (readable across projects)
+- **REG-F02**: GA4GH TRS API compatibility for interoperability with Dockstore/Terra
+
+### Provenance
+
+- **PROV-F01**: Per-task provenance with W3C PROV entity-activity-agent graph
+- **PROV-F02**: CWLProv-style research object export for academic publishing
+
+## Out of Scope
+
+Explicitly excluded. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| Semantic version enforcement on tags | Breaks scripting and CI pipelines using git SHA as tags; accept any tag string |
+| Global (cross-project) registry namespace | Name collision risk; project-scoped registry with future `is_public` flag instead |
+| Per-task W3C PROV lineage | 3-5x scope of run-level provenance; existing tasks table has inputs/outputs for future use |
+| Real-time execution events (WebSocket/SSE) | Polling sufficient for batch workflows; revisit when Web UI is added |
+| PostgreSQL migration | SQLite with WAL handles current scale; revisit when write contention is measurable |
+| CLI commands (flowy push/pull/tag) | API-first for v1.3; CLI commands can be added as a quick task or future milestone |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AUTH-01 | — | Pending |
+| AUTH-02 | — | Pending |
+| AUTH-03 | — | Pending |
+| AUTH-04 | — | Pending |
+| AUTH-05 | — | Pending |
+| AUTH-06 | — | Pending |
+| PROJ-01 | — | Pending |
+| PROJ-02 | — | Pending |
+| PROJ-03 | — | Pending |
+| PROJ-04 | — | Pending |
+| PROJ-05 | — | Pending |
+| PROJ-06 | — | Pending |
+| PROJ-07 | — | Pending |
+| REG-01 | — | Pending |
+| REG-02 | — | Pending |
+| REG-03 | — | Pending |
+| REG-04 | — | Pending |
+| REG-05 | — | Pending |
+| REG-06 | — | Pending |
+| EXEC-01 | — | Pending |
+| EXEC-02 | — | Pending |
+| PROV-01 | — | Pending |
+| PROV-02 | — | Pending |
+| PROV-03 | — | Pending |
+| PROV-04 | — | Pending |
+
+**Coverage:**
+- v1.3 requirements: 25 total
+- Mapped to phases: 0
+- Unmapped: 25 ⚠️
+
+---
+*Requirements defined: 2026-03-17*
+*Last updated: 2026-03-17 after initial definition*
