@@ -31,6 +31,21 @@ const (
 	TaskAborted   TaskState = "ABORTED"
 )
 
+// User represents an authenticated user of the flowy server.
+// GlobalRole is one of "admin", "executor", or "viewer".
+// IsActive is false for deactivated (soft-deleted) accounts.
+type User struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	DisplayName  string
+	Email        string
+	GlobalRole   string // "admin", "executor", or "viewer"
+	IsActive     bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 // Run holds metadata for a submitted workflow run.
 type Run struct {
 	ID          string
@@ -109,6 +124,29 @@ type Store interface {
 	// UpdateTaskInputs stores the JSON-encoded inputs for a task.
 	// Called by makeDispatchFn and handleTaskRun after creating the task record.
 	UpdateTaskInputs(ctx context.Context, taskID int64, inputsJSON string) error
+
+	// User operations
+
+	// CreateUser persists a new user record. u.ID must be set by the caller.
+	CreateUser(ctx context.Context, u *User) error
+	// GetUserByUsername returns the active user with the given username, or an error if not found.
+	GetUserByUsername(ctx context.Context, username string) (*User, error)
+	// GetUserByID returns the user with the given ID regardless of active state, or an error if not found.
+	GetUserByID(ctx context.Context, id string) (*User, error)
+	// ListUsers returns all users ordered by created_at ascending.
+	ListUsers(ctx context.Context) ([]User, error)
+	// DeactivateUser sets is_active=false for the user with the given ID.
+	DeactivateUser(ctx context.Context, id string) error
+	// CountUsers returns the total number of user records (including inactive).
+	CountUsers(ctx context.Context) (int, error)
+
+	// Server config operations (key-value store for auto-generated secrets)
+
+	// GetServerConfig returns the value for the given key, or an error wrapping
+	// sql.ErrNoRows if the key does not exist.
+	GetServerConfig(ctx context.Context, key string) (string, error)
+	// SetServerConfig upserts a key-value pair in the server_config table.
+	SetServerConfig(ctx context.Context, key, value string) error
 
 	// Lifecycle
 

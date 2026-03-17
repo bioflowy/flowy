@@ -32,6 +32,22 @@ type StorageConfig struct {
 	MultipartThreshold int64 `yaml:"multipart_threshold"`
 }
 
+// AuthConfig holds authentication-related configuration.
+// When Enabled is false (the default), all auth middleware is bypassed and
+// the server behaves as before — no tokens are required.
+type AuthConfig struct {
+	// Enabled activates JWT-based authentication when true. Defaults to false.
+	Enabled bool `yaml:"enabled"`
+
+	// JWTSecret is the HMAC-SHA256 signing key for JWT tokens.
+	// If empty when Enabled is true, the server generates and persists one automatically.
+	JWTSecret string `yaml:"jwt_secret"`
+
+	// DaemonToken is the shared secret used by daemon processes to authenticate.
+	// If empty when Enabled is true, the server generates and persists one automatically.
+	DaemonToken string `yaml:"daemon_token"`
+}
+
 // Config holds the top-level configuration for all flowy binaries.
 type Config struct {
 	// BaseDir is the root directory for run data (inputs/outputs/db).
@@ -48,6 +64,7 @@ type Config struct {
 	Daemon  DaemonConfig  `yaml:"daemon"`
 	Client  ClientConfig  `yaml:"client"`
 	Storage StorageConfig `yaml:"storage"`
+	Auth    AuthConfig    `yaml:"auth"`
 }
 
 // ServerConfig holds configuration for the flowy-server binary.
