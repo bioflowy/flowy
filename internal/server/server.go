@@ -117,6 +117,27 @@ func (s *Server) newRouter() *chi.Mux {
 			r.With(roleRequired("admin")).Delete("/users/{id}", s.handleDeleteUser)
 		})
 
+		// Project routes (JWT-protected).
+		r.Route("/projects", func(r chi.Router) {
+			r.Use(JWTMiddleware(s.jwtSecret))
+			r.Post("/", s.handleCreateProject)  // any authenticated user
+			r.Get("/", s.handleListProjects)    // filtered to membership
+
+			r.Route("/{slug}", func(r chi.Router) {
+				r.Use(s.projectContext)
+
+				r.With(s.projectRoleRequired("viewer")).Get("/", s.handleGetProject)
+				r.With(s.projectRoleRequired("admin")).Put("/", s.handleUpdateProject)
+				r.With(s.projectRoleRequired("admin")).Delete("/", s.handleDeleteProject)
+
+				// Members sub-resource
+				r.With(s.projectRoleRequired("viewer")).Get("/members", s.handleListMembers)
+				r.With(s.projectRoleRequired("admin")).Post("/members", s.handleAddMember)
+				r.With(s.projectRoleRequired("admin")).Put("/members/{username}", s.handleUpdateMember)
+				r.With(s.projectRoleRequired("admin")).Delete("/members/{username}", s.handleRemoveMember)
+			})
+		})
+
 		// Daemon-authenticated routes (pre-shared token).
 		r.Group(func(r chi.Router) {
 			r.Use(DaemonAuthMiddleware(s.cfg.Auth.DaemonToken))
