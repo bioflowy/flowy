@@ -108,7 +108,11 @@ Plans:
   3. Viewer can retrieve the exact WDL content by tag (`name:tag`) or by digest (`name@sha256:hex`)
   4. Viewer can list all registry entries in a project and see their versions and tags
   5. Registry entries are automatically classified as tool (WDL task) or workflow (WDL workflow); project admin can delete entries
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 21-01-PLAN.md — Migration schema, store models, and SQLite registry implementation
+- [ ] 21-02-PLAN.md — API types, push/pull handlers, route wiring, and push/pull tests
+- [ ] 21-03-PLAN.md — Tag management, list endpoints, delete handler, and remaining tests
 
 ### Phase 22: Registry-Based Execution
 **Goal**: Executors can submit workflow runs using a registry reference instead of a file path, and the server resolves the WDL content automatically
@@ -153,7 +157,7 @@ Plans:
 | 17. Daemon Staging | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
-| 20. Projects and RBAC | 3/3 | Complete   | 2026-03-17 | - |
-| 21. WDL Registry | v1.3 | 0/TBD | Not started | - |
+| 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
+| 21. WDL Registry | v1.3 | 0/3 | Not started | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
