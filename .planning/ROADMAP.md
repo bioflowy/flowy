@@ -121,7 +121,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Executor can submit a run using a registry reference (`project/name:tag` or `project/name@sha256:hex`) and the run starts successfully
   2. Submitting via registry reference and submitting via direct WDL path both produce identical run behavior; neither mode breaks the other
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 22-01-PLAN.md — Migration, model, API types, handler resolution logic, handleClaim registry branch, and integration tests
+- [ ] 22-02-PLAN.md — CLI auto-detection of registry refs, --project flag, config DefaultProject, project-scoped client methods
 
 ### Phase 23: Provenance Tracking
 **Goal**: The system records a provenance record for every run linking it to its registry version, inputs, and submitting user, and viewers can query this audit trail
@@ -158,6 +161,6 @@ Plans:
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
-| 21. WDL Registry | 3/3 | Complete   | 2026-03-20 | - |
-| 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
+| 21. WDL Registry | 3/3 | Complete    | 2026-03-20 | - |
+| 22. Registry-Based Execution | v1.3 | 0/2 | Not started | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
