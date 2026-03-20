@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: unknown
-stopped_at: Completed 21-01-PLAN.md (registry store foundation)
-last_updated: "2026-03-20T01:43:32.125Z"
+stopped_at: Completed 21-02-PLAN.md (registry push/pull handlers)
+last_updated: "2026-03-20T01:50:00Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-17)
 ## Current Position
 
 Phase: 21 (wdl-registry) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Accumulated Context
 
@@ -51,6 +51,8 @@ Recent decisions affecting current work:
 - [Phase 20-projects-and-rbac]: /workflows routes removed from auth-enabled branch; project-scoped /runs routes are the auth-enabled replacement
 - [Phase 21-wdl-registry]: PushRegistryVersion uses writer connection for both SELECT and INSERT to avoid TOCTOU races
 - [Phase 21-wdl-registry]: Registry entry kind is immutable after first push; re-push with different kind returns error mapped to 409 by handler
+- [Phase 21-02]: Kind mismatch detection uses strings.Contains(err.Error(), "kind") — matches PushRegistryVersion error format
+- [Phase 21-02]: Stub handlers (returning 501) wired in Plan 02 so server compiles before Plan 03 implements list/versions/delete/tag
 
 ### Pending Todos
 
@@ -63,6 +65,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T01:43:32.120Z
-Stopped at: Completed 21-01-PLAN.md (registry store foundation)
+Last session: 2026-03-20T01:50:00Z
+Stopped at: Completed 21-02-PLAN.md (registry push/pull handlers)
 Resume file: None
