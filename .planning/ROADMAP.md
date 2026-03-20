@@ -162,5 +162,5 @@ Plans:
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 21. WDL Registry | 3/3 | Complete    | 2026-03-20 | - |
-| 22. Registry-Based Execution | 2/2 | Complete   | 2026-03-20 | - |
+| 22. Registry-Based Execution | 2/2 | Complete    | 2026-03-20 | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
