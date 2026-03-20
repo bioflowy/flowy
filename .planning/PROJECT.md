@@ -42,7 +42,14 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-(No active requirements — planning next milestone)
+- [ ] Web UI SPA with React + TypeScript, shadcn/ui, Tailwind CSS
+- [ ] Separate `flowy-ui` binary serving embedded SPA + proxying API
+- [ ] Login screen with JWT authentication
+- [ ] User management (list, create, activate/deactivate, password change)
+- [ ] Project management (create, list, members, role assignment)
+- [ ] Registry browsing (entries, versions, tags)
+- [ ] File browsing and download (S3/local storage output files)
+- [ ] CORS support on flowy-server for development mode
 
 ### Out of Scope
 
@@ -53,10 +60,22 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - Execution cache (task output reuse) — deferred to future milestone
 - Workflow resume from checkpoint — deferred to future milestone
 - Docker-alternative backends (Podman, Singularity) — deferred to future milestone
-- WebSocket/SSE for status — polling sufficient for batch workflows; revisit when Web UI added
+- WebSocket/SSE for status — polling sufficient for batch workflows; revisit in v2.1 job execution UI
 - OAuth2/LDAP/SSO authentication — simple username/password sufficient for now
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
+
+## Current Milestone: v2.0 Web UI — Management
+
+**Goal:** Provide a web-based management interface for flowy, covering authentication, user/project/registry management, and file browsing with download.
+
+**Target features:**
+- Login + JWT session management
+- User administration (CRUD, activate/deactivate)
+- Project management (create, members, RBAC roles)
+- Registry browsing (entries, versions, tags)
+- File browser with download (S3/local storage)
+- `flowy-ui` binary serving embedded React SPA
 
 ## Current State
 
@@ -66,7 +85,7 @@ Shipped v1.3 with 37,776 LOC Go. All four milestones complete (v1.0–v1.3).
 
 ## Context
 
-Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt.
+Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt. Frontend (v2.0+): React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS, React Router, TanStack Query.
 Spectool conformance: 156/156 WDL 1.2 tests passing (100% of supported features; 4 categories excluded: Object type, sub-workflow calls, deferred input defaults, read_tsv with Object).
 Architecture: three binaries (flowy, flowy-server, flowy-daemon), SQLite task queue with WAL, local filesystem or S3/MinIO storage backends, JWT-protected REST API with RBAC middleware.
 Reference implementation: `../miniwdl` (Python, ~20k lines).
@@ -107,5 +126,9 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Registry ref resolution at submit + claim | Server resolves by tag at submit, daemon re-resolves by digest | ✓ Good — daemon always gets exact version |
 | Run-level provenance (not per-task) | Simpler scope; per-task possible via existing tasks table later | ✓ Good — right granularity for v1.3 |
 
+| Separate flowy-ui binary for SPA hosting | Decouples frontend dev from server, independent deploy | — Pending |
+| React + TypeScript + shadcn/ui | Rich ecosystem, copy-paste components, small bundle | — Pending |
+| Embedded SPA in Go binary | Single binary deployment, no separate static file hosting | — Pending |
+
 ---
-*Last updated: 2026-03-20 after v1.3 milestone completion*
+*Last updated: 2026-03-20 after v2.0 milestone start*

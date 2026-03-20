@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Project & Registry
-status: milestone_complete
-last_updated: "2026-03-20T05:21:01.619Z"
+milestone: v2.0
+milestone_name: Web UI — Management
+status: defining_requirements
+last_updated: "2026-03-20"
 last_activity: 2026-03-20
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -19,12 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** v1.3 milestone complete — planning next milestone
+**Current focus:** v2.0 Web UI — Management
 
 ## Current Position
 
-Milestone v1.3 Project & Registry — SHIPPED 2026-03-20
-All 6 phases, 14 plans complete.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-20 — Milestone v2.0 started
 
 ## Accumulated Context
 
