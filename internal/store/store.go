@@ -152,6 +152,48 @@ type Task struct {
 	OutputsJSON     string // JSON-encoded task outputs; empty until set by UpdateTaskOutputs
 }
 
+// Provenance records the audit trail for a registry-based run.
+// It links a run to the registry entry and version that was used, and to the
+// user who submitted the run.
+type Provenance struct {
+	ID                string
+	RunID             string
+	UserID            string
+	RegistryEntryID   string
+	RegistryVersionID string
+	RegistryRef       string
+	RegistryDigest    string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// ProvenanceSummary is a lightweight row returned by ListProvenance.
+// It joins provenance with runs, users, and registry_entries.
+type ProvenanceSummary struct {
+	RunID          string
+	RegistryRef    string
+	RegistryDigest string
+	Username       string
+	RunState       string
+	CreatedAt      time.Time
+}
+
+// ProvenanceDetail is the full provenance record returned by GetProvenance.
+// It joins provenance with runs, users, and registry_entries.
+type ProvenanceDetail struct {
+	RunID              string
+	RegistryRef        string
+	RegistryDigest     string
+	Username           string
+	RunState           string
+	InputsJSON         string
+	OutputsJSON        string
+	RegistryEntryName  string
+	RegistryEntryKind  string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
 // Store is the persistence abstraction for runs and tasks.
 // Implementations must be safe for concurrent use.
 type Store interface {
@@ -290,6 +332,21 @@ type Store interface {
 	GetServerConfig(ctx context.Context, key string) (string, error)
 	// SetServerConfig upserts a key-value pair in the server_config table.
 	SetServerConfig(ctx context.Context, key, value string) error
+
+	// Provenance operations
+
+	// CreateProvenance inserts a new provenance record for a registry-based run.
+	// Returns an error if the run_id already has a provenance record (UNIQUE constraint).
+	CreateProvenance(ctx context.Context, p *Provenance) error
+	// TouchProvenanceUpdatedAt bumps the updated_at timestamp for the provenance record
+	// associated with the given run_id. Returns nil (not an error) if no record exists.
+	TouchProvenanceUpdatedAt(ctx context.Context, runID string) error
+	// GetProvenance returns the full provenance detail for the given run_id in a project.
+	GetProvenance(ctx context.Context, projectID, runID string) (*ProvenanceDetail, error)
+	// ListProvenance returns summary rows for all provenance records in a project.
+	// entryFilter limits results to a specific registry entry name (empty = all entries).
+	// userFilter limits results to a specific username (empty = all users).
+	ListProvenance(ctx context.Context, projectID, entryFilter, userFilter string) ([]ProvenanceSummary, error)
 
 	// Lifecycle
 
