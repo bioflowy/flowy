@@ -305,3 +305,28 @@ type RegistryTagRequest struct {
 	// Digest is the version digest to tag ("sha256:<hex>").
 	Digest string `json:"digest"`
 }
+
+// ProvenanceSummaryResponse is a single item in the provenance list response.
+type ProvenanceSummaryResponse struct {
+	RunID          string `json:"run_id"`
+	RegistryRef    string `json:"registry_ref"`
+	RegistryDigest string `json:"registry_digest"`
+	Username       string `json:"username"`
+	RunState       string `json:"run_state"`
+	CreatedAt      string `json:"created_at"`
+}
+
+// ProvenanceDetailResponse is the full provenance record for a single run.
+type ProvenanceDetailResponse struct {
+	RunID             string                 `json:"run_id"`
+	RegistryRef       string                 `json:"registry_ref"`
+	RegistryDigest    string                 `json:"registry_digest"`
+	Username          string                 `json:"username"`
+	RunState          string                 `json:"run_state"`
+	Inputs            map[string]interface{} `json:"inputs,omitempty"`
+	Outputs           map[string]interface{} `json:"outputs,omitempty"`
+	RegistryEntryName string                 `json:"registry_entry_name"`
+	RegistryEntryKind string                 `json:"registry_entry_kind"`
+	CreatedAt         string                 `json:"created_at"`
+	UpdatedAt         string                 `json:"updated_at"`
+}

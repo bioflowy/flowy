@@ -155,6 +155,12 @@ func (s *Server) newRouter() *chi.Mux {
 						r.With(s.projectRoleRequired("admin")).Delete("/tags/{tag}", s.handleRegistryDeleteTag)
 					})
 				})
+
+				// Provenance sub-resource (audit trail for registry-based runs).
+				r.Route("/provenance", func(r chi.Router) {
+					r.With(s.projectRoleRequired("viewer")).Get("/", s.handleListProvenance)
+					r.With(s.projectRoleRequired("viewer")).Get("/{run_id}", s.handleGetProvenance)
+				})
 			})
 		})
 
