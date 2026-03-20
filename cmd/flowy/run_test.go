@@ -401,6 +401,77 @@ func TestRunStatusPrintedWithoutQuiet(t *testing.T) {
 	}
 }
 
+// TestRunRegistryRefProjectScoped verifies that "flowy run myworkflow:latest --project test-proj --server URL"
+// submits to /projects/test-proj/workflows, polls via /projects/test-proj/runs/{id}/status,
+// fetches outputs via /projects/test-proj/runs/{id}/outputs, and does NOT call non-project routes.
+func TestRunRegistryRefProjectScoped(t *testing.T) {
+	const runID = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+	outputs := map[string]interface{}{"workflow.greeting": "hi"}
+
+	var nonProjectStatusCalled atomic.Int32
+	var nonProjectOutputsCalled atomic.Int32
+
+	mux := http.NewServeMux()
+	// Project-scoped submit route.
+	mux.HandleFunc("/projects/test-proj/workflows", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"run_id": runID}) //nolint:errcheck
+	})
+	// Project-scoped status route.
+	mux.HandleFunc("/projects/test-proj/runs/"+runID+"/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"run_id": runID, "state": "COMPLETED"}) //nolint:errcheck
+	})
+	// Project-scoped outputs route.
+	mux.HandleFunc("/projects/test-proj/runs/"+runID+"/outputs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"run_id": runID, "outputs": outputs}) //nolint:errcheck
+	})
+	// Non-project routes: should NOT be called.
+	mux.HandleFunc("/workflows/"+runID+"/status", func(w http.ResponseWriter, r *http.Request) {
+		nonProjectStatusCalled.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"run_id": runID, "state": "COMPLETED"}) //nolint:errcheck
+	})
+	mux.HandleFunc("/workflows/"+runID+"/outputs", func(w http.ResponseWriter, r *http.Request) {
+		nonProjectOutputsCalled.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"run_id": runID, "outputs": outputs}) //nolint:errcheck
+	})
+
+	srv := runMockServer(t, mux)
+
+	code, stdout, stderr := runArgs([]string{
+		"run", "myworkflow:latest",
+		"--project", "test-proj",
+		"--server", srv.URL,
+	})
+	if code != 0 {
+		t.Errorf("expected exit 0, got %d (stderr: %q, stdout: %q)", code, stderr, stdout)
+	}
+	if !json.Valid([]byte(strings.TrimSpace(stdout))) {
+		t.Errorf("expected stdout to be valid JSON, got %q", stdout)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &got); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v (stdout: %q)", err, stdout)
+	}
+	if _, ok := got["workflow.greeting"]; !ok {
+		t.Errorf("expected 'workflow.greeting' key in outputs, got %v", got)
+	}
+	if nonProjectStatusCalled.Load() != 0 {
+		t.Errorf("non-project /workflows/{id}/status was called %d times, expected 0", nonProjectStatusCalled.Load())
+	}
+	if nonProjectOutputsCalled.Load() != 0 {
+		t.Errorf("non-project /workflows/{id}/outputs was called %d times, expected 0", nonProjectOutputsCalled.Load())
+	}
+}
+
 // TestRunBuildCompiles verifies that go build ./... compiles all three binaries.
 func TestRunBuildCompiles(t *testing.T) {
 	// This is a meta-test; the fact that this package compiles is sufficient.

@@ -301,7 +301,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Poll until terminal state.
-	finalState, err := pollUntilDone(ctx, c, submittedRunID, *quietFlag, stderr)
+	finalState, err := pollUntilDone(ctx, c, submittedRunID, projectSlug, *quietFlag, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: polling run %s: %v\n", submittedRunID, err)
 		return 1
@@ -313,7 +313,12 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Fetch outputs.
-	outputsResp, err := c.Outputs(ctx, submittedRunID)
+	var outputsResp *api.OutputsResponse
+	if projectSlug != "" {
+		outputsResp, err = c.OutputsInProject(ctx, projectSlug, submittedRunID)
+	} else {
+		outputsResp, err = c.Outputs(ctx, submittedRunID)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "error: fetching outputs for run %s: %v\n", submittedRunID, err)
 		return 1
@@ -340,7 +345,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 // pollUntilDone polls the server for run status until a terminal state is reached.
 // It prints state changes to stderr (unless quiet is true).
 // Returns the terminal state string or an error on context cancellation.
-func pollUntilDone(ctx context.Context, c *client.Client, runID string, quiet bool, stderr io.Writer) (string, error) {
+func pollUntilDone(ctx context.Context, c *client.Client, runID string, projectSlug string, quiet bool, stderr io.Writer) (string, error) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -351,7 +356,13 @@ func pollUntilDone(ctx context.Context, c *client.Client, runID string, quiet bo
 
 	lastState := ""
 	poll := func() (string, bool) {
-		resp, err := c.Status(ctx, runID)
+		var resp *api.StatusResponse
+		var err error
+		if projectSlug != "" {
+			resp, err = c.StatusInProject(ctx, projectSlug, runID)
+		} else {
+			resp, err = c.Status(ctx, runID)
+		}
 		if err != nil {
 			// Transient network issue — warn and continue.
 			fmt.Fprintf(stderr, "warning: polling run %s: %v\n", shortID, err)
