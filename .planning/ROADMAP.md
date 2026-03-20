@@ -64,7 +64,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project (completed 2026-03-20)
 - [x] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths (completed 2026-03-20)
 - [x] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run (completed 2026-03-20)
-- [ ] **Phase 24: Fix CLI Polling for Project-Scoped Runs** — CLI can poll status and retrieve outputs after project-scoped/registry-ref submission with auth enabled (gap closure)
+- [x] **Phase 24: Fix CLI Polling for Project-Scoped Runs** — CLI can poll status and retrieve outputs after project-scoped/registry-ref submission with auth enabled (gap closure) (completed 2026-03-20)
 
 ## Phase Details
 
@@ -181,4 +181,4 @@ Plans:
 | 21. WDL Registry | v1.3 | 3/3 | Complete | 2026-03-20 |
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
-| 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 0/1 | Pending | - |
+| 24. Fix CLI Polling for Project-Scoped Runs | 1/1 | Complete   | 2026-03-20 | - |

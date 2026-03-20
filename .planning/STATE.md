@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: unknown
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-03-20T04:43:00Z"
+last_updated: "2026-03-20T05:16:55.380Z"
+last_activity: 2026-03-20
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 14
+  completed_plans: 14
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 23 — provenance-tracking
+**Current focus:** Phase 24 — Fix CLI Polling for Project-Scoped Runs
 
 ## Current Position
 
-Phase: 23 (provenance-tracking) — EXECUTING
-Plan: 2 of 2
+Phase: 24 (Fix CLI Polling for Project-Scoped Runs) — EXECUTING
+Plan: 1 of 1
 
 ## Accumulated Context
 
@@ -65,6 +65,7 @@ Recent decisions affecting current work:
 - [Phase 23-01]: claimsFromContext nil-guard in provenance creation — provenance skipped when auth disabled
 - [Phase 23-provenance-tracking]: Provenance routes registered only in auth-enabled branch — no auth-disabled read path needed
 - [Phase 23-provenance-tracking]: Inputs/outputs fields in ProvenanceDetailResponse use omitempty — absent from JSON when run not yet complete
+- [Phase 24]: StatusInProject/OutputsInProject follow same pattern as Status/Outputs; pollUntilDone takes projectSlug with empty-string fallback
 
 ### Pending Todos
 
@@ -83,5 +84,5 @@ None.
 
 ## Session Continuity
 
-Last activity: 2026-03-20 - Completed quick task 260320-6ed: Create end-to-end demo script exercising all v1.3 milestone features
+Last activity: 2026-03-20
 Resume file: None
