@@ -130,22 +130,29 @@ func parseRegistryRef(ref string) (name, tag, digest string, err error) {
 // resolveRegistryRef resolves a registry reference to WDL content.
 // Returns (wdlContent, resolvedDigest, error).
 func (s *Server) resolveRegistryRef(ctx context.Context, projectID, ref string) (string, string, error) {
-	name, tag, digest, err := parseRegistryRef(ref)
-	if err != nil {
-		return "", "", err
+	wdlContent, digest, _, _, err := s.resolveRegistryRefFull(ctx, projectID, ref)
+	return wdlContent, digest, err
+}
+
+// resolveRegistryRefFull resolves a registry reference and returns all fields
+// needed for both run creation and provenance recording.
+func (s *Server) resolveRegistryRefFull(ctx context.Context, projectID, ref string) (wdlContent, digest, entryID, versionID string, err error) {
+	name, tag, dgst, parseErr := parseRegistryRef(ref)
+	if parseErr != nil {
+		return "", "", "", "", parseErr
 	}
 	if tag != "" {
-		v, _, err := s.store.GetRegistryVersionByTag(ctx, projectID, name, tag)
-		if err != nil {
-			return "", "", fmt.Errorf("tag %q not found for entry %q", tag, name)
+		v, e, lookupErr := s.store.GetRegistryVersionByTag(ctx, projectID, name, tag)
+		if lookupErr != nil {
+			return "", "", "", "", fmt.Errorf("tag %q not found for entry %q", tag, name)
 		}
-		return v.WDLContent, v.Digest, nil
+		return v.WDLContent, v.Digest, e.ID, v.ID, nil
 	}
-	v, _, err := s.store.GetRegistryVersionByDigest(ctx, projectID, name, digest)
-	if err != nil {
-		return "", "", fmt.Errorf("digest %q not found for entry %q", digest, name)
+	v, e, lookupErr := s.store.GetRegistryVersionByDigest(ctx, projectID, name, dgst)
+	if lookupErr != nil {
+		return "", "", "", "", fmt.Errorf("digest %q not found for entry %q", dgst, name)
 	}
-	return v.WDLContent, v.Digest, nil
+	return v.WDLContent, v.Digest, e.ID, v.ID, nil
 }
 
 // handleSubmit handles POST /workflows and POST /projects/{slug}/workflows.
@@ -169,6 +176,8 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// Resolve registry reference if provided.
 	var wdlContent string
 	var registryDigest string
+	var registryEntryID string
+	var registryVersionID string
 	if req.RegistryRef != "" {
 		projectID := projectIDFromContext(r.Context())
 		if projectID == "" {
@@ -176,7 +185,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var resolveErr error
-		wdlContent, registryDigest, resolveErr = s.resolveRegistryRef(r.Context(), projectID, req.RegistryRef)
+		wdlContent, registryDigest, registryEntryID, registryVersionID, resolveErr = s.resolveRegistryRefFull(r.Context(), projectID, req.RegistryRef)
 		if resolveErr != nil {
 			writeError(w, http.StatusUnprocessableEntity, resolveErr.Error())
 			return
@@ -233,6 +242,26 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record provenance for registry-based runs only.
+	if req.RegistryRef != "" {
+		claims := claimsFromContext(r.Context())
+		if claims != nil {
+			prov := &store.Provenance{
+				ID:                uuid.New().String(),
+				RunID:             runID,
+				UserID:            claims.UserID,
+				RegistryEntryID:   registryEntryID,
+				RegistryVersionID: registryVersionID,
+				RegistryRef:       req.RegistryRef,
+				RegistryDigest:    registryDigest,
+			}
+			if provErr := s.store.CreateProvenance(r.Context(), prov); provErr != nil {
+				log.Printf("handleSubmit: CreateProvenance for run %s: %v", runID, provErr)
+				// Non-fatal: audit failure should not block run execution.
+			}
+		}
+	}
+
 	// Create a run context tied to context.Background() (not r.Context()).
 	// This ensures the run goroutine outlives the HTTP request.
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -277,6 +306,8 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 	// Resolve registry reference if provided.
 	var wdlContent string
 	var registryDigest string
+	var registryEntryID string
+	var registryVersionID string
 	if req.RegistryRef != "" {
 		projectID := projectIDFromContext(r.Context())
 		if projectID == "" {
@@ -284,7 +315,7 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var resolveErr error
-		wdlContent, registryDigest, resolveErr = s.resolveRegistryRef(r.Context(), projectID, req.RegistryRef)
+		wdlContent, registryDigest, registryEntryID, registryVersionID, resolveErr = s.resolveRegistryRefFull(r.Context(), projectID, req.RegistryRef)
 		if resolveErr != nil {
 			writeError(w, http.StatusUnprocessableEntity, resolveErr.Error())
 			return
@@ -363,6 +394,26 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run: %v", err))
 		return
+	}
+
+	// Record provenance for registry-based runs only.
+	if req.RegistryRef != "" {
+		claims := claimsFromContext(r.Context())
+		if claims != nil {
+			prov := &store.Provenance{
+				ID:                uuid.New().String(),
+				RunID:             runID,
+				UserID:            claims.UserID,
+				RegistryEntryID:   registryEntryID,
+				RegistryVersionID: registryVersionID,
+				RegistryRef:       req.RegistryRef,
+				RegistryDigest:    registryDigest,
+			}
+			if provErr := s.store.CreateProvenance(r.Context(), prov); provErr != nil {
+				log.Printf("handleTaskRun: CreateProvenance for run %s: %v", runID, provErr)
+				// Non-fatal: audit failure should not block run execution.
+			}
+		}
 	}
 
 	// Create Task record.

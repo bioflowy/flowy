@@ -258,6 +258,9 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 		} else {
 			log.Printf("runWorkflow %s: failed: %v", runID, err)
 			_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+			if touchErr := s.store.TouchProvenanceUpdatedAt(context.Background(), runID); touchErr != nil {
+				log.Printf("runWorkflow %s: TouchProvenanceUpdatedAt: %v", runID, touchErr)
+			}
 		}
 	} else {
 		// Write run-level outputs with "workflowName.outputName" keys.
@@ -287,6 +290,9 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 			if err := s.store.UpdateRunState(context.Background(), runID, store.RunCompleted); err != nil {
 				log.Printf("runWorkflow %s: UpdateRunState COMPLETED: %v", runID, err)
 			}
+			if touchErr := s.store.TouchProvenanceUpdatedAt(context.Background(), runID); touchErr != nil {
+				log.Printf("runWorkflow %s: TouchProvenanceUpdatedAt: %v", runID, touchErr)
+			}
 		}
 	}
 
@@ -304,6 +310,9 @@ func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskI
 	if err != nil {
 		log.Printf("runTask %s: task %q failed: %v", runID, taskName, err)
 		_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+		if touchErr := s.store.TouchProvenanceUpdatedAt(context.Background(), runID); touchErr != nil {
+			log.Printf("runTask %s: TouchProvenanceUpdatedAt: %v", runID, touchErr)
+		}
 		return
 	}
 
@@ -332,6 +341,9 @@ func (s *Server) waitForTaskAndFinalize(ctx context.Context, runID string, taskI
 	}
 
 	_ = s.store.UpdateRunState(context.Background(), runID, store.RunCompleted)
+	if touchErr := s.store.TouchProvenanceUpdatedAt(context.Background(), runID); touchErr != nil {
+		log.Printf("runTask %s: TouchProvenanceUpdatedAt: %v", runID, touchErr)
+	}
 }
 
 // cleanupRun removes the run's cancel function from the active runs map.
