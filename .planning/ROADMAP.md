@@ -135,7 +135,7 @@ Plans:
   2. When the run completes, the provenance record is updated with the run outputs
   3. Viewer can list all provenance records for a project
   4. Viewer can retrieve a single provenance record by run ID showing version, digest, inputs, outputs, and submitting user
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 23-01-PLAN.md — Migration, store model, store interface, provenance creation in handlers, completion touch in dispatch
 - [ ] 23-02-PLAN.md — API response types, provenance list/detail handlers, route registration, integration tests
@@ -166,4 +166,4 @@ Plans:
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 21. WDL Registry | v1.3 | 3/3 | Complete | 2026-03-20 |
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
-| 23. Provenance Tracking | v1.3 | 0/2 | Not started | - |
+| 23. Provenance Tracking | 1/2 | In Progress|  | - |

@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: unknown
-stopped_at: Phase 23 context gathered
-last_updated: "2026-03-20T03:37:01.434Z"
+status: executing
+stopped_at: "Completed 23-01-PLAN.md"
+last_updated: "2026-03-20T04:23:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 22 — registry-based-execution
+**Current focus:** Phase 23 — provenance-tracking
 
 ## Current Position
 
-Phase: 22 (registry-based-execution) — EXECUTING
+Phase: 23 (provenance-tracking) — EXECUTING
 Plan: 2 of 2
 
 ## Accumulated Context
@@ -59,6 +59,10 @@ Recent decisions affecting current work:
 - [Phase 22-01]: Registry resolution returns 422 (not 404) for unknown refs
 - [Phase 22-02]: Windows drive letter exclusion in isRegistryRef: idx==1 && isAlpha(arg[0]) — C: is not a registry ref
 - [Phase 22-02]: SubmitToProject and TaskRunInProject are additive methods; existing Submit/TaskRun unchanged for backward compat
+- [Phase 23-01]: TouchProvenanceUpdatedAt returns nil for non-existent run_id — missing record is not an error
+- [Phase 23-01]: Provenance creation is non-fatal in handlers — audit failure must not block run execution
+- [Phase 23-01]: resolveRegistryRefFull returns entryID and versionID; resolveRegistryRef delegates to it
+- [Phase 23-01]: claimsFromContext nil-guard in provenance creation — provenance skipped when auth disabled
 
 ### Pending Todos
 
@@ -71,6 +75,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T03:37:01.429Z
-Stopped at: Phase 23 context gathered
-Resume file: .planning/phases/23-provenance-tracking/23-CONTEXT.md
+Last session: 2026-03-20T04:23:00.000Z
+Stopped at: Completed 23-01-PLAN.md
+Resume file: .planning/phases/23-provenance-tracking/23-02-PLAN.md
