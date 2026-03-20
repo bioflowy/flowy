@@ -151,6 +151,8 @@ Plans:
   2. `pollUntilDone` in CLI uses project-scoped methods when `projectSlug` is set
   3. Full E2E flow works: login → push → submit by registry ref → poll → outputs — all with auth enabled
 Plans: 0/1
+Plans:
+- [ ] 24-01-PLAN.md — Add StatusInProject/OutputsInProject client methods and update CLI pollUntilDone
 
 ## Progress
 
