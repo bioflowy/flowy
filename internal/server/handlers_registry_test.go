@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bioflowy/flowy/internal/api"
+	"github.com/bioflowy/flowy/internal/server"
 	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/internal/store/sqlite"
 )
@@ -54,6 +55,21 @@ task hello {
     }
 }
 `
+
+// addProjectMember adds a user to a project with the specified role in the store.
+func addProjectMember(t *testing.T, st *sqlite.SQLiteStore, projID, userID, role string) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := st.AddMember(context.Background(), &store.ProjectMember{
+		ProjectID: projID,
+		UserID:    userID,
+		Role:      role,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("AddMember(%s): %v", role, err)
+	}
+}
 
 // createRegistryTestProject creates a project with a unique slug in the store and adds
 // the given user as admin. Returns the created project.
@@ -386,6 +402,411 @@ func TestRegistryPull_NoParam(t *testing.T) {
 	w := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool", nil, token)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// sampleToolWDLv2 is a second tool WDL with different content (produces a different digest).
+const sampleToolWDLv2 = `version 1.0
+task hello {
+    input {
+        String name
+        String greeting = "Hello"
+    }
+    command <<<
+        echo "~{greeting} ~{name}"
+    >>>
+    output {
+        String result = read_string(stdout())
+    }
+}
+`
+
+// ===== Tag tests =====
+
+// pushWDL is a test helper that pushes WDL content to the registry and returns the push response.
+func pushWDL(t *testing.T, srv *server.Server, projSlug, entryName, content, token string) api.RegistryPushResponse {
+	t.Helper()
+	w := doAuthRequest(t, srv, "POST", "/projects/"+projSlug+"/registry", api.RegistryPushRequest{
+		Name:    entryName,
+		Content: content,
+	}, token)
+	if w.Code != http.StatusCreated && w.Code != http.StatusOK {
+		t.Fatalf("pushWDL: expected 200 or 201, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp api.RegistryPushResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("pushWDL decode: %v", err)
+	}
+	return resp
+}
+
+func TestRegistryTag(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	// Push WDL to get a digest.
+	pushResp := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, token)
+
+	// Tag the version via the API.
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "v1.0",
+		Digest: pushResp.Digest,
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tag: expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var tagResp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&tagResp); err != nil {
+		t.Fatalf("decode tag response: %v", err)
+	}
+	if tagResp["tag"] != "v1.0" {
+		t.Errorf("tag: got %q, want %q", tagResp["tag"], "v1.0")
+	}
+
+	// Pull by tag — content must match sampleToolWDL.
+	w2 := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool?tag=v1.0", nil, token)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("pull by tag: expected 200, got %d (body: %s)", w2.Code, w2.Body.String())
+	}
+	var pullResp api.RegistryPullResponse
+	if err := json.NewDecoder(w2.Body).Decode(&pullResp); err != nil {
+		t.Fatalf("decode pull response: %v", err)
+	}
+	if pullResp.Content != sampleToolWDL {
+		t.Errorf("content mismatch: got %q, want sampleToolWDL", pullResp.Content)
+	}
+}
+
+func TestRegistryTag_Reassign(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	// Push first version.
+	push1 := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, token)
+
+	// Push second version (different content).
+	push2 := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDLv2, token)
+
+	// Tag first version as "latest".
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "latest",
+		Digest: push1.Digest,
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tag v1: expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Reassign "latest" to second version.
+	w2 := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "latest",
+		Digest: push2.Digest,
+	}, token)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("tag v2: expected 200, got %d (body: %s)", w2.Code, w2.Body.String())
+	}
+
+	// Pull by tag — content must match the SECOND version.
+	w3 := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool?tag=latest", nil, token)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("pull: expected 200, got %d (body: %s)", w3.Code, w3.Body.String())
+	}
+	var pullResp api.RegistryPullResponse
+	if err := json.NewDecoder(w3.Body).Decode(&pullResp); err != nil {
+		t.Fatalf("decode pull response: %v", err)
+	}
+	if pullResp.Content != sampleToolWDLv2 {
+		t.Errorf("content should be second version after reassignment; got first version or unexpected content")
+	}
+}
+
+func TestRegistryTag_Forbidden(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	// Admin sets up the project and pushes data.
+	createTestUser(t, st, "admin-1", "bob", "pass", "admin")
+	adminToken := issueTestToken(t, "admin-1", "bob", "admin")
+
+	// Executor user is added to the project with executor role.
+	createTestUser(t, st, "executor-1", "alice", "pass", "executor")
+	executorToken := issueTestToken(t, "executor-1", "alice", "executor")
+
+	proj := createRegistryTestProject(t, st, "admin-1")
+	addProjectMember(t, st, proj.ID, "executor-1", "executor")
+
+	// Push WDL as admin to have something to tag.
+	pushResp := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, adminToken)
+
+	// Attempt to tag as executor — must be 403.
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "v1.0",
+		Digest: pushResp.Digest,
+	}, executorToken)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestRegistryTag_InvalidName(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	pushResp := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, token)
+
+	// Colon in tag name — 400.
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "bad:tag",
+		Digest: pushResp.Digest,
+	}, token)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("colon: expected 400, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// At-sign in tag name — 400.
+	w2 := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "bad@tag",
+		Digest: pushResp.Digest,
+	}, token)
+	if w2.Code != http.StatusBadRequest {
+		t.Fatalf("at-sign: expected 400, got %d (body: %s)", w2.Code, w2.Body.String())
+	}
+}
+
+func TestRegistryDeleteTag(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	// Push and tag.
+	pushResp := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, token)
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "v1.0",
+		Digest: pushResp.Digest,
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tag: expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Delete the tag.
+	wDel := doAuthRequest(t, srv, "DELETE", "/projects/"+proj.Slug+"/registry/my-tool/tags/v1.0", nil, token)
+	if wDel.Code != http.StatusNoContent {
+		t.Fatalf("delete tag: expected 204, got %d (body: %s)", wDel.Code, wDel.Body.String())
+	}
+
+	// Pull by tag — should be 404 (tag gone).
+	w2 := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool?tag=v1.0", nil, token)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("pull by deleted tag: expected 404, got %d (body: %s)", w2.Code, w2.Body.String())
+	}
+
+	// Pull by digest — version still exists.
+	w3 := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool?digest="+pushResp.Digest, nil, token)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("pull by digest after tag delete: expected 200, got %d (body: %s)", w3.Code, w3.Body.String())
+	}
+}
+
+// ===== List tests =====
+
+func TestRegistryList(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	// Push two entries.
+	push1 := pushWDL(t, srv, proj.Slug, "tool-a", sampleToolWDL, token)
+	pushWDL(t, srv, proj.Slug, "wf-b", sampleWorkflowWDL, token)
+
+	// Tag "tool-a" version as "latest".
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/tool-a/tags", api.RegistryTagRequest{
+		Tag:    "latest",
+		Digest: push1.Digest,
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tag: expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// List entries.
+	wList := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry", nil, token)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d (body: %s)", wList.Code, wList.Body.String())
+	}
+
+	var entries []api.RegistryEntryResponse
+	if err := json.NewDecoder(wList.Body).Decode(&entries); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Build map for easy lookup.
+	byName := make(map[string]api.RegistryEntryResponse, 2)
+	for _, e := range entries {
+		byName[e.Name] = e
+	}
+
+	toolA, ok := byName["tool-a"]
+	if !ok {
+		t.Fatal("expected entry 'tool-a' in list")
+	}
+	if toolA.Kind != "tool" {
+		t.Errorf("tool-a kind: got %q, want 'tool'", toolA.Kind)
+	}
+	if toolA.VersionCount != 1 {
+		t.Errorf("tool-a version_count: got %d, want 1", toolA.VersionCount)
+	}
+	if len(toolA.Tags) != 1 || toolA.Tags[0] != "latest" {
+		t.Errorf("tool-a tags: got %v, want [latest]", toolA.Tags)
+	}
+
+	wfB, ok := byName["wf-b"]
+	if !ok {
+		t.Fatal("expected entry 'wf-b' in list")
+	}
+	if wfB.Kind != "workflow" {
+		t.Errorf("wf-b kind: got %q, want 'workflow'", wfB.Kind)
+	}
+	if wfB.VersionCount != 1 {
+		t.Errorf("wf-b version_count: got %d, want 1", wfB.VersionCount)
+	}
+	if wfB.Tags == nil || len(wfB.Tags) != 0 {
+		t.Errorf("wf-b tags: got %v, want []", wfB.Tags)
+	}
+}
+
+func TestRegistryListVersions(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	// Push two different versions.
+	pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, token)
+	push2 := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDLv2, token)
+
+	// Tag the second version.
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry/my-tool/tags", api.RegistryTagRequest{
+		Tag:    "v2",
+		Digest: push2.Digest,
+	}, token)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tag: expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// List versions.
+	wList := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool/versions", nil, token)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("list versions: expected 200, got %d (body: %s)", wList.Code, wList.Body.String())
+	}
+
+	var versions []api.RegistryVersionResponse
+	if err := json.NewDecoder(wList.Body).Decode(&versions); err != nil {
+		t.Fatalf("decode versions response: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+
+	// Find the version with the "v2" tag.
+	var tagged *api.RegistryVersionResponse
+	for i := range versions {
+		if versions[i].Digest == push2.Digest {
+			tagged = &versions[i]
+			break
+		}
+	}
+	if tagged == nil {
+		t.Fatal("second version not found in versions list")
+	}
+	if len(tagged.Tags) != 1 || tagged.Tags[0] != "v2" {
+		t.Errorf("second version tags: got %v, want [v2]", tagged.Tags)
+	}
+}
+
+// ===== Delete tests =====
+
+func TestRegistryDelete(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "admin")
+	token := issueTestToken(t, "user-1", "alice", "admin")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	pushResp := pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, token)
+
+	// Delete entry.
+	wDel := doAuthRequest(t, srv, "DELETE", "/projects/"+proj.Slug+"/registry/my-tool", nil, token)
+	if wDel.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d (body: %s)", wDel.Code, wDel.Body.String())
+	}
+
+	// List — entry must not appear.
+	wList := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry", nil, token)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("list after delete: expected 200, got %d (body: %s)", wList.Code, wList.Body.String())
+	}
+	var entries []api.RegistryEntryResponse
+	if err := json.NewDecoder(wList.Body).Decode(&entries); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name == "my-tool" {
+			t.Errorf("expected 'my-tool' to be absent from list after delete, but it was found")
+		}
+	}
+
+	// Pull by digest — must be 404 (entry soft-deleted).
+	wPull := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool?digest="+pushResp.Digest, nil, token)
+	if wPull.Code != http.StatusNotFound {
+		t.Fatalf("pull after delete: expected 404, got %d (body: %s)", wPull.Code, wPull.Body.String())
+	}
+}
+
+func TestRegistryDelete_Forbidden(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	// Admin sets up the project and data.
+	createTestUser(t, st, "admin-1", "bob", "pass", "admin")
+	adminToken := issueTestToken(t, "admin-1", "bob", "admin")
+
+	// Executor user added to the project with executor role.
+	createTestUser(t, st, "executor-1", "alice", "pass", "executor")
+	executorToken := issueTestToken(t, "executor-1", "alice", "executor")
+
+	proj := createRegistryTestProject(t, st, "admin-1")
+	addProjectMember(t, st, proj.ID, "executor-1", "executor")
+
+	// Push WDL as admin.
+	pushWDL(t, srv, proj.Slug, "my-tool", sampleToolWDL, adminToken)
+
+	// Attempt DELETE as executor — must be 403.
+	wDel := doAuthRequest(t, srv, "DELETE", "/projects/"+proj.Slug+"/registry/my-tool", nil, executorToken)
+	if wDel.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d (body: %s)", wDel.Code, wDel.Body.String())
 	}
 }
 
