@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
 status: planning
-stopped_at: Completed 20-03-PLAN.md
-last_updated: "2026-03-17T19:33:41.725Z"
+stopped_at: Phase 21 context gathered
+last_updated: "2026-03-20T01:16:09.870Z"
 last_activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
 progress:
   total_phases: 5
@@ -67,6 +67,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:33:41.721Z
-Stopped at: Completed 20-03-PLAN.md
-Resume file: None
+Last session: 2026-03-20T01:16:09.866Z
+Stopped at: Phase 21 context gathered
+Resume file: .planning/phases/21-wdl-registry/21-CONTEXT.md
