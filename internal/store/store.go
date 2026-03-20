@@ -68,6 +68,56 @@ type ProjectMember struct {
 	UpdatedAt time.Time
 }
 
+// RegistryEntry represents a named WDL entry in a project registry.
+// Kind is "tool" (WDL task) or "workflow" (WDL workflow), set on first push and immutable.
+// IsActive is false for soft-deleted entries.
+type RegistryEntry struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Kind      string // "tool" or "workflow"
+	IsActive  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// RegistryVersion represents an immutable content-addressed WDL blob.
+// Digest is "sha256:<hex>" computed from WDLContent.
+type RegistryVersion struct {
+	ID         string
+	EntryID    string
+	Digest     string // "sha256:<hex>"
+	WDLContent string
+	CreatedAt  time.Time
+}
+
+// RegistryTag is a mutable pointer from a human-readable tag name to a specific version.
+type RegistryTag struct {
+	ID        string
+	EntryID   string
+	Name      string
+	VersionID string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// RegistryEntryListItem is the summary row returned by ListRegistryEntries.
+type RegistryEntryListItem struct {
+	Name         string
+	Kind         string
+	VersionCount int
+	Tags         []string // tag names only
+	CreatedAt    time.Time
+}
+
+// RegistryVersionListItem is a version row with associated tag names.
+type RegistryVersionListItem struct {
+	ID        string
+	Digest    string
+	Tags      []string
+	CreatedAt time.Time
+}
+
 // Run holds metadata for a submitted workflow run.
 type Run struct {
 	ID          string
@@ -206,6 +256,30 @@ type Store interface {
 	// RemoveMemberIfNotLastAdmin removes a member only if doing so would not leave
 	// the project with zero admins. Returns an error if the target is the last admin.
 	RemoveMemberIfNotLastAdmin(ctx context.Context, projectID, userID string) error
+
+	// Registry operations
+
+	// PushRegistryVersion creates or gets a version for the given entry (idempotent by digest).
+	// If the entry does not exist, it is created with the given kind.
+	// If the entry exists but kind differs, returns an error (kind is immutable after creation).
+	// Returns the version, a boolean indicating if it was newly created, and an error.
+	PushRegistryVersion(ctx context.Context, projectID, name, kind, digest, content string) (*RegistryVersion, bool, error)
+	// GetRegistryVersionByTag returns the version pointed to by the tag.
+	GetRegistryVersionByTag(ctx context.Context, projectID, name, tag string) (*RegistryVersion, *RegistryEntry, error)
+	// GetRegistryVersionByDigest returns the version with the given digest.
+	GetRegistryVersionByDigest(ctx context.Context, projectID, name, digest string) (*RegistryVersion, *RegistryEntry, error)
+	// ListRegistryEntries returns summary rows for all active entries in a project.
+	ListRegistryEntries(ctx context.Context, projectID string) ([]RegistryEntryListItem, error)
+	// ListRegistryVersions returns all versions for the named entry with associated tag names.
+	ListRegistryVersions(ctx context.Context, projectID, name string) ([]RegistryVersionListItem, error)
+	// UpsertRegistryTag creates or reassigns a tag to a version.
+	UpsertRegistryTag(ctx context.Context, entryID, tagName, versionID string) error
+	// DeleteRegistryTag removes a tag (version remains).
+	DeleteRegistryTag(ctx context.Context, entryID, tagName string) error
+	// DeleteRegistryEntry soft-deletes the entry (sets is_active=0).
+	DeleteRegistryEntry(ctx context.Context, projectID, name string) error
+	// GetRegistryEntry returns the active entry with the given name in a project.
+	GetRegistryEntry(ctx context.Context, projectID, name string) (*RegistryEntry, error)
 
 	// Server config operations (key-value store for auto-generated secrets)
 
