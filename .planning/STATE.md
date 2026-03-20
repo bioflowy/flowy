@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: executing
-stopped_at: "Completed 22-01-PLAN.md"
-last_updated: "2026-03-20T03:15:00Z"
+status: unknown
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-03-20T03:19:48.708Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -57,6 +57,8 @@ Recent decisions affecting current work:
 - [Phase 22-01]: Convenience routes /projects/{slug}/workflows and /projects/{slug}/tasks/run added; handleClaim re-resolves registry WDL by stored RegistryDigest for reproducibility
 - [Phase 22-01]: registry_ref and registry_digest columns NOT NULL DEFAULT '' — empty string for file-path runs
 - [Phase 22-01]: Registry resolution returns 422 (not 404) for unknown refs
+- [Phase 22-02]: Windows drive letter exclusion in isRegistryRef: idx==1 && isAlpha(arg[0]) — C: is not a registry ref
+- [Phase 22-02]: SubmitToProject and TaskRunInProject are additive methods; existing Submit/TaskRun unchanged for backward compat
 
 ### Pending Todos
 
@@ -69,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T03:15:00Z
-Stopped at: Completed 22-01-PLAN.md
-Resume file: .planning/phases/22-registry-based-execution/22-CONTEXT.md
+Last session: 2026-03-20T03:19:48.703Z
+Stopped at: Completed 22-02-PLAN.md
+Resume file: None

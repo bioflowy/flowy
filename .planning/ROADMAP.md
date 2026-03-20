@@ -62,7 +62,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 19: User Authentication** — Users can log in with username/password and receive JWT tokens; all routes protected; admin seeds on first run (completed 2026-03-17)
 - [x] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles (completed 2026-03-17)
 - [x] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project (completed 2026-03-20)
-- [ ] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths
+- [x] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths (completed 2026-03-20)
 - [ ] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run
 
 ## Phase Details
@@ -121,7 +121,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Executor can submit a run using a registry reference (`project/name:tag` or `project/name@sha256:hex`) and the run starts successfully
   2. Submitting via registry reference and submitting via direct WDL path both produce identical run behavior; neither mode breaks the other
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 22-01-PLAN.md — Migration, model, API types, handler resolution logic, handleClaim registry branch, and integration tests
 - [ ] 22-02-PLAN.md — CLI auto-detection of registry refs, --project flag, config DefaultProject, project-scoped client methods
@@ -162,5 +162,5 @@ Plans:
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 21. WDL Registry | 3/3 | Complete    | 2026-03-20 | - |
-| 22. Registry-Based Execution | 1/2 | In Progress|  | - |
+| 22. Registry-Based Execution | 2/2 | Complete   | 2026-03-20 | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
