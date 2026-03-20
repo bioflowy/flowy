@@ -62,6 +62,74 @@ func (c *Client) Submit(ctx context.Context, req api.SubmitRequest) (*api.Submit
 	return &result, nil
 }
 
+// SubmitToProject sends POST /projects/{projectSlug}/workflows with the given SubmitRequest.
+// Returns an error if the server returns a non-201 status.
+func (c *Client) SubmitToProject(ctx context.Context, projectSlug string, req api.SubmitRequest) (*api.SubmitResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("client: marshal submit request: %w", err)
+	}
+
+	url := c.serverURL + "/projects/" + projectSlug + "/workflows"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("client: build submit request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: POST /projects/%s/workflows: %w", projectSlug, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: submit failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+
+	var result api.SubmitResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("client: decode submit response: %w", err)
+	}
+	return &result, nil
+}
+
+// TaskRunInProject sends POST /projects/{projectSlug}/tasks/run with the given TaskRunRequest.
+// Returns an error if the server returns a non-201 status.
+func (c *Client) TaskRunInProject(ctx context.Context, projectSlug string, req api.TaskRunRequest) (*api.TaskRunResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("client: marshal task run request: %w", err)
+	}
+
+	url := c.serverURL + "/projects/" + projectSlug + "/tasks/run"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("client: build task run request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: POST /projects/%s/tasks/run: %w", projectSlug, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: task run failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+
+	var result api.TaskRunResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("client: decode task run response: %w", err)
+	}
+	return &result, nil
+}
+
 // Status sends GET /workflows/{runID}/status and returns the StatusResponse.
 // Returns an error if the server returns a non-200 status.
 func (c *Client) Status(ctx context.Context, runID string) (*api.StatusResponse, error) {

@@ -159,6 +159,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	configFlag := fs.String("config", "", "config file path")
 	quietFlag := fs.Bool("quiet", false, "suppress status lines on stderr during polling")
 	storageFlag := fs.String("storage", "", "storage backend: local or s3")
+	projectFlag := fs.String("project", "", "project slug for registry-ref runs")
 
 	// Reorder args so flags after positional args are parsed correctly.
 	// Go's flag package stops parsing at the first non-flag argument,
@@ -171,7 +172,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: run requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy run [--server <url>] [--storage <type>] [-i <inputs>] [--task <name>] [--path <dir>] [--output <file>] [--quiet] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy run [--server <url>] [--project <slug>] [--storage <type>] [-i <inputs>] [--task <name>] [--path <dir>] [--output <file>] [--quiet] <file.wdl|name:tag>")
 		return 2
 	}
 
@@ -202,6 +203,12 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
+	// Resolve project slug from flag or config default.
+	projectSlug := *projectFlag
+	if projectSlug == "" {
+		projectSlug = cfg.Client.DefaultProject
+	}
+
 	// Set up signal-aware context so Ctrl+C interrupts immediately.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -209,11 +216,22 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	// Generate a client-side run ID.
 	runID := uuid.New().String()
 
-	// Resolve WDL path to absolute.
-	absWDL, err := filepath.Abs(wdlArg)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
-		return 1
+	// Detect whether the argument is a registry reference or a file path.
+	var absWDL string
+	var registryRef string
+	var err error
+	if isRegistryRef(wdlArg) {
+		registryRef = wdlArg
+		if projectSlug == "" {
+			fmt.Fprintln(stderr, "error: registry reference requires --project flag or default_project in config")
+			return 1
+		}
+	} else {
+		absWDL, err = filepath.Abs(wdlArg)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
+			return 1
+		}
 	}
 
 	// Load input JSON if provided.
@@ -240,29 +258,41 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 	var submittedRunID string
 
 	if *taskFlag != "" {
-		// Task mode: submit via POST /tasks/run.
+		// Task mode: submit via POST /tasks/run (or project-scoped /projects/{slug}/tasks/run).
 		req := api.TaskRunRequest{
 			WDLPath:     absWDL,
+			RegistryRef: registryRef,
 			TaskName:    *taskFlag,
 			InputsJSON:  jsonInputs,
 			RunID:       runID,
 			SearchPaths: searchPaths,
 		}
-		resp, err := c.TaskRun(ctx, req)
+		var resp *api.TaskRunResponse
+		if registryRef != "" {
+			resp, err = c.TaskRunInProject(ctx, projectSlug, req)
+		} else {
+			resp, err = c.TaskRun(ctx, req)
+		}
 		if err != nil {
 			fmt.Fprintf(stderr, "error: cannot reach server at %s: %v\n", serverURL, err)
 			return 1
 		}
 		submittedRunID = resp.RunID
 	} else {
-		// Workflow mode: submit via POST /workflows.
+		// Workflow mode: submit via POST /workflows (or project-scoped /projects/{slug}/workflows).
 		req := api.SubmitRequest{
 			RunID:       runID,
 			WDLPath:     absWDL,
+			RegistryRef: registryRef,
 			InputsJSON:  jsonInputs,
 			SearchPaths: searchPaths,
 		}
-		resp, err := c.Submit(ctx, req)
+		var resp *api.SubmitResponse
+		if registryRef != "" {
+			resp, err = c.SubmitToProject(ctx, projectSlug, req)
+		} else {
+			resp, err = c.Submit(ctx, req)
+		}
 		if err != nil {
 			fmt.Fprintf(stderr, "error: cannot reach server at %s: %v\n", serverURL, err)
 			return 1
@@ -452,6 +482,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	configFlag := fs.String("config", "", "config file path")
 	pathFlag := fs.String("path", "", "additional import search directory")
 	storageFlag := fs.String("storage", "", "storage backend: local or s3")
+	projectFlag := fs.String("project", "", "project slug for registry-ref runs")
 
 	args = reorderArgs(args)
 
@@ -461,7 +492,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: submit requires exactly one WDL file argument")
-		fmt.Fprintln(stderr, "Usage: flowy submit [--server <url>] [--storage <type>] [-i <inputs>] [--path <dir>] <file.wdl>")
+		fmt.Fprintln(stderr, "Usage: flowy submit [--server <url>] [--project <slug>] [--storage <type>] [-i <inputs>] [--path <dir>] <file.wdl|name:tag>")
 		return 2
 	}
 
@@ -481,14 +512,31 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
+	// Resolve project slug from flag or config default.
+	projectSlug := *projectFlag
+	if projectSlug == "" {
+		projectSlug = cfg.Client.DefaultProject
+	}
+
 	// Generate a client-side run ID.
 	runID := uuid.New().String()
 
-	// Resolve WDL path to absolute.
-	absWDL, err := filepath.Abs(wdlArg)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
-		return 1
+	// Detect whether the argument is a registry reference or a file path.
+	var absWDL string
+	var registryRef string
+	if isRegistryRef(wdlArg) {
+		registryRef = wdlArg
+		if projectSlug == "" {
+			fmt.Fprintln(stderr, "error: registry reference requires --project flag or default_project in config")
+			return 1
+		}
+	} else {
+		var err error
+		absWDL, err = filepath.Abs(wdlArg)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: resolving WDL path %q: %v\n", wdlArg, err)
+			return 1
+		}
 	}
 
 	// Load input JSON if provided.
@@ -511,16 +559,23 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 		searchPaths = []string{*pathFlag}
 	}
 
-	// Submit to server.
+	// Submit to server (project-scoped if registry ref, otherwise direct).
 	req := api.SubmitRequest{
 		RunID:       runID,
 		WDLPath:     absWDL,
+		RegistryRef: registryRef,
 		InputsJSON:  jsonInputs,
 		SearchPaths: searchPaths,
 	}
 
 	c := client.New(serverURL)
-	resp, err := c.Submit(context.Background(), req)
+	var resp *api.SubmitResponse
+	var err error
+	if registryRef != "" {
+		resp, err = c.SubmitToProject(context.Background(), projectSlug, req)
+	} else {
+		resp, err = c.Submit(context.Background(), req)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "error: submitting workflow: %v\n", err)
 		return 1
@@ -616,6 +671,29 @@ func runOutputs(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// isRegistryRef reports whether arg looks like a registry reference.
+// A registry ref contains "@sha256:" or ":" where the colon is not a
+// Windows drive letter (single letter followed by colon).
+func isRegistryRef(arg string) bool {
+	if strings.Contains(arg, "@sha256:") {
+		return true
+	}
+	idx := strings.Index(arg, ":")
+	if idx < 0 {
+		return false
+	}
+	// Drive letters are single alphabetical characters: "C:", "D:", etc.
+	if idx == 1 && len(arg) > 1 && isAlpha(arg[0]) {
+		return false
+	}
+	return true
+}
+
+// isAlpha reports whether b is an ASCII letter (a-z or A-Z).
+func isAlpha(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 // reorderArgs moves flags that appear after positional arguments to the front.
 // Go's flag package stops parsing at the first non-flag argument, so
 // "file.wdl --task name" would silently ignore --task. This function
@@ -631,6 +709,8 @@ func reorderArgs(args []string) []string {
 		"-i": true, "--i": true,
 		// Storage backend selection.
 		"--storage": true, "-storage": true,
+		// Project selection for registry-ref runs.
+		"--project": true, "-project": true,
 	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]

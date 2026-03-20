@@ -100,6 +100,10 @@ type ClientConfig struct {
 	// ServerURL is the base URL for the flowy-server HTTP API.
 	// Defaults to "http://localhost:8124".
 	ServerURL string `yaml:"server_url"`
+
+	// DefaultProject is the project slug to use when submitting registry-ref runs
+	// without an explicit --project flag. Optional.
+	DefaultProject string `yaml:"default_project"`
 }
 
 // Load reads and parses the YAML config file at path, applies defaults for
