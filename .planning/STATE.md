@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: unknown
-stopped_at: Completed 21-02-PLAN.md (registry push/pull handlers)
-last_updated: "2026-03-20T01:50:00Z"
+status: complete
+stopped_at: Completed 21-03-PLAN.md (registry tag/list/delete handlers)
+last_updated: "2026-03-20T01:56:28Z"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-17)
 
 ## Current Position
 
-Phase: 21 (wdl-registry) — EXECUTING
-Plan: 3 of 3
+Phase: 21 (wdl-registry) — COMPLETE
+Plan: 3 of 3 (all plans complete)
 
 ## Accumulated Context
 
@@ -53,6 +53,7 @@ Recent decisions affecting current work:
 - [Phase 21-wdl-registry]: Registry entry kind is immutable after first push; re-push with different kind returns error mapped to 409 by handler
 - [Phase 21-02]: Kind mismatch detection uses strings.Contains(err.Error(), "kind") — matches PushRegistryVersion error format
 - [Phase 21-02]: Stub handlers (returning 501) wired in Plan 02 so server compiles before Plan 03 implements list/versions/delete/tag
+- [Phase 21-03]: Forbidden tests require separate admin+executor users — createRegistryTestProject always makes the user project admin, so addProjectMember helper added for executor role setup
 
 ### Pending Todos
 
@@ -65,6 +66,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T01:50:00Z
-Stopped at: Completed 21-02-PLAN.md (registry push/pull handlers)
+Last session: 2026-03-20T01:56:28Z
+Stopped at: Completed 21-03-PLAN.md (registry tag/list/delete handlers — phase 21 complete)
 Resume file: None

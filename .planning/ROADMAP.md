@@ -61,7 +61,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 
 - [x] **Phase 19: User Authentication** — Users can log in with username/password and receive JWT tokens; all routes protected; admin seeds on first run (completed 2026-03-17)
 - [x] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles (completed 2026-03-17)
-- [ ] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project
+- [x] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project (completed 2026-03-20)
 - [ ] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths
 - [ ] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run
 
@@ -108,7 +108,7 @@ Plans:
   3. Viewer can retrieve the exact WDL content by tag (`name:tag`) or by digest (`name@sha256:hex`)
   4. Viewer can list all registry entries in a project and see their versions and tags
   5. Registry entries are automatically classified as tool (WDL task) or workflow (WDL workflow); project admin can delete entries
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 21-01-PLAN.md — Migration schema, store models, and SQLite registry implementation
 - [ ] 21-02-PLAN.md — API types, push/pull handlers, route wiring, and push/pull tests
@@ -158,6 +158,6 @@ Plans:
 | 18. MinIO Integration Testing | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 19. User Authentication | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
-| 21. WDL Registry | 2/3 | In Progress|  | - |
+| 21. WDL Registry | 3/3 | Complete   | 2026-03-20 | - |
 | 22. Registry-Based Execution | v1.3 | 0/TBD | Not started | - |
 | 23. Provenance Tracking | v1.3 | 0/TBD | Not started | - |
