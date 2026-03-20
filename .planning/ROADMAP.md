@@ -181,4 +181,4 @@ Plans:
 | 21. WDL Registry | v1.3 | 3/3 | Complete | 2026-03-20 |
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
-| 24. Fix CLI Polling for Project-Scoped Runs | 1/1 | Complete   | 2026-03-20 | - |
+| 24. Fix CLI Polling for Project-Scoped Runs | 1/1 | Complete    | 2026-03-20 | - |
