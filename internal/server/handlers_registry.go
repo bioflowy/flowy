@@ -156,31 +156,162 @@ func (s *Server) handleRegistryPull(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRegistryList handles GET /projects/{slug}/registry.
-// Stub: will be implemented in Plan 03.
+// Returns summary rows for all active entries in the project. Accessible by viewers.
 func (s *Server) handleRegistryList(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	proj := projectFromContext(r.Context())
+	if proj == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	items, err := s.store.ListRegistryEntries(r.Context(), proj.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list registry entries")
+		return
+	}
+
+	resp := make([]api.RegistryEntryResponse, 0, len(items))
+	for _, item := range items {
+		tags := item.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		resp = append(resp, api.RegistryEntryResponse{
+			Name:         item.Name,
+			Kind:         item.Kind,
+			VersionCount: item.VersionCount,
+			Tags:         tags,
+			CreatedAt:    item.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleRegistryListVersions handles GET /projects/{slug}/registry/{name}/versions.
-// Stub: will be implemented in Plan 03.
+// Returns all versions for the named entry with their associated tag names. Accessible by viewers.
 func (s *Server) handleRegistryListVersions(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	proj := projectFromContext(r.Context())
+	if proj == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+
+	items, err := s.store.ListRegistryVersions(r.Context(), proj.ID, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("entry %q not found", name))
+		return
+	}
+
+	resp := make([]api.RegistryVersionResponse, 0, len(items))
+	for _, item := range items {
+		tags := item.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		resp = append(resp, api.RegistryVersionResponse{
+			ID:        item.ID,
+			Digest:    item.Digest,
+			Tags:      tags,
+			CreatedAt: item.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleRegistryDelete handles DELETE /projects/{slug}/registry/{name}.
-// Stub: will be implemented in Plan 03.
+// Soft-deletes the named entry. Admin only.
 func (s *Server) handleRegistryDelete(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	proj := projectFromContext(r.Context())
+	if proj == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+
+	if err := s.store.DeleteRegistryEntry(r.Context(), proj.ID, name); err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("entry %q not found", name))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRegistryTag handles POST /projects/{slug}/registry/{name}/tags.
-// Stub: will be implemented in Plan 03.
+// Creates or reassigns a tag to the version identified by digest. Admin only.
 func (s *Server) handleRegistryTag(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	proj := projectFromContext(r.Context())
+	if proj == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+
+	var req api.RegistryTagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if !validTagName(req.Tag) {
+		writeError(w, http.StatusBadRequest, "invalid tag name: must be 1-128 chars, no '@' or ':'")
+		return
+	}
+
+	if req.Digest == "" {
+		writeError(w, http.StatusBadRequest, "digest is required")
+		return
+	}
+
+	entry, err := s.store.GetRegistryEntry(r.Context(), proj.ID, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("entry %q not found", name))
+		return
+	}
+
+	version, _, err := s.store.GetRegistryVersionByDigest(r.Context(), proj.ID, name, req.Digest)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("version with digest %q not found for entry %q", req.Digest, name))
+		return
+	}
+
+	if err := s.store.UpsertRegistryTag(r.Context(), entry.ID, req.Tag, version.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to upsert tag")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"tag":    req.Tag,
+		"digest": req.Digest,
+		"entry":  name,
+	})
 }
 
 // handleRegistryDeleteTag handles DELETE /projects/{slug}/registry/{name}/tags/{tag}.
-// Stub: will be implemented in Plan 03.
+// Removes the named tag; the version is not affected. Admin only.
 func (s *Server) handleRegistryDeleteTag(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented")
+	proj := projectFromContext(r.Context())
+	if proj == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+	tag := chi.URLParam(r, "tag")
+
+	entry, err := s.store.GetRegistryEntry(r.Context(), proj.ID, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("entry %q not found", name))
+		return
+	}
+
+	if err := s.store.DeleteRegistryTag(r.Context(), entry.ID, tag); err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("tag %q not found for entry %q", tag, name))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
