@@ -135,6 +135,51 @@
 
 ---
 
+## Milestone: v1.3 — Project & Registry
+
+**Shipped:** 2026-03-20
+**Phases:** 6 | **Plans:** 14
+
+### What Was Built
+- JWT authentication with bcrypt password hashing, admin user seeding on first server start
+- Project-scoped RBAC with admin/executor/viewer roles and middleware chain
+- Content-addressed WDL registry with SHA-256 digest versioning and mutable tags
+- Registry-based workflow execution — submit by name:tag or name@sha256:hex
+- Run provenance tracking linking outputs to registry version, inputs, and submitting user
+- Gap closure: project-scoped CLI polling (StatusInProject/OutputsInProject)
+
+### What Worked
+- Milestone audit caught a cross-phase integration gap (CLI polling used non-project-scoped routes) — Phase 24 gap closure fixed it cleanly
+- RBAC middleware chain pattern (JWTMiddleware → projectContext → projectRoleRequired) kept authorization logic composable
+- Content-addressed registry model (Docker-style SHA-256 + tags) provided familiar UX and integrity guarantees
+- Dual-resolution pattern for registry refs (tag at submit, digest at claim) ensured daemon always gets exact version
+- Auth-disabled backward compatibility preserved all spectool conformance tests unchanged
+
+### What Was Inefficient
+- SUMMARY.md one_liner frontmatter still not populated — automated extraction continues to fail
+- Gap between "phase passed individual verification" and "cross-phase integration works" — audit caught this but late
+- Phase 24 (gap closure) could have been avoided if Phase 22 had tested project-scoped polling directly
+
+### Patterns Established
+- JWT middleware + RBAC middleware chain for multi-layer auth
+- Content-addressed registry with mutable tags (Docker model)
+- Dual-resolution: resolve by tag at submit time, re-resolve by digest at claim time
+- Provenance creation at submit + touch at terminal state (completed/failed)
+- Project-scoped vs legacy route separation via auth.enabled config flag
+
+### Key Lessons
+1. Cross-phase integration testing is critical — individual phase verification missed the CLI polling gap
+2. Gap closure phases are lightweight and effective — Phase 24 was 1 plan, 2 tasks, fixed cleanly
+3. Auth-disabled backward compatibility is worth maintaining — spectool conformance acts as regression gate
+4. Content-addressed registries are straightforward to implement with SHA-256 and a versions+tags table
+
+### Cost Observations
+- Model mix: ~20% opus (orchestration/planning), ~80% sonnet (execution/verification)
+- Timeline: 4 days (2026-03-17 → 2026-03-20), longer than prior milestones due to scope
+- Notable: 6 phases, 14 plans; first milestone with gap closure phase
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -144,6 +189,7 @@
 | v1.0 | 160 | 8 | Initial pipeline — linear dependency chain |
 | v1.1 | 64 | 5 | Distributed architecture — server/daemon/client split |
 | v1.2 | 81 | 5 | S3 storage backend — cloud-native WDL execution |
+| v1.3 | ~50 | 6 | Auth, RBAC, registry, provenance — multi-user platform |
 
 ### Cumulative Quality
 
@@ -152,6 +198,7 @@
 | v1.0 | 17,648 | ~40 | 45/160 (28%) |
 | v1.1 | 25,433 | ~55 | 156/156 (100%) |
 | v1.2 | 29,277 | ~65 | 156/156 (100%) |
+| v1.3 | 37,776 | ~80 | 156/156 (100%) |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -161,3 +208,5 @@
 4. Milestone audit catches doc/code drift and tech debt — verified v1.1, v1.2
 5. Quick-fix tasks after integration testing catch real cross-component issues — established v1.2
 6. Well-designed interfaces pay off in later phases — Backend interface (Phase 14) made S3Backend (Phase 16) clean
+7. Cross-phase integration testing matters more than individual phase verification — established v1.3
+8. Gap closure phases are lightweight and effective for fixing audit-discovered issues — established v1.3
