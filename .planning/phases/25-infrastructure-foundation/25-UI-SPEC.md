@@ -52,9 +52,11 @@ Source: CONTEXT.md layout shell decision (`p-6` on content area = 24px); 8-point
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px | 400 (regular) | 1.5 |
-| Label | 12px | 500 (medium) | 1.4 |
+| Label | 12px | 400 (regular) | 1.4 |
 | Heading | 20px | 600 (semibold) | 1.2 |
 | Display | 28px | 600 (semibold) | 1.2 |
+
+Weights declared: 400 (regular) for body and label, 600 (semibold) for heading and display. Labels remain visually distinct from body through size difference (12px vs 14px) without requiring a separate weight.
 
 Source: shadcn/ui Default style Tailwind v4 CSS variables (`--font-size-*` tokens from slate preset). GitHub-style information-dense UI (CONTEXT.md) calls for 14px body rather than 16px.
 
@@ -70,6 +72,8 @@ Source: shadcn/ui Default style Tailwind v4 CSS variables (`--font-size-*` token
 | Destructive | `oklch(0.637 0.237 25.331)` (red-500 / `--destructive`) | Destructive actions only (no destructive actions in Phase 25) |
 
 Accent reserved for: active/selected sidebar navigation item highlight only. No other interactive elements use the accent color in Phase 25 (no feature screens exist yet).
+
+Primary visual anchor: the sidebar navigation list. The active nav item (rendered with the accent color — `--primary`) draws the eye first on any page load. All other sidebar items are muted text on the secondary surface, so the single accent-colored item is unambiguous as the focal point.
 
 Source: shadcn/ui Tailwind v4 OKLCH color system (RESEARCH.md). GitHub-style dark sidebar is deferred — Phase 25 uses the default light sidebar with secondary surface color. CONTEXT.md grants Claude discretion over color scheme within shadcn/ui defaults.
 
