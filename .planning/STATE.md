@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: unknown
-last_updated: "2026-03-20T05:19:12.213Z"
+status: milestone_complete
+last_updated: "2026-03-20T05:21:01.619Z"
 last_activity: 2026-03-20
 progress:
   total_phases: 6
@@ -16,15 +16,15 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-17)
+See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 24 — Fix CLI Polling for Project-Scoped Runs
+**Current focus:** v1.3 milestone complete — planning next milestone
 
 ## Current Position
 
-Phase: 24 (Fix CLI Polling for Project-Scoped Runs) — EXECUTING
-Plan: 1 of 1
+Milestone v1.3 Project & Registry — SHIPPED 2026-03-20
+All 6 phases, 14 plans complete.
 
 ## Accumulated Context
 

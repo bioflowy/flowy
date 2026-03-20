@@ -2,14 +2,14 @@
 
 ## Overview
 
-flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full parse → typecheck → evaluate → execute pipeline. Spectool conformance baseline: 45/160. v1.1 shipped distributed server/daemon/client architecture for multi-host workflow execution. v1.2 shipped S3/MinIO object storage as an alternative backend to shared filesystem, enabling cloud-native WDL execution. Spectool conformance: 156/156. v1.3 adds multi-user authentication, project-scoped RBAC, a Docker-registry-style WDL content-addressed registry, registry-based workflow execution, and run provenance tracking.
+flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full parse → typecheck → evaluate → execute pipeline. Spectool conformance baseline: 45/160. v1.1 shipped distributed server/daemon/client architecture for multi-host workflow execution. v1.2 shipped S3/MinIO object storage as an alternative backend to shared filesystem, enabling cloud-native WDL execution. Spectool conformance: 156/156. v1.3 shipped multi-user authentication, project-scoped RBAC, a Docker-registry-style WDL content-addressed registry, registry-based workflow execution, and run provenance tracking.
 
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-8 (shipped 2026-03-11)
 - ✅ **v1.1 Distributed Execution** — Phases 9-13 (shipped 2026-03-12)
 - ✅ **v1.2 S3 Object Storage** — Phases 14-18 (shipped 2026-03-13)
-- 🚧 **v1.3 Project & Registry** — Phases 19-23 (in progress)
+- ✅ **v1.3 Project & Registry** — Phases 19-24 (shipped 2026-03-20)
 
 ## Phases
 
@@ -55,104 +55,19 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 
 </details>
 
-### 🚧 v1.3 Project & Registry (In Progress)
+<details>
+<summary>✅ v1.3 Project & Registry (Phases 19-24) — SHIPPED 2026-03-20</summary>
 
-**Milestone Goal:** Add multi-user authentication, project-scoped RBAC, a content-addressed WDL registry, registry-based execution, and run provenance tracking.
+- [x] **Phase 19: User Authentication** (3/3 plans) — completed 2026-03-17
+- [x] **Phase 20: Projects and RBAC** (3/3 plans) — completed 2026-03-17
+- [x] **Phase 21: WDL Registry** (3/3 plans) — completed 2026-03-20
+- [x] **Phase 22: Registry-Based Execution** (2/2 plans) — completed 2026-03-20
+- [x] **Phase 23: Provenance Tracking** (2/2 plans) — completed 2026-03-20
+- [x] **Phase 24: Fix CLI Polling for Project-Scoped Runs** (1/1 plan) — completed 2026-03-20
 
-- [x] **Phase 19: User Authentication** — Users can log in with username/password and receive JWT tokens; all routes protected; admin seeds on first run (completed 2026-03-17)
-- [x] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles (completed 2026-03-17)
-- [x] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project (completed 2026-03-20)
-- [x] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths (completed 2026-03-20)
-- [x] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run (completed 2026-03-20)
-- [x] **Phase 24: Fix CLI Polling for Project-Scoped Runs** — CLI can poll status and retrieve outputs after project-scoped/registry-ref submission with auth enabled (gap closure) (completed 2026-03-20)
+Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
-## Phase Details
-
-### Phase 19: User Authentication
-**Goal**: Users can securely authenticate with the server and all non-public routes are protected by JWT tokens
-**Depends on**: Phase 18 (v1.2 complete)
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06
-**Success Criteria** (what must be TRUE):
-  1. User can POST to `/auth/login` with username and password and receive a signed JWT token
-  2. Requests to protected routes without a valid JWT token return 401 Unauthorized
-  3. On first server start, an initial admin user exists and can log in without any setup step
-  4. Admin can create new user accounts and list or delete existing users
-  5. When `auth.enabled: false` is set in config, all existing spectool conformance tests pass unchanged
-**Plans:** 3/3 plans complete
-Plans:
-- [ ] 19-01-PLAN.md — Config, migration, store layer foundation (User model, server_config)
-- [ ] 19-02-PLAN.md — Auth package, middleware, handlers, and server router restructure
-- [ ] 19-03-PLAN.md — CLI --init-admin command and daemon bearer token injection
-
-### Phase 20: Projects and RBAC
-**Goal**: Users can create isolated project workspaces and control who can do what via role-based membership
-**Depends on**: Phase 19
-**Requirements**: PROJ-01, PROJ-02, PROJ-03, PROJ-04, PROJ-05, PROJ-06, PROJ-07
-**Success Criteria** (what must be TRUE):
-  1. User can create a project, then list only projects they are a member of (not all projects on the server)
-  2. Project admin can add a member with a specific role and change or remove that membership
-  3. A viewer-role member can read project details but cannot update or delete the project
-  4. Workflow runs submitted within a project context are associated with that project (project_id present on run records)
-**Plans:** 3/3 plans complete
-Plans:
-- [ ] 20-01-PLAN.md — Models, migration 00005, and SQLite store layer for projects and membership
-- [ ] 20-02-PLAN.md — Project CRUD handlers, membership handlers, RBAC middleware, and route registration
-- [ ] 20-03-PLAN.md — Project-scoped run routes and backward-compatible auth-disabled path
-
-### Phase 21: WDL Registry
-**Goal**: Executors can push versioned WDL tool and workflow files to a project registry and retrieve them by tag or immutable digest
-**Depends on**: Phase 20
-**Requirements**: REG-01, REG-02, REG-03, REG-04, REG-05, REG-06
-**Success Criteria** (what must be TRUE):
-  1. Executor can push a WDL file to a project registry and the response includes an auto-computed SHA-256 digest
-  2. Executor can assign a human-readable tag to a registry version and later reassign that tag to a different version
-  3. Viewer can retrieve the exact WDL content by tag (`name:tag`) or by digest (`name@sha256:hex`)
-  4. Viewer can list all registry entries in a project and see their versions and tags
-  5. Registry entries are automatically classified as tool (WDL task) or workflow (WDL workflow); project admin can delete entries
-**Plans:** 3/3 plans complete
-Plans:
-- [ ] 21-01-PLAN.md — Migration schema, store models, and SQLite registry implementation
-- [ ] 21-02-PLAN.md — API types, push/pull handlers, route wiring, and push/pull tests
-- [ ] 21-03-PLAN.md — Tag management, list endpoints, delete handler, and remaining tests
-
-### Phase 22: Registry-Based Execution
-**Goal**: Executors can submit workflow runs using a registry reference instead of a file path, and the server resolves the WDL content automatically
-**Depends on**: Phase 21
-**Requirements**: EXEC-01, EXEC-02
-**Success Criteria** (what must be TRUE):
-  1. Executor can submit a run using a registry reference (`project/name:tag` or `project/name@sha256:hex`) and the run starts successfully
-  2. Submitting via registry reference and submitting via direct WDL path both produce identical run behavior; neither mode breaks the other
-**Plans:** 2/2 plans complete
-Plans:
-- [ ] 22-01-PLAN.md — Migration, model, API types, handler resolution logic, handleClaim registry branch, and integration tests
-- [ ] 22-02-PLAN.md — CLI auto-detection of registry refs, --project flag, config DefaultProject, project-scoped client methods
-
-### Phase 23: Provenance Tracking
-**Goal**: The system records a provenance record for every run linking it to its registry version, inputs, and submitting user, and viewers can query this audit trail
-**Depends on**: Phase 22
-**Requirements**: PROV-01, PROV-02, PROV-03, PROV-04
-**Success Criteria** (what must be TRUE):
-  1. After submitting a registry-based run, a provenance record exists immediately containing the registry version digest, inputs, and submitting user
-  2. When the run completes, the provenance record is updated with the run outputs
-  3. Viewer can list all provenance records for a project
-  4. Viewer can retrieve a single provenance record by run ID showing version, digest, inputs, outputs, and submitting user
-**Plans:** 2/2 plans complete
-Plans:
-- [ ] 23-01-PLAN.md — Migration, store model, store interface, provenance creation in handlers, completion touch in dispatch
-- [ ] 23-02-PLAN.md — API response types, provenance list/detail handlers, route registration, integration tests
-
-### Phase 24: Fix CLI Polling for Project-Scoped Runs
-**Goal**: CLI can poll run status and retrieve outputs after project-scoped or registry-ref submission when auth is enabled
-**Depends on**: Phase 22, Phase 20
-**Requirements**: EXEC-01
-**Gap Closure:** Closes gaps from v1.3 milestone audit (EXEC-01 partial, integration Phase 22→20, broken E2E flow)
-**Success Criteria** (what must be TRUE):
-  1. `StatusInProject(ctx, slug, runID)` and `OutputsInProject(ctx, slug, runID)` exist in `internal/client/client.go` and call project-scoped routes
-  2. `pollUntilDone` in CLI uses project-scoped methods when `projectSlug` is set
-  3. Full E2E flow works: login → push → submit by registry ref → poll → outputs — all with auth enabled
-Plans: 0/1
-Plans:
-- [ ] 24-01-PLAN.md — Add StatusInProject/OutputsInProject client methods and update CLI pollUntilDone
+</details>
 
 ## Progress
 
@@ -181,4 +96,4 @@ Plans:
 | 21. WDL Registry | v1.3 | 3/3 | Complete | 2026-03-20 |
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
-| 24. Fix CLI Polling for Project-Scoped Runs | 1/1 | Complete    | 2026-03-20 | - |
+| 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and tags, and execution provenance tracking linking outputs to source tool/workflow versions and inputs.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution, and run provenance tracking linking outputs to source versions and inputs.
 
 ## Core Value
 
@@ -34,14 +34,15 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ Input path scheme resolution (relative → default backend, s3:// → S3, absolute → local FS) — v1.2
 - ✓ Daemon LED pattern (Localize-Execute-Delocalize) for S3-backed task execution — v1.2
 - ✓ MinIO integration testing (testcontainers-go, spectool conformance on S3 backend) — v1.2
+- ✓ User authentication (username/password, JWT tokens) — v1.3
+- ✓ Project management with role-based access control (admin/executor/viewer) — v1.3
+- ✓ WDL tool/workflow registry with content-hash versioning and tags — v1.3
+- ✓ Execution integration with registered tools/workflows — v1.3
+- ✓ Provenance tracking for execution output files — v1.3
 
 ### Active
 
-- ✓ User authentication (username/password, JWT tokens) — Validated in Phase 19: User Authentication
-- ✓ Project management with role-based access control (admin/executor/viewer) — Validated in Phase 20: Projects and RBAC
-- ✓ WDL tool/workflow registry with content-hash versioning and tags — Validated in Phase 21: WDL Registry
-- ✓ Execution integration with registered tools/workflows — Validated in Phase 22: Registry-Based Execution
-- ✓ Provenance tracking for execution output files — Validated in Phase 23: Provenance Tracking
+(No active requirements — planning next milestone)
 
 ### Out of Scope
 
@@ -57,23 +58,17 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
 
-## Current Milestone: v1.3 Project & Registry
+## Current State
 
-**Goal:** Add multi-user project management, Docker-registry-style WDL tool/workflow versioning, and execution provenance tracking.
+Shipped v1.3 with 37,776 LOC Go. All four milestones complete (v1.0–v1.3).
 
-**Target features:**
-- User authentication with username/password and JWT tokens
-- Projects with role-based access (admin, executor, viewer)
-- WDL tool (task) and workflow registry with content-hash + tag versioning
-- Execution of registered tools/workflows within project context
-- Provenance tracking linking output files to their source tool/workflow, version, and inputs
+**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, and run provenance tracking.
 
 ## Context
 
-Shipped v1.2 with 29,277 LOC Go.
-Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go.
+Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt.
 Spectool conformance: 156/156 WDL 1.2 tests passing (100% of supported features; 4 categories excluded: Object type, sub-workflow calls, deferred input defaults, read_tsv with Object).
-Architecture: three binaries (flowy, flowy-server, flowy-daemon), SQLite task queue, local filesystem or S3/MinIO storage backends.
+Architecture: three binaries (flowy, flowy-server, flowy-daemon), SQLite task queue with WAL, local filesystem or S3/MinIO storage backends, JWT-protected REST API with RBAC middleware.
 Reference implementation: `../miniwdl` (Python, ~20k lines).
 
 ## Constraints
@@ -106,6 +101,11 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | AWS SDK v2 only | v1 end-of-support July 2025; transfermanager for multipart | ✓ Good — future-proof |
 | No credentials in TaskClaimResponse | Security: daemon uses own config/IAM role | ✓ Good — no credential leaks |
 | API-based input/output delivery | DB stores inputs/outputs for S3 mode; FS fallback for local | ✓ Good — works for both backends |
+| JWT + bcrypt for auth | Simple, stateless auth; no external dependencies | ✓ Good — fits single-server model |
+| Project-scoped RBAC middleware chain | JWTMiddleware → projectContext → projectRoleRequired | ✓ Good — clean separation of concerns |
+| Content-addressed registry (SHA-256) | Immutable versions, mutable tags — Docker registry model | ✓ Good — familiar UX, integrity guarantees |
+| Registry ref resolution at submit + claim | Server resolves by tag at submit, daemon re-resolves by digest | ✓ Good — daemon always gets exact version |
+| Run-level provenance (not per-task) | Simpler scope; per-task possible via existing tasks table later | ✓ Good — right granularity for v1.3 |
 
 ---
-*Last updated: 2026-03-20 after Phase 24 (Fix CLI Polling for Project-Scoped Runs) completion*
+*Last updated: 2026-03-20 after v1.3 milestone completion*
