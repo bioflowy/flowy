@@ -70,6 +70,12 @@ Recent decisions affecting current work:
 
 None.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260320-6ed | Create end-to-end demo script exercising all v1.3 milestone features | 2026-03-20 | c91520f | [260320-6ed-create-end-to-end-demo-script-exercising](./quick/260320-6ed-create-end-to-end-demo-script-exercising/) |
+
 ### Blockers/Concerns
 
 - [Phase 19] Admin seed decision: POST /users is admin-only (chicken-and-egg). Must decide between migration-seeded default admin or --init-admin CLI flag before implementation.
@@ -77,6 +83,5 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T04:43:00Z
-Stopped at: Completed quick task 260320-6ed (end-to-end v1.3 demo script)
+Last activity: 2026-03-20 - Completed quick task 260320-6ed: Create end-to-end demo script exercising all v1.3 milestone features
 Resume file: None
