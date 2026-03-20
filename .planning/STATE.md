@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: executing
-stopped_at: "Completed 23-01-PLAN.md"
-last_updated: "2026-03-20T04:23:00.000Z"
+status: unknown
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-03-20T04:29:44.217Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -63,6 +63,8 @@ Recent decisions affecting current work:
 - [Phase 23-01]: Provenance creation is non-fatal in handlers — audit failure must not block run execution
 - [Phase 23-01]: resolveRegistryRefFull returns entryID and versionID; resolveRegistryRef delegates to it
 - [Phase 23-01]: claimsFromContext nil-guard in provenance creation — provenance skipped when auth disabled
+- [Phase 23-provenance-tracking]: Provenance routes registered only in auth-enabled branch — no auth-disabled read path needed
+- [Phase 23-provenance-tracking]: Inputs/outputs fields in ProvenanceDetailResponse use omitempty — absent from JSON when run not yet complete
 
 ### Pending Todos
 
@@ -75,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T04:23:00.000Z
-Stopped at: Completed 23-01-PLAN.md
-Resume file: .planning/phases/23-provenance-tracking/23-02-PLAN.md
+Last session: 2026-03-20T04:29:44.213Z
+Stopped at: Completed 23-02-PLAN.md
+Resume file: None

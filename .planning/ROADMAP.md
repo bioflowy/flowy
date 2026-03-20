@@ -63,7 +63,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 20: Projects and RBAC** — Users can create projects, manage members, and access control enforces admin/executor/viewer roles (completed 2026-03-17)
 - [x] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project (completed 2026-03-20)
 - [x] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths (completed 2026-03-20)
-- [ ] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run
+- [x] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run (completed 2026-03-20)
 
 ## Phase Details
 
@@ -135,7 +135,7 @@ Plans:
   2. When the run completes, the provenance record is updated with the run outputs
   3. Viewer can list all provenance records for a project
   4. Viewer can retrieve a single provenance record by run ID showing version, digest, inputs, outputs, and submitting user
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 23-01-PLAN.md — Migration, store model, store interface, provenance creation in handlers, completion touch in dispatch
 - [ ] 23-02-PLAN.md — API response types, provenance list/detail handlers, route registration, integration tests
@@ -166,4 +166,4 @@ Plans:
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 21. WDL Registry | v1.3 | 3/3 | Complete | 2026-03-20 |
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
-| 23. Provenance Tracking | 1/2 | In Progress|  | - |
+| 23. Provenance Tracking | 2/2 | Complete   | 2026-03-20 | - |

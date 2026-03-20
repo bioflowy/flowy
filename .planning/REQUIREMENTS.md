@@ -44,8 +44,8 @@ Requirements for Project & Registry milestone. Each maps to roadmap phases.
 
 - [x] **PROV-01**: System records provenance on run submission (registry version digest, inputs, submitting user)
 - [x] **PROV-02**: System updates provenance with outputs when run completes
-- [ ] **PROV-03**: Viewer can list provenance records for a project
-- [ ] **PROV-04**: Viewer can get provenance for a specific run (version, digest, inputs, outputs, user)
+- [x] **PROV-03**: Viewer can list provenance records for a project
+- [x] **PROV-04**: Viewer can get provenance for a specific run (version, digest, inputs, outputs, user)
 
 ## Future Requirements
 
@@ -108,8 +108,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXEC-02 | Phase 22 | Complete |
 | PROV-01 | Phase 23 | Complete |
 | PROV-02 | Phase 23 | Complete |
-| PROV-03 | Phase 23 | Pending |
-| PROV-04 | Phase 23 | Pending |
+| PROV-03 | Phase 23 | Complete |
+| PROV-04 | Phase 23 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 25 total
