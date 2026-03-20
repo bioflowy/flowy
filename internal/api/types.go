@@ -246,3 +246,54 @@ type TaskResultRequest struct {
 	// successful task execution. Keyed by plain output name (no task prefix).
 	Outputs map[string]interface{} `json:"outputs,omitempty"`
 }
+
+// RegistryPushRequest is the request body for POST /projects/{slug}/registry.
+type RegistryPushRequest struct {
+	// Name is the entry name (slug format: lowercase alphanumeric + hyphens, 1-64 chars).
+	Name string `json:"name"`
+
+	// Content is the raw WDL file content as a string.
+	Content string `json:"content"`
+}
+
+// RegistryPushResponse is the response body for POST /projects/{slug}/registry.
+type RegistryPushResponse struct {
+	Name      string `json:"name"`
+	Digest    string `json:"digest"`
+	Kind      string `json:"kind"`
+	VersionID string `json:"version_id"`
+}
+
+// RegistryPullResponse is the response body for GET /projects/{slug}/registry/{name}.
+type RegistryPullResponse struct {
+	Name    string `json:"name"`
+	Digest  string `json:"digest"`
+	Kind    string `json:"kind"`
+	Content string `json:"content"`
+}
+
+// RegistryEntryResponse is a single entry in the list response.
+type RegistryEntryResponse struct {
+	Name         string   `json:"name"`
+	Kind         string   `json:"kind"`
+	VersionCount int      `json:"version_count"`
+	Tags         []string `json:"tags"`
+	CreatedAt    string   `json:"created_at"`
+}
+
+// RegistryVersionResponse is a single version in the versions list response.
+type RegistryVersionResponse struct {
+	ID        string   `json:"id"`
+	Digest    string   `json:"digest"`
+	Tags      []string `json:"tags"`
+	CreatedAt string   `json:"created_at"`
+}
+
+// RegistryTagRequest is the request body for POST /projects/{slug}/registry/{name}/tags.
+type RegistryTagRequest struct {
+	// Tag is the tag name (any string up to 128 chars, no '@' or ':').
+	Tag string `json:"tag"`
+
+	// Digest is the version digest to tag ("sha256:<hex>").
+	Digest string `json:"digest"`
+}
