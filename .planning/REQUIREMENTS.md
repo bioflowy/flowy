@@ -80,38 +80,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| INFRA-04 | — | Pending |
-| INFRA-05 | — | Pending |
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| USER-01 | — | Pending |
-| USER-02 | — | Pending |
-| USER-03 | — | Pending |
-| USER-04 | — | Pending |
-| PROJ-01 | — | Pending |
-| PROJ-02 | — | Pending |
-| PROJ-03 | — | Pending |
-| PROJ-04 | — | Pending |
-| REG-01 | — | Pending |
-| REG-02 | — | Pending |
-| REG-03 | — | Pending |
-| REG-04 | — | Pending |
-| FILE-01 | — | Pending |
-| FILE-02 | — | Pending |
-| FILE-03 | — | Pending |
-| FILE-04 | — | Pending |
+| INFRA-01 | Phase 25 | Pending |
+| INFRA-02 | Phase 25 | Pending |
+| INFRA-03 | Phase 25 | Pending |
+| INFRA-04 | Phase 25 | Pending |
+| INFRA-05 | Phase 25 | Pending |
+| AUTH-01 | Phase 26 | Pending |
+| AUTH-02 | Phase 26 | Pending |
+| AUTH-03 | Phase 26 | Pending |
+| AUTH-04 | Phase 26 | Pending |
+| AUTH-05 | Phase 26 | Pending |
+| USER-01 | Phase 27 | Pending |
+| USER-02 | Phase 27 | Pending |
+| USER-03 | Phase 27 | Pending |
+| USER-04 | Phase 27 | Pending |
+| PROJ-01 | Phase 28 | Pending |
+| PROJ-02 | Phase 28 | Pending |
+| PROJ-03 | Phase 28 | Pending |
+| PROJ-04 | Phase 28 | Pending |
+| REG-01 | Phase 29 | Pending |
+| REG-02 | Phase 29 | Pending |
+| REG-03 | Phase 29 | Pending |
+| REG-04 | Phase 29 | Pending |
+| FILE-01 | Phase 30 | Pending |
+| FILE-02 | Phase 30 | Pending |
+| FILE-03 | Phase 30 | Pending |
+| FILE-04 | Phase 30 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 26 total
-- Mapped to phases: 0
-- Unmapped: 26 ⚠️
+- Mapped to phases: 26
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after initial definition*
+*Last updated: 2026-03-20 after roadmap creation*

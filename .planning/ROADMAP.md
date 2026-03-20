@@ -2,7 +2,7 @@
 
 ## Overview
 
-flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full parse → typecheck → evaluate → execute pipeline. Spectool conformance baseline: 45/160. v1.1 shipped distributed server/daemon/client architecture for multi-host workflow execution. v1.2 shipped S3/MinIO object storage as an alternative backend to shared filesystem, enabling cloud-native WDL execution. Spectool conformance: 156/156. v1.3 shipped multi-user authentication, project-scoped RBAC, a Docker-registry-style WDL content-addressed registry, registry-based workflow execution, and run provenance tracking.
+flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full parse → typecheck → evaluate → execute pipeline. Spectool conformance baseline: 45/160. v1.1 shipped distributed server/daemon/client architecture for multi-host workflow execution. v1.2 shipped S3/MinIO object storage as an alternative backend to shared filesystem, enabling cloud-native WDL execution. Spectool conformance: 156/156. v1.3 shipped multi-user authentication, project-scoped RBAC, a Docker-registry-style WDL content-addressed registry, registry-based workflow execution, and run provenance tracking. v2.0 adds a browser-based management SPA embedded in a new `flowy-ui` binary, covering authentication, user/project/registry management, and file browsing with download.
 
 ## Milestones
 
@@ -10,6 +10,7 @@ flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full p
 - ✅ **v1.1 Distributed Execution** — Phases 9-13 (shipped 2026-03-12)
 - ✅ **v1.2 S3 Object Storage** — Phases 14-18 (shipped 2026-03-13)
 - ✅ **v1.3 Project & Registry** — Phases 19-24 (shipped 2026-03-20)
+- 🚧 **v2.0 Web UI — Management** — Phases 25-30 (in progress)
 
 ## Phases
 
@@ -69,6 +70,90 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
+### 🚧 v2.0 Web UI — Management (In Progress)
+
+**Milestone Goal:** Provide a browser-based management interface for flowy covering authentication, user/project/registry management, and file browsing with download, served from a new `flowy-ui` binary embedding the React SPA.
+
+- [ ] **Phase 25: Infrastructure Foundation** — flowy-ui binary with go:embed SPA serving, Vite+React+TypeScript scaffold, build pipeline
+- [ ] **Phase 26: Authentication** — Login screen, JWT session management, CORS support, protected route gating
+- [ ] **Phase 27: User Management** — Admin user list, create, deactivate/reactivate, password reset
+- [ ] **Phase 28: Project Management** — Project list/create, project detail, member management with RBAC roles
+- [ ] **Phase 29: Registry Browsing** — Registry entry list, version history, WDL source viewer, tag management
+- [ ] **Phase 30: File Browsing** — Run list, output file list, file download (S3/local), inline text preview
+
+## Phase Details
+
+### Phase 25: Infrastructure Foundation
+**Goal**: The flowy-ui binary exists, serves the embedded React SPA with correct SPA routing fallback, and the build pipeline produces a single deployable binary from one make target.
+**Depends on**: Nothing (first v2.0 phase)
+**Requirements**: INFRA-01, INFRA-02, INFRA-03, INFRA-04, INFRA-05
+**Success Criteria** (what must be TRUE):
+  1. Running `make build-ui` produces a `flowy-ui` binary that serves the React SPA on a configured port without errors.
+  2. Pressing F5 (hard refresh) on any SPA route (e.g., `/projects`) returns the React app, not a JSON 404.
+  3. All SPA assets load correctly in the browser — no 404s for JS/CSS files from the embedded FS.
+  4. `flowy-ui --api-addr http://host:8124` proxies `/api/*` requests to the specified flowy-server address.
+  5. flowy-server accepts requests from the Vite dev server origin when `cors.enabled: true` is set in config.
+**Plans**: TBD
+
+### Phase 26: Authentication
+**Goal**: Users can log in with username and password, maintain a JWT session across the app, and are automatically redirected to login when their session expires or they access protected routes unauthenticated.
+**Depends on**: Phase 25
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05
+**Success Criteria** (what must be TRUE):
+  1. User submits username and password on the login screen and is redirected to the application on success; invalid credentials show an error message.
+  2. All API requests include the JWT token automatically — the user never manually sets an Authorization header.
+  3. Navigating to any protected route without a session redirects to the login screen; after login the user is returned to the originally requested URL.
+  4. When a 401 response is received, the session is cleared and the user is redirected to login without manual action.
+  5. User can change their own password via an account settings action and can log out from any page.
+**Plans**: TBD
+
+### Phase 27: User Management
+**Goal**: Admins can view and manage all user accounts — creating new users, deactivating/reactivating existing accounts, and resetting passwords — via a dedicated users screen.
+**Depends on**: Phase 26
+**Requirements**: USER-01, USER-02, USER-03, USER-04
+**Success Criteria** (what must be TRUE):
+  1. Admin navigates to the users screen and sees a table of all registered users with their active/inactive status.
+  2. Admin creates a new user by filling in a form; the new user appears in the table immediately.
+  3. Admin deactivates an active user (with confirmation dialog); the user's status changes to inactive in the table.
+  4. Admin reactivates an inactive user; the user's status returns to active.
+  5. Admin resets another user's password; the affected user can log in with the new password.
+**Plans**: TBD
+
+### Phase 28: Project Management
+**Goal**: Users can view the projects they belong to, create new projects, and admins can manage project membership and role assignments through a project detail screen.
+**Depends on**: Phase 26
+**Requirements**: PROJ-01, PROJ-02, PROJ-03, PROJ-04
+**Success Criteria** (what must be TRUE):
+  1. User navigates to projects and sees a list of only the projects they are a member of.
+  2. User creates a new project by entering a name and slug; the project appears in the list immediately.
+  3. Project detail screen shows a summary of the project including member list with role badges.
+  4. Admin adds a member to a project with a selected role; the new member appears in the member list.
+  5. Admin changes a member's role or removes a member from a project; the member list reflects the change.
+**Plans**: TBD
+
+### Phase 29: Registry Browsing
+**Goal**: Users can browse registry entries within a project, view version history and WDL source code, and admins can manage tags on registry entries.
+**Depends on**: Phase 28
+**Requirements**: REG-01, REG-02, REG-03, REG-04
+**Success Criteria** (what must be TRUE):
+  1. User navigates to a project's registry and sees a list of entries with kind badges (tool/workflow) and associated tags.
+  2. User selects a registry entry and sees its full version history with digest identifiers.
+  3. User selects a version and sees the WDL source code rendered in a code viewer.
+  4. Admin creates a new tag on a registry entry version; the tag appears on the entry in the list.
+  5. Admin deletes or moves a tag; the change is reflected in the entry detail immediately.
+**Plans**: TBD
+
+### Phase 30: File Browsing
+**Goal**: Users can view workflow runs for a project, browse output files for completed runs, and download files directly from S3 or local storage through the browser.
+**Depends on**: Phase 28
+**Requirements**: FILE-01, FILE-02, FILE-03, FILE-04
+**Success Criteria** (what must be TRUE):
+  1. User navigates to a project's runs list and sees all workflow runs with status badges and timestamps.
+  2. User selects a completed run and sees its output files listed by path.
+  3. User clicks a download button for an output file and the browser downloads the file (works for both S3 and local storage backends).
+  4. User can preview the contents of small text output files inline without downloading.
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -97,3 +182,9 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |
+| 25. Infrastructure Foundation | v2.0 | 0/TBD | Not started | - |
+| 26. Authentication | v2.0 | 0/TBD | Not started | - |
+| 27. User Management | v2.0 | 0/TBD | Not started | - |
+| 28. Project Management | v2.0 | 0/TBD | Not started | - |
+| 29. Registry Browsing | v2.0 | 0/TBD | Not started | - |
+| 30. File Browsing | v2.0 | 0/TBD | Not started | - |
