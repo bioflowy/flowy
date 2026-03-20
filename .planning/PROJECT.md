@@ -37,8 +37,8 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-- [ ] User authentication (username/password, JWT tokens)
-- [ ] Project management with role-based access control (admin/executor/viewer)
+- ✓ User authentication (username/password, JWT tokens) — Validated in Phase 19: User Authentication
+- ✓ Project management with role-based access control (admin/executor/viewer) — Validated in Phase 20: Projects and RBAC
 - ✓ WDL tool/workflow registry with content-hash versioning and tags — Validated in Phase 21: WDL Registry
 - ✓ Execution integration with registered tools/workflows — Validated in Phase 22: Registry-Based Execution
 - ✓ Provenance tracking for execution output files — Validated in Phase 23: Provenance Tracking
@@ -108,4 +108,4 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | API-based input/output delivery | DB stores inputs/outputs for S3 mode; FS fallback for local | ✓ Good — works for both backends |
 
 ---
-*Last updated: 2026-03-20 after Phase 23 (Provenance Tracking) completion*
+*Last updated: 2026-03-20 after Phase 24 (Fix CLI Polling for Project-Scoped Runs) completion*
