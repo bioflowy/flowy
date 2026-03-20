@@ -7,6 +7,10 @@ type SubmitRequest struct {
 	// WDLPath is the absolute path to the WDL file on the shared filesystem.
 	WDLPath string `json:"wdl_path"`
 
+	// RegistryRef is a registry reference (e.g. "name:tag" or "name@sha256:hex").
+	// Mutually exclusive with WDLPath. Exactly one must be set.
+	RegistryRef string `json:"registry_ref,omitempty"`
+
 	// InputsJSON contains the workflow-level input values keyed by input name.
 	InputsJSON map[string]interface{} `json:"inputs"`
 
@@ -103,6 +107,10 @@ type ChangePasswordRequest struct {
 type TaskRunRequest struct {
 	// WDLPath is the absolute path to the WDL file on the shared filesystem.
 	WDLPath string `json:"wdl_path"`
+
+	// RegistryRef is a registry reference (e.g. "name:tag" or "name@sha256:hex").
+	// Mutually exclusive with WDLPath. Exactly one must be set.
+	RegistryRef string `json:"registry_ref,omitempty"`
 
 	// TaskName is the name of the task to execute from the WDL file.
 	TaskName string `json:"task_name"`

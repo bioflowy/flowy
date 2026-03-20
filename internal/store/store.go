@@ -120,14 +120,16 @@ type RegistryVersionListItem struct {
 
 // Run holds metadata for a submitted workflow run.
 type Run struct {
-	ID          string
-	ProjectID   string    // Empty when auth is disabled; set to project UUID when auth is enabled
-	WDLPath     string
-	InputsJSON  string
-	State       RunState
-	OutputsJSON string    // JSON-encoded run outputs; empty until set by UpdateRunOutputs
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             string
+	ProjectID      string   // Empty when auth is disabled; set to project UUID when auth is enabled
+	WDLPath        string
+	RegistryRef    string   // User-provided ref, e.g. "align-reads:prod"; empty for file-path runs
+	RegistryDigest string   // Resolved digest at submission time, e.g. "sha256:abc..."; empty for file-path runs
+	InputsJSON     string
+	State          RunState
+	OutputsJSON    string   // JSON-encoded run outputs; empty until set by UpdateRunOutputs
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Task represents a single WDL task execution within a run.

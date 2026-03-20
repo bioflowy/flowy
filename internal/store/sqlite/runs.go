@@ -16,8 +16,8 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, r *store.Run) error {
 		projectID = &r.ProjectID
 	}
 	_, err := s.writer.ExecContext(ctx,
-		`INSERT INTO runs (id, wdl_path, inputs_json, state, project_id) VALUES (?, ?, ?, ?, ?)`,
-		r.ID, r.WDLPath, r.InputsJSON, string(r.State), projectID,
+		`INSERT INTO runs (id, wdl_path, inputs_json, state, project_id, registry_ref, registry_digest) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.WDLPath, r.InputsJSON, string(r.State), projectID, r.RegistryRef, r.RegistryDigest,
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite: CreateRun: %w", err)
@@ -28,7 +28,7 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, r *store.Run) error {
 // GetRun returns the run with the given exact ID.
 func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.Run, error) {
 	row := s.reader.QueryRowContext(ctx,
-		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id
+		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id, registry_ref, registry_digest
 		   FROM runs WHERE id = ?`, id)
 	r, err := scanRun(row)
 	if err == sql.ErrNoRows {
@@ -44,7 +44,7 @@ func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.Run, error)
 // Returns an error if zero or more than one run matches.
 func (s *SQLiteStore) GetRunByPrefix(ctx context.Context, prefix string) (*store.Run, error) {
 	rows, err := s.reader.QueryContext(ctx,
-		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id
+		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id, registry_ref, registry_digest
 		   FROM runs WHERE id LIKE ?`, prefix+"%")
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: GetRunByPrefix: %w", err)
@@ -96,13 +96,13 @@ func (s *SQLiteStore) UpdateRunOutputs(ctx context.Context, id string, outputsJS
 }
 
 // scanRun scans a single run from a *sql.Row.
-// Expects columns: id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id
+// Expects columns: id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id, registry_ref, registry_digest
 func scanRun(row *sql.Row) (*store.Run, error) {
 	var r store.Run
 	var state string
 	var outputsJSON sql.NullString
 	var projectID sql.NullString
-	err := row.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &outputsJSON, &r.CreatedAt, &r.UpdatedAt, &projectID)
+	err := row.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &outputsJSON, &r.CreatedAt, &r.UpdatedAt, &projectID, &r.RegistryRef, &r.RegistryDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +117,13 @@ func scanRun(row *sql.Row) (*store.Run, error) {
 }
 
 // scanRunRows scans a single run from *sql.Rows.
-// Expects columns: id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id
+// Expects columns: id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id, registry_ref, registry_digest
 func scanRunRows(rows *sql.Rows) (*store.Run, error) {
 	var r store.Run
 	var state string
 	var outputsJSON sql.NullString
 	var projectID sql.NullString
-	err := rows.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &outputsJSON, &r.CreatedAt, &r.UpdatedAt, &projectID)
+	err := rows.Scan(&r.ID, &r.WDLPath, &r.InputsJSON, &state, &outputsJSON, &r.CreatedAt, &r.UpdatedAt, &projectID, &r.RegistryRef, &r.RegistryDigest)
 	if err != nil {
 		return nil, err
 	}
