@@ -159,3 +159,55 @@ func TestReorderArgsStorage(t *testing.T) {
 		t.Errorf("unexpected order: %v", result)
 	}
 }
+
+// TestIsRegistryRef tests the isRegistryRef helper.
+func TestIsRegistryRef(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"my-tool:latest", true},
+		{"my-tool@sha256:abc123", true},
+		{"hello.wdl", false},
+		{"/path/to/file.wdl", false},
+		{"C:\\path\\file.wdl", false},
+		{"D:\\test.wdl", false},
+		{"workflow:v1.0", true},
+		{"a@sha256:abcdef1234567890", true},
+	}
+	for _, tc := range tests {
+		got := isRegistryRef(tc.input)
+		if got != tc.want {
+			t.Errorf("isRegistryRef(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestIsRegistryRef_EdgeCases tests edge cases for isRegistryRef.
+func TestIsRegistryRef_EdgeCases(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"", false},
+		{"no-colon", false},
+		{":empty-name", true}, // colon present, not a drive letter
+	}
+	for _, tc := range tests {
+		got := isRegistryRef(tc.input)
+		if got != tc.want {
+			t.Errorf("isRegistryRef(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestRunRun_RegistryRef_NoProject tests that running with a registry ref but no project produces an error.
+func TestRunRun_RegistryRef_NoProject(t *testing.T) {
+	code, _, stderr := runArgs([]string{"run", "my-tool:latest"})
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "registry reference requires --project") {
+		t.Errorf("expected error about --project, got stderr: %q", stderr)
+	}
+}
