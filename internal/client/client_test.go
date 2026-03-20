@@ -226,6 +226,104 @@ func TestTaskRun_TaskNotFound(t *testing.T) {
 	}
 }
 
+// TestStatusInProject_Success tests that StatusInProject sends GET /projects/{slug}/runs/{id}/status
+// and returns StatusResponse on 200.
+func TestStatusInProject_Success(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/projects/my-project/runs/run-abc-123/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "wrong method", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, api.StatusResponse{RunID: "run-abc-123", State: "RUNNING"})
+	})
+
+	_, c := newTestServer(t, mux)
+	resp, err := c.StatusInProject(context.Background(), "my-project", "run-abc-123")
+	if err != nil {
+		t.Fatalf("StatusInProject: unexpected error: %v", err)
+	}
+	if resp.State != "RUNNING" {
+		t.Errorf("StatusInProject: got State %q, want %q", resp.State, "RUNNING")
+	}
+}
+
+// TestStatusInProject_NotFound tests that StatusInProject returns an error on 404 (run not found).
+func TestStatusInProject_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/projects/my-project/runs/bad-id/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, api.ErrorResponse{Error: "run not found: bad-id"})
+	})
+
+	_, c := newTestServer(t, mux)
+	_, err := c.StatusInProject(context.Background(), "my-project", "bad-id")
+	if err == nil {
+		t.Fatal("StatusInProject: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("StatusInProject: error %q should mention 'not found'", err.Error())
+	}
+}
+
+// TestOutputsInProject_Success tests that OutputsInProject sends GET /projects/{slug}/runs/{id}/outputs
+// and returns OutputsResponse on 200.
+func TestOutputsInProject_Success(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/projects/my-project/runs/run-abc-123/outputs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "wrong method", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, api.OutputsResponse{
+			RunID:   "run-abc-123",
+			Outputs: map[string]interface{}{"result": "hello"},
+		})
+	})
+
+	_, c := newTestServer(t, mux)
+	resp, err := c.OutputsInProject(context.Background(), "my-project", "run-abc-123")
+	if err != nil {
+		t.Fatalf("OutputsInProject: unexpected error: %v", err)
+	}
+	if resp.Outputs["result"] != "hello" {
+		t.Errorf("OutputsInProject: got result %v, want %q", resp.Outputs["result"], "hello")
+	}
+}
+
+// TestOutputsInProject_NotCompleted tests that OutputsInProject returns a descriptive error on 409.
+func TestOutputsInProject_NotCompleted(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/projects/my-project/runs/run-abc-123/outputs", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusConflict, api.ErrorResponse{Error: "run not completed (state: RUNNING)"})
+	})
+
+	_, c := newTestServer(t, mux)
+	_, err := c.OutputsInProject(context.Background(), "my-project", "run-abc-123")
+	if err == nil {
+		t.Fatal("OutputsInProject: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not yet completed") {
+		t.Errorf("OutputsInProject: error %q should contain 'not yet completed'", err.Error())
+	}
+}
+
+// TestOutputsInProject_NotFound tests that OutputsInProject returns an error on 404.
+func TestOutputsInProject_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/projects/my-project/runs/bad-id/outputs", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, api.ErrorResponse{Error: "run not found: bad-id"})
+	})
+
+	_, c := newTestServer(t, mux)
+	_, err := c.OutputsInProject(context.Background(), "my-project", "bad-id")
+	if err == nil {
+		t.Fatal("OutputsInProject: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("OutputsInProject: error %q should mention 'not found'", err.Error())
+	}
+}
+
 // TestConnectionRefused tests that connection refused produces a clear error message.
 func TestConnectionRefused(t *testing.T) {
 	// Use a server URL that nothing is listening on.

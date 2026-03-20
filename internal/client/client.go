@@ -158,6 +158,72 @@ func (c *Client) Status(ctx context.Context, runID string) (*api.StatusResponse,
 	return &result, nil
 }
 
+// StatusInProject sends GET /projects/{projectSlug}/runs/{runID}/status and returns the StatusResponse.
+// Returns an error if the server returns a non-200 status.
+func (c *Client) StatusInProject(ctx context.Context, projectSlug string, runID string) (*api.StatusResponse, error) {
+	url := c.serverURL + "/projects/" + projectSlug + "/runs/" + runID + "/status"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("client: build status request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: GET /projects/%s/runs/%s/status: %w", projectSlug, runID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: status failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+
+	var result api.StatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("client: decode status response: %w", err)
+	}
+	return &result, nil
+}
+
+// OutputsInProject sends GET /projects/{projectSlug}/runs/{runID}/outputs and returns the OutputsResponse.
+// On 409 (run not completed), returns a descriptive error including the current state.
+// On 404 (run not found), returns a descriptive error.
+func (c *Client) OutputsInProject(ctx context.Context, projectSlug string, runID string) (*api.OutputsResponse, error) {
+	url := c.serverURL + "/projects/" + projectSlug + "/runs/" + runID + "/outputs"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("client: build outputs request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: GET /projects/%s/runs/%s/outputs: %w", projectSlug, runID, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var result api.OutputsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, fmt.Errorf("client: decode outputs response: %w", err)
+		}
+		return &result, nil
+	case http.StatusConflict:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: workflow not yet completed (state: %s)", errResp.Error)
+	case http.StatusNotFound:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: run not found: %s", errResp.Error)
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: outputs failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
 // Outputs sends GET /workflows/{runID}/outputs and returns the OutputsResponse.
 // On 409 (run not completed), returns a descriptive error including the current state.
 // On 404 (run not found), returns a descriptive error.
