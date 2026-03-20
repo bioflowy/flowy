@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -114,28 +115,86 @@ func projectIDFromContext(ctx context.Context) string {
 	return proj.ID
 }
 
-// handleSubmit handles POST /workflows.
+// parseRegistryRef splits "name:tag" or "name@sha256:hex" into components.
+// Returns (name, tag, digest, error). Exactly one of tag or digest will be non-empty.
+func parseRegistryRef(ref string) (name, tag, digest string, err error) {
+	if idx := strings.Index(ref, "@sha256:"); idx >= 0 {
+		return ref[:idx], "", ref[idx+1:], nil // digest = "sha256:hex"
+	}
+	if idx := strings.LastIndex(ref, ":"); idx >= 0 {
+		return ref[:idx], ref[idx+1:], "", nil
+	}
+	return "", "", "", fmt.Errorf("invalid registry ref %q: must be name:tag or name@sha256:hex", ref)
+}
+
+// resolveRegistryRef resolves a registry reference to WDL content.
+// Returns (wdlContent, resolvedDigest, error).
+func (s *Server) resolveRegistryRef(ctx context.Context, projectID, ref string) (string, string, error) {
+	name, tag, digest, err := parseRegistryRef(ref)
+	if err != nil {
+		return "", "", err
+	}
+	if tag != "" {
+		v, _, err := s.store.GetRegistryVersionByTag(ctx, projectID, name, tag)
+		if err != nil {
+			return "", "", fmt.Errorf("tag %q not found for entry %q", tag, name)
+		}
+		return v.WDLContent, v.Digest, nil
+	}
+	v, _, err := s.store.GetRegistryVersionByDigest(ctx, projectID, name, digest)
+	if err != nil {
+		return "", "", fmt.Errorf("digest %q not found for entry %q", digest, name)
+	}
+	return v.WDLContent, v.Digest, nil
+}
+
+// handleSubmit handles POST /workflows and POST /projects/{slug}/workflows.
 func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	var req api.SubmitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
-	if req.WDLPath == "" {
-		writeError(w, http.StatusBadRequest, "wdl_path is required")
+
+	// Validate mutual exclusion of wdl_path and registry_ref.
+	if req.WDLPath != "" && req.RegistryRef != "" {
+		writeError(w, http.StatusBadRequest, "exactly one of wdl_path or registry_ref must be set, not both")
+		return
+	}
+	if req.WDLPath == "" && req.RegistryRef == "" {
+		writeError(w, http.StatusBadRequest, "one of wdl_path or registry_ref is required")
 		return
 	}
 
-	// Parse the WDL file, honoring client-provided import search paths.
-	var doc *ast.Document
-	var err error
-	if len(req.SearchPaths) > 0 {
-		doc, err = parser.ParseWithSearchPaths(req.WDLPath, nil, req.SearchPaths)
-	} else {
-		doc, err = parser.Parse(req.WDLPath, nil)
+	// Resolve registry reference if provided.
+	var wdlContent string
+	var registryDigest string
+	if req.RegistryRef != "" {
+		projectID := projectIDFromContext(r.Context())
+		if projectID == "" {
+			writeError(w, http.StatusBadRequest, "registry_ref requires a project-scoped endpoint")
+			return
+		}
+		var resolveErr error
+		wdlContent, registryDigest, resolveErr = s.resolveRegistryRef(r.Context(), projectID, req.RegistryRef)
+		if resolveErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, resolveErr.Error())
+			return
+		}
 	}
-	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse WDL: %v", err))
+
+	// Parse the WDL — from registry content or from file path.
+	var doc *ast.Document
+	var parseErr error
+	if wdlContent != "" {
+		doc, parseErr = parser.Parse(req.RegistryRef, []byte(wdlContent))
+	} else if len(req.SearchPaths) > 0 {
+		doc, parseErr = parser.ParseWithSearchPaths(req.WDLPath, nil, req.SearchPaths)
+	} else {
+		doc, parseErr = parser.Parse(req.WDLPath, nil)
+	}
+	if parseErr != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse WDL: %v", parseErr))
 		return
 	}
 
@@ -161,11 +220,13 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	// Create the run record in the store.
 	// ProjectID is empty when auth is disabled; set from context when project-scoped.
 	run := &store.Run{
-		ID:         runID,
-		ProjectID:  projectIDFromContext(r.Context()),
-		WDLPath:    req.WDLPath,
-		InputsJSON: string(inputsJSON),
-		State:      store.RunPending,
+		ID:             runID,
+		ProjectID:      projectIDFromContext(r.Context()),
+		WDLPath:        req.WDLPath,
+		RegistryRef:    req.RegistryRef,
+		RegistryDigest: registryDigest,
+		InputsJSON:     string(inputsJSON),
+		State:          store.RunPending,
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run: %v", err))
@@ -188,7 +249,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, api.SubmitResponse{RunID: runID})
 }
 
-// handleTaskRun handles POST /tasks/run.
+// handleTaskRun handles POST /tasks/run and POST /projects/{slug}/tasks/run.
 // It runs a single named task from a WDL file by directly dispatching it
 // to the daemon, bypassing the workflow engine entirely.
 func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
@@ -197,25 +258,51 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return
 	}
-	if req.WDLPath == "" {
-		writeError(w, http.StatusBadRequest, "wdl_path is required")
+
+	// Validate mutual exclusion of wdl_path and registry_ref.
+	if req.WDLPath != "" && req.RegistryRef != "" {
+		writeError(w, http.StatusBadRequest, "exactly one of wdl_path or registry_ref must be set, not both")
 		return
 	}
+	if req.WDLPath == "" && req.RegistryRef == "" {
+		writeError(w, http.StatusBadRequest, "one of wdl_path or registry_ref is required")
+		return
+	}
+
 	if req.TaskName == "" {
 		writeError(w, http.StatusBadRequest, "task_name is required")
 		return
 	}
 
-	// Parse the WDL file, honoring client-provided import search paths.
-	var doc *ast.Document
-	var err error
-	if len(req.SearchPaths) > 0 {
-		doc, err = parser.ParseWithSearchPaths(req.WDLPath, nil, req.SearchPaths)
-	} else {
-		doc, err = parser.Parse(req.WDLPath, nil)
+	// Resolve registry reference if provided.
+	var wdlContent string
+	var registryDigest string
+	if req.RegistryRef != "" {
+		projectID := projectIDFromContext(r.Context())
+		if projectID == "" {
+			writeError(w, http.StatusBadRequest, "registry_ref requires a project-scoped endpoint")
+			return
+		}
+		var resolveErr error
+		wdlContent, registryDigest, resolveErr = s.resolveRegistryRef(r.Context(), projectID, req.RegistryRef)
+		if resolveErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, resolveErr.Error())
+			return
+		}
 	}
-	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse WDL: %v", err))
+
+	// Parse the WDL — from registry content or from file path.
+	var doc *ast.Document
+	var parseErr error
+	if wdlContent != "" {
+		doc, parseErr = parser.Parse(req.RegistryRef, []byte(wdlContent))
+	} else if len(req.SearchPaths) > 0 {
+		doc, parseErr = parser.ParseWithSearchPaths(req.WDLPath, nil, req.SearchPaths)
+	} else {
+		doc, parseErr = parser.Parse(req.WDLPath, nil)
+	}
+	if parseErr != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse WDL: %v", parseErr))
 		return
 	}
 
@@ -265,10 +352,13 @@ func (s *Server) handleTaskRun(w http.ResponseWriter, r *http.Request) {
 
 	// Create Run record (state=RUNNING, task is immediately dispatchable).
 	run := &store.Run{
-		ID:         runID,
-		WDLPath:    req.WDLPath,
-		InputsJSON: string(inputsData),
-		State:      store.RunRunning,
+		ID:             runID,
+		ProjectID:      projectIDFromContext(r.Context()),
+		WDLPath:        req.WDLPath,
+		RegistryRef:    req.RegistryRef,
+		RegistryDigest: registryDigest,
+		InputsJSON:     string(inputsData),
+		State:          store.RunRunning,
 	}
 	if err := s.store.CreateRun(r.Context(), run); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create run: %v", err))
@@ -392,6 +482,15 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 				log.Printf("handleClaim: ReadFile %s: %v — WDLContent will be empty", wdlPath, readErr)
 			} else {
 				wdlContent = string(wdlBytes)
+			}
+		} else if run.RegistryRef != "" {
+			// Registry run: re-resolve by digest for reproducibility.
+			name, _, _, _ := parseRegistryRef(run.RegistryRef)
+			v, _, resolveErr := s.store.GetRegistryVersionByDigest(r.Context(), run.ProjectID, name, run.RegistryDigest)
+			if resolveErr != nil {
+				log.Printf("handleClaim: re-resolve registry ref %q: %v", run.RegistryRef, resolveErr)
+			} else {
+				wdlContent = v.WDLContent
 			}
 		}
 

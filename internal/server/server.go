@@ -139,6 +139,10 @@ func (s *Server) newRouter() *chi.Mux {
 					r.With(s.projectRoleRequired("executor")).Post("/{id}/abort", s.handleAbort)
 				})
 
+				// Registry-based execution convenience routes.
+				r.With(s.projectRoleRequired("executor")).Post("/workflows", s.handleSubmit)
+				r.With(s.projectRoleRequired("executor")).Post("/tasks/run", s.handleTaskRun)
+
 				// Registry sub-resource (WDL content-addressed registry).
 				r.Route("/registry", func(r chi.Router) {
 					r.With(s.projectRoleRequired("executor")).Post("/", s.handleRegistryPush)
