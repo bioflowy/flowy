@@ -37,7 +37,7 @@ Requirements for Project & Registry milestone. Each maps to roadmap phases.
 
 ### Execution
 
-- [x] **EXEC-01**: Executor can submit a run by registry reference (`project/name:tag` or `project/name@sha256:hex`)
+- [ ] **EXEC-01**: Executor can submit a run by registry reference (`project/name:tag` or `project/name@sha256:hex`)
 - [x] **EXEC-02**: Server resolves registry ref to WDL content and delivers via existing `WDLContent` path
 
 ### Provenance
@@ -104,7 +104,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REG-04 | Phase 21 | Complete |
 | REG-05 | Phase 21 | Complete |
 | REG-06 | Phase 21 | Complete |
-| EXEC-01 | Phase 22 | Complete |
+| EXEC-01 | Phase 24 | Pending |
 | EXEC-02 | Phase 22 | Complete |
 | PROV-01 | Phase 23 | Complete |
 | PROV-02 | Phase 23 | Complete |
@@ -114,8 +114,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 **Coverage:**
 - v1.3 requirements: 25 total
 - Mapped to phases: 25
+- Satisfied: 24/25 (EXEC-01 pending in Phase 24)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-17*
-*Last updated: 2026-03-17 after roadmap creation (phases 19-23)*
+*Last updated: 2026-03-20 after gap closure phase creation (phase 24)*

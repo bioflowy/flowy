@@ -64,6 +64,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 21: WDL Registry** — Executors can push WDL files by content-hash digest and pull by tag or digest within a project (completed 2026-03-20)
 - [x] **Phase 22: Registry-Based Execution** — Executors can submit workflow runs using registry references instead of file paths (completed 2026-03-20)
 - [x] **Phase 23: Provenance Tracking** — System records and exposes the registry version, inputs, and submitting user for every run (completed 2026-03-20)
+- [ ] **Phase 24: Fix CLI Polling for Project-Scoped Runs** — CLI can poll status and retrieve outputs after project-scoped/registry-ref submission with auth enabled (gap closure)
 
 ## Phase Details
 
@@ -140,6 +141,17 @@ Plans:
 - [ ] 23-01-PLAN.md — Migration, store model, store interface, provenance creation in handlers, completion touch in dispatch
 - [ ] 23-02-PLAN.md — API response types, provenance list/detail handlers, route registration, integration tests
 
+### Phase 24: Fix CLI Polling for Project-Scoped Runs
+**Goal**: CLI can poll run status and retrieve outputs after project-scoped or registry-ref submission when auth is enabled
+**Depends on**: Phase 22, Phase 20
+**Requirements**: EXEC-01
+**Gap Closure:** Closes gaps from v1.3 milestone audit (EXEC-01 partial, integration Phase 22→20, broken E2E flow)
+**Success Criteria** (what must be TRUE):
+  1. `StatusInProject(ctx, slug, runID)` and `OutputsInProject(ctx, slug, runID)` exist in `internal/client/client.go` and call project-scoped routes
+  2. `pollUntilDone` in CLI uses project-scoped methods when `projectSlug` is set
+  3. Full E2E flow works: login → push → submit by registry ref → poll → outputs — all with auth enabled
+Plans: 0/1
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -166,4 +178,5 @@ Plans:
 | 20. Projects and RBAC | v1.3 | 3/3 | Complete | 2026-03-17 |
 | 21. WDL Registry | v1.3 | 3/3 | Complete | 2026-03-20 |
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
-| 23. Provenance Tracking | 2/2 | Complete    | 2026-03-20 | - |
+| 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
+| 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 0/1 | Pending | - |
