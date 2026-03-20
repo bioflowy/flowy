@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: unknown
-stopped_at: Phase 22 context gathered
-last_updated: "2026-03-20T02:53:07.287Z"
+status: executing
+stopped_at: "Completed 22-01-PLAN.md"
+last_updated: "2026-03-20T03:15:00Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 11
+  completed_plans: 10
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 21 — wdl-registry
+**Current focus:** Phase 22 — registry-based-execution
 
 ## Current Position
 
-Phase: 21 (wdl-registry) — COMPLETE
-Plan: 3 of 3 (all plans complete)
+Phase: 22 (registry-based-execution) — EXECUTING
+Plan: 2 of 2
 
 ## Accumulated Context
 
@@ -54,6 +54,9 @@ Recent decisions affecting current work:
 - [Phase 21-02]: Kind mismatch detection uses strings.Contains(err.Error(), "kind") — matches PushRegistryVersion error format
 - [Phase 21-02]: Stub handlers (returning 501) wired in Plan 02 so server compiles before Plan 03 implements list/versions/delete/tag
 - [Phase 21-03]: Forbidden tests require separate admin+executor users — createRegistryTestProject always makes the user project admin, so addProjectMember helper added for executor role setup
+- [Phase 22-01]: Convenience routes /projects/{slug}/workflows and /projects/{slug}/tasks/run added; handleClaim re-resolves registry WDL by stored RegistryDigest for reproducibility
+- [Phase 22-01]: registry_ref and registry_digest columns NOT NULL DEFAULT '' — empty string for file-path runs
+- [Phase 22-01]: Registry resolution returns 422 (not 404) for unknown refs
 
 ### Pending Todos
 
@@ -66,6 +69,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T02:53:07.282Z
-Stopped at: Phase 22 context gathered
+Last session: 2026-03-20T03:15:00Z
+Stopped at: Completed 22-01-PLAN.md
 Resume file: .planning/phases/22-registry-based-execution/22-CONTEXT.md
