@@ -2,7 +2,7 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and tags, and execution provenance tracking for output files.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and tags, and execution provenance tracking linking outputs to source tool/workflow versions and inputs.
 
 ## Core Value
 
@@ -41,7 +41,7 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - [ ] Project management with role-based access control (admin/executor/viewer)
 - ✓ WDL tool/workflow registry with content-hash versioning and tags — Validated in Phase 21: WDL Registry
 - ✓ Execution integration with registered tools/workflows — Validated in Phase 22: Registry-Based Execution
-- [ ] Provenance tracking for execution output files
+- ✓ Provenance tracking for execution output files — Validated in Phase 23: Provenance Tracking
 
 ### Out of Scope
 
@@ -108,4 +108,4 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | API-based input/output delivery | DB stores inputs/outputs for S3 mode; FS fallback for local | ✓ Good — works for both backends |
 
 ---
-*Last updated: 2026-03-20 after Phase 22 (Registry-Based Execution) completion*
+*Last updated: 2026-03-20 after Phase 23 (Provenance Tracking) completion*
