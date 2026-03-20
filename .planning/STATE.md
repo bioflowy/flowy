@@ -2,16 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Project & Registry
-status: planning
-stopped_at: Phase 21 context gathered
-last_updated: "2026-03-20T01:16:09.870Z"
-last_activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
+status: unknown
+stopped_at: Completed 21-01-PLAN.md (registry store foundation)
+last_updated: "2026-03-20T01:43:32.125Z"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 0
+  total_plans: 9
+  completed_plans: 7
 ---
 
 # Project State
@@ -21,16 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 19 — User Authentication
+**Current focus:** Phase 21 — wdl-registry
 
 ## Current Position
 
-Phase: 19 of 23 (User Authentication)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-17 — v1.3 roadmap created; phases 19-23 defined
-
-Progress: [░░░░░░░░░░] 0% (0/5 v1.3 phases complete)
+Phase: 21 (wdl-registry) — EXECUTING
+Plan: 2 of 3
 
 ## Accumulated Context
 
@@ -55,6 +49,8 @@ Recent decisions affecting current work:
 - [Phase 20-projects-and-rbac]: /projects route group has its own JWTMiddleware invocation; handleCreateProject reads claims directly since no project slug is known yet
 - [Phase 20-projects-and-rbac]: projectIDFromContext returns empty string when no project in context — same handleSubmit serves both /workflows and project-scoped routes
 - [Phase 20-projects-and-rbac]: /workflows routes removed from auth-enabled branch; project-scoped /runs routes are the auth-enabled replacement
+- [Phase 21-wdl-registry]: PushRegistryVersion uses writer connection for both SELECT and INSERT to avoid TOCTOU races
+- [Phase 21-wdl-registry]: Registry entry kind is immutable after first push; re-push with different kind returns error mapped to 409 by handler
 
 ### Pending Todos
 
@@ -67,6 +63,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T01:16:09.866Z
-Stopped at: Phase 21 context gathered
-Resume file: .planning/phases/21-wdl-registry/21-CONTEXT.md
+Last session: 2026-03-20T01:43:32.120Z
+Stopped at: Completed 21-01-PLAN.md (registry store foundation)
+Resume file: None

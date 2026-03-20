@@ -28,12 +28,12 @@ Requirements for Project & Registry milestone. Each maps to roadmap phases.
 
 ### Registry
 
-- [ ] **REG-01**: Executor can push a WDL file to the project registry, auto-computing SHA-256 digest
+- [x] **REG-01**: Executor can push a WDL file to the project registry, auto-computing SHA-256 digest
 - [ ] **REG-02**: Executor can assign a tag to a registry version (mutable pointer)
-- [ ] **REG-03**: Viewer can pull WDL content by tag (`name:tag`) or digest (`name@sha256:hex`)
-- [ ] **REG-04**: Viewer can list registry entries, versions, and tags in a project
-- [ ] **REG-05**: Registry entries are classified as tool (WDL task) or workflow (WDL workflow)
-- [ ] **REG-06**: Project admin can delete registry entries
+- [x] **REG-03**: Viewer can pull WDL content by tag (`name:tag`) or digest (`name@sha256:hex`)
+- [x] **REG-04**: Viewer can list registry entries, versions, and tags in a project
+- [x] **REG-05**: Registry entries are classified as tool (WDL task) or workflow (WDL workflow)
+- [x] **REG-06**: Project admin can delete registry entries
 
 ### Execution
 
@@ -98,12 +98,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROJ-05 | Phase 20 | Complete |
 | PROJ-06 | Phase 20 | Complete |
 | PROJ-07 | Phase 20 | Complete |
-| REG-01 | Phase 21 | Pending |
+| REG-01 | Phase 21 | Complete |
 | REG-02 | Phase 21 | Pending |
-| REG-03 | Phase 21 | Pending |
-| REG-04 | Phase 21 | Pending |
-| REG-05 | Phase 21 | Pending |
-| REG-06 | Phase 21 | Pending |
+| REG-03 | Phase 21 | Complete |
+| REG-04 | Phase 21 | Complete |
+| REG-05 | Phase 21 | Complete |
+| REG-06 | Phase 21 | Complete |
 | EXEC-01 | Phase 22 | Pending |
 | EXEC-02 | Phase 22 | Pending |
 | PROV-01 | Phase 23 | Pending |
