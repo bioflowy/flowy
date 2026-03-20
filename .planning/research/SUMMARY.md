@@ -1,197 +1,345 @@
 # Project Research Summary
 
-**Project:** flowy — WDL 1.2 workflow engine (Go)
-**Domain:** Multi-user bioinformatics workflow engine — user auth, project RBAC, WDL registry, provenance tracking (v1.3)
-**Researched:** 2026-03-17
+**Project:** flowy v2.0 — React Web UI management SPA
+**Domain:** React SPA embedded in Go binary, consuming an existing chi v5 REST API
+**Researched:** 2026-03-20
 **Confidence:** HIGH
 
 ## Executive Summary
 
-flowy v1.3 adds four interconnected features to an existing, working WDL workflow engine: user authentication, project-scoped RBAC, a WDL content-addressed registry, and run provenance tracking. The codebase already ships a solid foundation — chi v5 router, SQLite/WAL with goose migrations, a `Store` interface with injected dependencies, and an S3 storage backend — so v1.3 is a layered addition, not a rewrite. The recommended approach is sequential: auth first, projects and RBAC second, WDL registry third, registry-based execution fourth, and provenance as a capstone that ties all prior layers together. Every feature from v1.3 is either blocked by auth or blocks provenance, so the dependency chain drives the phase order unambiguously.
+flowy v2.0 adds a browser-based management UI to an existing, fully functional Go workflow
+engine. The approach is a pure SPA (React 19 + TypeScript + Vite 6) embedded into a new
+`flowy-ui` Go binary via `go:embed`. In production the binary serves the SPA and reverse-proxies
+`/api/*` to `flowy-server`, keeping both on the same origin and eliminating CORS entirely. In
+development, the Vite dev server handles hot-module replacement and proxies API calls, so the Go
+binary never needs to be rebuilt during UI development. This is a well-understood pattern with
+official Go and Vite documentation, and the existing backend requires only one minimal change: a
+config-gated CORS middleware added to `flowy-server` for development mode.
 
-The key technical decisions are already settled. No substantial new third-party libraries are required: `github.com/golang-jwt/jwt/v5` (one new direct dep, v5.3.1 January 2026), `golang.org/x/crypto/bcrypt` (already transitive via Docker SDK), and `github.com/opencontainers/go-digest` (already transitive) cover the full stack. RBAC is implemented as a ~50-line hand-rolled chi middleware — the static three-role system (admin/executor/viewer) does not warrant Casbin or any external RBAC library. WDL source is stored as `TEXT` directly in SQLite rather than in S3, because WDL files are small (typically < 50 KB) and keeping them in the database removes cross-service dependencies and allows registry to work in local-only deployments. The content-addressed registry follows the Docker distribution model: blobs are immutable and addressed by SHA-256 digest; tags are mutable pointers to a blob version.
+All five screens — Login, User Management, Project Management, Registry Browsing, and File
+Browsing — map directly to existing REST endpoints. The one exception is the File Browser, which
+requires three new backend endpoints (`GET /projects/{slug}/runs`, a file listing endpoint, and a
+file download/presigned-URL endpoint) that do not exist yet. This is the only hard backend
+dependency blocking a frontend phase. Everything else can be built against the current API surface.
 
-The primary risks are architectural and must be resolved before writing any handler code. The highest-risk decision is daemon authentication: the server has two distinct clients (human users and automated daemons), and adding JWT middleware without first structuring the router into separate sub-groups will silently break all task execution. The second critical risk is provenance granularity — run-level provenance cannot later answer "which tool version produced this file?" if a workflow calls multiple registered tools, and schema migrations to fix this are classified as HIGH recovery cost. Both pitfalls have documented avoidance strategies and are addressed directly by the phase ordering recommended below.
+The main risks are implementation-level rather than architectural. The SPA routing fallback on the
+Go side must be wired correctly from day one (browser refresh breaks all routes otherwise), the
+`fs.Sub` call on the embedded FS must be present (otherwise all assets 404), and the JWT storage
+strategy must be decided before any auth code is written. None of these risks are blocking; all
+have clear, verified prevention strategies documented in PITFALLS.md.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The v1.3 stack adds minimally on top of the existing v1.2 foundation. All auth and registry capabilities are covered by the existing dependency graph plus one new direct dependency. The `golang-jwt/jwt/v5` library (v5.3.1, January 28, 2026) is the maintained successor to the archived `dgrijalva/jwt-go`; it has zero runtime dependencies and is used by 13,000+ Go modules. RBAC is hand-rolled — three static roles at compile time do not justify a policy DSL. The content digest format (`sha256:<hex>`) reuses `github.com/opencontainers/go-digest`, already present via the Docker SDK. The key rejection is `go-chi/jwtauth/v5`, which depends on the full `lestrrat-go/jwx` JOSE implementation — 50x the needed surface area for HS256 token sign/verify.
+The frontend adds React 19, TypeScript 5.x, Vite 6, Tailwind CSS v4, shadcn/ui, React Router v7
+(library mode), TanStack Query v5, zustand, and axios to the project. Every version choice is
+driven by shadcn/ui compatibility: Vite 6 (not 8) because shadcn CLI targets 6; Tailwind v4
+because shadcn now defaults to it; React 19 because both TanStack Query v5 and shadcn fully
+support it. The Go side adds only `github.com/go-chi/cors` and a new `cmd/flowy-ui/` binary — the
+existing codebase is otherwise untouched.
 
-See `.planning/research/STACK.md` for full library comparison, rejected alternatives, and exact API usage patterns.
+See `.planning/research/STACK.md` for full library comparison, rejected alternatives, version
+compatibility matrix, and installation commands.
 
 **Core technologies:**
-- `github.com/golang-jwt/jwt/v5` v5.3.1: JWT sign/verify — zero deps, HS256, maintained community successor to dgrijalva
-- `golang.org/x/crypto/bcrypt` (already in go.mod): password hashing — cost 12 (~300ms), Go team maintained
-- `github.com/opencontainers/go-digest` (already in go.mod): SHA-256 content digest — canonical `sha256:<hex>` format
-- Hand-rolled `internal/auth/rbac.go` (~50 lines): three-role RBAC — no Casbin, no gorbac, static enum
-- `crypto/sha256` (stdlib): WDL content hashing — no external dep for content addressing
+- React 19.2.4 — UI rendering — current stable; React 19 removes `forwardRef` boilerplate
+- TypeScript 5.x (5.9.3 stable) — type safety — TS 6.0 is RC-only as of March 2026; stay on 5.x
+- Vite 6.x — build tool and dev server — shadcn CLI targets Vite 6; avoid Vite 8 until shadcn catches up
+- Tailwind CSS v4 — styling — CSS-first config (`@import "tailwindcss"`); no `tailwind.config.js`
+- shadcn/ui (CLI-managed) — component library — React 19 + Tailwind v4 fully supported; never edit generated files manually
+- React Router v7 library mode — client routing — use `react-router` package only (v7 merged `react-router-dom`); library mode is not Remix
+- TanStack Query v5 — server state — CRUD-heavy management UI benefits from `invalidateQueries` + mutation model
+- zustand v5 — client state — auth token + user session; avoids React Context re-render churn for global state
+- axios v1 — HTTP client — request/response interceptors for global JWT injection and 401 redirect
+- `go:embed` + `httputil.ReverseProxy` — production binary — single binary deployment; no Node.js runtime needed in production
+- Node.js 22 LTS — runtime for build tools — Vite 6 requires Node 18+
+
+**Critical version notes:**
+- Use Vite 6, NOT Vite 8 (Rolldown-based; shadcn init targets Vite 6)
+- Use `react-router` (v7), NOT `react-router-dom` (merged in v7; both packages would be redundant)
+- Use Tailwind v4, NOT v3 (shadcn CLI defaults to v4 as of early 2026)
+- TypeScript 5.x, NOT 6.0 (6.0 is RC as of March 2026)
+- `//go:embed all:web/dist` — the `all:` prefix is required to include dot-files in the Vite output
 
 ### Expected Features
 
-See `.planning/research/FEATURES.md` for full feature table, schema sketch, competitor analysis (Terra, Dockstore, Cromwell), and complete feature dependency graph.
+All five screens are required for v2.0 to be useful. Login is the prerequisite for all other
+screens. User Management and Project Management can be built in parallel. Registry Browsing
+depends on project selection being navigable. File Browsing is blocked by three missing backend
+endpoints and should be the last screen built.
 
-**Must have (table stakes) — all P1 for v1.3:**
-- Username/password login returning a signed JWT — entry point for all auth
-- JWT middleware protecting all non-public routes — without this, auth is theater
-- User creation and listing (admin-only) — lifecycle management
-- Projects as isolation boundaries — every team workflow platform requires this
-- Three-tier RBAC per project (admin/executor/viewer) — maps directly to workflow engine operations
-- WDL registry push with SHA-256 content digest — core registry write
-- WDL registry pull by tag or digest — tag is mutable, digest is immutable
-- Execute a registered workflow/tool by registry ref — the purpose of the registry
-- Run-level provenance record — audit trail linking run to registry version, inputs, submitting user
-- Provenance read endpoints — reproducibility query surface
+See `.planning/research/FEATURES.md` for full feature tables, competitor analysis, MVP definition,
+and complete feature dependency graph.
 
-**Should have (differentiators):**
-- Content-hash (digest) addressing guaranteeing byte-identical WDL retrieval
-- Provenance stores digest, not tag — tag can be moved, digest cannot
-- Registry entries project-scoped — no cross-team name collisions
-- Registry-ref execution requires no shared filesystem — already unlocked by v1.2 `WDLContent` field in `TaskClaimResponse`
+**Must have (table stakes):**
+- Login screen: username/password form, JWT session (sessionStorage or httpOnly cookie), 401 auto-redirect, disable-on-submit
+- User Management (admin only): list users, create user, deactivate user — no edit (API has no `PUT /users/{id}`)
+- Project list + create; project detail with description edit and member management (add/change-role/remove)
+- Registry entry list with kind badge (tool/workflow) and tags; entry detail with version history, WDL content viewer, tag management
+- Run list per project with status badges — requires new `GET /projects/{slug}/runs` endpoint
+- File browser: output file list + download per run — requires three new backend endpoints
+- CORS support on flowy-server (dev mode only, config-gated via `cors.enabled`)
+- `flowy-ui` binary embedding built SPA and proxying `/api/*` to flowy-server with configurable `--api-addr` flag
 
-**Defer (v1.x or v2+):**
-- OAuth2/SSO — enormous scope, no current requirement; username/password + JWT is stable and extendable
-- Refresh token rotation — disproportionate for batch workflow API used via scripting, not interactive sessions
-- Per-task provenance (W3C PROV graph) — research-grade, 3-5x the scope of run-level provenance
-- PostgreSQL migration — no measurable write contention at current scale; SQLite WAL is sufficient
-- GA4GH TRS API compatibility — defer until Dockstore/Terra interoperability is explicitly requested
+**Should have (v2.0 if time allows):**
+- WDL syntax highlighting in content viewer (highlight.js or Prism)
+- Client-side form validation before API calls (slug format regex, password length)
+- Presigned S3 URL redirect for file downloads (browser downloads directly from S3 for large files)
+- Prevent-last-admin client-side hint on project member removal
+- Role badge color coding (admin/executor/viewer)
+- Digest truncated display with copy-full-digest on click
+
+**Defer to v2.x or later:**
+- Run submission form (requires WDL input schema → form generation)
+- WDL diff viewer (two-version side-by-side comparison)
+- Provenance detail screen (full inputs snapshot rendered as table)
+- Refresh token / auto-renew
+- Real-time run status via WebSocket or SSE
+- OAuth2/SSO login
+- Bioinformatics file viewers (IGV.js, BAM/VCF in-browser viewing)
 
 ### Architecture Approach
 
-v1.3 follows an additive architecture: three new internal packages (`internal/auth/`, `internal/registry/`, `internal/provenance/`) are added, the `store.Store` interface gains four new method groups (user, project, registry, provenance), and the chi router is restructured into explicit sub-routers (public, user-JWT, daemon-token). The WDL parser, storage backend, and daemon execution loop are untouched. The `auth.enabled` config flag (default `false`) ensures all existing spectool conformance tests continue to pass without modification when auth is not configured.
+The architecture is a clean separation of concerns: `flowy-ui` binary is a pure static file server
+plus transparent reverse proxy with no domain knowledge; `flowy-server` is unchanged except for a
+config-gated CORS middleware; the React SPA communicates exclusively with `flowy-server` through
+the `/api/` prefix intercepted by both the Vite proxy (dev) and the Go reverse proxy (prod).
+State management is split: TanStack Query owns all server state; zustand (or React context) owns
+auth token and user session; component local state handles UI-only concerns such as form values
+and modal open state.
 
-See `.planning/research/ARCHITECTURE.md` for full component map, all five migration scripts, store interface extensions, data flow diagrams, and the seven-step build order.
+See `.planning/research/ARCHITECTURE.md` for full component diagram, code examples for all key
+patterns, data flow diagrams (login, authenticated fetch, 401 handling), CORS configuration, and
+the eight-step build order.
 
 **Major components:**
-1. `internal/auth/` (NEW) — JWT sign/verify, bcrypt hashing, chi middleware for JWT and daemon auth
-2. `internal/registry/` (NEW) — SHA-256 content hashing, push/pull logic, tag resolution
-3. `internal/provenance/` (NEW) — record construction, linking run completion to registry digest
-4. `internal/store/Store` interface (MODIFIED) — extended with user/project/registry/provenance method groups; existing methods untouched
-5. `internal/server/server.go` (MODIFIED) — `jwtSecret` field, structured route groups, backwards-compat `auth.enabled` flag
+1. `cmd/flowy-ui/main.go` — `go:embed all:web/dist`; `spaHandler` with 404-fallback to `index.html`; `httputil.ReverseProxy` at `/api/`; configurable `--api-addr` flag; startup assertion on embedded FS
+2. `web/src/api/client.ts` — centralized fetch/axios wrapper; module-level token state; `ApiError` class with HTTP status; 401 handler
+3. `web/src/context/AuthContext.tsx` (or zustand auth store) — JWT state; login/logout; sessionStorage hydration on mount
+4. `web/src/hooks/` — TanStack Query hooks per resource (`useUsers`, `useProjects`, `useRegistry`, `useRuns`, `useProvenance`)
+5. `web/src/pages/` — route-level components (LoginPage, UsersPage, ProjectsPage, RegistryPage, FileBrowserPage)
+6. `internal/server/server.go` (modified) — `go-chi/cors` middleware, registered at top-level router only, config-gated
 
-**Build order driven by strict dependencies:**
-1. `internal/auth/jwt.go`, `password.go` — no internal deps; unblocks all middleware
-2. Store interface + migration 00004 (users) — unblocks auth handlers
-3. Auth middleware + config + router restructure — spectool gate: `auth.enabled=false` passes all existing tests
-4. Migration 00005 (projects/members) + auth/project handlers + CLI login commands
-5. Migration 00006 (registry) + `internal/registry/` + registry handlers + CLI registry commands
-6. Migrations 00007-00008 (runs project linkage, provenance) + `internal/provenance/` + dispatch integration
-7. Daemon token auth — minimal change to `daemon.go` and config
+**Note on directory naming:** STACK.md uses `web/` while ARCHITECTURE.md uses `ui/` for the
+frontend workspace and corresponding `go:embed` path. Pick one name in Phase 1 and use it
+everywhere.
+
+**Build pipeline:**
+```
+make build-ui:
+  cd web && npm run build     # outputs web/dist/
+  go build ./cmd/flowy-ui/   # go:embed picks up web/dist/
+```
 
 ### Critical Pitfalls
 
-See `.planning/research/PITFALLS.md` for full detail including recovery costs, verification checklists, integration gotchas, and security mistakes.
+See `.planning/research/PITFALLS.md` for full detail including recovery costs, verification
+checklists, security mistakes, and the "Looks Done But Isn't" acceptance checklist.
 
-1. **Daemon endpoints left unauthenticated when user JWT is added** — design the three sub-router groups (public, user-JWT, daemon-token) in `newRouter()` before writing any JWT code; if daemon routes fall under JWT middleware, all task execution silently stops with runs stuck in PENDING; verified as the top auth retrofit failure mode
-2. **Object-level authorization (BOLA) missing** — JWT verification confirms authentication but not authorization; every handler that fetches a resource by UUID must verify `resource.project_id` matches the caller's project membership; OWASP API Security Top 10 #1 risk; cannot be fixed solely with middleware
-3. **Mutable tag overwrites breaking reproducibility** — implement `UNIQUE(entry_id, tag)` constraint at migration time and return HTTP 409 on re-tag; always store the resolved SHA-256 digest (not the tag string) in provenance records; silent overwrite is how bioinformatics tool versioning breaks downstream reproducibility
-4. **Store interface bypassed with raw SQL in handlers** — establish the `store.Store` extension pattern with the very first User entity in Phase 1; no `*sql.DB` references or SQL string literals belong in handler files; this pattern prevents fragmented query logic and enables testing
-5. **SQLite write transaction held open during expensive operations** — compute SHA-256 of WDL content before opening a write transaction; never hold a write lock across CPU-intensive work; long transactions block daemon heartbeats under concurrent load, causing tasks to be incorrectly marked stale
+1. **SPA routing breaks on browser refresh** — React Router routes exist only in JS; hard refresh sends real HTTP to the Go server, which has no matching route and returns JSON 404. Fix: `spaHandler` with 404-intercept that returns `index.html` for all non-`/api/` paths. Must be in place before any route is tested. Verify by pressing F5 on `/projects` — must return the React app, not a JSON error.
+
+2. **`go:embed` wrong subtree — all assets 404** — `//go:embed all:web/dist` preserves the `web/dist/` prefix inside the embedded FS. Without `fs.Sub(embeddedFS, "web/dist")`, the file server finds nothing at `index.html`. Add `fs.Sub` immediately and add a startup assertion (`fs.Stat(uiFS, "index.html")`) that panics if the subtree is wrong.
+
+3. **CORS middleware in wrong router position — OPTIONS preflight returns 404** — `go-chi/cors` must be registered at the top-level chi router (`r.Use(cors.Handler(...))`), before any route groups. Placement inside a route group causes preflight OPTIONS requests to hit `NotFound` before the middleware runs. Never use `AllowedOrigins: ["*"]` with `AllowCredentials: true` — browsers refuse this combination per the CORS spec.
+
+4. **JWT in localStorage — XSS token theft** — For an internal tool managing genomic data with RBAC, a stolen admin JWT grants full access to all projects, registry entries, and output files. Use `httpOnly; SameSite=Strict` cookies set by the server, or at minimum `sessionStorage` (not `localStorage`). This decision must be made before any auth code is written; retrofitting requires coordinated frontend + backend changes.
+
+5. **TanStack Query retries 401 three times by default** — When a JWT expires, every active query fires simultaneously and each retries 3x, creating a flood of concurrent auth calls. Configure `QueryClient.defaultOptions.queries.retry` to return `false` for 401 and 403 before building any authenticated screen.
+
+6. **S3 file downloads buffered in memory** — `io.ReadAll(s3Result.Body)` allocates the entire file on the Go heap. For 2 GB BAM files this causes OOM. Always stream with `io.Copy(w, result.Body)`. Presigned S3 URL redirect (browser downloads directly from S3) is even better for large files and eliminates the memory issue entirely.
+
+7. **`flowy-ui` API URL hardcoded** — `localhost:8124` baked in makes the binary unusable in any real deployment. Expose as `--api-addr` flag from the first line of `cmd/flowy-ui/main.go`.
+
+8. **Vite default `base: "/"` breaks sub-path deployment** — Absolute asset paths in `index.html` break when `flowy-ui` is placed behind a reverse proxy at a non-root path. Set `base: "./"` in `vite.config.ts` at project initialization. Verify: `grep 'src="/' web/dist/index.html` must return nothing.
 
 ## Implications for Roadmap
 
-Based on combined research, the feature dependency chain is linear and non-negotiable: auth enables projects, projects enable RBAC, RBAC guards the registry, and the registry enables provenance. No phase can be reordered without breaking a downstream dependency.
+The architecture research prescribes a clear build order driven by two dependency types: the Go
+binary scaffold must exist before the SPA can be integrated, and certain screens depend on others
+or on new backend endpoints. The recommended phase structure directly maps to the eight-step build
+order in ARCHITECTURE.md.
 
-### Phase 1: User Authentication Foundation
+### Phase 1: Binary Scaffold and SPA Foundation
 
-**Rationale:** Auth is the prerequisite for every other v1.3 feature. JWT claims carry `user_id` and `role` that all subsequent phases read from request context. The route group restructure must happen here to permanently avoid the daemon authentication pitfall — it cannot be deferred to "after auth works."
-**Delivers:** `users` table (migration 00004), `POST /auth/login`, `GET /auth/whoami`, `POST /users` (admin), `internal/auth/` package (jwt.go, password.go, middleware.go, rbac.go), JWT middleware on user routes, daemon shared-secret middleware on daemon routes, `~/.flowy-token` management in CLI, startup validation rejecting empty or short `FLOWY_JWT_SECRET`.
-**Addresses:** Username/password login, JWT session, user lifecycle management (table stakes).
-**Avoids:** Pitfall 1 (daemon auth — route groups defined here), Pitfall 6 (JWT secret in source — env var required at startup), Pitfall 7 (bcrypt cost — named constant `bcryptCost = 12`), Pitfall 8 (store interface pattern established with first entity).
+**Rationale:** All frontend work requires the Go binary and SPA skeleton to exist. The four
+critical pitfalls that affect the binary (SPA routing fallback, go:embed subtree, Vite base path,
+hardcoded API URL) must all be resolved here — retrofitting them later disrupts every subsequent
+phase.
 
-### Phase 2: Projects and RBAC
+**Delivers:**
+- `cmd/flowy-ui/main.go` with `go:embed all:web/dist`, `spaHandler` with 404 fallback, `httputil.ReverseProxy`, `--api-addr` flag
+- `web/` Vite 6 + React 19 + TypeScript 5.x + Tailwind v4 + shadcn/ui scaffold
+- `web/vite.config.ts` with `base: "./"` and `/api` proxy to `flowy-server`
+- `web/src/api/client.ts` base HTTP client (token injection layer, `ApiError` class)
+- `make build-ui` target with correct dependency ordering (npm build before go build)
+- Startup assertion: `fs.Stat(uiFS, "index.html")` panics on wrong subtree
 
-**Rationale:** Projects are the isolation boundary that all registry and provenance features require. RBAC middleware must exist before any project-scoped resource endpoint is written, or object-level authorization gaps will be retrofitted rather than designed in.
-**Delivers:** `projects` and `project_members` tables (migration 00005), `POST/GET /projects`, `GET /projects/{id}`, `POST /projects/{id}/members`, `DELETE /projects/{id}/members/{uid}`, `RequireProjectRole` chi middleware applied to route groups, `project_id` nullable FK added to `runs` table (migration 00007 partial).
-**Addresses:** Projects as isolation boundaries, three-tier RBAC per project (table stakes).
-**Avoids:** Pitfall 2 (BOLA — every resource gets `project_id` FK before any resource handler is written).
+**Avoids pitfalls:** SPA routing fallback (Pitfall 1), go:embed wrong subtree (Pitfall 2), Vite absolute base path (Pitfall 8), hardcoded API URL (Pitfall 7)
 
-### Phase 3: WDL Registry
+### Phase 2: CORS and Authentication
 
-**Rationale:** Registry is the core deliverable of v1.3. Requires users (`pushed_by` FK) and projects (`project_id` FK). The three-table schema (registry_entries/registry_versions/registry_tags) must be designed before any push endpoint is implemented to avoid the content-hash type collision and mutable tag overwrite pitfalls.
-**Delivers:** `registry_entries`, `registry_versions`, `registry_tags` tables (migration 00006), push endpoint (`POST /projects/{pid}/registry`, executor+), pull by tag and digest (`GET /projects/{pid}/registry/{name}/{ref}`, viewer+), list endpoints, CLI `registry push/pull/list` subcommands, idempotent re-upload of identical WDL content (UNIQUE on `(entry_id, digest)`), SHA-256 computed before transaction opens.
-**Addresses:** WDL registry push/pull with SHA-256 content digest, digest-based immutable addressing (table stakes + differentiator).
-**Avoids:** Pitfall 3 (content hash type collision — three-table schema separates blobs from named entries), Pitfall 4 (mutable tags — UNIQUE constraint + HTTP 409 on re-tag), Pitfall 9 (SQLite writer contention — hash computed before write transaction).
+**Rationale:** CORS must be configured before any authenticated API call can be made from the
+Vite dev server. JWT session strategy must be locked in before any auth code is written —
+changing storage strategy later requires coordinated frontend + backend changes.
 
-### Phase 4: Registry-Based Execution
+**Delivers:**
+- `internal/config/config.go` — `CORSConfig` struct (enabled flag, allowed origins)
+- `internal/server/server.go` — `go-chi/cors` at top-level router, config-gated
+- `go.mod` — `github.com/go-chi/cors`
+- `web/src/context/AuthContext.tsx` — JWT state, login, logout, sessionStorage hydration on mount
+- `web/src/pages/LoginPage.tsx` — username/password form, disable-on-submit, error display, redirect to original URL after login
+- `QueryClient` with custom `retry` (disabled for 401/403)
+- Protected route wrapper that redirects unauthenticated users to `/login`
+- Auto-logout on 401: global error handler in QueryClient calls `AuthContext.logout()`
 
-**Rationale:** Registry ref submission connects the registry to the existing execution engine. Requires registry (ref resolution) and projects (executor role check). The `WDLContent` field in `TaskClaimResponse` already exists from v1.2, so the daemon side requires zero changes — this phase is primarily wiring.
-**Delivers:** Registry ref resolution in submit handler, `registry_ref` column on `runs` table (migration 00007 remainder), `POST /projects/{pid}/workflows` accepting `{"registry_ref": "name:tag", "inputs": {...}}` alongside existing `wdl_path` submission, CLI `--registry ref` flag on submit/run commands, backward-compatible `wdl_path` submission continues to work unchanged.
-**Addresses:** Execute registered workflow/tool by registry ref (table stakes).
-**Uses:** Existing `WDLContent` field in `TaskClaimResponse` (v1.2 mechanism, no daemon changes required).
+**Avoids pitfalls:** CORS middleware position (Pitfall 3), JWT in localStorage (Pitfall 4), TanStack Query retry storm (Pitfall 5)
 
-### Phase 5: Provenance Tracking
+### Phase 3: User Management
 
-**Rationale:** Provenance is the capstone feature. It requires a completed run (dispatch.go integration), a registry version (`version_id` FK), a user identity (`submitted_by` FK), and a project (`project_id` FK). All four prior phases must be complete. The schema granularity decision must be made at schema design time — retrofitting task-level granularity after deployment is a HIGH-cost recovery.
-**Delivers:** `provenance` table (migration 00008), provenance record written in `dispatch.go` after successful run completion (non-fatal — logs on error, does not fail the run), `GET /projects/{pid}/provenance` (list), `GET /projects/{pid}/provenance/{id}` (single), digest stored in record (not just tag string at submission time), provenance daemon token auth (step 7 of build order).
-**Addresses:** Run-level provenance write and read, digest-linked provenance (table stakes + differentiator).
-**Avoids:** Pitfall 5 (provenance granularity — schema references `version_id` carrying an immutable digest, not a mutable tag; both tag-at-submit and resolved digest are stored).
+**Rationale:** User Management is independent of all other screens except Login. It can be built
+immediately after auth is wired, in parallel with Project screens. Admin-only route gating
+(checking `global_role === "admin"` from JWT claims) is validated here before it is needed
+elsewhere.
+
+**Delivers:**
+- `web/src/api/users.ts` + `web/src/hooks/useUsers.ts`
+- `web/src/pages/UsersPage.tsx` — list users with active/inactive status, create user form, deactivate with confirm dialog
+- Admin-only route guard (hide from nav, guard route for non-admins)
+- Client-side filter by username or display name
+- No edit fields for fields with no corresponding PUT endpoint (no phantom `PUT /users/{id}`)
+
+### Phase 4: Project Management
+
+**Rationale:** Projects are the organizing unit for all subsequent screens. Registry and File
+Browsing both require a project slug in the URL. The project list must be navigable before any
+project-scoped screen can be reached.
+
+**Delivers:**
+- `web/src/api/projects.ts` + `web/src/hooks/useProjects.ts`
+- `web/src/pages/ProjectsPage.tsx` — project list (cards), create project with slug format validation
+- `web/src/pages/ProjectDetailPage.tsx` — description edit, member list with role badges, add/change/remove member, prevent-last-admin hint
+- Role badge color coding (admin/executor/viewer)
+- Slug is read-only after creation (no slug-change API endpoint exists)
+
+### Phase 5: Registry Browsing
+
+**Rationale:** Registry is the read-oriented core of the workflow engine UI. All endpoints exist
+in the current API. This phase depends on Phase 4 (project slug must be in the URL route).
+
+**Delivers:**
+- `web/src/api/registry.ts` + `web/src/hooks/useRegistry.ts`
+- `web/src/pages/RegistryPage.tsx` — entry list with kind badge (tool/workflow), tags as chips, filter by kind
+- Registry entry detail: version history with digest truncation, WDL content viewer, tag management (admin), copy registry reference to clipboard
+- WDL syntax highlighting (highlight.js with WDL grammar, or generic fallback)
+
+**Open question for planning:** Verify highlight.js WDL grammar or Prism WDL plugin availability before implementation. Fall back to generic code highlighting if no WDL-specific grammar is satisfactory.
+
+### Phase 6: File Browsing and Download
+
+**Rationale:** This is the only phase with hard backend dependencies. Three new endpoints must be
+built before any frontend work can proceed. S3 streaming and presigned URL patterns have specific
+correctness requirements distinct from the other screens.
+
+**Delivers (backend — new endpoints on flowy-server):**
+- `GET /projects/{slug}/runs` — list runs with `run_state`, `created_at`, `registry_ref`
+- `GET /projects/{slug}/runs/{id}/files` — list output files resolved from OutputsJSON
+- `GET /projects/{slug}/runs/{id}/files/download?path=...` — stream file bytes OR redirect to presigned S3 URL
+
+**Delivers (frontend):**
+- `web/src/api/runs.ts` + `web/src/hooks/useRuns.ts`
+- `web/src/pages/FileBrowserPage.tsx` — run list with status badges, filter by status, output file list, download button
+- `Content-Disposition: attachment` and `Content-Length` headers on all downloads
+- Streaming via `io.Copy` (never `io.ReadAll`)
+- Authorization check: validate that requested file path belongs to a run the caller has viewer access to
+- Presigned S3 URL redirect for S3 backend (browser downloads directly from S3)
+
+**Avoids pitfalls:** S3 download memory buffering (Pitfall 6), missing Content-Disposition header, download authorization absent
+
+### Phase 7: Production Integration and Build Validation
+
+**Rationale:** The `go:embed` production path must be validated end-to-end before any phase is
+considered production-ready. This is the integration gate.
+
+**Delivers:**
+- Verified `make build-ui` producing a single `flowy-ui` binary that serves the full SPA
+- All items from PITFALLS.md "Looks Done But Isn't" checklist verified green
+- Production CORS disabled verification (flowy-server must NOT have `cors_enabled: true` in production)
+- Deployment documentation
 
 ### Phase Ordering Rationale
 
-- Auth must come first: JWT claims carry `user_id` that every downstream feature reads from context; no project membership, registry push, or provenance record can exist without a user identity.
-- Projects before registry: `registry_entries.project_id` is a NOT NULL FK; registry cannot exist without projects; RBAC must be in place before registry write endpoints go live.
-- Registry before execution-from-ref: The submit handler must resolve `registry_ref` to WDL content before it can create a run.
-- Registry before provenance: `provenance.version_id` is a FK into `registry_versions`; provenance rows cannot be written without the registry.
-- Daemon auth wired in Phase 1 because the route group restructure enabling daemon-token middleware must happen before any JWT middleware is deployed. This is the single highest-risk ordering constraint — getting it wrong causes silent, total execution failure.
+- Phase 1 before all others: the binary and SPA scaffold are the foundation; all embed, routing fallback, Vite base path, and API URL pitfalls must be resolved here or they block every subsequent phase.
+- Phase 2 before Phases 3-6: all authenticated screens require JWT session and 401 handling; CORS configuration must precede any API call from the Vite dev server.
+- Phases 3 and 4 are independent of each other and can be parallelized after Phase 2 completes.
+- Phase 5 requires Phase 4 (project slug must be navigable before entering registry; TanStack Query query key `['registry', slug]` requires slug from the URL).
+- Phase 6 is last among feature phases because it requires new backend endpoints and has the most complex implementation (streaming, presigned URLs, authorization checks on download paths).
+- Phase 7 is the integration gate and must follow all feature phases.
 
 ### Research Flags
 
-Phases with standard, well-documented patterns (likely no need for `/gsd:research-phase`):
-- **Phase 1 (Auth):** chi middleware, golang-jwt/jwt v5, bcrypt — thoroughly documented; exact implementation spelled out in ARCHITECTURE.md including full token design and rbac.go implementation.
-- **Phase 2 (Projects + RBAC):** Standard CRUD with chi route groups and RBAC middleware — no novel patterns; ARCHITECTURE.md has the full router structure.
-- **Phase 4 (Registry Execution):** Reuses existing `WDLContent` path — primarily wiring, minimal new design surface.
+Phases needing deeper research during planning:
+- **Phase 6 (File Browsing):** Three new backend endpoints require Store-layer design (`ListRunsByProject`, output file resolution from OutputsJSON). S3 presigned URL redirect pattern (AWS SDK v2 `PresignGetObject`, 302 redirect flow, S3 bucket CORS policy for presigned URLs) needs implementation detail verification. Download authorization logic needs explicit design (what membership check applies to a file path from OutputsJSON).
 
-Phases that benefit from deeper review before implementation:
-- **Phase 3 (WDL Registry):** The three-table blob/entry/tag schema has subtle correctness requirements (idempotent re-upload, tag immutability invariant, UNIQUE constraint semantics in SQLite with upsert). Review PITFALLS.md Pitfalls 3 and 4 carefully before schema finalization. The distinction between FEATURES.md schema (separate `registry_versions` table with UUID PK) and ARCHITECTURE.md schema (content hash as PK on `registry_entries`) must be resolved to a single canonical design before migrations are written.
-- **Phase 5 (Provenance):** Granularity decision (run-level vs task-level) has HIGH recovery cost if wrong. The PITFALLS.md "Looks Done But Isn't" checklist should be used as the acceptance criterion. Decision: run-level provenance linking to a single workflow registry entry is the v1.3 scope; task-level lineage is v2.
+Phases with standard patterns (skip `/gsd:research-phase`):
+- **Phase 1:** go:embed, Vite scaffold, `fs.Sub`, `httputil.ReverseProxy` are all documented in official Go and Vite sources with HIGH confidence.
+- **Phase 2:** chi CORS middleware, React auth context pattern, TanStack Query retry configuration are well-documented standard patterns.
+- **Phase 3:** User CRUD against existing endpoints — no novel patterns.
+- **Phase 4:** Project + member CRUD against existing endpoints — no novel patterns.
+- **Phase 5:** Registry browsing against existing endpoints. WDL highlighting worth a quick check during implementation but does not block planning.
+- **Phase 7:** Integration verification is mechanical; no research needed.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All libraries verified at pkg.go.dev; two are already in go.mod as transitive deps; golang-jwt/jwt v5.3.1 published January 28, 2026 — confirmed current |
-| Features | HIGH | Auth/RBAC patterns HIGH (official docs, production patterns); registry design HIGH (Docker distribution spec is the canonical reference); provenance schema MEDIUM-HIGH (run-level well-established; task-level granularity adds implementation complexity deferred to v2) |
-| Architecture | HIGH | Based on direct codebase analysis of all files in `internal/server/`, `internal/store/`, `internal/api/`, `internal/config/`, `internal/daemon/`, `cmd/flowy/main.go` |
-| Pitfalls | HIGH | Auth/RBAC pitfalls from OWASP and production experience; registry pitfalls from Docker distribution spec and CAS literature; provenance pitfalls from bioinformatics workflow community (CWLProv, Seqera); SQLite contention from official SQLite WAL docs and production post-mortems |
+| Stack | HIGH | All technology choices verified against official docs. Version pinning is specific and based on a compatibility matrix (React 19 + shadcn/ui + TanStack Query v5 + Vite 6 + Tailwind v4 all confirmed compatible). |
+| Features | HIGH (screens 1-4), MEDIUM (screen 5) | Screens 1-4 derived from direct code inspection of `server.go`, `types.go`, `store.go`. File browser feature scope is MEDIUM because the three required backend endpoints do not exist yet — scope may shift when they are designed. |
+| Architecture | HIGH | Go stdlib patterns (`go:embed`, `httputil.ReverseProxy`, `http.FileServer`, `fs.Sub`) sourced from official docs. React architecture patterns (TanStack Query, centralized API client, Auth context) are well-established with multiple confirming sources. |
+| Pitfalls | HIGH | All 8 critical pitfalls sourced from official docs or well-regarded community posts with verified reproduction steps and prevention patterns. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Registry schema canonical version:** FEATURES.md and ARCHITECTURE.md describe slightly different registry schemas. FEATURES.md uses a separate `registry_versions` table with a UUID primary key (more normalized, supports future metadata per version). ARCHITECTURE.md uses `content_hash` as the primary key directly on `registry_entries` (simpler, fewer joins). The roadmap plan for Phase 3 must pick one and commit before migrations are written. ARCHITECTURE.md's content-hash-as-PK approach is simpler; FEATURES.md's version-table approach is more extensible. Recommendation: use the FEATURES.md three-table schema (`registry_entries`, `registry_versions`, `registry_tags`) as it maps more cleanly to the Docker distribution spec.
-- **Admin seed on first run:** FEATURES.md lists `POST /users` as admin-only, which creates a chicken-and-egg problem. Either a migration seeds a default admin user with a configurable password, or a `flowy-server --init-admin` CLI flag is provided. This decision must be explicit in Phase 1 planning before any implementation begins.
-- **Backward-compatible route transition:** When `auth.enabled: true`, the existing unauthenticated routes (`POST /workflows`, `GET /workflows/{id}/status`) must still pass spectool conformance. The `auth.enabled` config flag handles this, but the transition path for existing API clients needs to be documented in the Phase 1 plan.
+- **`web/` vs `ui/` directory name:** STACK.md uses `web/` and ARCHITECTURE.md uses `ui/` for the frontend workspace. Pick one name in Phase 1 planning and use it everywhere (including the `//go:embed` path). Either is fine; consistency matters.
+- **JWT storage strategy — final decision:** ARCHITECTURE.md recommends `sessionStorage` (pragmatic for internal tool); PITFALLS.md recommends `httpOnly` cookies (more secure, eliminates XSS token theft). The team must decide before Phase 2 begins. sessionStorage is acceptable for MVP if documented as technical debt. httpOnly cookies require a Go-side `SetCookie` call in `handleLogin` and `credentials: 'include'` in fetch calls.
+- **WDL syntax highlighting library:** Prism WDL plugin availability has LOW confidence. Verify `highlight.js` WDL grammar or Prism WDL plugin during Phase 5 planning. Generic code highlighting (any language) is an acceptable fallback and should not block planning.
+- **File browser backend scope:** The three new endpoints for Phase 6 have no existing implementation. Store-layer interface changes need design before Phase 6 planning begins. Be explicit about scope: `ListRunsByProject` is a query, output file resolution requires parsing OutputsJSON string values to extract file paths. Keep new endpoints minimal to avoid turning a UI milestone into a large backend feature.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-
-- Direct codebase analysis (`internal/server/`, `internal/store/`, `internal/api/`, `internal/config/`, `internal/daemon/`, `cmd/flowy/`) — architecture and integration points
-- [golang-jwt/jwt/v5 pkg.go.dev](https://pkg.go.dev/github.com/golang-jwt/jwt/v5) — v5.3.1 API, `WithValidMethods`, `RegisteredClaims`
-- [golang.org/x/crypto/bcrypt pkg.go.dev](https://pkg.go.dev/golang.org/x/crypto/bcrypt) — Go team maintained, already in go.mod
-- [Docker Distribution Specification](https://distribution.github.io/distribution/spec/api/) — immutable digest vs mutable tag semantics
-- [chi v5 middleware documentation](https://go-chi.io/#/pages/middleware) — route groups, middleware ordering
-- [OWASP API Security Top 10 — BOLA](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/) — object-level authorization is the #1 API security risk
-- [SQLite Write-Ahead Logging](https://sqlite.org/wal.html) — single writer, WAL semantics
-- [GA4GH Tool Registry Service (TRS) data model](https://ga4gh.github.io/tool-registry-service-schemas/DataModel/) — registry versioning reference
-- [golang-jwt/jwt v5.3.1 release — January 28, 2026](https://pkg.go.dev/github.com/golang-jwt/jwt/v5) — confirmed current maintained fork
+- flowy source `internal/server/server.go` — complete route map (direct code inspection)
+- flowy source `internal/api/types.go` — all request/response DTOs confirming field names and types (direct code inspection)
+- flowy source `internal/store/store.go` — Store interface confirming what queries exist and which are missing (direct code inspection)
+- flowy source `internal/server/handlers.go` — `handleOutputs` confirms OutputsJSON is a flat key-value map (direct code inspection)
+- Go stdlib `embed` package — `pkg.go.dev/embed` — `//go:embed all:` directive
+- Go stdlib `net/http/httputil` — `pkg.go.dev/net/http/httputil` — `ReverseProxy.Rewrite` pattern (Go 1.20+)
+- go-chi/cors — `pkg.go.dev/github.com/go-chi/cors` — CORS middleware placement and credentials rules
+- Vite server.proxy — `vite.dev/config/server-options` — dev proxy configuration
+- Vite build options — `vite.dev/guide/build` — `base` option and relative paths
+- React 19 release — `react.dev/blog/2024/12/05/react-19` — stable December 2024
+- shadcn/ui React 19 docs — `ui.shadcn.com/docs/react-19` — full React 19 compatibility confirmed
+- shadcn/ui Tailwind v4 docs — `ui.shadcn.com/docs/tailwind-v4` — Tailwind v4 fully supported
+- TanStack Query v5 official docs — `tanstack.com/query/latest` — query keys, retry configuration, mutation invalidation
+- React Router v7 SPA mode — `reactrouter.com/how-to/spa` — library mode vs framework mode
+- PROJECT.md — explicit out-of-scope items (WebSocket/SSE, OAuth2, run submission via UI)
 
 ### Secondary (MEDIUM confidence)
-
-- [Dockstore introduction](https://docs.dockstore.org/en/develop/dockstore-introduction.html) — organization/collection scoping model, four-tier role reference
-- [Terra pipeline versioning](https://support.terra.bio/hc/en-us/articles/360037484111) — Docker digest resolved at submit; three-tier role reference
-- [CWLProv — W3C PROV workflow provenance](https://academic.oup.com/gigascience/article/8/11/giz095/5611001) — task-level granularity requirement for scientific reproducibility
-- [Seqera Community — provenance discussion](https://community.seqera.io/t/provenance-or-audit-trail-of-computation/1174) — bioinformatics community expectations for provenance
-- [10 RBAC Best Practices — Oso](https://www.osohq.com/learn/rbac-best-practices) — scoped roles, role proliferation anti-patterns
-- [Role-based access control in Golang with jwt-go and chi](https://dev.to/bensonmacharia/role-based-access-control-in-golang-with-jwt-go-ijn) — chi middleware RBAC pattern
+- Serving SPA from Go — `hackandsla.sh/posts/2021-11-06-serve-spa-from-go/` — spaResponseWriter 404-intercept pattern
+- Embedding React in Go binary — `smartinary.com/blog/how-to-embed-a-react-app-in-a-go-binary/` — fs.Sub pattern
+- JWT token storage comparison — `descope.com/blog/post/developer-guide-jwt-storage` — sessionStorage vs localStorage security tradeoffs
+- React Query auth token refresh — `elazizi.com/posts/react-query-auth-token-refresh/` — 401 retry deduplication with TanStack Query
+- S3 presigned URLs for React downloads — OneUptime blog — presigned URL redirect pattern
+- S3 streaming download — DEV Community — memory pitfalls of buffered (`io.ReadAll`) S3 downloads
+- shadcn/ui production pitfalls — `paulserban.eu` — bundle size and barrel import warnings
+- State management 2026 survey — zustand as pragmatic default for most React apps
+- JWT in React SPAs — marmelab.com — in-memory token pattern and sessionStorage trade-offs
 
 ### Tertiary (LOW confidence)
-
-- CNCF 2024 survey (via PITFALLS.md) — "65% of organizations experienced breakages from mutable tags" — directional, validates immutable tag enforcement requirement
-- [Cromwell SecurityRecommendations.md](https://cromwell.readthedocs.io/en/stable/CommandLine/) — "Cromwell is NOT on its own a security appliance" — confirms auth must be layered explicitly on workflow engines
+- WDL syntax highlighting — Prism WDL plugin availability is unverified; needs validation during Phase 5 planning before committing to a specific highlighting library.
 
 ---
-*Research completed: 2026-03-17*
+*Research completed: 2026-03-20*
 *Ready for roadmap: yes*

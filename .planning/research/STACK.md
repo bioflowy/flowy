@@ -1,8 +1,341 @@
-# Stack Research: WDL Workflow Engine (Go)
+# Stack Research: WDL Workflow Engine (Go + React Web UI)
 
 **Project:** flowy — WDL 1.2 workflow engine (Go port of miniwdl)
-**Researched:** 2026-03-17 (v1.3 update; v1.0–v1.2 stacks preserved below)
+**Researched:** 2026-03-20 (v2.0 Web UI update; v1.0–v1.3 stacks preserved below)
 **Overall confidence:** HIGH
+
+---
+
+## v2.0 Additions: React Web UI (flowy-ui binary)
+
+This section covers NEW technology needed for the v2.0 milestone: a React SPA served from a
+dedicated `flowy-ui` Go binary. The entire Go backend (v1.0–v1.3) is unchanged.
+
+**Scope constraint:** Pure SPA — no SSR, no Next.js, no Remix framework mode. The SPA calls the
+existing `flowy-server` REST API. `flowy-ui` is a second Go binary that embeds the built SPA and
+proxies API requests in production, or proxies to `flowy-server` directly during development.
+
+---
+
+### Core Technologies
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| **React** | 19.2.4 | UI component model and rendering | Current stable; shadcn/ui and TanStack Query v5 both fully support React 19; React 19 removes `forwardRef` boilerplate (ref is now a plain prop) |
+| **TypeScript** | 5.x (5.9.3 stable; 6.0 RC) | Type safety across the entire frontend | Use 5.x; TS 6.0 is RC only as of March 2026. TypeScript 5 project references support multi-package monorepos cleanly if needed later |
+| **Vite** | 6.x (latest 6.y.z) | Build tooling and dev server | Use Vite 6, not Vite 8. Vite 8 ships Rolldown (Rust bundler) which is production-ready but the shadcn/ui `init` scaffolding targets Vite 6 currently. Vite 6 is the latest LTS-equivalent major. Upgrade to Vite 8 after shadcn/ui CLI officially targets it. |
+| **@vitejs/plugin-react** | 4.x | React Fast Refresh + JSX transform in Vite | The official React plugin for Vite; enables HMR, automatic JSX runtime (no `import React` needed). v4.x is the Vite 6-compatible version |
+| **Tailwind CSS** | v4.x | Utility-first CSS | shadcn/ui now fully supports Tailwind v4. v4 uses CSS-first config (`@import "tailwindcss"` in CSS, no `tailwind.config.js`). Colors converted from HSL to OKLCH. Use v4 from the start — migrating later costs more than adopting now. |
+| **@tailwindcss/vite** | v4.x | Tailwind v4 Vite plugin | Replaces the old `postcss` pipeline for Tailwind v4. Add as a Vite plugin: `tailwindcss()`. No `postcss.config.js` needed. |
+| **shadcn/ui** | CLI-managed (no npm version) | Copy-paste component library built on Radix UI | Not a versioned npm package — components are copied into `src/components/ui/` by the CLI. React 19 fully compatible since late 2024. Tailwind v4 fully supported as of early 2026. The `shadcn@latest init` CLI auto-detects Tailwind version. |
+| **react-router** | 7.x (7.13.1) | Client-side routing | v7 unifies `react-router` and `react-router-dom` into a single package. Use **library mode** (not framework mode — framework mode is the Remix successor, requires a server runtime). Library mode is identical to React Router v6 usage: wrap with `<BrowserRouter>`, declare `<Routes>`. |
+| **@tanstack/react-query** | 5.x (5.91.x) | Server state management (fetch, cache, refetch) | The standard for REST API data fetching in React. v5 is stable (5.91.2 as of March 2026). Replaces manual `useEffect` + `useState` for API calls. Pairs with `useSuspenseQuery` for React 19 Suspense. |
+
+---
+
+### Supporting Libraries
+
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| **zustand** | 5.x | Client-side state (auth token, UI state) | Auth token storage (JWT), user session state, UI preferences. Zustand is the pragmatic default: ~1.2 KB, no context wrapping, simple API. Use for state that is not server data (server data belongs in TanStack Query). |
+| **axios** | 1.x | HTTP client with interceptors | Use axios for the API client layer. Its request interceptor injects the `Authorization: Bearer <token>` header globally — cleaner than per-call fetch wrappers. Response interceptor handles 401 → redirect to login automatically. The bundle size cost (~14 KB gzipped) is justified for a management UI (not a public-facing page). |
+| **lucide-react** | latest | Icons | shadcn/ui uses lucide-react as its icon library. Install alongside shadcn/ui. |
+| **sonner** | latest | Toast notifications | shadcn/ui is deprecating its own `toast` component in favor of `sonner`. Use `sonner` from the start. |
+| **clsx + tailwind-merge** | latest | Conditional class composition | Installed automatically by `shadcn init`. Required for shadcn component internals (`cn()` utility). |
+
+---
+
+### Go Binary: flowy-ui
+
+The `flowy-ui` binary serves two purposes:
+1. **Embed and serve the built SPA** (`dist/` directory from `npm run build`)
+2. **Proxy `/api/*` requests** to `flowy-server` (so SPA and API share the same origin — no CORS needed in production)
+
+| Component | Approach | Why |
+|-----------|----------|-----|
+| **SPA embedding** | `//go:embed all:web/dist` + `embed.FS` | Standard Go 1.16+ pattern. Single binary deployment. `all:` prefix includes dot-files. |
+| **Static file serving** | `http.FileServer(http.FS(embeddedFS))` with SPA fallback | File server handles assets. SPA fallback returns `index.html` for all non-file routes (required for React Router client-side routing). |
+| **API proxy** | `net/http/httputil.NewSingleHostReverseProxy` mounted at `/api/` in chi | Routes `/api/*` to `flowy-server`. Strips prefix if needed. Uses chi's existing `Mount` API — no external proxy library. |
+| **CORS** | None needed in production (same-origin) | SPA is served from the same host/port as the proxy. CORS headers needed only on `flowy-server` directly for the Vite dev server (see development mode below). |
+| **Dev mode** | Vite dev server runs separately; `flowy-ui --dev` proxies to Vite + API | During development, SPA is served by `vite dev` at `localhost:5173`. Vite proxies `/api` to `flowy-server`. No binary rebuild needed to see frontend changes. |
+
+**SPA fallback pattern (required for React Router):**
+
+```go
+// internal/ui/handler.go
+func SPAHandler(fs fs.FS) http.HandlerFunc {
+    fileServer := http.FileServer(http.FS(fs))
+    return func(w http.ResponseWriter, r *http.Request) {
+        // Try to serve the file directly
+        f, err := fs.Open(strings.TrimPrefix(r.URL.Path, "/"))
+        if err == nil {
+            f.Close()
+            fileServer.ServeHTTP(w, r)
+            return
+        }
+        // Fall back to index.html for all unknown paths (SPA routing)
+        r2 := new(http.Request)
+        *r2 = *r
+        r2.URL = new(url.URL)
+        *r2.URL = *r.URL
+        r2.URL.Path = "/"
+        fileServer.ServeHTTP(w, r2)
+    }
+}
+```
+
+**Project layout:**
+
+```
+cmd/
+  flowy-ui/
+    main.go          -- binary entrypoint; chi router; embed directive
+web/
+  src/               -- React source
+  public/
+  index.html
+  package.json
+  vite.config.ts
+  tsconfig.json
+  dist/              -- built output (git-ignored; embedded at build time)
+```
+
+**Build process:**
+
+```bash
+# In Makefile
+build-ui:
+    cd web && npm run build
+    go build -o bin/flowy-ui ./cmd/flowy-ui
+
+# Embed directive in cmd/flowy-ui/main.go
+//go:embed all:web/dist
+var embeddedSPA embed.FS
+```
+
+The `go build` of `flowy-ui` must be run AFTER `npm run build` so that `web/dist/` exists at embed time.
+
+---
+
+### Development Tools
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| **Node.js** | JavaScript runtime for Vite and npm | Use Node.js 22 LTS (current LTS as of March 2026). Vite 6 requires Node 18+. |
+| **npm** | Package manager | Use npm (already standard). pnpm is faster but adds a lockfile format difference — use npm for consistency with the Go project's single-lockfile approach. |
+| **ESLint** | TypeScript/React linting | Use `eslint` + `@typescript-eslint/eslint-plugin` + `eslint-plugin-react-hooks`. Vite's `react-ts` template sets this up. |
+| **shadcn CLI** | Component installation | `npx shadcn@latest add <component>`. Never manually edit files in `src/components/ui/` — always re-run the CLI to update. |
+| **Vite dev server proxy** | Dev-time API routing | Configure `server.proxy` in `vite.config.ts` to forward `/api` to `flowy-server:8080`. Eliminates CORS issues during development. |
+
+---
+
+### Installation
+
+```bash
+# Create Vite + React + TypeScript project in web/ subdirectory
+npm create vite@6 web -- --template react-ts
+cd web
+npm install
+
+# Tailwind CSS v4 (Vite plugin approach — no postcss.config.js needed)
+npm install -D tailwindcss @tailwindcss/vite
+
+# TanStack Query v5
+npm install @tanstack/react-query
+
+# React Router v7 (library mode — single package)
+npm install react-router
+
+# State management
+npm install zustand
+
+# HTTP client
+npm install axios
+
+# Icons (shadcn/ui dependency)
+npm install lucide-react
+
+# Toast notifications
+npm install sonner
+
+# Initialize shadcn/ui (interactive — choose slate theme, CSS variables: yes)
+npx shadcn@latest init
+
+# Add initial components
+npx shadcn@latest add button card input label form table dialog dropdown-menu
+```
+
+**Vite config (`web/vite.config.ts`):**
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',  // flowy-server
+        changeOrigin: true,
+      },
+    },
+  },
+  build: {
+    outDir: 'dist',
+  },
+})
+```
+
+**CSS entry (`web/src/index.css`):**
+
+```css
+@import "tailwindcss";
+/* shadcn/ui CSS variables are added here by `shadcn init` */
+```
+
+---
+
+### Alternatives Considered
+
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| React Router v7 library mode | React Router v7 framework mode | Framework mode (Remix successor) is for full-stack apps with server loaders. flowy-ui has no server rendering requirement — library mode is correct. |
+| React Router v7 library mode | TanStack Router | TanStack Router has better type-safety for route params. Use if the team prefers fully type-safe routes. React Router v7 is the incumbent with more shadcn/ui examples. |
+| TanStack Query v5 | SWR | SWR is simpler but fewer features. TanStack Query's `invalidateQueries` and mutation model are better for the CRUD-heavy management UI. |
+| axios | native fetch | fetch requires manual interceptor setup for JWT injection and 401 handling. axios interceptors are cleaner for a multi-endpoint management API. |
+| zustand | React Context | Context re-renders all consumers on any change. Auth token + user info is global state read frequently — zustand's selector pattern avoids unnecessary renders. |
+| zustand | jotai | jotai's atomic model is better for complex interdependent state. flowy-ui's client state is simple (auth token, user info) — zustand is appropriate. |
+| Vite 6 | Vite 8 | Vite 8 uses Rolldown (faster) and @vitejs/plugin-react v6 (Oxc-based). Upgrade when shadcn/ui CLI officially targets Vite 8. Both work with shadcn/ui, but Vite 6 is the current shadcn/ui `init` target. |
+| npm | pnpm | pnpm is 2-3x faster for installs. Use if CI install time is a concern. Requires `pnpm-lock.yaml` instead of `package-lock.json`. |
+
+---
+
+### What NOT to Use
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| **Next.js** | SSR framework — requires a Node.js runtime server. flowy-ui is a Go binary serving a static SPA. No Node.js runtime in production. | Vite + React SPA |
+| **Remix / React Router framework mode** | Same issue — requires server runtime for loaders/actions. | React Router v7 library mode |
+| **Create React App (CRA)** | Deprecated and unmaintained since 2023. 40x slower builds than Vite. | `npm create vite@6` |
+| **Redux Toolkit** | 5-10x more boilerplate than zustand for flowy's state (auth token, session). Redux is justified at team scale (>5 devs) with complex state. | zustand |
+| **Material UI / Ant Design** | Different design system from shadcn/ui — mixing two component libraries creates visual inconsistency and doubles bundle size. | shadcn/ui + Tailwind |
+| **styled-components / emotion** | CSS-in-JS at runtime has performance costs (style recalculation). Tailwind CSS generates static CSS at build time. | Tailwind CSS v4 |
+| **`react-router-dom`** | In React Router v7, `react-router-dom` is merged into `react-router`. Installing both is redundant. | `react-router` (v7) |
+| **Tailwind v3** | shadcn/ui CLI defaults to Tailwind v4 as of early 2026. Starting with v3 and migrating later is more work. Use v4 from the start. | Tailwind CSS v4 |
+
+---
+
+### Stack Patterns by Variant
+
+**API data fetching (server state):**
+- Use TanStack Query `useQuery` and `useMutation`
+- Query key pattern: `['users']`, `['projects', projectId]`, `['registry', projectId, 'tools']`
+- Never store API response data in zustand — TanStack Query IS the cache
+
+**Auth token storage:**
+- Use zustand store + `localStorage` persistence
+- Axios interceptor reads from the store; sets `Authorization: Bearer <token>` on every request
+- On 401 response (interceptor), clear token and redirect to `/login`
+
+**CORS during development:**
+- Vite `server.proxy` forwards `/api` to `flowy-server` — no CORS headers needed on flowy-server for dev
+- For direct `flowy-server` access without `flowy-ui`, add CORS middleware to chi (PROJECT.md flags this as a requirement)
+
+**Binary build ordering:**
+```makefile
+build: build-web build-ui
+build-web:
+    cd web && npm ci && npm run build
+build-ui: build-web
+    go build -o bin/flowy-ui ./cmd/flowy-ui
+```
+`build-ui` depends on `build-web` so that `web/dist/` always exists before the Go embed runs.
+
+---
+
+### Version Compatibility
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| React 19.2.4 | Node 18+ | Works with Vite 6 and @vitejs/plugin-react v4 |
+| TypeScript 5.9.3 | Node 18+ | TS 6.0 is RC — stay on 5.x |
+| Vite 6.x | Node 18+, React 19 | @vitejs/plugin-react v4 is the Vite 6-compatible version |
+| Tailwind CSS v4 | Vite 6+, PostCSS optional | @tailwindcss/vite plugin replaces postcss pipeline |
+| shadcn/ui (CLI-managed) | React 19, Tailwind v4 | shadcn CLI auto-detects Tailwind version; all components updated for React 19 |
+| react-router v7.13.1 | React 18+ | React 19 compatible; library mode does not require React 19 features |
+| @tanstack/react-query 5.91.x | React 18+ | React 19 compatible; useSuspenseQuery works with React 19 Suspense |
+| zustand 5.x | React 18+ | React 19 compatible |
+| axios 1.x | Browser + Node | No compatibility concerns |
+| Go 1.25 embed | go:embed stable since 1.16 | `//go:embed all:web/dist` — `all:` prefix required to include dot-files in dist |
+
+---
+
+### Integration with Existing chi v5 API
+
+The `flowy-ui` binary does NOT share a process with `flowy-server`. It is a separate binary:
+
+```
+[Browser]
+    |
+    | :3000 (or :80)
+    v
+[flowy-ui binary]
+    |-- /          → serve embedded SPA (index.html + assets)
+    |-- /api/*     → httputil.ReverseProxy → [flowy-server :8080]
+    `-- /*         → SPA fallback (index.html for React Router)
+```
+
+**Why a separate binary (not embedding the SPA in flowy-server directly):**
+- Decouples frontend deployment from backend deployment
+- flowy-server has no knowledge of the SPA — it remains a pure REST API
+- Development workflow: frontend team can run `vite dev` without running a full server build
+- flowy-server can be deployed without flowy-ui in headless/CLI-only environments
+
+**CORS requirement on flowy-server:**
+When `flowy-ui --dev` is used (or when the browser accesses `flowy-server` directly without the proxy), `flowy-server` needs CORS headers. Add chi middleware:
+
+```go
+// In flowy-server router setup
+r.Use(cors.Handler(cors.Options{
+    AllowedOrigins: []string{"http://localhost:5173"}, // Vite dev server
+    AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+    AllowedHeaders: []string{"Authorization", "Content-Type"},
+    AllowCredentials: false,
+}))
+```
+
+Use `github.com/go-chi/cors` (already in the chi ecosystem, zero extra dependencies beyond chi itself) or implement a 15-line CORS middleware manually. The PROJECT.md requirement "CORS support on flowy-server for development mode" is a single middleware addition.
+
+---
+
+### Sources
+
+- [React v19 release — react.dev](https://react.dev/blog/2024/12/05/react-19) — React 19 stable December 2024; React 19.2.4 latest as of January 2026; HIGH confidence
+- [shadcn/ui React 19 docs — ui.shadcn.com](https://ui.shadcn.com/docs/react-19) — full React 19 compatibility confirmed; forwardRef removed; HIGH confidence
+- [shadcn/ui Tailwind v4 docs — ui.shadcn.com](https://ui.shadcn.com/docs/tailwind-v4) — Tailwind v4 fully supported; CSS-first config; OKLCH colors; HIGH confidence
+- [Vite 8 release — vite.dev](https://vite.dev/blog/announcing-vite8) — Vite 8 ships Rolldown; @vitejs/plugin-react v6 uses Oxc; HIGH confidence
+- [vite-plugin-react releases — GitHub](https://github.com/vitejs/vite-plugin-react/releases) — v4.x is Vite 6 compatible; v6 for Vite 8; HIGH confidence
+- [TanStack Query v5 npm — npmjs.com](https://www.npmjs.com/package/@tanstack/react-query) — 5.91.2 latest; actively maintained March 2026; HIGH confidence
+- [React Router v7 npm — npmjs.com](https://www.npmjs.com/package/react-router) — 7.13.1 latest; library mode confirmed; HIGH confidence
+- [React Router v7 SPA mode — reactrouter.com](https://reactrouter.com/how-to/spa) — library mode vs framework mode explained; HIGH confidence
+- [TypeScript 5.9.3 — typescriptlang.org](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-9.html) — latest stable; TS 6.0 RC announced March 6 2026; HIGH confidence
+- [Go embed package — pkg.go.dev](https://pkg.go.dev/embed) — `//go:embed all:` directive; stable since Go 1.16; HIGH confidence
+- [Embedding React in Go binary — bindplane.com](https://bindplane.com/blog/embed-react-in-golang) — SPA fallback pattern for client-side routing; MEDIUM confidence
+- [Serving SPA from Go — hackandsla.sh](https://hackandsla.sh/posts/2021-11-06-serve-spa-from-go/) — SPA fallback pattern reference; MEDIUM confidence
+- [zustand npm — npmjs.com](https://www.npmjs.com/package/zustand) — ~20M weekly downloads; 1.2KB; HIGH confidence
+- [State management 2026 — pkgpulse.com](https://www.pkgpulse.com/blog/react-state-management-2026) — zustand is pragmatic default for most apps; MEDIUM confidence
+- [shadcn/ui Vite installation — ui.shadcn.com](https://ui.shadcn.com/docs/installation/vite) — `npx shadcn@latest init -t vite`; HIGH confidence
 
 ---
 
@@ -891,6 +1224,12 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 | `golang-jwt/jwt/v5 v5.3.1` | Go 1.18+ | NEW v1.3 direct dependency; compatible with Go 1.25 |
 | `golang.org/x/crypto v0.49.0` | Go 1.20+ | Promote from indirect in v1.3; bcrypt for password hashing |
 | `opencontainers/go-digest v1.0.0` | Go 1.13+ | Already transitive; promote to direct in v1.3 for registry content hashing |
+| React 19.2.4 | Node 18+, Vite 6 | v2.0 frontend; latest stable |
+| TypeScript 5.9.3 | Node 18+ | v2.0 frontend; TS 6.0 is RC only |
+| Vite 6.x | Node 18+ | v2.0 frontend; Vite 8 deferred until shadcn/ui CLI targets it |
+| react-router 7.13.1 | React 18+ | v2.0 frontend; library mode |
+| @tanstack/react-query 5.91.x | React 18+ | v2.0 frontend; server state |
+| zustand 5.x | React 18+ | v2.0 frontend; client state |
 
 ---
 
@@ -919,6 +1258,13 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 - [opencontainers/go-digest — pkg.go.dev](https://pkg.go.dev/github.com/opencontainers/go-digest) — v1.0.0 stable; already in go.mod
 - [go-chi/jwtauth v5 — pkg.go.dev](https://pkg.go.dev/github.com/go-chi/jwtauth/v5) — v5.4.0 February 26, 2026; depends on lestrrat-go/jwx; evaluated and not recommended
 - [lestrrat-go/jwx releases — GitHub](https://github.com/lestrrat-go/jwx/releases) — v3.0.13 released; full JOSE suite; too broad for this use case
+- [React v19 release — react.dev](https://react.dev/blog/2024/12/05/react-19) — React 19 stable; 19.2.4 latest January 2026
+- [shadcn/ui React 19 — ui.shadcn.com](https://ui.shadcn.com/docs/react-19) — full React 19 compatibility
+- [shadcn/ui Tailwind v4 — ui.shadcn.com](https://ui.shadcn.com/docs/tailwind-v4) — Tailwind v4 fully supported
+- [Vite 8 announcement — vite.dev](https://vite.dev/blog/announcing-vite8) — Rolldown bundler; @vitejs/plugin-react v6
+- [TanStack Query v5 — npmjs.com](https://www.npmjs.com/package/@tanstack/react-query) — 5.91.2 latest March 2026
+- [React Router v7 — npmjs.com](https://www.npmjs.com/package/react-router) — 7.13.1 latest; library mode
+- [Go embed — pkg.go.dev](https://pkg.go.dev/embed) — `//go:embed all:` directive; stable since Go 1.16
 
 ---
 
@@ -938,5 +1284,5 @@ See the original v1.0 research in git history for full rationale on these choice
 
 ---
 
-*Stack research for: flowy v1.3 user auth, project RBAC, WDL registry, provenance tracking*
-*Researched: 2026-03-17*
+*Stack research for: flowy v2.0 React Web UI + v1.3 user auth + v1.2 S3 + v1.1 distributed server + v1.0 core*
+*Researched: 2026-03-20*
