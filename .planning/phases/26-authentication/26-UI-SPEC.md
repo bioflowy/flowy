@@ -114,7 +114,7 @@ Full-page centered layout. No sidebar. No AppShell.
 
 - Layout: `min-h-screen flex items-center justify-center bg-background`
 - Card: shadcn/ui `<Card>` — width `w-full max-w-sm`, padding `p-6`
-- Card header: app name ("flowy") at Display (28px / semibold), subtitle ("Sign in to continue") at Body (14px / regular / muted-foreground)
+- Card header: app name ("flowy") at Display (28px / semibold), subtitle ("Sign in to continue") at Body (14px / regular / muted-foreground). Primary visual anchor: the "flowy" display heading (28px/semibold) draws the eye first; the full-width "Sign in" button is the action focal point.
 - Form: shadcn/ui `<Form>` with react-hook-form + zod
 - Username field: shadcn/ui `<Label>` + `<Input>` (type="text", autocomplete="username")
 - Password field: shadcn/ui `<Label>` + `<Input>` (type="password", autocomplete="current-password")
@@ -156,7 +156,7 @@ Triggered from Account page. Uses shadcn/ui `<Dialog>`.
 - Confirm new password field: `<Label>` + `<Input>` (type="password", autocomplete="new-password")
 - Inline validation: show error under each field when it fails (shadcn/ui `<FormMessage>`)
 - Submit button: "Update password" — variant="default" (accent/primary), full-width
-- Cancel button: "Cancel" — variant="ghost", closes dialog without action
+- Cancel button: "Keep current password" — variant="ghost", closes dialog without action
 - On success: show success toast (sonner), reset form, close dialog
 
 ### Sidebar Modification: Account Area
@@ -186,7 +186,7 @@ This command installs: react-hook-form, @hookform/resolvers, zod as peer depende
 | `label` | `pnpm dlx shadcn@latest add label` | All form field labels |
 | `card` | `pnpm dlx shadcn@latest add card` | Login page centered card container |
 | `dialog` | `pnpm dlx shadcn@latest add dialog` | Change Password modal |
-| `button` | Already installed (Phase 25) | Sign in, Change Password, Sign out, Cancel |
+| `button` | Already installed (Phase 25) | Sign in, Change Password, Sign out, Keep current password |
 | `separator` | Already installed (Phase 25) | Sidebar section dividers (unchanged) |
 | `tooltip` | Already installed (Phase 25) | (no new uses in Phase 26) |
 | `LoginPage` | `web/src/features/auth/LoginPage.tsx` (custom) | Full-page login form |
@@ -278,7 +278,7 @@ No confirmation dialog for sign out. Action is reversible (user can log back in)
 | Change Password success toast | "Password updated successfully." |
 | Change Password error — wrong current | "Current password is incorrect." |
 | Change Password error — mismatch | "Passwords do not match." |
-| Change Password cancel | "Cancel" |
+| Change Password cancel | "Keep current password" |
 | Account page heading | "Account" |
 | Account section: Password | "Password" |
 | Account section: Session | "Session" |
