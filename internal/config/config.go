@@ -48,6 +48,17 @@ type AuthConfig struct {
 	DaemonToken string `yaml:"daemon_token"`
 }
 
+// CORSConfig holds CORS settings for the development workflow.
+// In production, flowy-ui proxies /api/* on the same origin so CORS is not needed.
+type CORSConfig struct {
+	// Enabled activates CORS middleware when true. Defaults to false.
+	Enabled bool `yaml:"enabled"`
+
+	// AllowedOrigins lists the origins permitted for cross-origin requests.
+	// Example: ["http://localhost:5173"] for Vite dev server.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
 // Config holds the top-level configuration for all flowy binaries.
 type Config struct {
 	// BaseDir is the root directory for run data (inputs/outputs/db).
@@ -65,6 +76,7 @@ type Config struct {
 	Client  ClientConfig  `yaml:"client"`
 	Storage StorageConfig `yaml:"storage"`
 	Auth    AuthConfig    `yaml:"auth"`
+	CORS    CORSConfig    `yaml:"cors"`
 }
 
 // ServerConfig holds configuration for the flowy-server binary.
