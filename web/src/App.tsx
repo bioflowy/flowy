@@ -22,8 +22,9 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<AppShell />}>
+          <Route element={<AppShell />}>
             <Route index element={<Navigate to="/projects" replace />} />
+            <Route path="*" element={<div>Select a page from the sidebar.</div>} />
           </Route>
         </Routes>
       </BrowserRouter>
