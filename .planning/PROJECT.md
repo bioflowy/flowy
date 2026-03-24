@@ -80,6 +80,7 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 ## Current State
 
 Shipped v1.3 with 37,776 LOC Go. All four milestones complete (v1.0–v1.3).
+Phase 25 complete — flowy-ui binary serves embedded React SPA with SPA routing fallback, reverse proxy, and CORS middleware. `make build-ui` produces single deployable binary.
 
 **Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, and run provenance tracking.
 
@@ -131,4 +132,4 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Embedded SPA in Go binary | Single binary deployment, no separate static file hosting | — Pending |
 
 ---
-*Last updated: 2026-03-20 after v2.0 milestone start*
+*Last updated: 2026-03-24 after Phase 25 completion*
