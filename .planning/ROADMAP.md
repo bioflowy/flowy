@@ -93,7 +93,11 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. All SPA assets load correctly in the browser — no 404s for JS/CSS files from the embedded FS.
   4. `flowy-ui --api-addr http://host:8124` proxies `/api/*` requests to the specified flowy-server address.
   5. flowy-server accepts requests from the Vite dev server origin when `cors.enabled: true` is set in config.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
+- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
+- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
 
 ### Phase 26: Authentication
 **Goal**: Users can log in with username and password, maintain a JWT session across the app, and are automatically redirected to login when their session expires or they access protected routes unauthenticated.
@@ -105,7 +109,11 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. Navigating to any protected route without a session redirects to the login screen; after login the user is returned to the originally requested URL.
   4. When a 401 response is received, the session is cleared and the user is redirected to login without manual action.
   5. User can change their own password via an account settings action and can log out from any page.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
+- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
+- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
 
 ### Phase 27: User Management
 **Goal**: Admins can view and manage all user accounts — creating new users, deactivating/reactivating existing accounts, and resetting passwords — via a dedicated users screen.
@@ -117,7 +125,11 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. Admin deactivates an active user (with confirmation dialog); the user's status changes to inactive in the table.
   4. Admin reactivates an inactive user; the user's status returns to active.
   5. Admin resets another user's password; the affected user can log in with the new password.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
+- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
+- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
 
 ### Phase 28: Project Management
 **Goal**: Users can view the projects they belong to, create new projects, and admins can manage project membership and role assignments through a project detail screen.
@@ -129,7 +141,11 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. Project detail screen shows a summary of the project including member list with role badges.
   4. Admin adds a member to a project with a selected role; the new member appears in the member list.
   5. Admin changes a member's role or removes a member from a project; the member list reflects the change.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
+- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
+- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
 
 ### Phase 29: Registry Browsing
 **Goal**: Users can browse registry entries within a project, view version history and WDL source code, and admins can manage tags on registry entries.
@@ -141,7 +157,11 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. User selects a version and sees the WDL source code rendered in a code viewer.
   4. Admin creates a new tag on a registry entry version; the tag appears on the entry in the list.
   5. Admin deletes or moves a tag; the change is reflected in the entry detail immediately.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
+- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
+- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
 
 ### Phase 30: File Browsing
 **Goal**: Users can view workflow runs for a project, browse output files for completed runs, and download files directly from S3 or local storage through the browser.
@@ -152,7 +172,11 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   2. User selects a completed run and sees its output files listed by path.
   3. User clicks a download button for an output file and the browser downloads the file (works for both S3 and local storage backends).
   4. User can preview the contents of small text output files inline without downloading.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
+- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
+- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
 
 ## Progress
 
@@ -182,7 +206,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |
-| 25. Infrastructure Foundation | v2.0 | 0/TBD | Not started | - |
+| 25. Infrastructure Foundation | v2.0 | 0/3 | In progress | - |
 | 26. Authentication | v2.0 | 0/TBD | Not started | - |
 | 27. User Management | v2.0 | 0/TBD | Not started | - |
 | 28. Project Management | v2.0 | 0/TBD | Not started | - |
