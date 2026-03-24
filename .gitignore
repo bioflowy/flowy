@@ -28,3 +28,8 @@
 
 # Conformance test output (legacy location, now under flowy-data/spectool)
 /conformance-tests/
+
+# Frontend workspace
+web/node_modules/
+web/dist/
+web/.pnpmfile.cjs
