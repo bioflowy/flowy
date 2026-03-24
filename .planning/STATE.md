@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
-status: planning
-stopped_at: Phase 25 context gathered
-last_updated: "2026-03-20T06:12:11.190Z"
-last_activity: 2026-03-20 — v2.0 roadmap created (6 phases, 26 requirements mapped)
+status: unknown
+stopped_at: "Completed 25-02-PLAN.md (CORS middleware)"
+last_updated: "2026-03-24T02:56:10.594Z"
+last_activity: 2026-03-20
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 3
+  completed_plans: 1
 ---
 
 # Project State
@@ -21,22 +20,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 25 — Infrastructure Foundation
+**Current focus:** Phase 25 — infrastructure-foundation
 
 ## Current Position
 
-Phase: 25 of 30 (Infrastructure Foundation)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-20 — v2.0 roadmap created (6 phases, 26 requirements mapped)
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 25 (infrastructure-foundation) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0 (v2.0)
+- Total plans completed: 2 (v2.0)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -59,6 +54,8 @@ Recent decisions affecting current work:
 - v2.0: `web/` chosen as frontend workspace directory (consistent with STACK.md; resolves `web/` vs `ui/` gap)
 - v2.0: JWT stored in sessionStorage for v2.0 MVP; httpOnly cookie deferred (acceptable for internal tool)
 - v2.0: flowy-ui is pure static-file server + reverse proxy — no domain knowledge; flowy-server unchanged except CORS
+- 25-02: CORS disabled by default; enabled via cors.enabled: true; middleware at top-level router before JWT groups
+- 25-02: AllowCredentials=false for v2.0 (sessionStorage JWT, not cookies)
 - v2.0: Phase 30 (File Browsing) requires 3 new backend endpoints not yet in flowy-server store layer
 
 ### Pending Todos
@@ -73,6 +70,6 @@ None.
 
 ## Session Continuity
 
-Last activity: 2026-03-20
-Stopped at: Phase 25 context gathered
-Resume file: .planning/phases/25-infrastructure-foundation/25-CONTEXT.md
+Last activity: 2026-03-24
+Stopped at: "Completed 25-02-PLAN.md (CORS middleware)"
+Resume file: .planning/phases/25-infrastructure-foundation/25-03-PLAN.md

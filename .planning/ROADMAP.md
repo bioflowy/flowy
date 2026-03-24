@@ -206,7 +206,7 @@ Plans:
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |
-| 25. Infrastructure Foundation | v2.0 | 0/3 | In progress | - |
+| 25. Infrastructure Foundation | 1/3 | In Progress|  | - |
 | 26. Authentication | v2.0 | 0/TBD | Not started | - |
 | 27. User Management | v2.0 | 0/TBD | Not started | - |
 | 28. Project Management | v2.0 | 0/TBD | Not started | - |

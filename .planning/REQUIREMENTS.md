@@ -12,7 +12,7 @@ Requirements for Web UI management milestone. Each maps to roadmap phases.
 - [ ] **INFRA-01**: flowy-ui Go binary serves embedded React SPA via go:embed with SPA fallback routing
 - [ ] **INFRA-02**: flowy-ui reverse-proxies /api/* requests to flowy-server
 - [ ] **INFRA-03**: Vite + React 19 + TypeScript + shadcn/ui + Tailwind v4 project scaffold
-- [ ] **INFRA-04**: flowy-server supports config-gated CORS middleware for development mode
+- [x] **INFRA-04**: flowy-server supports config-gated CORS middleware for development mode
 - [ ] **INFRA-05**: Makefile `build-ui` target builds frontend and Go binary
 
 ### Authentication
@@ -83,7 +83,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-01 | Phase 25 | Pending |
 | INFRA-02 | Phase 25 | Pending |
 | INFRA-03 | Phase 25 | Pending |
-| INFRA-04 | Phase 25 | Pending |
+| INFRA-04 | Phase 25 | Complete |
 | INFRA-05 | Phase 25 | Pending |
 | AUTH-01 | Phase 26 | Pending |
 | AUTH-02 | Phase 26 | Pending |
