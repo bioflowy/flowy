@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-03-24T02:59:27.113Z"
+stopped_at: Completed 25-03-PLAN.md
+last_updated: "2026-03-24T03:20:00.000Z"
 last_activity: 2026-03-24
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 ## Current Position
 
-Phase: 25 (infrastructure-foundation) — EXECUTING
-Plan: 2 of 3
+Phase: 25 (infrastructure-foundation) — COMPLETE
+Plan: 3 of 3
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2 (v2.0)
+- Total plans completed: 3 (v2.0)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -40,6 +40,7 @@ Plan: 2 of 3
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 25-infrastructure-foundation P01 | 2 tasks | 4 min | 19 files |
+| 25-infrastructure-foundation P03 | 3 tasks | 15 min | 4 files |
 
 *Updated after each plan completion*
 
@@ -59,6 +60,9 @@ Recent decisions affecting current work:
 - v2.0: Phase 30 (File Browsing) requires 3 new backend endpoints not yet in flowy-server store layer
 - [Phase 25-01]: pnpm create vite@6 is interactive-only; project scaffolded manually with exact Vite react-ts template file contents
 - [Phase 25-01]: AppShell and Sidebar created in Task 1 commit; App.tsx requires layout components to compile so they are inseparable
+- [Phase 25-03]: go:embed lives in web/embed.go (not cmd/flowy-ui) — Go forbids .. in embed paths; exports DistFS
+- [Phase 25-03]: vite.config.ts base must be '/' not './' — relative base breaks asset URLs when served by Go http.FileServer at root
+- [Phase 25-03]: SPA fallback uses pre-flight fs.Open check to avoid ResponseWriter-already-written problem
 
 ### Pending Todos
 
@@ -73,5 +77,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-03-24
-Stopped at: Completed 25-01-PLAN.md
+Stopped at: Completed 25-03-PLAN.md
 Resume file: None

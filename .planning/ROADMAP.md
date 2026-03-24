@@ -74,7 +74,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 **Milestone Goal:** Provide a browser-based management interface for flowy covering authentication, user/project/registry management, and file browsing with download, served from a new `flowy-ui` binary embedding the React SPA.
 
-- [ ] **Phase 25: Infrastructure Foundation** — flowy-ui binary with go:embed SPA serving, Vite+React+TypeScript scaffold, build pipeline
+- [x] **Phase 25: Infrastructure Foundation** — flowy-ui binary with go:embed SPA serving, Vite+React+TypeScript scaffold, build pipeline (completed 2026-03-24)
 - [ ] **Phase 26: Authentication** — Login screen, JWT session management, CORS support, protected route gating
 - [ ] **Phase 27: User Management** — Admin user list, create, deactivate/reactivate, password reset
 - [ ] **Phase 28: Project Management** — Project list/create, project detail, member management with RBAC roles
@@ -206,7 +206,7 @@ Plans:
 | 22. Registry-Based Execution | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |
-| 25. Infrastructure Foundation | 2/3 | In Progress|  | - |
+| 25. Infrastructure Foundation | 3/3 | Complete   | 2026-03-24 | - |
 | 26. Authentication | v2.0 | 0/TBD | Not started | - |
 | 27. User Management | v2.0 | 0/TBD | Not started | - |
 | 28. Project Management | v2.0 | 0/TBD | Not started | - |
