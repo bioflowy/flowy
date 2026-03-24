@@ -1,6 +1,7 @@
 FLOWY_BIN     := ./flowy
 SERVER_BIN    := ./flowy-server
 DAEMON_BIN    := ./flowy-daemon
+UI_BIN        := ./flowy-ui
 SPECTOOL_BIN  := $(HOME)/.cargo/bin/spectool
 WDL_SPEC_DIR  := /tmp/wdl-spec
 
@@ -23,7 +24,7 @@ TEST_BUCKET  := flowy-spectool-test
 S3_CONFIG    := /tmp/flowy-s3.yaml
 S3_PORT      := 8125
 
-.PHONY: build spectool spectool-s3 integration test clean
+.PHONY: build build-ui spectool spectool-s3 integration test clean
 
 # --- Build targets ---
 
@@ -39,6 +40,14 @@ $(SERVER_BIN): $(GO_SOURCES)
 
 $(DAEMON_BIN): $(GO_SOURCES)
 	go build -o $(DAEMON_BIN) ./cmd/flowy-daemon
+
+# --- UI build targets ---
+
+build-ui: web/dist
+	go build -o $(UI_BIN) ./cmd/flowy-ui
+
+web/dist: web/package.json $(shell find web/src -name '*.ts' -o -name '*.tsx' -o -name '*.css' 2>/dev/null)
+	cd web && pnpm install --frozen-lockfile && pnpm build
 
 test:
 	go test ./... -count=1
@@ -221,5 +230,6 @@ spectool-s3: $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(SPECTOOL_BIN) $(WDL_SPEC
 # --- Cleanup ---
 
 clean:
-	rm -f $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN)
+	rm -f $(FLOWY_BIN) $(SERVER_BIN) $(DAEMON_BIN) $(UI_BIN)
 	rm -f $(SERVER_PID) $(DAEMON_PID)
+	rm -rf web/dist

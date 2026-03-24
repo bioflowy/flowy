@@ -33,3 +33,6 @@
 web/node_modules/
 web/dist/
 web/.pnpmfile.cjs
+
+# flowy-ui binary
+/flowy-ui
