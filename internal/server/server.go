@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 
 	"github.com/bioflowy/flowy/internal/api"
 	"github.com/bioflowy/flowy/internal/auth"
@@ -83,6 +84,18 @@ func (s *Server) newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	// CORS: config-gated, dev-only. Must be registered at top-level before
+	// JWT middleware so OPTIONS preflight requests are handled without auth.
+	if s.cfg.CORS.Enabled {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   s.cfg.CORS.AllowedOrigins,
+			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+			AllowCredentials: false,
+			MaxAge:           300,
+		}))
+	}
 
 	// Override default 404/405 to return JSON error responses.
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
