@@ -25,10 +25,10 @@ Requirements for Web UI management milestone. Each maps to roadmap phases.
 
 ### User Management
 
-- [ ] **USER-01**: Admin can view all users in a table
-- [ ] **USER-02**: Admin can create a new user
-- [ ] **USER-03**: Admin can deactivate/reactivate a user
-- [ ] **USER-04**: Admin can reset another user's password
+- [x] **USER-01**: Admin can view all users in a table
+- [x] **USER-02**: Admin can create a new user
+- [x] **USER-03**: Admin can deactivate/reactivate a user
+- [x] **USER-04**: Admin can reset another user's password
 
 ### Project Management
 
@@ -90,10 +90,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03 | Phase 26 | Complete |
 | AUTH-04 | Phase 26 | Complete |
 | AUTH-05 | Phase 26 | Complete |
-| USER-01 | Phase 27 | Pending |
-| USER-02 | Phase 27 | Pending |
-| USER-03 | Phase 27 | Pending |
-| USER-04 | Phase 27 | Pending |
+| USER-01 | Phase 27 | Complete |
+| USER-02 | Phase 27 | Complete |
+| USER-03 | Phase 27 | Complete |
+| USER-04 | Phase 27 | Complete |
 | PROJ-01 | Phase 28 | Pending |
 | PROJ-02 | Phase 28 | Pending |
 | PROJ-03 | Phase 28 | Pending |

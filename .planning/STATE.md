@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Phase 27 UI-SPEC approved
-last_updated: "2026-04-06T02:40:33.417Z"
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-04-06T03:03:57.102Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 26 — authentication
+**Current focus:** Phase 27 — user-management
 
 ## Current Position
 
-Phase: 26 (authentication) — COMPLETE
-Plan: 3 of 3 (all complete)
+Phase: 27 (user-management) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Plan: 3 of 3 (all complete)
 | 26-authentication P03 | 3 tasks | 5 min | 7 files |
 
 *Updated after each plan completion*
+| Phase 27 P01 | 4 | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase 26-01]: jsdom v25 used instead of v29 due to top-level await ESM incompatibility with vitest worker pools
 - [Phase 26-01]: Manual jest-dom matchers setup (expect.extend) instead of auto-setup import for ESM compatibility
 - [Phase 26-01]: Test files excluded from tsconfig.app.json build to prevent noUnusedLocals errors
+- [Phase 27]: shadcn CLI places files in @/ directory; move manually to src/components/ui/ (Phase 27 pattern consistent with Phase 26)
+- [Phase 27]: PATCH added to CORS AllowedMethods to support new PATCH /users/{id}/reactivate route
 
 ### Pending Todos
 
@@ -83,5 +86,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-06
-Stopped at: Phase 27 UI-SPEC approved
-Resume file: .planning/phases/27-user-management/27-UI-SPEC.md
+Stopped at: Completed 27-01-PLAN.md
+Resume file: None
