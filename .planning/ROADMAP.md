@@ -140,11 +140,10 @@ Plans:
   3. Project detail screen shows a summary of the project including member list with role badges.
   4. Admin adds a member to a project with a selected role; the new member appears in the member list.
   5. Admin changes a member's role or removes a member from a project; the member list reflects the change.
-**Plans**: 3 plans
+**Plans**: 2 plans
 Plans:
-- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
-- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
-- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
+- [ ] 28-01-PLAN.md — Project data layer, ProjectsPage card grid, CreateProjectPage with slug auto-generation
+- [ ] 28-02-PLAN.md — ProjectDetailPage with member management, sidebar refactor with project dropdown
 
 ### Phase 29: Registry Browsing
 **Goal**: Users can browse registry entries within a project, view version history and WDL source code, and admins can manage tags on registry entries.
@@ -208,6 +207,6 @@ Plans:
 | 25. Infrastructure Foundation | 3/3 | Complete    | 2026-03-24 | - |
 | 26. Authentication | 3/3 | Complete    | 2026-04-06 | - |
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
-| 28. Project Management | v2.0 | 0/TBD | Not started | - |
+| 28. Project Management | v2.0 | 0/2 | Not started | - |
 | 29. Registry Browsing | v2.0 | 0/TBD | Not started | - |
 | 30. File Browsing | v2.0 | 0/TBD | Not started | - |
