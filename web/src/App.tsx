@@ -1,16 +1,30 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryCache,
+  MutationCache,
+} from '@tanstack/react-query'
 import { Toaster } from 'sonner'
+import { ApiError } from '@/lib/apiClient'
+import { useAuthStore } from '@/store/authStore'
 import { AppShell } from '@/components/layout/AppShell'
+import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
+import { LoginPage } from '@/features/auth/LoginPage'
+
+const handleAuthError = (error: unknown) => {
+  if (error instanceof ApiError && error.status === 401) {
+    useAuthStore.getState().clearAuth()
+  }
+}
 
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: handleAuthError }),
+  mutationCache: new MutationCache({ onError: handleAuthError }),
   defaultOptions: {
     queries: {
       retry: (failureCount, error) => {
-        if (error instanceof Error && 'status' in error) {
-          const status = (error as { status: number }).status
-          if (status === 401 || status === 403) return false
-        }
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return false
         return failureCount < 2
       },
     },
@@ -22,9 +36,13 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<Navigate to="/projects" replace />} />
-            <Route path="*" element={<div>Select a page from the sidebar.</div>} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/projects" replace />} />
+              <Route path="account" element={<div>Account page placeholder</div>} />
+              <Route path="*" element={<div>Select a page from the sidebar.</div>} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>
