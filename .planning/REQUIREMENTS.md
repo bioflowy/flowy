@@ -32,8 +32,8 @@ Requirements for Web UI management milestone. Each maps to roadmap phases.
 
 ### Project Management
 
-- [ ] **PROJ-01**: User can view list of projects they belong to
-- [ ] **PROJ-02**: User can create a new project
+- [x] **PROJ-01**: User can view list of projects they belong to
+- [x] **PROJ-02**: User can create a new project
 - [ ] **PROJ-03**: Admin can manage project members (add/remove/change role)
 - [ ] **PROJ-04**: User can view project dashboard with summary info
 
@@ -94,8 +94,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | USER-02 | Phase 27 | Complete |
 | USER-03 | Phase 27 | Complete |
 | USER-04 | Phase 27 | Complete |
-| PROJ-01 | Phase 28 | Pending |
-| PROJ-02 | Phase 28 | Pending |
+| PROJ-01 | Phase 28 | Complete |
+| PROJ-02 | Phase 28 | Complete |
 | PROJ-03 | Phase 28 | Pending |
 | PROJ-04 | Phase 28 | Pending |
 | REG-01 | Phase 29 | Pending |

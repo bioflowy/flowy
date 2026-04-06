@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Phase 28 UI-SPEC approved
-last_updated: "2026-04-06T08:09:12.332Z"
+stopped_at: "Completed 28-01-PLAN.md"
+last_updated: "2026-04-06T08:36:40Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 8
+  total_plans: 10
   completed_plans: 8
 ---
 
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 27 — user-management
+**Current focus:** Phase 28 — project-management
 
 ## Current Position
 
-Phase: 27 (user-management) — EXECUTING
-Plan: 1 of 2
+Phase: 28 (project-management) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -76,6 +76,10 @@ Recent decisions affecting current work:
 - [Phase 27]: AlertDialog async confirm uses e.preventDefault() to block default close, then calls onOpenChange(false) after await
 - [Phase 27]: Reactivate is inline (no confirmation dialog) — destructive actions require dialog, restorative do not
 - [Phase 27]: Self-row protection in UsersPage based on username string comparison against authStore.username
+- [Phase 28-01]: GET /users relaxed from admin-only to any-authenticated-user — required for Plan 02 Add Member dropdown
+- [Phase 28-01]: No member_count on project cards — ProjectResponse has no such field; avoids N+1 queries
+- [Phase 28-01]: slugManuallyEdited flag stops slug auto-generation once user directly edits slug field
+- [Phase 28-01]: Zustand selector mock pattern: mockImplementation((selector) => selector(state)) for (s) => s.field usage
 
 ### Pending Todos
 
@@ -90,5 +94,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-06
-Stopped at: Phase 28 UI-SPEC approved
-Resume file: .planning/phases/28-project-management/28-UI-SPEC.md
+Stopped at: Completed 28-01-PLAN.md
+Resume file: .planning/phases/28-project-management/28-01-SUMMARY.md
