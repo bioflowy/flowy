@@ -124,4 +124,59 @@ describe('apiClient', () => {
       })
     )
   })
+
+  it('apiClient.delete sends DELETE with auth header', async () => {
+    useAuthStore.setState({ token: 'tok-delete', username: 'alice', role: 'admin' })
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: () => Promise.resolve(undefined),
+    })
+
+    await apiClient.delete('/users/user-1')
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/users/user-1', {
+      method: 'DELETE',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer tok-delete',
+      }),
+    })
+  })
+
+  it('apiClient.patch sends PATCH with body and auth header', async () => {
+    useAuthStore.setState({ token: 'tok-patch', username: 'alice', role: 'admin' })
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 'user-1', is_active: true }),
+    })
+
+    await apiClient.patch('/users/user-1/reactivate', { reason: 'test' })
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/users/user-1/reactivate', {
+      method: 'PATCH',
+      body: JSON.stringify({ reason: 'test' }),
+      headers: expect.objectContaining({
+        Authorization: 'Bearer tok-patch',
+      }),
+    })
+  })
+
+  it('apiClient.patch sends PATCH without body when body is undefined', async () => {
+    useAuthStore.setState({ token: 'tok-patch', username: 'alice', role: 'admin' })
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: 'user-1', is_active: true }),
+    })
+
+    await apiClient.patch('/users/user-1/reactivate')
+
+    const callArgs = mockFetch.mock.calls[0][1]
+    expect(callArgs.method).toBe('PATCH')
+    expect(callArgs.body).toBeUndefined()
+  })
 })

@@ -130,6 +130,66 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleReactivateUser handles PATCH /users/{id}/reactivate (admin only).
+// Sets the user's is_active to true and returns the updated user.
+func (s *Server) handleReactivateUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "user id is required")
+		return
+	}
+	user, err := s.store.GetUserByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	user.IsActive = true
+	if err := s.store.UpdateUser(r.Context(), user); err != nil {
+		log.Printf("handleReactivateUser: update user %s: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "failed to reactivate user")
+		return
+	}
+	writeJSON(w, http.StatusOK, userToResponse(user))
+}
+
+// handleAdminResetPassword handles PUT /users/{id}/password (admin only).
+// Resets the user's password without requiring the current password.
+// Returns 204 on success.
+func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "user id is required")
+		return
+	}
+	var req api.AdminResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	user, err := s.store.GetUserByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	hash, err := auth.HashPassword(req.NewPassword, auth.DefaultBcryptCost)
+	if err != nil {
+		log.Printf("handleAdminResetPassword: hash password for user %s: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "failed to reset password")
+		return
+	}
+	user.PasswordHash = hash
+	if err := s.store.UpdateUser(r.Context(), user); err != nil {
+		log.Printf("handleAdminResetPassword: update user %s: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "failed to reset password")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleGetMe handles GET /users/me.
 // Returns the authenticated user's profile.
 func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request) {

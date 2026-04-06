@@ -102,6 +102,11 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+// AdminResetPasswordRequest is the request body for PUT /users/{id}/password (admin only).
+type AdminResetPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+}
+
 // TaskRunRequest is the request body for POST /tasks/run.
 // Runs a single named task from a WDL file (used by flowy run --task).
 type TaskRunRequest struct {

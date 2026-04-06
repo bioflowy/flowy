@@ -90,7 +90,7 @@ func (s *Server) newRouter() *chi.Mux {
 	if s.cfg.CORS.Enabled {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORS.AllowedOrigins,
-			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 			AllowCredentials: false,
 			MaxAge:           300,
@@ -122,6 +122,8 @@ func (s *Server) newRouter() *chi.Mux {
 			r.With(roleRequired("admin")).Post("/users", s.handleCreateUser)
 			r.With(roleRequired("admin")).Get("/users", s.handleListUsers)
 			r.With(roleRequired("admin")).Delete("/users/{id}", s.handleDeleteUser)
+			r.With(roleRequired("admin")).Patch("/users/{id}/reactivate", s.handleReactivateUser)
+			r.With(roleRequired("admin")).Put("/users/{id}/password", s.handleAdminResetPassword)
 		})
 
 		// Project routes (JWT-protected).

@@ -401,3 +401,126 @@ func TestDaemonAuthMiddleware_InvalidToken(t *testing.T) {
 		t.Fatalf("expected 401, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }
+
+// ===== handleReactivateUser tests =====
+
+func TestReactivateUser(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "admin-1", "admin", "adminpass", "admin")
+	createTestUser(t, st, "user-1", "alice", "pass", "user")
+	adminToken := issueTestToken(t, "admin-1", "admin", "admin")
+
+	// First deactivate the user.
+	if err := st.DeactivateUser(context.Background(), "user-1"); err != nil {
+		t.Fatalf("DeactivateUser: %v", err)
+	}
+
+	// Now reactivate via PATCH.
+	w := doAuthRequest(t, srv, "PATCH", "/users/user-1/reactivate", nil, adminToken)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp api.UserResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.IsActive {
+		t.Error("expected is_active=true after reactivation")
+	}
+	if resp.Username != "alice" {
+		t.Errorf("username: got %q, want %q", resp.Username, "alice")
+	}
+}
+
+func TestReactivateUser_NonAdmin(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "user")
+	userToken := issueTestToken(t, "user-1", "alice", "user")
+
+	w := doAuthRequest(t, srv, "PATCH", "/users/user-1/reactivate", nil, userToken)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestReactivateUser_NotFound(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "admin-1", "admin", "adminpass", "admin")
+	adminToken := issueTestToken(t, "admin-1", "admin", "admin")
+
+	w := doAuthRequest(t, srv, "PATCH", "/users/00000000-0000-0000-0000-000000000099/reactivate", nil, adminToken)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// ===== handleAdminResetPassword tests =====
+
+func TestAdminResetPassword(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "admin-1", "admin", "adminpass", "admin")
+	createTestUser(t, st, "user-1", "alice", "oldpassword", "user")
+	adminToken := issueTestToken(t, "admin-1", "admin", "admin")
+
+	w := doAuthRequest(t, srv, "PUT", "/users/user-1/password", map[string]string{
+		"new_password": "newpassword123",
+	}, adminToken)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Verify login with new password works.
+	wLogin := doAuthRequest(t, srv, "POST", "/auth/login", api.LoginRequest{
+		Username: "alice",
+		Password: "newpassword123",
+	}, "")
+	if wLogin.Code != http.StatusOK {
+		t.Errorf("expected new password to work (200), got %d (body: %s)", wLogin.Code, wLogin.Body.String())
+	}
+}
+
+func TestAdminResetPassword_TooShort(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "admin-1", "admin", "adminpass", "admin")
+	createTestUser(t, st, "user-1", "alice", "oldpassword", "user")
+	adminToken := issueTestToken(t, "admin-1", "admin", "admin")
+
+	w := doAuthRequest(t, srv, "PUT", "/users/user-1/password", map[string]string{
+		"new_password": "abc",
+	}, adminToken)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var errResp api.ErrorResponse
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if errResp.Error != "password must be at least 8 characters" {
+		t.Errorf("error message: got %q, want %q", errResp.Error, "password must be at least 8 characters")
+	}
+}
+
+func TestAdminResetPassword_NonAdmin(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "user")
+	userToken := issueTestToken(t, "user-1", "alice", "user")
+
+	w := doAuthRequest(t, srv, "PUT", "/users/user-1/password", map[string]string{
+		"new_password": "newpassword123",
+	}, userToken)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
