@@ -207,7 +207,7 @@ Plans:
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |
 | 25. Infrastructure Foundation | 3/3 | Complete    | 2026-03-24 | - |
-| 26. Authentication | 3/3 | Complete   | 2026-04-06 | - |
+| 26. Authentication | 3/3 | Complete    | 2026-04-06 | - |
 | 27. User Management | v2.0 | 0/TBD | Not started | - |
 | 28. Project Management | v2.0 | 0/TBD | Not started | - |
 | 29. Registry Browsing | v2.0 | 0/TBD | Not started | - |
