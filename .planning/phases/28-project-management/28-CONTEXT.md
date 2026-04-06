@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-Users can view the projects they belong to, create new projects (global admins only), and admins can manage project membership and role assignments through a project detail screen. Backend endpoints already exist — this phase builds the frontend UI and wires it to existing API.
+Users can view the projects they belong to, create new projects (global admins only), and admins can manage project membership and role assignments through a project detail screen. Backend endpoints already exist — this phase builds the frontend UI and wires it to existing API. One backend change: relax GET /users from admin-only to any-authenticated-user so Add Member dropdown works for all project admins.
 
 </domain>
 
@@ -15,7 +15,7 @@ Users can view the projects they belong to, create new projects (global admins o
 
 ### Project list display
 - Card grid layout on `/projects` page — responsive grid of project cards
-- Each card shows: project name (title), slug (subtitle), description snippet (2 lines max), member count
+- Each card shows: project name (title), slug (subtitle), description snippet (2 lines max) — no member count (ProjectResponse lacks member_count field; accepted trade-off to avoid N+1)
 - Clicking a card sets it as the active project in the sidebar dropdown AND navigates to `/projects/{slug}`
 - Default landing page after login remains `/projects` — user picks a project from the grid
 - Sidebar has a project dropdown selector at top; selecting a project shows project-scoped nav items (Registry, Runs, Members) below it
@@ -30,7 +30,7 @@ Users can view the projects they belong to, create new projects (global admins o
 - Project admins can edit description and delete the project (not limited to global admins)
 
 ### Member management
-- Add member: Dialog overlay with user dropdown (all active users not yet in project) + role select (admin/executor/viewer, default viewer) + Add button
+- Add member: Dialog overlay with user dropdown (all active users not yet in project) + role select (admin/executor/viewer, default viewer) + Add button. Backend change: relax GET /users from admin-only to any authenticated user so the dropdown works for all project admins.
 - Role change: Inline Select dropdown in role column — changing immediately updates via API + success toast (no dialog)
 - Remove member: Three-dot dropdown on row with "Remove" option — confirmation dialog "Remove {username} from {project}?" with destructive red button
 - Self-protection: hide three-dot menu and disable role dropdown for the logged-in user's own row (same pattern as Phase 27 users table)
