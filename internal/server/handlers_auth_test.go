@@ -265,6 +265,27 @@ func TestHandleListUsers_Admin(t *testing.T) {
 	}
 }
 
+func TestHandleListUsers_NonAdmin(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "admin-1", "admin", "adminpass", "admin")
+	createTestUser(t, st, "user-1", "alice", "pass", "executor")
+	userToken := issueTestToken(t, "user-1", "alice", "executor")
+
+	w := doAuthRequest(t, srv, "GET", "/users", nil, userToken)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	var resp []api.UserResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp) == 0 {
+		t.Error("expected non-empty user list")
+	}
+}
+
 // ===== handleDeleteUser tests =====
 
 func TestHandleDeleteUser_Admin(t *testing.T) {
