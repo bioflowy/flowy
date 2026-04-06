@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-04-06T03:03:57.102Z"
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-04-06T03:13:37.965Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -47,6 +47,7 @@ Plan: 1 of 2
 
 *Updated after each plan completion*
 | Phase 27 P01 | 4 | 2 tasks | 14 files |
+| Phase 27 P02 | 20 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - [Phase 26-01]: Test files excluded from tsconfig.app.json build to prevent noUnusedLocals errors
 - [Phase 27]: shadcn CLI places files in @/ directory; move manually to src/components/ui/ (Phase 27 pattern consistent with Phase 26)
 - [Phase 27]: PATCH added to CORS AllowedMethods to support new PATCH /users/{id}/reactivate route
+- [Phase 27]: AlertDialog async confirm uses e.preventDefault() to block default close, then calls onOpenChange(false) after await
+- [Phase 27]: Reactivate is inline (no confirmation dialog) — destructive actions require dialog, restorative do not
+- [Phase 27]: Self-row protection in UsersPage based on username string comparison against authStore.username
 
 ### Pending Todos
 
@@ -86,5 +90,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-06
-Stopped at: Completed 27-01-PLAN.md
+Stopped at: Completed 27-02-PLAN.md
 Resume file: None
