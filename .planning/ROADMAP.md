@@ -10,7 +10,7 @@ flowy is a WDL 1.2 workflow engine in Go. v1.0 shipped as a CLI tool with full p
 - ✅ **v1.1 Distributed Execution** — Phases 9-13 (shipped 2026-03-12)
 - ✅ **v1.2 S3 Object Storage** — Phases 14-18 (shipped 2026-03-13)
 - ✅ **v1.3 Project & Registry** — Phases 19-24 (shipped 2026-03-20)
-- 🚧 **v2.0 Web UI — Management** — Phases 25-30 (in progress)
+- 🚧 **v2.0 Web UI — Management** �� Phases 25-30 (in progress)
 
 ## Phases
 
@@ -33,7 +33,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 <details>
 <summary>✅ v1.1 Distributed Execution (Phases 9-13) — SHIPPED 2026-03-12</summary>
 
-- [x] **Phase 9: API Contract + Persistence Foundation** (2/2 plans) — completed 2026-03-11
+- [x] **Phase 9: API Contract + Persistence Foundation** (2/2 plans) ��� completed 2026-03-11
 - [x] **Phase 10: Server Binary + DAG Dispatch** (2/2 plans) — completed 2026-03-11
 - [x] **Phase 11: Daemon Binary + Task Execution** (2/2 plans) — completed 2026-03-12
 - [x] **Phase 12: Client CLI + Spectool Compatibility** (3/3 plans) — completed 2026-03-12
@@ -79,7 +79,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [ ] **Phase 27: User Management** — Admin user list, create, deactivate/reactivate, password reset
 - [ ] **Phase 28: Project Management** — Project list/create, project detail, member management with RBAC roles
 - [ ] **Phase 29: Registry Browsing** — Registry entry list, version history, WDL source viewer, tag management
-- [ ] **Phase 30: File Browsing** — Run list, output file list, file download (S3/local), inline text preview
+- [ ] **Phase 30: File Browsing** ��� Run list, output file list, file download (S3/local), inline text preview
 
 ## Phase Details
 
@@ -111,9 +111,9 @@ Plans:
   5. User can change their own password via an account settings action and can log out from any page.
 **Plans**: 3 plans
 Plans:
-- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
-- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
-- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
+- [ ] 26-01-PLAN.md — Test infra, shadcn/ui components, Zustand auth store, API client with token injection
+- [ ] 26-02-PLAN.md — Login page, ProtectedRoute, App.tsx route wiring with 401 interception
+- [ ] 26-03-PLAN.md — Account page, password change dialog, logout hook, sidebar user display
 
 ### Phase 27: User Management
 **Goal**: Admins can view and manage all user accounts — creating new users, deactivating/reactivating existing accounts, and resetting passwords — via a dedicated users screen.
@@ -207,7 +207,7 @@ Plans:
 | 23. Provenance Tracking | v1.3 | 2/2 | Complete | 2026-03-20 |
 | 24. Fix CLI Polling for Project-Scoped Runs | v1.3 | 1/1 | Complete | 2026-03-20 |
 | 25. Infrastructure Foundation | 3/3 | Complete    | 2026-03-24 | - |
-| 26. Authentication | v2.0 | 0/TBD | Not started | - |
+| 26. Authentication | v2.0 | 0/3 | Not started | - |
 | 27. User Management | v2.0 | 0/TBD | Not started | - |
 | 28. Project Management | v2.0 | 0/TBD | Not started | - |
 | 29. Registry Browsing | v2.0 | 0/TBD | Not started | - |
