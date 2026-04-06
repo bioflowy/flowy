@@ -97,6 +97,8 @@ Role badge colors (from shadcn/ui Badge component variants):
 
 Rationale: admin is the highest-privilege role, warranting the primary/accent color to signal elevated access. Executor gets secondary emphasis. Viewer gets neutral outline. Distinguished by both color and text content (never color alone).
 
+Note: The inline Role `<Select>` trigger in the member table shows `--accent` background on hover. This is Radix UI / shadcn/ui framework-default behavior for Select triggers and does not constitute an intentional accent usage in this phase's 10% accent budget. It is acceptable as-is and does not require overriding.
+
 Source: Phase 27 UI-SPEC color contract carried forward. Badge color mapping from CONTEXT.md Discretion list (exact badge colors for roles).
 
 ---
@@ -108,6 +110,8 @@ Phase 28 introduces three new pages and one dialog modal. It also modifies the s
 ### Screen 1: Projects Page (`/projects`)
 
 Default landing page after login. Card grid showing projects the current user belongs to.
+
+Focal Point: The "Create Project" button (top-right of the heading row) is the primary visual anchor for admin users — it is the only accent-colored element on the page and draws the eye to the primary action. For non-admin users, the focal point shifts to the first project card in the grid.
 
 ```
 +-----------------------------------------------------------+
@@ -243,7 +247,7 @@ Triggered by "Add Member" button on ProjectDetailPage. Uses shadcn/ui `<Dialog>`
 |  Username *          [      ] |
 |  Role *              [viewer] |
 |                               |
-|  [Cancel]        [Add Member] |
+|  [Never Mind]    [Add Member] |
 +-------------------------------+
 ```
 
@@ -253,7 +257,7 @@ Triggered by "Add Member" button on ProjectDetailPage. Uses shadcn/ui `<Dialog>`
   - For non-global project admins: plain `<Input>` (type="text", placeholder="Enter username"). `GET /users` is admin-only; text input works for all.
 - Role field: `<Label>` "Role" + `<Select>` with options: admin, executor, viewer. Default: "viewer"
 - "Add Member" submit: `variant="default"` (accent/primary). Loading: disabled + `<Loader2 animate-spin>`, text "Adding..."
-- "Cancel": `variant="ghost"`
+- "Never Mind": `variant="ghost"`
 - On success: sonner toast "Member added.", dialog closes, member table refreshes
 - On error (user not found, already member): inline error below form
 
@@ -270,14 +274,14 @@ Triggered from row three-dot "Remove" option. Uses shadcn/ui `<AlertDialog>`.
 |  This will revoke their access to   |
 |  this project.                      |
 |                                     |
-|  [Cancel]           [Remove]        |
+|  [Keep Member]         [Remove]     |
 +-------------------------------------+
 ```
 
 - Dialog title: "Remove {username} from {slug}?" — Heading (20px / semibold)
 - Description: "This will revoke their access to this project." — Body (14px / regular / 1.5), muted-foreground
 - Confirm button: "Remove" — `variant="destructive"`. Loading: disabled + `<Loader2 animate-spin>`, text "Removing..."
-- Cancel button: "Cancel" — `variant="outline"`
+- Cancel button: "Keep Member" — `variant="outline"`
 - Uses `e.preventDefault()` to block default close on async (Phase 27 AlertDialog pattern)
 - On success: sonner toast "{username} removed.", dialog closes, member table refreshes
 - On error: sonner toast "Something went wrong. Please try again."
@@ -295,14 +299,14 @@ Triggered by "Delete Project" button in ProjectDetailPage header. Uses shadcn/ui
 |  This action cannot be undone.      |
 |  All project data will be removed.  |
 |                                     |
-|  [Cancel]           [Delete]        |
+|  [Keep Project]        [Delete]     |
 +-------------------------------------+
 ```
 
 - Dialog title: "Delete {slug}?" — Heading (20px / semibold)
 - Description: "This action cannot be undone. All project data will be removed." — Body (14px / regular / 1.5), muted-foreground
 - Confirm button: "Delete" — `variant="destructive"`. Loading: disabled + `<Loader2 animate-spin>`, text "Deleting..."
-- Cancel button: "Cancel" — `variant="outline"`
+- Cancel button: "Keep Project" — `variant="outline"`
 - Uses `e.preventDefault()` to block default close on async
 - On success: navigate to `/projects`, call `setActiveProject(null)`, sonner toast "{slug} deleted."
 - On error: sonner toast "Something went wrong. Please try again."
@@ -321,14 +325,14 @@ Triggered by "Edit Description" button in ProjectDetailPage header. Uses shadcn/
 |  [                           ]|
 |  [                           ]|
 |                               |
-|  [Cancel]          [Save]     |
+|  [Discard Changes] [Update Description] |
 +-------------------------------+
 ```
 
 - Dialog title: "Edit Description" — Heading (20px / semibold)
 - Description field: `<Textarea>` (4 rows) pre-filled with current project description. Placeholder: "A brief description of this project."
-- "Save" submit: `variant="default"`. Loading: disabled + `<Loader2 animate-spin>`, text "Saving..."
-- "Cancel": `variant="ghost"`
+- "Update Description" submit: `variant="default"`. Loading: disabled + `<Loader2 animate-spin>`, text "Saving..."
+- "Discard Changes": `variant="ghost"`
 - On success: sonner toast "Description updated.", dialog closes, project detail refreshes
 - On error: sonner toast "Something went wrong. Please try again."
 
@@ -428,7 +432,7 @@ cd /home/uehara/flowy/web && pnpm dlx shadcn@latest add textarea
 | State | Visual |
 |-------|--------|
 | Default | `w-32` trigger, shows current role |
-| Hover | `--accent` background on trigger |
+| Hover | `--accent` background on trigger (framework-default Radix UI behavior — see Color section note) |
 | Open | Dropdown visible below trigger |
 | Changing | Calls API immediately on selection, shows success toast |
 | Error | Sonner toast "Something went wrong. Please try again." |
@@ -505,6 +509,7 @@ cd /home/uehara/flowy/web && pnpm dlx shadcn@latest add textarea
 | Add Member field: Role | "Role" |
 | Add Member submit (idle) | "Add Member" |
 | Add Member submit (loading) | "Adding..." |
+| Add Member cancel button | "Never Mind" |
 | Add Member success toast | "Member added." |
 | Add Member error — user not found | "User not found." |
 | Add Member error — already member | "User is already a member of this project." |
@@ -513,18 +518,18 @@ cd /home/uehara/flowy/web && pnpm dlx shadcn@latest add textarea
 | Remove member dialog description | "This will revoke their access to this project." |
 | Remove member confirm button (idle) | "Remove" |
 | Remove member confirm button (loading) | "Removing..." |
-| Remove member cancel button | "Cancel" |
+| Remove member cancel button | "Keep Member" |
 | Remove member success toast | "{username} removed." |
 | Delete project dialog title | "Delete {slug}?" |
 | Delete project dialog description | "This action cannot be undone. All project data will be removed." |
 | Delete project confirm button (idle) | "Delete" |
 | Delete project confirm button (loading) | "Deleting..." |
-| Delete project cancel button | "Cancel" |
+| Delete project cancel button | "Keep Project" |
 | Delete project success toast | "{slug} deleted." |
 | Edit description dialog title | "Edit Description" |
-| Edit description submit (idle) | "Save" |
+| Edit description submit (idle) | "Update Description" |
 | Edit description submit (loading) | "Saving..." |
-| Edit description cancel button | "Cancel" |
+| Edit description cancel button | "Discard Changes" |
 | Edit description success toast | "Description updated." |
 | Sidebar project selector placeholder | "Select a project..." |
 | Sidebar nav: Registry | "Registry" |
@@ -533,7 +538,7 @@ cd /home/uehara/flowy/web && pnpm dlx shadcn@latest add textarea
 | Project card — no description | (empty, no placeholder text shown) |
 | Error state — network/server | "Something went wrong. Please try again." |
 
-Source: CONTEXT.md locked decisions for button labels and dialog patterns. Error copy follows Phase 26/27 conventions ("Something went wrong. Please try again.").
+Source: CONTEXT.md locked decisions for button labels and dialog patterns. Cancel labels updated per checker revision (2026-04-06): generic "Cancel" replaced with contextual labels throughout. Error copy follows Phase 26/27 conventions ("Something went wrong. Please try again.").
 
 ---
 
