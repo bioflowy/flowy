@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Phase 26 context gathered
-last_updated: "2026-04-06T01:05:57.686Z"
-last_activity: 2026-03-24
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-04-06T01:33:20Z"
+last_activity: 2026-04-06
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 6
+  completed_plans: 4
 ---
 
 # Project State
@@ -20,18 +20,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 25 — infrastructure-foundation
+**Current focus:** Phase 26 — authentication
 
 ## Current Position
 
-Phase: 25 (infrastructure-foundation) — COMPLETE
-Plan: 3 of 3
+Phase: 26 (authentication) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3 (v2.0)
+- Total plans completed: 4 (v2.0)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -41,6 +41,7 @@ Plan: 3 of 3
 |-------|-------|-------|----------|
 | 25-infrastructure-foundation P01 | 2 tasks | 4 min | 19 files |
 | 25-infrastructure-foundation P03 | 3 tasks | 15 min | 4 files |
+| 26-authentication P01 | 2 tasks | 7 min | 13 files |
 
 *Updated after each plan completion*
 
@@ -63,6 +64,9 @@ Recent decisions affecting current work:
 - [Phase 25-03]: go:embed lives in web/embed.go (not cmd/flowy-ui) — Go forbids .. in embed paths; exports DistFS
 - [Phase 25-03]: vite.config.ts base must be '/' not './' — relative base breaks asset URLs when served by Go http.FileServer at root
 - [Phase 25-03]: SPA fallback uses pre-flight fs.Open check to avoid ResponseWriter-already-written problem
+- [Phase 26-01]: jsdom v25 used instead of v29 due to top-level await ESM incompatibility with vitest worker pools
+- [Phase 26-01]: Manual jest-dom matchers setup (expect.extend) instead of auto-setup import for ESM compatibility
+- [Phase 26-01]: Test files excluded from tsconfig.app.json build to prevent noUnusedLocals errors
 
 ### Pending Todos
 
@@ -76,6 +80,6 @@ None.
 
 ## Session Continuity
 
-Last activity: 2026-03-24
-Stopped at: Phase 26 context gathered
-Resume file: .planning/phases/26-authentication/26-CONTEXT.md
+Last activity: 2026-04-06
+Stopped at: Completed 26-01-PLAN.md
+Resume file: .planning/phases/26-authentication/26-02-PLAN.md

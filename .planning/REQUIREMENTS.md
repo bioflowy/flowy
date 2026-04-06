@@ -18,7 +18,7 @@ Requirements for Web UI management milestone. Each maps to roadmap phases.
 ### Authentication
 
 - [ ] **AUTH-01**: User can log in with username and password via login screen
-- [ ] **AUTH-02**: JWT token is stored in session and injected into all API requests
+- [x] **AUTH-02**: JWT token is stored in session and injected into all API requests
 - [ ] **AUTH-03**: User is automatically redirected to login on 401 response
 - [ ] **AUTH-04**: User can change their own password
 - [ ] **AUTH-05**: User can log out (token cleared, redirect to login)
@@ -86,7 +86,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-04 | Phase 25 | Complete |
 | INFRA-05 | Phase 25 | Pending |
 | AUTH-01 | Phase 26 | Pending |
-| AUTH-02 | Phase 26 | Pending |
+| AUTH-02 | Phase 26 | Complete |
 | AUTH-03 | Phase 26 | Pending |
 | AUTH-04 | Phase 26 | Pending |
 | AUTH-05 | Phase 26 | Pending |
