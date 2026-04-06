@@ -13,6 +13,10 @@ import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { AccountPage } from '@/features/auth/AccountPage'
 import { UsersPage } from '@/features/users/UsersPage'
+import { ProjectsPage } from '@/features/projects/ProjectsPage'
+import { CreateProjectPage } from '@/features/projects/CreateProjectPage'
+
+const ProjectDetailPage = () => <div>Project detail placeholder</div>
 
 const handleAuthError = (error: unknown) => {
   if (error instanceof ApiError && error.status === 401) {
@@ -44,6 +48,9 @@ export function App() {
               <Route index element={<Navigate to="/projects" replace />} />
               <Route path="account" element={<AccountPage />} />
               <Route path="users" element={<UsersPage />} />
+              <Route path="projects" element={<ProjectsPage />} />
+              <Route path="projects/new" element={<CreateProjectPage />} />
+              <Route path="projects/:slug" element={<ProjectDetailPage />} />
               <Route path="*" element={<div>Select a page from the sidebar.</div>} />
             </Route>
           </Route>
