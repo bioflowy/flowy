@@ -46,7 +46,7 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - [ ] Separate `flowy-ui` binary serving embedded SPA + proxying API
 - [ ] Login screen with JWT authentication
 - [x] User management (list, create, activate/deactivate, password change)
-- [ ] Project management (create, list, members, role assignment)
+- [x] Project management (create, list, members, role assignment)
 - [ ] Registry browsing (entries, versions, tags)
 - [ ] File browsing and download (S3/local storage output files)
 - [ ] CORS support on flowy-server for development mode
@@ -83,6 +83,7 @@ Shipped v1.3 with 37,776 LOC Go. All four milestones complete (v1.0–v1.3).
 Phase 25 complete — flowy-ui binary serves embedded React SPA with SPA routing fallback, reverse proxy, and CORS middleware. `make build-ui` produces single deployable binary.
 Phase 26 complete — Authentication UI: login page with JWT session management, protected route gating with return-to-URL, password change dialog, logout, sidebar user display. 30 unit tests. Validated in Phase 26: Authentication (2026-04-06).
 Phase 27 complete — User Management UI: admin-only users page with data table, create/deactivate/reactivate/reset-password actions, React Query hooks, backend endpoints for reactivate and admin password reset. 52 frontend tests, 6 backend endpoint tests. Validated in Phase 27: User Management (2026-04-06).
+Phase 28 complete — Project Management UI: card grid project list, create project page with slug auto-generation, project detail with member table (inline role change, add/remove member, edit description, delete project), sidebar project dropdown with scoped navigation. GET /users relaxed to any-authenticated-user. 83 frontend tests. Validated in Phase 28: Project Management (2026-04-06).
 
 **Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, and web UI authentication with session management.
 
@@ -134,4 +135,4 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Embedded SPA in Go binary | Single binary deployment, no separate static file hosting | — Pending |
 
 ---
-*Last updated: 2026-04-06 after Phase 27 completion*
+*Last updated: 2026-04-06 after Phase 28 completion*
