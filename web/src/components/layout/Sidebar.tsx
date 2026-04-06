@@ -1,6 +1,7 @@
-import { NavLink } from 'react-router'
+import { NavLink, useNavigate } from 'react-router'
 import { Package, Play, Users, Shield, UserCircle } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+import { useAuthStore } from '@/store/authStore'
 
 const projectNavItems = [
   { to: '/registry', label: 'Registry', icon: Package },
@@ -13,6 +14,9 @@ const globalNavItems = [
 ]
 
 export function Sidebar() {
+  const username = useAuthStore((s) => s.username)
+  const navigate = useNavigate()
+
   return (
     <aside className="flex w-60 flex-col border-r bg-sidebar">
       {/* App name */}
@@ -74,10 +78,13 @@ export function Sidebar() {
       <Separator />
 
       {/* Account menu */}
-      <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+      <button
+        onClick={() => navigate('/account')}
+        className="flex w-full items-center gap-2 px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
         <UserCircle className="h-4 w-4" />
-        Account
-      </div>
+        {username ?? 'Account'}
+      </button>
     </aside>
   )
 }
