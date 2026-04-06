@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: "Completed 28-01-PLAN.md"
-last_updated: "2026-04-06T08:36:40Z"
+stopped_at: Completed 28-02-PLAN.md
+last_updated: "2026-04-06T08:43:53.589Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 10
 ---
 
 # Project State
@@ -48,6 +48,7 @@ Plan: 2 of 2
 *Updated after each plan completion*
 | Phase 27 P01 | 4 | 2 tasks | 14 files |
 | Phase 27 P02 | 20 | 2 tasks | 9 files |
+| Phase 28 P02 | 4 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 28-01]: No member_count on project cards — ProjectResponse has no such field; avoids N+1 queries
 - [Phase 28-01]: slugManuallyEdited flag stops slug auto-generation once user directly edits slug field
 - [Phase 28-01]: Zustand selector mock pattern: mockImplementation((selector) => selector(state)) for (s) => s.field usage
+- [Phase 28-02]: Project admin detection uses currentMember?.role === 'admin' from members list, not global authStore.role — enables project-scoped access control
+- [Phase 28-02]: AddMemberDialog always uses Select dropdown (no text-input fallback) — GET /users relaxed to all authenticated users in Plan 01
+- [Phase 28-02]: Sidebar project nav items guarded by activeSlug && to prevent null-slug URL generation
 
 ### Pending Todos
 
@@ -94,5 +98,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-06
-Stopped at: Completed 28-01-PLAN.md
-Resume file: .planning/phases/28-project-management/28-01-SUMMARY.md
+Stopped at: Completed 28-02-PLAN.md
+Resume file: None

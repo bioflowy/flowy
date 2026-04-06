@@ -77,7 +77,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 25: Infrastructure Foundation** — flowy-ui binary with go:embed SPA serving, Vite+React+TypeScript scaffold, build pipeline (completed 2026-03-24)
 - [x] **Phase 26: Authentication** — Login screen, JWT session management, CORS support, protected route gating (completed 2026-04-06)
 - [x] **Phase 27: User Management** — Admin user list, create, deactivate/reactivate, password reset (completed 2026-04-06)
-- [ ] **Phase 28: Project Management** — Project list/create, project detail, member management with RBAC roles
+- [x] **Phase 28: Project Management** — Project list/create, project detail, member management with RBAC roles (completed 2026-04-06)
 - [ ] **Phase 29: Registry Browsing** — Registry entry list, version history, WDL source viewer, tag management
 - [ ] **Phase 30: File Browsing** — Run list, output file list, file download (S3/local), inline text preview
 
@@ -207,6 +207,6 @@ Plans:
 | 25. Infrastructure Foundation | 3/3 | Complete    | 2026-03-24 | - |
 | 26. Authentication | 3/3 | Complete    | 2026-04-06 | - |
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
-| 28. Project Management | 1/2 | In Progress|  | - |
+| 28. Project Management | 2/2 | Complete   | 2026-04-06 | - |
 | 29. Registry Browsing | v2.0 | 0/TBD | Not started | - |
 | 30. File Browsing | v2.0 | 0/TBD | Not started | - |
