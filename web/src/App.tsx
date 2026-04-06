@@ -12,6 +12,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { AccountPage } from '@/features/auth/AccountPage'
+import { UsersPage } from '@/features/users/UsersPage'
 
 const handleAuthError = (error: unknown) => {
   if (error instanceof ApiError && error.status === 401) {
@@ -42,6 +43,7 @@ export function App() {
             <Route element={<AppShell />}>
               <Route index element={<Navigate to="/projects" replace />} />
               <Route path="account" element={<AccountPage />} />
+              <Route path="users" element={<UsersPage />} />
               <Route path="*" element={<div>Select a page from the sidebar.</div>} />
             </Route>
           </Route>

@@ -15,6 +15,7 @@ const globalNavItems = [
 
 export function Sidebar() {
   const username = useAuthStore((s) => s.username)
+  const role = useAuthStore((s) => s.role)
   const navigate = useNavigate()
 
   return (
@@ -53,27 +54,30 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <Separator />
-
-      {/* Global navigation */}
-      <nav className="space-y-1 px-2 py-2">
-        {globalNavItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              `flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
-                isActive
-                  ? 'bg-primary text-primary-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              }`
-            }
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
+      {/* Global navigation — admin only */}
+      {role === 'admin' && (
+        <>
+          <Separator />
+          <nav className="space-y-1 px-2 py-2">
+            {globalNavItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
+                    isActive
+                      ? 'bg-primary text-primary-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`
+                }
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        </>
+      )}
 
       <Separator />
 

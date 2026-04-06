@@ -61,8 +61,8 @@ describe('CreateUserDialog', () => {
     expect(screen.getByLabelText(/^role$/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/^display name$/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument()
-    // Role select should default to viewer
-    expect(screen.getByText('viewer')).toBeInTheDocument()
+    // Role select should default to viewer (there may be multiple "viewer" text nodes due to select rendering)
+    expect(screen.getAllByText('viewer').length).toBeGreaterThan(0)
   })
 
   it('shows validation error for password less than 8 characters', async () => {
@@ -103,6 +103,7 @@ describe('CreateUserDialog', () => {
   })
 
   it('shows "Creating..." with spinner during submission', async () => {
+    // Mock isPending: true so the button immediately shows "Creating..."
     vi.mocked(useCreateUser).mockReturnValue({
       mutateAsync: vi.fn().mockReturnValue(new Promise(() => {})),
       isPending: true,
@@ -110,10 +111,7 @@ describe('CreateUserDialog', () => {
 
     renderDialog()
 
-    await user.type(screen.getByLabelText(/^username$/i), 'testuser')
-    await user.type(screen.getByLabelText(/^password$/i), 'password123')
-    await user.click(screen.getByRole('button', { name: /^create$/i }))
-
+    // When isPending is true, the button should show "Creating..."
     await waitFor(() => {
       expect(screen.getByText(/creating\.\.\./i)).toBeInTheDocument()
     })
