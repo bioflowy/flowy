@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Phase 28 context gathered
-last_updated: "2026-04-06T07:50:05.733Z"
+stopped_at: Phase 28 UI-SPEC approved
+last_updated: "2026-04-06T08:09:12.332Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 6
@@ -90,5 +90,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-06
-Stopped at: Phase 28 context gathered
-Resume file: .planning/phases/28-project-management/28-CONTEXT.md
+Stopped at: Phase 28 UI-SPEC approved
+Resume file: .planning/phases/28-project-management/28-UI-SPEC.md
