@@ -18,14 +18,14 @@ vi.mock('@/lib/apiClient', () => ({
 }))
 
 // Mock sonner
-const mockToastSuccess = vi.fn()
 vi.mock('sonner', () => ({
   toast: {
-    success: mockToastSuccess,
+    success: vi.fn(),
   },
 }))
 
 import { apiClient, ApiError } from '@/lib/apiClient'
+import { toast } from 'sonner'
 import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog'
 
 describe('ChangePasswordDialog', () => {
@@ -110,7 +110,7 @@ describe('ChangePasswordDialog', () => {
     await user.click(screen.getByRole('button', { name: /update password/i }))
 
     await waitFor(() => {
-      expect(mockToastSuccess).toHaveBeenCalledWith('Password updated successfully.')
+      expect(toast.success).toHaveBeenCalledWith('Password updated successfully.')
     })
 
     // After success, fields should be cleared
