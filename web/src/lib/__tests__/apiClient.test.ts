@@ -3,7 +3,6 @@ import { useAuthStore } from '@/store/authStore'
 
 // Must import after store setup
 let apiClient: typeof import('@/lib/apiClient').apiClient
-let ApiError: typeof import('@/lib/apiClient').ApiError
 
 describe('apiClient', () => {
   const mockFetch = vi.fn()
@@ -16,7 +15,6 @@ describe('apiClient', () => {
     // Dynamic import to get fresh module
     const mod = await import('@/lib/apiClient')
     apiClient = mod.apiClient
-    ApiError = mod.ApiError
   })
 
   afterEach(() => {
