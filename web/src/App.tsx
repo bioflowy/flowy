@@ -15,8 +15,7 @@ import { AccountPage } from '@/features/auth/AccountPage'
 import { UsersPage } from '@/features/users/UsersPage'
 import { ProjectsPage } from '@/features/projects/ProjectsPage'
 import { CreateProjectPage } from '@/features/projects/CreateProjectPage'
-
-const ProjectDetailPage = () => <div>Project detail placeholder</div>
+import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage'
 
 const handleAuthError = (error: unknown) => {
   if (error instanceof ApiError && error.status === 401) {
