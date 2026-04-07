@@ -54,6 +54,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runOutputs(args[1:], stdout, stderr)
 	case "login":
 		return runLogin(args[1:], stdin, stdout, stderr)
+	case "registry":
+		return runRegistry(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown subcommand: %q\n\n", args[0])
 		usage(stderr)
@@ -71,12 +73,13 @@ func usage(w io.Writer) {
 	fmt.Fprint(w, `Usage: flowy <command> [options]
 
 Commands:
-  login    Authenticate with a flowy-server
-  check    Parse and type-check a WDL file
-  run      Execute a WDL workflow or task
-  submit   Submit a WDL workflow to a flowy-server
-  status   Get the status of a submitted workflow run
-  outputs  Get the outputs of a completed workflow run
+  login     Authenticate with a flowy-server
+  check     Parse and type-check a WDL file
+  run       Execute a WDL workflow or task
+  submit    Submit a WDL workflow to a flowy-server
+  status    Get the status of a submitted workflow run
+  outputs   Get the outputs of a completed workflow run
+  registry  Manage WDL registry (push, list, pull, tag, delete-tag, delete)
 
 Flags:
   --version  Print version and exit
@@ -726,6 +729,10 @@ func reorderArgs(args []string) []string {
 		"--storage": true, "-storage": true,
 		// Project selection for registry-ref runs.
 		"--project": true, "-project": true,
+		// Registry subcommand flags.
+		"--name": true, "-name": true,
+		"--tag": true, "-tag": true,
+		"--digest": true, "-digest": true,
 	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
