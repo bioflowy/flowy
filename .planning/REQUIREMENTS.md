@@ -54,26 +54,26 @@ Requirements for Job Execution & Registry CLI milestone. Each maps to roadmap ph
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLI-01 | TBD | Pending |
-| CLI-02 | TBD | Pending |
-| REG-CLI-01 | TBD | Pending |
-| REG-CLI-02 | TBD | Pending |
-| REG-CLI-03 | TBD | Pending |
-| REG-CLI-04 | TBD | Pending |
-| REG-CLI-05 | TBD | Pending |
-| REG-UI-01 | TBD | Pending |
-| EXEC-01 | TBD | Pending |
-| EXEC-02 | TBD | Pending |
-| EXEC-03 | TBD | Pending |
-| EXEC-04 | TBD | Pending |
-| EXEC-05 | TBD | Pending |
-| API-01 | TBD | Pending |
-| API-02 | TBD | Pending |
+| API-01 | Phase 32 | Pending |
+| API-02 | Phase 32 | Pending |
+| CLI-01 | Phase 33 | Pending |
+| CLI-02 | Phase 33 | Pending |
+| REG-CLI-01 | Phase 33 | Pending |
+| REG-CLI-02 | Phase 33 | Pending |
+| REG-CLI-03 | Phase 33 | Pending |
+| REG-CLI-04 | Phase 33 | Pending |
+| REG-CLI-05 | Phase 33 | Pending |
+| REG-UI-01 | Phase 34 | Pending |
+| EXEC-04 | Phase 35 | Pending |
+| EXEC-01 | Phase 36 | Pending |
+| EXEC-02 | Phase 36 | Pending |
+| EXEC-03 | Phase 36 | Pending |
+| EXEC-05 | Phase 36 | Pending |
 
 **Coverage:**
 - v2.1 requirements: 15 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 15
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-07*

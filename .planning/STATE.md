@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Job Execution & Registry CLI
 status: active
-stopped_at: Defining requirements
+stopped_at: Roadmap created — ready to plan Phase 32
 last_updated: "2026-04-07"
 last_activity: 2026-04-07
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,20 +20,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Defining requirements for v2.1
+**Current focus:** Phase 32 — API Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-07 — Milestone v2.1 started
+Phase: 32 of 36 (API Foundation)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-04-07 — Roadmap created for v2.1; Phase 32 is next
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
-
-- Total plans completed: 6 (v2.0)
+- Total plans completed: 0 (v2.1)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -41,20 +42,9 @@ Last activity: 2026-04-07 — Milestone v2.1 started
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 25-infrastructure-foundation P01 | 2 tasks | 4 min | 19 files |
-| 25-infrastructure-foundation P03 | 3 tasks | 15 min | 4 files |
-| 26-authentication P01 | 2 tasks | 7 min | 13 files |
-| 26-authentication P02 | 2 tasks | 3 min | 5 files |
-| 26-authentication P03 | 3 tasks | 5 min | 7 files |
+| - | - | - | - |
 
 *Updated after each plan completion*
-| Phase 27 P01 | 4 | 2 tasks | 14 files |
-| Phase 27 P02 | 20 | 2 tasks | 9 files |
-| Phase 28 P02 | 4 | 2 tasks | 6 files |
-| Phase 29 P01 | 5 | 2 tasks | 5 files |
-| Phase 30-file-browsing P01 | 4 | 2 tasks | 7 files |
-| Phase 30-file-browsing P02 | 4m 3s | 2 tasks | 6 files |
-| Phase 31 P01 | 187 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -63,47 +53,11 @@ Last activity: 2026-04-07 — Milestone v2.1 started
 Key decisions archived in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- v2.0 stack: React 19 + TypeScript 5.x + Vite 6 + Tailwind v4 + shadcn/ui (pinned for shadcn compatibility)
-- v2.0: `web/` chosen as frontend workspace directory (consistent with STACK.md; resolves `web/` vs `ui/` gap)
-- v2.0: JWT stored in sessionStorage for v2.0 MVP; httpOnly cookie deferred (acceptable for internal tool)
-- v2.0: flowy-ui is pure static-file server + reverse proxy — no domain knowledge; flowy-server unchanged except CORS
-- 25-02: CORS disabled by default; enabled via cors.enabled: true; middleware at top-level router before JWT groups
-- 25-02: AllowCredentials=false for v2.0 (sessionStorage JWT, not cookies)
-- v2.0: Phase 30 (File Browsing) requires 3 new backend endpoints not yet in flowy-server store layer
-- [Phase 25-01]: pnpm create vite@6 is interactive-only; project scaffolded manually with exact Vite react-ts template file contents
-- [Phase 25-01]: AppShell and Sidebar created in Task 1 commit; App.tsx requires layout components to compile so they are inseparable
-- [Phase 25-03]: go:embed lives in web/embed.go (not cmd/flowy-ui) — Go forbids .. in embed paths; exports DistFS
-- [Phase 25-03]: vite.config.ts base must be '/' not './' — relative base breaks asset URLs when served by Go http.FileServer at root
-- [Phase 25-03]: SPA fallback uses pre-flight fs.Open check to avoid ResponseWriter-already-written problem
-- [Phase 26-01]: jsdom v25 used instead of v29 due to top-level await ESM incompatibility with vitest worker pools
-- [Phase 26-01]: Manual jest-dom matchers setup (expect.extend) instead of auto-setup import for ESM compatibility
-- [Phase 26-01]: Test files excluded from tsconfig.app.json build to prevent noUnusedLocals errors
-- [Phase 27]: shadcn CLI places files in @/ directory; move manually to src/components/ui/ (Phase 27 pattern consistent with Phase 26)
-- [Phase 27]: PATCH added to CORS AllowedMethods to support new PATCH /users/{id}/reactivate route
-- [Phase 27]: AlertDialog async confirm uses e.preventDefault() to block default close, then calls onOpenChange(false) after await
-- [Phase 27]: Reactivate is inline (no confirmation dialog) — destructive actions require dialog, restorative do not
-- [Phase 27]: Self-row protection in UsersPage based on username string comparison against authStore.username
-- [Phase 28-01]: GET /users relaxed from admin-only to any-authenticated-user — required for Plan 02 Add Member dropdown
-- [Phase 28-01]: No member_count on project cards — ProjectResponse has no such field; avoids N+1 queries
-- [Phase 28-01]: slugManuallyEdited flag stops slug auto-generation once user directly edits slug field
-- [Phase 28-01]: Zustand selector mock pattern: mockImplementation((selector) => selector(state)) for (s) => s.field usage
-- [Phase 28-02]: Project admin detection uses currentMember?.role === 'admin' from members list, not global authStore.role — enables project-scoped access control
-- [Phase 28-02]: AddMemberDialog always uses Select dropdown (no text-input fallback) — GET /users relaxed to all authenticated users in Plan 01
-- [Phase 31-02]: GET /users re-restricted to global admin only; project-scoped GET /projects/{slug}/users added for project admin Add Member dropdown
-- [Phase 31-02]: handleListUsersForProject filters inactive users — only active users can be added as project members
-- [Phase 28-02]: Sidebar project nav items guarded by activeSlug && to prevent null-slug URL generation
-- [Phase 29]: RegistryEntryPage placeholder created in Plan 01 to satisfy App.tsx import; full implementation deferred to Plan 02
-- [Phase 29]: Kind badges use variant=outline with conditional className for blue tool / purple workflow styling
-- [Phase 29-02]: RegistryEntryPage kind badge wrapper changed from <p> to <div> — Badge renders as div, p cannot contain block elements
-- [Phase 29-02]: truncateDigest uses slice(7,23) on full sha256 string giving 16 hex chars: sha256:abcdef1234567890...
-- [Phase 30-01]: File download handler accepts raw ?path= query param directly as storage path, not constructed from baseDir/runID
-- [Phase 30-01]: Preview mode reads full file into memory then truncates at 100KB (DownloadFile), not streaming partial read
-- [Phase 30-01]: Empty run list returns [] not null via explicit nil-to-empty-slice guard before writeJSON
-- [Phase 30-02]: useAuthStore.getState().token used for raw fetch calls to support binary downloads and text previews (not apiClient)
-- [Phase 30-02]: Run detail finds run from list via useRuns — no dedicated single-run GET endpoint in backend
-- [Phase 30-02]: formatDuration exported from RunsPage.tsx and imported into RunDetailPage.tsx to avoid duplication
-- [Phase 31-01]: Sidebar Members and Overview share /projects/:slug path; both use NavLink end=true to prevent false active state on child routes
-- [Phase 31-01]: Auth-disabled login redirects to / (not /login) — no credentials needed in auth-disabled mode so app root is the correct destination
+- v2.0: React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui (established stack — no new packages for v2.1)
+- v2.0: JWT stored in sessionStorage; flowy-ui is pure proxy — no domain knowledge
+- ADR 0001: File inputs are path-entry strings (server-accessible paths only) — browser file upload to daemon is out of scope
+- [Phase 30-02]: Run detail finds run from list via useRuns — no dedicated single-run GET endpoint; relevant to Phase 35 polling design
+- [Phase 31-02]: GET /users re-restricted to global admin; project-scoped endpoint added — pattern for Phase 33 CLI auth
 
 ### Pending Todos
 
@@ -111,12 +65,12 @@ None.
 
 ### Blockers/Concerns
 
-- [Phase 25] Directory naming: `web/` selected; must be used consistently in `//go:embed all:web/dist`, vite.config.ts, and Makefile.
-- [Phase 26] JWT storage strategy must be finalized before any auth code is written — sessionStorage chosen as v2.0 default.
-- [Phase 30] Three new backend endpoints needed: `GET /projects/{slug}/runs`, `GET /projects/{slug}/runs/{id}/files`, `GET /projects/{slug}/runs/{id}/files/download` — Store-layer design required during Phase 30 planning.
+- [Phase 32] File upload endpoint design (API-02): exact route, multipart vs base64, and returned path format must be decided during Phase 32 planning — affects Phase 36 File input UX
+- [Phase 33] `flowy login` token expiry UX: expired token must produce a human-readable message ("run flowy login"), not raw JSON 401 — specify error handling path in `internal/client` during planning
+- [Phase 35] Runs list polling stop condition: "while any run is active" needs precise definition (all terminal vs no PENDING/RUNNING visible) — decide during Phase 35 planning
 
 ## Session Continuity
 
 Last activity: 2026-04-07
-Stopped at: Completed 31-01-PLAN.md
+Stopped at: Roadmap written — ROADMAP.md, STATE.md, REQUIREMENTS.md traceability updated
 Resume file: None
