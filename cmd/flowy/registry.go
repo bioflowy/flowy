@@ -157,7 +157,10 @@ func runRegistryList(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", entry.Name, entry.Kind, latestTag, entry.VersionCount)
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		fmt.Fprintf(stderr, "error: writing output: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
