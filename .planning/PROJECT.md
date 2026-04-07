@@ -2,7 +2,7 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as three binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), and `flowy-daemon` (Docker task executor). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution, and run provenance tracking linking outputs to source versions and inputs.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as four binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), `flowy-daemon` (Docker task executor), and `flowy-ui` (web management UI). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution, run provenance tracking, and a browser-based management interface for users, projects, registry, and run output browsing.
 
 ## Core Value
 
@@ -39,17 +39,18 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ WDL tool/workflow registry with content-hash versioning and tags — v1.3
 - ✓ Execution integration with registered tools/workflows — v1.3
 - ✓ Provenance tracking for execution output files — v1.3
+- ✓ Web UI SPA with React + TypeScript, shadcn/ui, Tailwind CSS — v2.0
+- ✓ Separate `flowy-ui` binary serving embedded SPA + proxying API — v2.0
+- ✓ Login screen with JWT authentication — v2.0
+- ✓ User management (list, create, activate/deactivate, password change) — v2.0
+- ✓ Project management (create, list, members, role assignment) — v2.0
+- ✓ Registry browsing (entries, versions, tags) — v2.0
+- ✓ File browsing and download (S3/local storage output files) — v2.0
+- ✓ CORS support on flowy-server for development mode — v2.0
 
 ### Active
 
-- [ ] Web UI SPA with React + TypeScript, shadcn/ui, Tailwind CSS
-- [ ] Separate `flowy-ui` binary serving embedded SPA + proxying API
-- [ ] Login screen with JWT authentication
-- [x] User management (list, create, activate/deactivate, password change)
-- [x] Project management (create, list, members, role assignment)
-- [x] Registry browsing (entries, versions, tags)
-- [x] File browsing and download (S3/local storage output files)
-- [ ] CORS support on flowy-server for development mode
+(None — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -65,36 +66,19 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
 
-## Current Milestone: v2.0 Web UI — Management
-
-**Goal:** Provide a web-based management interface for flowy, covering authentication, user/project/registry management, and file browsing with download.
-
-**Target features:**
-- Login + JWT session management
-- User administration (CRUD, activate/deactivate)
-- Project management (create, members, RBAC roles)
-- Registry browsing (entries, versions, tags)
-- File browser with download (S3/local storage)
-- `flowy-ui` binary serving embedded React SPA
-
 ## Current State
 
-Shipped v1.3 with 37,776 LOC Go. All four milestones complete (v1.0–v1.3).
-Phase 25 complete — flowy-ui binary serves embedded React SPA with SPA routing fallback, reverse proxy, and CORS middleware. `make build-ui` produces single deployable binary.
-Phase 26 complete — Authentication UI: login page with JWT session management, protected route gating with return-to-URL, password change dialog, logout, sidebar user display. 30 unit tests. Validated in Phase 26: Authentication (2026-04-06).
-Phase 27 complete — User Management UI: admin-only users page with data table, create/deactivate/reactivate/reset-password actions, React Query hooks, backend endpoints for reactivate and admin password reset. 52 frontend tests, 6 backend endpoint tests. Validated in Phase 27: User Management (2026-04-06).
-Phase 28 complete — Project Management UI: card grid project list, create project page with slug auto-generation, project detail with member table (inline role change, add/remove member, edit description, delete project), sidebar project dropdown with scoped navigation. GET /users relaxed to any-authenticated-user. 83 frontend tests. Validated in Phase 28: Project Management (2026-04-06).
-Phase 29 complete — Registry Browsing UI: entry list page with kind badges (tool/workflow) and admin delete, entry detail page with version history table, WDL source viewer with line numbers and copy button, admin tag management (create/move/delete). 16 new tests (99 total). Validated in Phase 29: Registry Browsing (2026-04-07).
-Phase 30 complete — File Browsing: new backend endpoints (ListRunsByProject, file download/preview with path traversal protection), RunsPage with status badges table, RunDetailPage with outputs table + fetch+blob download + inline text preview (100KB threshold). 11 backend tests, 12 frontend tests (111 total). Validated in Phase 30: File Browsing (2026-04-07).
-Phase 31 complete — Audit Gap Closure: fixed sidebar Members link (broken route), restored admin guard on GET /users (security), added project-scoped /projects/{slug}/users endpoint for AddMemberDialog, fixed auth-disabled login redirect. 4 new tests (112 frontend + backend all pass). Validated in Phase 31: Audit Gap Closure (2026-04-07).
+Shipped v2.0 with 37,776 LOC Go + 7,557 LOC TypeScript/React. Five milestones complete (v1.0–v2.0).
 
-**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, and web UI authentication with session management.
+v2.0 delivered a browser-based management UI as a single-binary deployment (`flowy-ui`). The SPA covers authentication (login, password change, logout with session persistence), user administration (create, deactivate, reactivate, reset password — admin only), project management (create, edit, delete projects; add/remove members; inline role changes), registry browsing (entry list with kind badges, version history, WDL source viewer with line numbers and copy, tag create/move/delete for admins), and file browsing (workflow run list with status badges, output files table, file download via backend proxy, inline text preview for small files). 112 frontend tests across 19 files, all passing. Backend test suite covers all new endpoints.
+
+**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, and web management UI for users, projects, registry, and run output browsing.
 
 ## Context
 
-Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt. Frontend (v2.0+): React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS, React Router, TanStack Query.
+Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt. Frontend: React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS v4, React Router, TanStack Query, Zustand.
 Spectool conformance: 156/156 WDL 1.2 tests passing (100% of supported features; 4 categories excluded: Object type, sub-workflow calls, deferred input defaults, read_tsv with Object).
-Architecture: three binaries (flowy, flowy-server, flowy-daemon), SQLite task queue with WAL, local filesystem or S3/MinIO storage backends, JWT-protected REST API with RBAC middleware.
+Architecture: four binaries (flowy, flowy-server, flowy-daemon, flowy-ui), SQLite task queue with WAL, local filesystem or S3/MinIO storage backends, JWT-protected REST API with RBAC middleware, embedded React SPA with reverse proxy.
 Reference implementation: `../miniwdl` (Python, ~20k lines).
 
 ## Constraints
@@ -103,6 +87,7 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 - **WDL version**: 1.2 only (no older version support)
 - **Import**: Local files only (HTTP import deferred)
 - **Compatibility**: Spectool conformance suite as compliance benchmark
+- **Frontend**: React 19, TypeScript, Vite, shadcn/ui — established in v2.0
 
 ## Key Decisions
 
@@ -132,10 +117,11 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Content-addressed registry (SHA-256) | Immutable versions, mutable tags — Docker registry model | ✓ Good — familiar UX, integrity guarantees |
 | Registry ref resolution at submit + claim | Server resolves by tag at submit, daemon re-resolves by digest | ✓ Good — daemon always gets exact version |
 | Run-level provenance (not per-task) | Simpler scope; per-task possible via existing tasks table later | ✓ Good — right granularity for v1.3 |
-
-| Separate flowy-ui binary for SPA hosting | Decouples frontend dev from server, independent deploy | — Pending |
-| React + TypeScript + shadcn/ui | Rich ecosystem, copy-paste components, small bundle | — Pending |
-| Embedded SPA in Go binary | Single binary deployment, no separate static file hosting | — Pending |
+| Separate flowy-ui binary for SPA hosting | Decouples frontend dev from server, independent deploy | ✓ Good — single binary ships UI + API proxy |
+| React + TypeScript + shadcn/ui | Rich ecosystem, copy-paste components, small bundle | ✓ Good — rapid UI development |
+| Embedded SPA in Go binary (go:embed) | Single binary deployment, no separate static file hosting | ✓ Good — zero-config deployment |
+| Backend proxies file downloads | No presigned S3 URLs — frontend stays simple and secure | ✓ Good — storage-agnostic downloads |
+| Project-scoped user list for AddMemberDialog | Avoids relaxing global user list to non-admins | ✓ Good — proper security boundary |
 
 ---
-*Last updated: 2026-04-06 after Phase 28 completion*
+*Last updated: 2026-04-07 after v2.0 milestone*

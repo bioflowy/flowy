@@ -1,5 +1,15 @@
 # Milestones
 
+## v2.0 Web UI — Management (Shipped: 2026-04-07)
+
+**Phases completed:** 7 phases, 16 plans, 2 tasks
+
+**Key accomplishments:**
+
+- (none recorded)
+
+---
+
 ## v1.3 Project & Registry (Shipped: 2026-03-20)
 
 **Phases completed:** 6 phases, 14 plans, 2 tasks
