@@ -16,6 +16,22 @@ When you apply a temporary or workaround fix just to make tests pass, but a more
 4. **Proposed proper fix**: How to fundamentally resolve the issue
 5. **Affected files**: List of files involved in the temporary fix
 
+## Build & Lint Verification
+
+After modifying frontend code (`web/` directory), always verify the production build succeeds:
+
+```bash
+cd web && npx tsc --noEmit && cd ..
+```
+
+When planning phases that touch frontend code, include `cd web && npx tsc --noEmit` in every task's `<verify>` / `<automated>` block. This catches unused imports, type errors, and other issues that unit tests don't cover.
+
+For final verification of a frontend phase, use the full build:
+
+```bash
+make build-ui
+```
+
 ## Architecture Decision Records
 
 When an architectural discussion reaches a conclusion, record the decision as an ADR (Architecture Decision Record) in `docs/adr/`. Follow the format described at https://adr.github.io/ — each ADR should have a sequential number and contain Title, Context, Decision, Status, and Consequences sections. Keep records concise (1-2 pages) and write in full sentences.
