@@ -48,7 +48,7 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - [x] User management (list, create, activate/deactivate, password change)
 - [x] Project management (create, list, members, role assignment)
 - [x] Registry browsing (entries, versions, tags)
-- [ ] File browsing and download (S3/local storage output files)
+- [x] File browsing and download (S3/local storage output files)
 - [ ] CORS support on flowy-server for development mode
 
 ### Out of Scope
@@ -85,6 +85,7 @@ Phase 26 complete — Authentication UI: login page with JWT session management,
 Phase 27 complete — User Management UI: admin-only users page with data table, create/deactivate/reactivate/reset-password actions, React Query hooks, backend endpoints for reactivate and admin password reset. 52 frontend tests, 6 backend endpoint tests. Validated in Phase 27: User Management (2026-04-06).
 Phase 28 complete — Project Management UI: card grid project list, create project page with slug auto-generation, project detail with member table (inline role change, add/remove member, edit description, delete project), sidebar project dropdown with scoped navigation. GET /users relaxed to any-authenticated-user. 83 frontend tests. Validated in Phase 28: Project Management (2026-04-06).
 Phase 29 complete — Registry Browsing UI: entry list page with kind badges (tool/workflow) and admin delete, entry detail page with version history table, WDL source viewer with line numbers and copy button, admin tag management (create/move/delete). 16 new tests (99 total). Validated in Phase 29: Registry Browsing (2026-04-07).
+Phase 30 complete — File Browsing: new backend endpoints (ListRunsByProject, file download/preview with path traversal protection), RunsPage with status badges table, RunDetailPage with outputs table + fetch+blob download + inline text preview (100KB threshold). 11 backend tests, 12 frontend tests (111 total). Validated in Phase 30: File Browsing (2026-04-07).
 
 **Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, and web UI authentication with session management.
 
