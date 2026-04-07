@@ -180,6 +180,54 @@
 
 ---
 
+## Milestone: v2.0 — Web UI Management
+
+**Shipped:** 2026-04-07
+**Phases:** 7 | **Plans:** 16
+
+### What Was Built
+- flowy-ui binary serving embedded React SPA with reverse proxy to flowy-server
+- Login page with JWT session management, protected routes, password change, logout
+- Admin user management (create, deactivate, reactivate, reset password)
+- Project management (card grid, detail page with member table, inline role changes)
+- Registry browsing (entry list with kind badges, version history, WDL source viewer, tag management)
+- File browsing (run list with status badges, output files, download via backend proxy, inline text preview)
+- Gap closure: sidebar Members route fix, admin guard on GET /users, auth-disabled redirect
+
+### What Worked
+- Phase-level context isolation: each executor agent got fresh 200k context, preventing cross-phase confusion
+- UI-SPEC design contracts: catching "Cancel" as a blocked generic label before implementation saved rework
+- Milestone audit with integration checker: found 3 real cross-phase wiring bugs that per-phase verification missed
+- Parallel wave execution: phases with independent plans ran in parallel, cutting wall time
+- Established frontend patterns: by Phase 29, the table+badge+hooks pattern was so consistent that researcher needed 0 user questions
+
+### What Was Inefficient
+- Phases 26-27 produced human_needed verification status but human verification was never formally completed
+- Nyquist VALIDATION.md created for all 7 phases but none marked nyquist_compliant: true — process existed but wasn't closed
+- REQUIREMENTS.md checkbox drift: INFRA-01/02/05 stayed unchecked through several phases until audit caught it
+
+### Patterns Established
+- Feature folder: `web/src/features/{domain}/` with hooks, pages, dialogs, __tests__
+- React Query hooks in `use{Domain}.ts` with apiClient + Bearer token injection
+- shadcn/ui Table + Badge + DropdownMenu for list views; AlertDialog for destructive actions
+- Navigation: list page → detail page via clickable rows
+- Project-scoped API calls using useProjectStore activeSlug
+- Admin gating: check project member role for project-scoped, global role for system actions
+- Backend proxy for file downloads — frontend never touches storage backend directly
+
+### Key Lessons
+1. Cross-phase integration tests matter more than per-phase verification — 3 bugs found only by integration checker
+2. Sidebar navigation is a high-risk integration surface — routes, links, active-state styling all must agree
+3. UI-SPEC design contracts pay off for consistency — phases 29-30 had zero design rework
+4. Gap closure phases are lightweight — Phase 31 was 2 plans, both parallel, entire fix cycle under 10 minutes
+
+### Cost Observations
+- Model mix: ~60% sonnet (research, checking, execution), ~40% opus (planning, orchestration)
+- Timeline: 28 days (2026-03-10 → 2026-04-07), first full-stack milestone (Go + React)
+- Notable: Phases 29-31 executed in a single conversation session
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -190,23 +238,27 @@
 | v1.1 | 64 | 5 | Distributed architecture — server/daemon/client split |
 | v1.2 | 81 | 5 | S3 storage backend — cloud-native WDL execution |
 | v1.3 | ~50 | 6 | Auth, RBAC, registry, provenance — multi-user platform |
+| v2.0 | ~60 | 7 | Web UI — React SPA with full management interface |
 
 ### Cumulative Quality
 
-| Milestone | Go LOC | Test Files | Spectool |
-|-----------|--------|------------|----------|
-| v1.0 | 17,648 | ~40 | 45/160 (28%) |
-| v1.1 | 25,433 | ~55 | 156/156 (100%) |
-| v1.2 | 29,277 | ~65 | 156/156 (100%) |
-| v1.3 | 37,776 | ~80 | 156/156 (100%) |
+| Milestone | Go LOC | Frontend LOC | Test Files | Spectool |
+|-----------|--------|-------------|------------|----------|
+| v1.0 | 17,648 | — | ~40 | 45/160 (28%) |
+| v1.1 | 25,433 | — | ~55 | 156/156 (100%) |
+| v1.2 | 29,277 | — | ~65 | 156/156 (100%) |
+| v1.3 | 37,776 | — | ~80 | 156/156 (100%) |
+| v2.0 | 37,776 | 7,557 | ~100 | 156/156 (100%) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Linear phase dependencies produce clean architecture but limit parallelization — verified v1.0, v1.1, v1.2
 2. Mock interfaces (ContainerRunner, ShellRunner, mockS3Client) are essential for fast test cycles — verified v1.0, v1.1, v1.2
 3. TDD RED-GREEN pattern catches bugs early and produces well-tested code — verified v1.0, v1.1, v1.2
-4. Milestone audit catches doc/code drift and tech debt — verified v1.1, v1.2
+4. Milestone audit catches doc/code drift and tech debt — verified v1.1, v1.2, v2.0
 5. Quick-fix tasks after integration testing catch real cross-component issues — established v1.2
 6. Well-designed interfaces pay off in later phases — Backend interface (Phase 14) made S3Backend (Phase 16) clean
-7. Cross-phase integration testing matters more than individual phase verification — established v1.3
-8. Gap closure phases are lightweight and effective for fixing audit-discovered issues — established v1.3
+7. Cross-phase integration testing matters more than individual phase verification — verified v1.3, v2.0
+8. Gap closure phases are lightweight and effective for fixing audit-discovered issues — verified v1.3, v2.0
+9. UI-SPEC design contracts prevent design rework in frontend phases — established v2.0
+10. Sidebar/navigation is a high-risk integration surface requiring dedicated wiring checks — established v2.0
