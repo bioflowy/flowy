@@ -147,11 +147,13 @@ func (s *Server) newRouter() *chi.Mux {
 
 				// Runs sub-resource (project-scoped workflow runs).
 				r.Route("/runs", func(r chi.Router) {
+					r.With(s.projectRoleRequired("viewer")).Get("/", s.handleListRuns)
 					r.With(s.projectRoleRequired("executor")).Post("/submit", s.handleSubmit)
 					r.With(s.projectRoleRequired("executor")).Post("/task-run", s.handleTaskRun)
 					r.With(s.projectRoleRequired("viewer")).Get("/{id}/status", s.handleStatus)
 					r.With(s.projectRoleRequired("viewer")).Get("/{id}/outputs", s.handleOutputs)
 					r.With(s.projectRoleRequired("executor")).Post("/{id}/abort", s.handleAbort)
+					r.With(s.projectRoleRequired("viewer")).Get("/{id}/files", s.handleFileDownload)
 				})
 
 				// Registry-based execution convenience routes.

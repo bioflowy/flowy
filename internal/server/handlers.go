@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -617,6 +618,93 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleListRuns handles GET /projects/{slug}/runs.
+// Returns all runs for the project, optionally filtered by ?status=STATE.
+func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
+	projectID := projectIDFromContext(r.Context())
+	runs, err := s.store.ListRunsByProject(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("list runs: %v", err))
+		return
+	}
+
+	// Optional status filter.
+	statusFilter := r.URL.Query().Get("status")
+	var items []api.RunListItem
+	for _, run := range runs {
+		if statusFilter != "" && string(run.State) != statusFilter {
+			continue
+		}
+		items = append(items, api.RunListItem{
+			ID:          run.ID,
+			State:       string(run.State),
+			RegistryRef: run.RegistryRef,
+			WDLPath:     run.WDLPath,
+			CreatedAt:   run.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:   run.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	if items == nil {
+		items = []api.RunListItem{}
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// handleFileDownload handles GET /projects/{slug}/runs/{id}/files?path=...
+// Streams file from storage backend. With ?preview=true, returns up to 100KB as text/plain.
+func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		writeError(w, http.StatusBadRequest, "missing required query parameter: path")
+		return
+	}
+	// Path traversal protection.
+	if strings.Contains(filePath, "..") {
+		writeError(w, http.StatusBadRequest, "path must not contain '..'")
+		return
+	}
+
+	// Validate run exists and belongs to this project.
+	projectID := projectIDFromContext(r.Context())
+	run, err := s.store.GetRun(r.Context(), runID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("run not found: %s", runID))
+		return
+	}
+	if run.ProjectID != projectID {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("run not found: %s", runID))
+		return
+	}
+
+	preview := r.URL.Query().Get("preview") == "true"
+	if preview {
+		const maxPreview = 100 * 1024
+		data, err := s.backend.DownloadFile(filePath)
+		if err != nil {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("file not found: %s", filePath))
+			return
+		}
+		if len(data) > maxPreview {
+			data = data[:maxPreview]
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+		return
+	}
+
+	// Download mode: stream file with Content-Disposition.
+	filename := filepath.Base(filePath)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if err := s.backend.DownloadFileStream(filePath, w); err != nil {
+		// If headers were already sent, we cannot write an error JSON response.
+		// Log and let the client see a truncated response.
+		log.Printf("handleFileDownload: stream %s: %v", filePath, err)
+	}
 }
 
 // handleHeartbeat handles POST /heartbeat.
