@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { MoreHorizontal, Loader2 } from 'lucide-react'
+import { MoreHorizontal, Loader2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useRegistryEntries, useDeleteRegistryEntry } from '@/features/registry/useRegistry'
 import { useProjectMembers } from '@/features/projects/useProjects'
 import { useAuthStore } from '@/store/authStore'
+import { PushWDLDialog } from '@/features/registry/PushWDLDialog'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -48,13 +49,17 @@ export function RegistryPage() {
   const { data: entries, isLoading, isError } = useRegistryEntries(slug!)
   const { data: members } = useProjectMembers(slug!)
   const currentUsername = useAuthStore((s) => s.username)
+  const globalRole = useAuthStore((s) => s.role)
   const deleteEntry = useDeleteRegistryEntry(slug!)
 
-  const isProjectAdmin =
-    members?.find((m) => m.username === currentUsername)?.role === 'admin'
+  const isGlobalAdmin = globalRole === 'admin'
+  const currentMember = members?.find((m) => m.username === currentUsername)
+  const isProjectAdmin = isGlobalAdmin || currentMember?.role === 'admin'
+  const canPush = isGlobalAdmin || currentMember?.role === 'admin' || currentMember?.role === 'executor'
 
   const [deleteEntryName, setDeleteEntryName] = useState<string | null>(null)
   const [isDeletingEntry, setIsDeletingEntry] = useState(false)
+  const [pushOpen, setPushOpen] = useState(false)
 
   async function handleDeleteEntry(e: React.MouseEvent) {
     e.preventDefault()
@@ -77,6 +82,12 @@ export function RegistryPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Registry</h1>
+        {canPush && (
+          <Button variant="default" onClick={() => setPushOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Push WDL
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -126,7 +137,7 @@ export function RegistryPage() {
                 <TableCell colSpan={6} className="text-center text-muted-foreground">
                   No registry entries.
                   <p className="text-xs text-muted-foreground mt-1">
-                    Push a WDL workflow or task using the flowy CLI to see it here.
+                    Push a WDL workflow or task using the CLI or the Push WDL button above.
                   </p>
                 </TableCell>
               </TableRow>
@@ -189,6 +200,8 @@ export function RegistryPage() {
           </TableBody>
         </Table>
       </div>
+
+      <PushWDLDialog open={pushOpen} onOpenChange={setPushOpen} slug={slug!} />
 
       {/* Delete registry entry AlertDialog */}
       <AlertDialog
