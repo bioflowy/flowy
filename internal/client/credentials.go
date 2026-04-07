@@ -71,5 +71,11 @@ func SaveCredentials(creds *Credentials) error {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("credentials: writing credentials file: %w", err)
 	}
+	// Unconditionally enforce 0600: os.WriteFile only applies the mode on
+	// file creation, so an existing file with broader permissions would
+	// otherwise keep its old mode after an overwrite.
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("credentials: setting credentials file permissions: %w", err)
+	}
 	return nil
 }
