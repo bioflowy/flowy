@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Phase 29 context gathered
-last_updated: "2026-04-07T01:30:47.322Z"
-last_activity: 2026-04-06
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-04-07T02:14:55.077Z"
+last_activity: 2026-04-07
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
 ---
 
 # Project State
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 28 — project-management
+**Current focus:** Phase 29 — registry-browsing
 
 ## Current Position
 
-Phase: 28 (project-management) — EXECUTING
-Plan: 2 of 2
+Phase: 29 (registry-browsing) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Plan: 2 of 2
 | Phase 27 P01 | 4 | 2 tasks | 14 files |
 | Phase 27 P02 | 20 | 2 tasks | 9 files |
 | Phase 28 P02 | 4 | 2 tasks | 6 files |
+| Phase 29 P01 | 5 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 28-02]: Project admin detection uses currentMember?.role === 'admin' from members list, not global authStore.role — enables project-scoped access control
 - [Phase 28-02]: AddMemberDialog always uses Select dropdown (no text-input fallback) — GET /users relaxed to all authenticated users in Plan 01
 - [Phase 28-02]: Sidebar project nav items guarded by activeSlug && to prevent null-slug URL generation
+- [Phase 29]: RegistryEntryPage placeholder created in Plan 01 to satisfy App.tsx import; full implementation deferred to Plan 02
+- [Phase 29]: Kind badges use variant=outline with conditional className for blue tool / purple workflow styling
 
 ### Pending Todos
 
@@ -97,6 +100,6 @@ None.
 
 ## Session Continuity
 
-Last activity: 2026-04-06
-Stopped at: Phase 29 context gathered
-Resume file: .planning/phases/29-registry-browsing/29-CONTEXT.md
+Last activity: 2026-04-07
+Stopped at: Completed 29-01-PLAN.md
+Resume file: None

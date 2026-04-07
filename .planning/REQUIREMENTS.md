@@ -39,7 +39,7 @@ Requirements for Web UI management milestone. Each maps to roadmap phases.
 
 ### Registry
 
-- [ ] **REG-01**: User can view list of registry entries in a project
+- [x] **REG-01**: User can view list of registry entries in a project
 - [ ] **REG-02**: User can view versions and tags for a registry entry
 - [ ] **REG-03**: User can view WDL source code of a registry version
 - [ ] **REG-04**: Admin can create/move/delete tags on registry entries
@@ -98,7 +98,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROJ-02 | Phase 28 | Complete |
 | PROJ-03 | Phase 28 | Complete |
 | PROJ-04 | Phase 28 | Complete |
-| REG-01 | Phase 29 | Pending |
+| REG-01 | Phase 29 | Complete |
 | REG-02 | Phase 29 | Pending |
 | REG-03 | Phase 29 | Pending |
 | REG-04 | Phase 29 | Pending |

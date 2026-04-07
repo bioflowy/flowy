@@ -207,5 +207,5 @@ Plans:
 | 26. Authentication | 3/3 | Complete    | 2026-04-06 | - |
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
 | 28. Project Management | 2/2 | Complete    | 2026-04-06 | - |
-| 29. Registry Browsing | v2.0 | 0/TBD | Not started | - |
+| 29. Registry Browsing | 1/2 | In Progress|  | - |
 | 30. File Browsing | v2.0 | 0/TBD | Not started | - |
