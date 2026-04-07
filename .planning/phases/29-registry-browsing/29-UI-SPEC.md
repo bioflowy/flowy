@@ -65,7 +65,7 @@ Consistent with established Phase 26–28 patterns verified from UsersPage.tsx a
 | Heading | 20px (text-xl) | 600 (semibold) | 1.2 | `text-xl font-semibold` | Page h1 ("Registry"), section h2 ("Versions", "Source") |
 | Caption | 12px (text-xs) | 400 (regular) | 1.4 | `text-xs text-muted-foreground` | Slug subtitles, WDL line numbers, helper text |
 
-Exactly 4 sizes declared. Exactly 2 weights (400 and 600); 500 used only for label role where shadcn/ui Table renders `font-medium` by default — executor should not override this.
+Exactly 4 sizes declared. Exactly 2 intentional weights (400 and 600). Weight 500 is a shadcn/ui Table component default — it is applied automatically by the `TableHead` component via its built-in `font-medium` class. Executors must not apply weight 500 as a deliberate design choice outside of `TableHead` cells; it should never appear in custom components or new UI elements.
 
 Code/monospace exception: WDL source viewer uses `font-mono text-sm` (14px monospace) — this is a display variant of the Body role, not a fifth size.
 
@@ -134,6 +134,8 @@ New component (built in-phase, no external dependency):
 ## Page Structure
 
 ### Page 1: Registry List — `/projects/:slug/registry`
+
+Primary visual anchor: h1 "Registry" heading — users orient to the page title first, then scan the table downward.
 
 Layout mirrors UsersPage.tsx exactly:
 
@@ -238,9 +240,11 @@ Selected version state: `useState<string>` initialized to `versions?.[0]?.digest
 | Delete entry dialog title | "Delete registry entry" | AlertDialog title |
 | Delete entry dialog body | "This will permanently delete \"{name}\" and all its versions. This action cannot be undone." | AlertDialog description |
 | Delete entry confirm button | "Delete" | `bg-destructive` button |
+| Delete entry dismiss button | "Keep Entry" | Secondary button — clarifies the preserved outcome |
 | Delete tag dialog title | "Delete tag" | AlertDialog title |
 | Delete tag dialog body | "This will permanently remove the tag \"{tag}\" from this registry entry." | AlertDialog description |
 | Delete tag confirm button | "Delete" | `bg-destructive` button |
+| Delete tag dismiss button | "Keep Tag" | Secondary button — clarifies the preserved outcome |
 | Create tag dialog title | "Create or Move Tag" | Dialog title — POST is an upsert, so "create or move" is accurate |
 | Create tag dialog body | "Assign a tag to a specific version. If the tag already exists on another version, it will be moved." | Dialog description |
 | Tag name label | "Tag name" | FormLabel |
@@ -248,7 +252,7 @@ Selected version state: `useState<string>` initialized to `versions?.[0]?.digest
 | Version label | "Version" | FormLabel for Select |
 | Version placeholder | "Select a version" | SelectTrigger placeholder |
 | Create tag submit | "Save Tag" | Submit button |
-| Cancel buttons | "Cancel" | All dialogs |
+| Create tag dismiss button | "Discard" | Secondary button — discards unsaved tag form |
 | Copy button | aria-label="Copy code" | Icon-only button on WDLSourceViewer |
 | "Create Tag" page action | "Create Tag" | Button on detail page header (admin only) |
 
@@ -339,4 +343,5 @@ Note: REQUIREMENTS.md explicitly out-of-scopes mobile responsive layout and dark
 
 *Phase: 29-registry-browsing*
 *UI-SPEC created: 2026-04-07*
+*UI-SPEC revised: 2026-04-07 — fixed BLOCK (generic "Cancel" labels replaced with context-specific dismiss labels), FLAG (added focal point statement for registry list page), FLAG (clarified font-weight 500 as shadcn/ui TableHead default, not a design choice)*
 *Pre-populated from: CONTEXT.md (9 decisions), RESEARCH.md (11 patterns), components.json (design system), index.css (color tokens), UsersPage.tsx + ProjectDetailPage.tsx (typography/spacing patterns)*
