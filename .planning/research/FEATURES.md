@@ -1,307 +1,242 @@
 # Feature Research
 
-**Domain:** Web UI management SPA for WDL workflow engine — login, user/project/registry/file management screens
-**Researched:** 2026-03-20
-**Confidence:** HIGH (screen patterns based on direct API inspection), MEDIUM (UX patterns from comparable tools), LOW (file browser — no file-list API exists yet)
+**Domain:** Workflow execution UI, CLI registry management, browser-based WDL upload — additive features for a WDL 1.2 engine (flowy v2.1)
+**Researched:** 2026-04-07
+**Confidence:** HIGH (codebase analysis) / MEDIUM (domain patterns from comparable systems)
 
 ---
 
-## Context: Existing Backend API
+## Context: What Already Exists
 
-All REST endpoints already exist in flowy-server. This research covers only what the **frontend** needs to implement against those endpoints.
+These features build on v2.0 foundations. Understanding existing capabilities is essential for scoping.
 
-### Available API Surface (confirmed by code inspection)
+**Existing backend API (all ready to call):**
+- `POST /projects/{slug}/registry` — push WDL (JSON body with `name` + `content`)
+- `GET /projects/{slug}/registry` — list entries
+- `GET /projects/{slug}/registry/{name}` — pull WDL content
+- `GET /projects/{slug}/registry/{name}/versions` — list versions
+- `POST /projects/{slug}/registry/{name}/tags` — create/move tag
+- `DELETE /projects/{slug}/registry/{name}/tags/{tag}` — delete tag
+- `POST /projects/{slug}/runs/submit` — submit run via `{registry_ref, inputs}` JSON
+- `GET /projects/{slug}/runs` — list runs (returns state, registry_ref, timing)
+- `GET /projects/{slug}/runs/{id}/status` — poll status
+- `GET /projects/{slug}/runs/{id}/outputs` — fetch outputs
 
-| Endpoint | Purpose | Auth Required |
-|----------|---------|---------------|
-| `POST /auth/login` | Credential exchange → JWT token | None |
-| `GET /users/me` | Current user profile | JWT |
-| `PUT /users/me/password` | Change own password | JWT |
-| `POST /users` | Create user | JWT + global admin |
-| `GET /users` | List all users | JWT + global admin |
-| `DELETE /users/{id}` | Deactivate user | JWT + global admin |
-| `POST /projects` | Create project | JWT |
-| `GET /projects` | List accessible projects | JWT |
-| `GET /projects/{slug}` | Get project detail | JWT + viewer |
-| `PUT /projects/{slug}` | Update project description | JWT + project admin |
-| `DELETE /projects/{slug}` | Deactivate project | JWT + project admin |
-| `GET /projects/{slug}/members` | List project members | JWT + viewer |
-| `POST /projects/{slug}/members` | Add member | JWT + project admin |
-| `PUT /projects/{slug}/members/{username}` | Change member role | JWT + project admin |
-| `DELETE /projects/{slug}/members/{username}` | Remove member | JWT + project admin |
-| `GET /projects/{slug}/registry` | List registry entries | JWT + viewer |
-| `GET /projects/{slug}/registry/{name}` | Pull WDL (by tag or digest) | JWT + viewer |
-| `GET /projects/{slug}/registry/{name}/versions` | List all versions | JWT + viewer |
-| `POST /projects/{slug}/registry/{name}/tags` | Create/move tag | JWT + project admin |
-| `DELETE /projects/{slug}/registry/{name}/tags/{tag}` | Delete tag | JWT + project admin |
-| `DELETE /projects/{slug}/registry` | Delete entry | JWT + project admin |
-| `GET /projects/{slug}/runs/{id}/status` | Run status | JWT + viewer |
-| `GET /projects/{slug}/runs/{id}/outputs` | Run outputs (JSON map) | JWT + viewer |
-| `GET /projects/{slug}/provenance` | Provenance list (filterable) | JWT + viewer |
-| `GET /projects/{slug}/provenance/{run_id}` | Provenance detail | JWT + viewer |
+**Existing frontend infrastructure (React 19, TanStack Query, shadcn/ui, Tailwind):**
+- Registry page: lists entries, versions table, WDL source viewer, tag create/delete dialogs
+- Runs page: list with status badges (PENDING/RUNNING/COMPLETED/FAILED), duration, click-through to detail
+- Run detail page: outputs table, file download, inline preview
 
-### API Gaps for File Browsing
-
-The backend currently provides no file-listing or file-download endpoints. Output paths arrive as string values inside the outputs JSON map (e.g., `"output_file": "/data/runs/abc/outputs/result.tsv"` for local, or `"output_file": "s3://bucket/prefix/runs/abc/result.tsv"` for S3). The UI cannot directly browse or download these without new server endpoints. This is a hard dependency for the file browser screen.
+**Existing CLI client package (`internal/client`):**
+- `Submit`, `SubmitToProject`, `Status`, `StatusInProject`, `Outputs`, `OutputsInProject`
+- No registry methods exist in `internal/client`
 
 ---
 
-## Feature Landscape
+## Feature Area 1: UI Workflow Execution (Select + Submit + Monitor)
 
-### Screen 1: Login
+### Table Stakes
 
-#### Table Stakes
+Features users of comparable systems (Terra, Nextflow Tower, Argo Workflows UI) expect as baseline.
 
-| Feature | Why Expected | Complexity | API Dependency |
-|---------|--------------|------------|----------------|
-| Username + password form | Entry point for all authenticated users; no auth = no access to any other screen | LOW | `POST /auth/login` |
-| JWT storage in memory or sessionStorage | Token must persist across SPA route changes; localStorage is insecure (XSS steals tokens) | LOW | Client-side only |
-| Redirect to original URL after login | Standard web app UX — navigating to a protected URL while logged out should resume after auth | LOW | Client-side routing |
-| Clear error message on 401 | User must know if credentials are wrong vs server is down | LOW | HTTP 401 response parsing |
-| Disable form during in-flight request | Prevent duplicate submissions | LOW | TanStack Query mutation state |
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Select workflow from registry dropdown | Registry browsing already works; execution must follow naturally | LOW | Populated from existing `GET /projects/{slug}/registry` filtered to `kind=workflow` |
+| Input form for basic scalar types (String, Int, Float, Boolean) | Cromwell/WES all require parameter input at submit time; no raw JSON editing for simple cases | MEDIUM | Requires parsing WDL inputs from WDL source — server returns raw WDL, client parses input declarations |
+| Submit button with loading state | Every job-submission UI has submit + spinner | LOW | Calls `POST /projects/{slug}/runs/submit` with `{registry_ref, inputs}` |
+| Post-submit redirect to run detail | Users need to know where their run went | LOW | Navigate to `/projects/{slug}/runs/{run_id}` after submit response |
+| Status polling on run detail page | Runs page already shows status; detail page must refresh while RUNNING | MEDIUM | TanStack Query `refetchInterval` on `GET .../status`; stop when terminal state reached |
+| Status badge updates without page reload | Users expect live-ish status; full-page reload is unacceptable | LOW | Already implemented in Runs page; apply same pattern to detail page poll |
+| Outputs display on completion | Detail page already renders outputs; must trigger fetch when status transitions to COMPLETED | LOW | Already exists — `useRunOutputs` only fetches when state === 'COMPLETED' |
 
-#### Differentiators
+### Differentiators
+
+Features that make the execution UI meaningfully better than just a raw JSON POST.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Persist session across page reload | Using sessionStorage (not memory) means token survives F5 without re-login | LOW | sessionStorage is cleared on tab close; acceptable trade-off vs localStorage |
-| Auto-logout on JWT expiry | Server will return 401 on expired token; UI should intercept globally and redirect to login | LOW | TanStack Query global error handler or Axios interceptor pattern |
+| Dynamic input form derived from WDL declarations | Users see typed fields (string input, number input, checkbox) instead of raw JSON — matches what Terra/Seqera do | HIGH | Parse WDL source in frontend. Requires scanning `input {}` block declarations. Only feasible for primitive types; complex types fall back to JSON textarea |
+| Optional input detection (show/hide) | WDL optional inputs (`String?`) should not require user input — mark clearly | MEDIUM | Parsing `?` type suffix from WDL input declarations |
+| File-type input via path entry | WDL `File` inputs are common in bioinformatics; user must provide s3:// or absolute paths | LOW | String input with `File` label; no actual upload (files live on storage backend) |
+| Registry ref display in submit form | Show which digest/tag will be used for traceability | LOW | Pull from the version selected; display sha256 prefix |
+| "Run again" from run detail | Bioinformatics users re-run with tweaked parameters frequently | MEDIUM | Pre-populate submission form with previous run's inputs from `ProvenanceDetailResponse.inputs` |
 
-#### Anti-Features
+### Anti-Features
 
-| Feature | Why Problematic | Alternative |
-|---------|-----------------|-------------|
-| "Remember me" with localStorage | XSS exposure; PROJECT.md does not include refresh tokens, so long-lived tokens in localStorage is a security liability | sessionStorage (tab-scoped) is acceptable without refresh tokens |
-| OAuth2 / SSO login button | Explicitly out of scope per PROJECT.md; backend has no OAuth2 support | Plain username/password |
-| Biometric / WebAuthn | No backend support; enormous scope | Username/password sufficient |
-
----
-
-### Screen 2: User Management
-
-**Access:** Global admin role only. Non-admins must not see this screen at all (hide in nav, guard route).
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | API Dependency |
-|---------|--------------|------------|----------------|
-| List all users (table view) | Admin needs an overview of who exists in the system | LOW | `GET /users` |
-| Show active/inactive status visually | Deactivated users must be distinguishable at a glance | LOW | `is_active` field in `UserResponse` |
-| Create user form (username, password, display name, email, global role) | Admin lifecycle management | LOW | `POST /users` |
-| Deactivate user (confirm dialog) | Soft-delete — no hard delete via API; admin needs a way to revoke access | LOW | `DELETE /users/{id}` |
-| Show global role (admin/user) per row | Admins need to know who else has admin privileges | LOW | `global_role` field in `UserResponse` |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Inline validation on create form | Username empty / password too short caught before API call, not after | LOW | Client-side validation with React Hook Form or Zod |
-| Search/filter users by username or display name | Useful once user count exceeds 20–30; simple client-side filter is sufficient | LOW | Client-side filter on fetched list; no API pagination endpoint exists |
-| Copy user ID to clipboard | Admin may need UUID for debugging or scripting | LOW | navigator.clipboard API |
-
-#### Anti-Features
-
-| Feature | Why Problematic | Alternative |
-|---------|-----------------|-------------|
-| Edit all user fields inline | `PUT /users/{id}` does not exist — only `PUT /users/me/password`. Exposing phantom edit buttons that fail silently is harmful | Show fields as read-only; only deactivate is a write operation |
-| Hard delete | API performs soft-delete only (`DeactivateUser`). UI should not imply permanent removal | Label as "Deactivate" not "Delete"; show deactivated users as greyed-out rows |
-| Bulk operations (select all, bulk deactivate) | API has no batch endpoint; implementing multi-call sequences with partial failure handling is disproportionate complexity | Single-row actions only; bulk is a future enhancement |
-| Password reset by admin | API provides only `PUT /users/me/password` (self-service). No admin-reset endpoint exists | Admin creates a new account; user changes password on first login (no first-login forced password change mechanism in v1.3) |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| Real-time log streaming | Users want to see task logs while running | WebSocket/SSE explicitly deferred in PROJECT.md; adds server complexity for v2.1 | Poll-based status with state transitions is sufficient; logs visible post-run via file download |
+| File upload for WDL File inputs | Users want to upload data files | Files must live on the shared filesystem or S3 backend — browser uploads bypass the LED execution pattern entirely; would require server-side staging | Document that File inputs must use server-accessible paths (s3://, absolute) |
+| DAG visualization | Nice for understanding workflow structure | High complexity; requires WDL parsing + graph rendering library; not needed for basic execution | Show task names in run detail if/when task-level status is added |
+| Cancel/abort button in UI | Users want to stop running jobs | The abort endpoint exists (`POST .../abort`) but the UI currently has no cancel UX; low priority for v2.1 | Defer to v2.2 |
 
 ---
 
-### Screen 3: Project Management
+## Feature Area 2: Run Status Monitoring (Polling)
 
-**Access:** All authenticated users see projects they are a member of. Global admin sees all projects via `ListAllProjects` path (middleware allows admin to see projects they are not a member of). Project admin role gates write operations.
+### Table Stakes
 
-#### Table Stakes
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Automatic status refresh on run detail page | Users leave the page open; status must update | LOW | TanStack Query `refetchInterval: 3000` while state is PENDING/RUNNING; disable on terminal state |
+| Status badge that reflects live state | Text description alone is insufficient; color coding expected | LOW | Already done in RunsPage and RunDetailPage — apply same `statusBadgeClassName` |
+| Duration counter updating while RUNNING | Users want to know how long a run has been going | LOW | `formatDuration` already handles RUNNING state by using `Date.now()` — just needs a re-render trigger from polling |
+| Clear terminal state indication (COMPLETED/FAILED) | Users must know when to look at outputs | LOW | Already handled via state-conditional output section in RunDetailPage |
+| Error message on FAILED state | Users need actionable information | MEDIUM | Currently shows "check CLI logs" — server stores error field on run record but UI does not display it |
 
-| Feature | Why Expected | Complexity | API Dependency |
-|---------|--------------|------------|----------------|
-| List projects (cards or table) | Entry point for all project-scoped work; users expect to see their workspaces at a glance | LOW | `GET /projects` |
-| Create project form (slug + description) | Any authenticated user can create a project | LOW | `POST /projects` |
-| Project detail page showing description, members, slug | Users need to understand the project's purpose and who has access | LOW | `GET /projects/{slug}` |
-| Members list with role badges | Viewer must see who has what access level | LOW | `GET /projects/{slug}/members` |
-| Add member form (username + role selection) | Project admin needs to grant access to colleagues | LOW | `POST /projects/{slug}/members` |
-| Change member role (dropdown or radio) | Access changes without removing and re-adding the member | LOW | `PUT /projects/{slug}/members/{username}` |
-| Remove member (confirm dialog) | Project admin must be able to revoke access | LOW | `DELETE /projects/{slug}/members/{username}` |
-| Update project description | Projects evolve; description should be editable | LOW | `PUT /projects/{slug}` |
-| Deactivate project (project admin only, confirm dialog) | Lifecycle management; no accidental deletion without confirmation | LOW | `DELETE /projects/{slug}` |
-
-#### Differentiators
+### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Role badge color coding (admin=red, executor=blue, viewer=grey) | Instant visual recognition of who can do what; matches shadcn/ui Badge variants | LOW | CSS only |
-| Slug validation in create form (lowercase alphanumeric + hyphens) | Slug format is enforced by the API; surface the constraint before submission | LOW | Regex validation client-side |
-| Prevent removing last admin (client hint) | API already enforces `RemoveMemberIfNotLastAdmin`; pre-check on the client avoids a confusing 400 error | MEDIUM | Count admins in the members list before allowing the action; show tooltip explaining why the button is disabled |
-| Project member count on project card | Administrators want a quick overview without entering each project | LOW | Compute from `members` response (must be loaded) or add a summary count field |
+| Runs list page auto-refresh | Users can leave Runs page open and see new runs appear or status change | LOW | `refetchInterval` on `useRuns` hook — currently fires once on mount |
+| "Submit new run" button on Runs page | Obvious entry point to execution flow | LOW | Button or link to execution dialog/page |
 
-#### Anti-Features
+### Anti-Features
 
-| Feature | Why Problematic | Alternative |
-|---------|-----------------|-------------|
-| Inline slug editing after creation | Slug is the project's URL identifier; the API has no slug-change endpoint. Changing the slug would break all bookmarks and CLI references | Slug is read-only after creation; only description is editable |
-| Project archiving with visibility toggle | API only has `is_active` soft-delete; no archived/active distinction beyond that | Use "Deactivate" consistently with a confirm dialog |
-| Nested sub-projects | Not in the data model; excessive scope | Flat project list only |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| WebSocket/SSE push updates | Instant status without polling | Explicitly out of scope in PROJECT.md for v2.1; requires server-side streaming infrastructure | 3s polling interval is imperceptible for long-running bioinformatics jobs |
+| Task-level progress (individual task status) | Users want fine-grained progress | Requires task polling loop and DB join; tasks table exists but has no project-scoped API endpoint | Defer — would be a compelling v2.2 feature |
 
 ---
 
-### Screen 4: Registry Browsing
+## Feature Area 3: CLI Registry Commands
 
-**Access:** Any project member (viewer+) can browse. Project admin can manage tags and delete entries. Executor can push (push is CLI-only in this milestone; UI is read-oriented).
+### Table Stakes
 
-#### Table Stakes
+Commands that users of Docker-registry-style CLIs (Docker CLI, Dockstore CLI) expect.
 
-| Feature | Why Expected | Complexity | API Dependency |
-|---------|--------------|------------|----------------|
-| Registry entry list (name, kind=tool/workflow, version count, tags) | Users need to discover what tools and workflows are available in the project | LOW | `GET /projects/{slug}/registry` |
-| Kind badge (tool / workflow) | Distinguishes WDL tasks from full workflows at a glance | LOW | `kind` field in `RegistryEntryResponse` |
-| Tags displayed as chips on each entry | Tags (e.g. `latest`, `prod`) are the primary reference for execution; must be visible without drilling in | LOW | `tags` array in `RegistryEntryResponse` |
-| Entry detail: versions list (digest, tags, created date) | Developers need to see version history to understand what changed and pin to a specific digest | LOW | `GET /projects/{slug}/registry/{name}/versions` |
-| WDL content viewer (read-only, syntax highlighted) | The content is the value; users need to inspect the WDL before submitting a run | MEDIUM | `GET /projects/{slug}/registry/{name}?tag=X` or `?digest=Y` |
-| Copy registry reference to clipboard (`name:tag` or `name@sha256:hex`) | Users will use this reference in CLI submissions; copy-to-clipboard is the expected UX | LOW | Compose string from list data; navigator.clipboard |
-| Delete tag (project admin only) | Tag management is an expected admin operation | LOW | `DELETE /projects/{slug}/registry/{name}/tags/{tag}` |
-| Create/move tag (project admin only) | Tag reassignment is needed to promote versions (e.g. move `prod` tag to a new digest) | LOW | `POST /projects/{slug}/registry/{name}/tags` |
-| Delete registry entry (project admin only, confirm dialog) | Lifecycle management; irreversible, so confirmation required | LOW | `DELETE /projects/{slug}/registry/{name}` |
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| `flowy registry push <file.wdl> --name <name> --project <slug>` | Backend `POST /projects/{slug}/registry` already exists; CLI wrapper is the user's primary interface | MEDIUM | Read file, POST JSON `{name, content}`, print digest + version ID on success. Needs auth token from config |
+| `flowy registry list --project <slug>` | Users need to see what's in the registry | LOW | `GET /projects/{slug}/registry`, format as table: name, kind, versions, tags |
+| `flowy registry pull <name[:tag|@digest]> --project <slug>` | Users need to retrieve WDL source locally | LOW | `GET /projects/{slug}/registry/{name}` with optional tag/digest query param, write content to stdout or `--output` file |
+| `flowy registry tag <name> <digest> <tag> --project <slug>` | Mutable tags are core to the registry model (Docker pattern) | LOW | `POST /projects/{slug}/registry/{name}/tags` with `{tag, digest}` body |
+| `flowy registry delete-tag <name> <tag> --project <slug>` | Lifecycle management; admins need to clean up | LOW | `DELETE /projects/{slug}/registry/{name}/tags/{tag}` |
+| Authentication propagation | Registry commands need auth — same JWT flow as `flowy run` | LOW | Read token from config file or `FLOWY_TOKEN` env var; add `Authorization: Bearer` header via existing client |
 
-#### Differentiators
+### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Digest truncated display (`sha256:abc1234…`) with copy-full on click | Full 72-char digest is unwieldy; truncated display with clipboard access matches Docker Hub UX | LOW | String truncation + Tooltip with full digest + copy button |
-| WDL syntax highlighting | WDL is not a standard language; most syntax highlighters support it as a subset of CWL or with a custom grammar | MEDIUM | Use `highlight.js` with WDL grammar or fall back to generic programming language highlighting. Prism has WDL plugin (LOW confidence — needs verification). |
-| Filter entries by kind (tool / workflow) | Registry can grow; filtering helps bioinformaticians find the right entry type | LOW | Client-side filter on the fetched list |
-| Version comparison (side-by-side diff of two digests) | Developers need to understand what changed between versions | HIGH | Requires fetching two versions and a diff library (e.g. `diff`). Deferred — nice to have but not table stakes for v2.0. |
+| `--output` flag on `pull` to save WDL to file | Scripting and automation workflows need file output | LOW | `os.WriteFile` if flag set, else stdout |
+| Human-readable table output (default) + `--json` flag | Matches modern CLI conventions (cf. `gh`, `docker`) | LOW | For `list` command — default prints aligned columns, `--json` emits raw API response |
+| Push prints tag suggestion | After push, print "use `flowy registry tag <name> <digest> latest` to tag this version" | LOW | Pure UX improvement in push output |
+| Config `default_project` fallback | `flowy registry list` without `--project` falls back to `cfg.Client.DefaultProject` | LOW | Consistent with how `flowy run --project` already works |
 
-#### Anti-Features
+### Anti-Features
 
-| Feature | Why Problematic | Alternative |
-|---------|-----------------|-------------|
-| Push WDL via UI (file upload or text editor) | Registry push is a developer/CI operation via CLI. Web-based WDL editor adds validation complexity (WDL parse errors) and is far out of scope for a management UI | Browse and tag management only; push stays in CLI |
-| Full WDL editor with syntax check | Would require a WDL language server or WASM-compiled parser in the browser | Read-only viewer with syntax highlighting |
-| Automatic tag suggestions (semver increment) | The engine treats tags as arbitrary strings; generating semver suggestions is opinionated and adds complexity | Let the user type the tag string |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| `flowy registry delete` (entry-level delete) | Cleanup of entire entries | Backend delete-entry endpoint does not exist; scope creep for v2.1 | Implement tag cleanup; full entry deletion is a separate backend feature |
+| Import resolution at push time | Validate imports before pushing | HTTP imports are out of scope; local imports are not resolvable from the server side | Push sends raw content; server validates WDL parse only (already implemented in handler) |
+| Bulk push from directory | Push all `.wdl` files in a folder | Rarely needed; adds complexity | Shell loop: `for f in *.wdl; do flowy registry push $f ...; done` |
 
 ---
 
-### Screen 5: File Browsing and Download
+## Feature Area 4: Browser-Based WDL Upload (UI Registry Push)
 
-**Access:** Any project member (viewer+). Files are output paths from completed runs.
+### Table Stakes
 
-**Critical note:** The backend has NO file listing or file download endpoint. Output paths are returned by `GET /projects/{slug}/runs/{id}/outputs` as a JSON map (e.g., `{"aligned.bam": "/data/runs/abc/outputs/aligned.bam"}`). The UI cannot serve these files directly. New server-side endpoints are required before this screen can be built.
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| File picker for `.wdl` files | Browser upload convention; users should not paste WDL text manually | LOW | `<input type="file" accept=".wdl">` reads file content via FileReader API |
+| Name field for registry entry | Required by `POST /projects/{slug}/registry` | LOW | Text input validated against slug format (lowercase alphanumeric + hyphens) |
+| Upload button with loading state | Any form submission needs progress feedback | LOW | Show spinner during POST |
+| Success feedback with digest displayed | Users need confirmation and traceability | LOW | Toast or inline message showing `sha256:...` (short) and kind detected |
+| Error feedback (parse failure, name conflict) | Server returns 422 for invalid WDL, 409 for kind mismatch | LOW | Display server error message inline |
+| Admin/executor role gating | Only admins and executors should push — matches RBAC model | LOW | Check `currentMember.role` in `['admin', 'executor']`; hide button for viewers |
 
-#### Required New Backend Endpoints (Blocking)
-
-Before the file browser screen can be implemented, the `flowy-server` or `flowy-ui` proxy must provide:
-
-| Needed Endpoint | Purpose | Notes |
-|-----------------|---------|-------|
-| `GET /projects/{slug}/runs` | List runs for a project (with status, created_at) | `ListRunsByProject` store method does not exist yet |
-| `GET /projects/{slug}/runs/{id}/files` | List output files for a completed run (name, size, type) | Needs backend to resolve paths from OutputsJSON |
-| `GET /projects/{slug}/runs/{id}/files/download?path=...` | Stream/redirect file content to browser | For local backend: serve file bytes; for S3 backend: generate presigned URL and redirect |
-
-#### Table Stakes (once backend endpoints exist)
-
-| Feature | Why Expected | Complexity | API Dependency |
-|---------|--------------|------------|----------------|
-| Run list per project (ID, status badge, created date) | Starting point for finding output files — users identify which run produced the files they want | LOW | New `GET /projects/{slug}/runs` endpoint |
-| Status badge (PENDING/RUNNING/COMPLETED/FAILED/ABORTED) | Users only want to browse files from COMPLETED runs | LOW | `run_state` field |
-| Output file list for a run (filename, path) | Direct access to what the workflow produced | LOW | New `GET /projects/{slug}/runs/{id}/files` or parse OutputsJSON |
-| Download file button | The core value of the file browser — retrieve computation results | MEDIUM | New download/presigned-URL endpoint |
-| Filter runs by status | Large deployments accumulate many runs; filtering to COMPLETED is the most common need | LOW | Client-side filter or query param |
-
-#### Differentiators
+### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Presigned S3 URL redirect for S3 backend | Files can be large; streaming through the proxy server is wasteful. S3 presigned URLs let the browser download directly from S3. | MEDIUM | `flowy-ui` generates presigned URL server-side (AWS SDK v2 `PresignGetObject`) and redirects the browser. Local backend serves bytes directly. |
-| File type icons (`.bam`, `.vcf`, `.tsv`, `.fastq`) | Bioinformatics output types are recognizable; icons help users identify file types without opening them | LOW | Map extension → icon in UI; no backend change |
-| Copy output path to clipboard | Advanced users may want the `s3://bucket/key` or filesystem path for use in next-run inputs | LOW | Display path value from OutputsJSON; clipboard copy |
-| Provenance link from run to registry entry | Show which WDL version produced the files, with a link to the registry entry | LOW | Combine provenance API (`GET /projects/{slug}/provenance/{run_id}`) with registry browsing link |
+| WDL content preview before upload | User can confirm they selected the right file | LOW | Read file via FileReader, display first N lines in a code block |
+| Auto-populate name from filename | Remove manual entry step; strip `.wdl` extension, convert to slug format | LOW | `filename.replace(/\.wdl$/, '').toLowerCase().replace(/[^a-z0-9-]/g, '-')` |
+| Tag field (optional) | User can immediately tag the version after push in the same form | MEDIUM | Make optional; if set, POST tag after successful push |
+| Registry page "Upload" button | Discoverable entry point to the upload flow | LOW | Add button to RegistryPage header alongside existing entries list |
 
-#### Anti-Features
+### Anti-Features
 
-| Feature | Why Problematic | Alternative |
-|---------|-----------------|-------------|
-| Directory tree browser | Workflow outputs are flat key-value pairs in OutputsJSON (e.g. `"workflow.bam": "path"`). There is no directory structure in the data model. Generating a tree view from output paths would be fragile | Flat list of output files keyed by WDL output name |
-| File upload (stage inputs via UI) | Inputs staging (copying files to the run input directory before submission) is a CLI concern. Run submission via UI is out of scope for v2.0 | Download only |
-| File preview in browser (BAM viewer, VCF viewer) | Domain-specific bioinformatics viewers (e.g. IGV.js) are enormous scope; BAM files require indexed access | External tools; provide download link and documentation |
-| Streaming log tail (stdout/stderr per task) | No task log API exists; PROJECT.md defers WebSocket/SSE | Status polling only; logs are a future milestone |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| Drag-and-drop upload | Modern UX convention | Adds complexity with no functional gain for WDL — users typically navigate to specific files | Standard file picker is sufficient; can be added later as enhancement |
+| Multi-file upload (for import dependencies) | WDL workflows can import other files | HTTP imports deferred; local imports not resolvable server-side — pushing a bundle is not supported | Single-file push; document that workflows with local imports must use CLI |
+| In-browser WDL editor | Users want to write WDL in the browser | High complexity (syntax highlighting, error markers); out of scope | Use WDLSourceViewer for read-only display; direct users to local editors |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Login Screen
-    └──required by──> All other screens (JWT must exist in session)
-    └──produces──> JWT token stored in sessionStorage
+[UI Workflow Execution]
+    requires ──> [Registry entry list] (existing v2.0)
+    requires ──> [WDL source retrieval] (existing v2.0 — needed to derive input schema)
+    requires ──> [Run submission API] (existing v1.3)
+    enhances ──> [Run status monitoring]
 
-User Management Screen
-    └──requires──> Login (JWT)
-    └──requires──> global_role = "admin" in JWT claims (gate route + nav item)
-    └──calls──> GET /users, POST /users, DELETE /users/{id}
+[Run status monitoring]
+    requires ──> [Run detail page] (existing v2.0)
+    enhances ──> [Runs list page] (existing v2.0)
 
-Project Management Screen
-    └──requires──> Login (JWT)
-    └──calls──> GET /projects, POST /projects, GET /projects/{slug}/members, etc.
+[CLI registry push]
+    requires ──> [internal/client registry push method] (new)
+    requires ──> [auth token in config] (existing config structure)
+    enhances ──> [UI registry upload] (same backend API)
 
-Registry Browsing Screen
-    └──requires──> Login (JWT)
-    └──requires──> Project selection (project slug in route)
-    └──calls──> GET /projects/{slug}/registry, GET /projects/{slug}/registry/{name}/versions
+[CLI registry list/pull/tag/delete-tag]
+    requires ──> [internal/client registry methods] (new)
+    enhances ──> [UI registry browsing] (same data)
 
-File Browsing Screen
-    └──requires──> Login (JWT)
-    └──requires──> Project selection (project slug in route)
-    └──requires──> New backend endpoints (GET /projects/{slug}/runs, file download)
-    └──enhances──> Registry Browsing (provenance links)
+[UI registry upload]
+    requires ──> [Registry push API] (existing v1.3)
+    requires ──> [RBAC role check] (existing v2.0 pattern)
+    enhances ──> [CLI registry push] (same data; different entry point)
 
-WDL Content Viewer
-    └──requires──> Registry entry + version selection
-    └──enhances──> Registry Browsing Screen
+[Dynamic WDL input form]
+    requires ──> [UI workflow execution] (context for form)
+    requires ──> [WDL source content] (to derive input schema)
+    enhances ──> [UI workflow execution] (replaces raw JSON textarea)
 ```
 
 ### Dependency Notes
 
-- **Login must be the first screen built.** All other screens fail to load without a valid JWT. The TanStack Query global 401 interceptor and sessionStorage token must be in place before any other screen is wired.
-- **Project selection is a prerequisite for registry and file browsing.** Both screens are project-scoped; the project slug must be in the URL route (e.g., `/projects/my-project/registry`). A project list/selector must be navigable before entering either screen.
-- **File browsing is blocked by new backend endpoints.** Building the file browser before `GET /projects/{slug}/runs` and the download endpoint exist is impossible. This screen should be deferred to a later phase or the blocking endpoints must be built first within the same milestone.
-- **User management is independent of all other screens** except login. It can be built in parallel with project/registry screens.
+- **Dynamic input form requires WDL parsing in the frontend.** The server returns raw WDL content in `RegistryPullResponse.content`. The UI must parse `input {}` declarations to render typed fields. A lightweight line-by-line scan of the WDL input block is feasible for primitive types; full AST parsing in the browser is not justified for v2.1.
+- **CLI registry commands require new `internal/client` methods.** The client package has no registry methods. Six new methods are needed (`Push`, `List`, `Pull`, `CreateTag`, `DeleteTag`, and their project-scoped variants). This is the foundation for all CLI registry subcommands.
+- **UI registry upload and CLI push share the same API endpoint.** The `POST /projects/{slug}/registry` endpoint accepts JSON `{name, content}`. The UI reads file content via FileReader and posts this JSON — identical to the CLI flow.
+- **`flowy registry` subcommand requires a new command dispatcher.** Currently `cmd/flowy/main.go` handles `check`, `run`, `submit`, `status`, `outputs`. A new `registry` case must be added, with sub-dispatch to `push`, `list`, `pull`, `tag`, `delete-tag`.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v2.0)
+### Launch With (v2.1)
 
-Minimum set for the Web UI milestone to be complete and useful.
+These are the minimum features to satisfy the milestone goal stated in PROJECT.md.
 
-- [ ] **Login screen** — JWT acquisition; redirect to dashboard on success
-- [ ] **User management screen** (admin only) — list, create, deactivate; show global role
-- [ ] **Project list screen** — list accessible projects; create new project
-- [ ] **Project detail screen** — description, member list with roles, add/remove/change-role members
-- [ ] **Registry entry list screen** — entries with kind + tags in selected project
-- [ ] **Registry entry detail screen** — version history, WDL content viewer, tag management (admin)
-- [ ] **Run list screen** (prerequisite for file browsing) — list runs per project with status
-- [ ] **File browser screen** — output file list per run with download (requires new backend endpoints)
-- [ ] **CORS support** — `flowy-server` must send CORS headers for dev mode (`flowy-ui` proxy handles it in production)
-- [ ] **`flowy-ui` binary** — Go binary embedding the React SPA and reverse-proxying `/api/` to `flowy-server`
+- [ ] `flowy registry push <file> --name <name> --project <slug>` — primary registry management CLI command
+- [ ] `flowy registry list --project <slug>` — list registry entries from CLI
+- [ ] `flowy registry pull <name[:tag]> --project <slug>` — retrieve WDL source from CLI
+- [ ] `flowy registry tag <name> <digest> <tag> --project <slug>` — tag a version
+- [ ] `flowy registry delete-tag <name> <tag> --project <slug>` — remove a tag
+- [ ] UI registry upload dialog on RegistryPage — file picker, name field, submit, success/error feedback
+- [ ] UI workflow execution — select from registry, JSON textarea for inputs, submit, redirect to run detail
+- [ ] Run detail page polling — 3s interval while RUNNING/PENDING, stop on terminal state
+- [ ] Runs list auto-refresh — same polling while any run is active
 
-### Add After Validation (v2.x)
+### Add After Validation (v2.1.x)
 
-- [ ] **Run submission form** — submit a workflow from the registry via the UI (requires input form generation from WDL type schema)
-- [ ] **WDL diff viewer** — compare two versions side by side
-- [ ] **Provenance detail screen** — full audit trail with inputs snapshot rendered as a table
-- [ ] **Refresh token / auto-renew** — seamless session management for long-lived admin sessions
-- [ ] **File type icons for bioinformatics formats** — `.bam`, `.vcf`, `.fastq`, `.bed` recognized by extension
+- [ ] Dynamic typed input form (parse WDL input declarations) — trigger: user feedback that raw JSON is painful
+- [ ] "Run again" from run detail — trigger: power users requesting it
+- [ ] Tag field in UI upload dialog — trigger: users finding post-upload tag creation cumbersome
+- [ ] `--json` output flag for `flowy registry list` — trigger: automation/scripting needs
 
-### Future Consideration (v3+)
+### Future Consideration (v2.2+)
 
-- [ ] **IGV.js or similar in-browser genomics viewer** — view BAM/VCF files directly
-- [ ] **WebSocket run status updates** — real-time progress without polling
-- [ ] **OAuth2/SSO login** — enterprise auth integration
-- [ ] **Audit log screen** — who did what, when (requires audit log backend)
+- [ ] Task-level status and progress display — requires task status API endpoint
+- [ ] Abort button in UI — abort endpoint exists, just needs UI
+- [ ] In-browser WDL source editor — large scope, requires syntax highlighting
+- [ ] Registry entry deletion (full entry, not just tag) — requires new backend endpoint
 
 ---
 
@@ -309,54 +244,49 @@ Minimum set for the Web UI milestone to be complete and useful.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Login screen + JWT session | HIGH | LOW | P1 |
-| Project list + create | HIGH | LOW | P1 |
-| Project detail + member management | HIGH | LOW | P1 |
-| Registry entry list | HIGH | LOW | P1 |
-| Registry entry detail + WDL viewer | HIGH | MEDIUM | P1 |
-| User management (admin) | HIGH | LOW | P1 |
-| Run list per project | HIGH | MEDIUM | P1 (requires new backend endpoint) |
-| File browser + download | HIGH | HIGH | P1 (blocked by new backend endpoints) |
-| Tag management in registry | MEDIUM | LOW | P1 |
-| WDL syntax highlighting | MEDIUM | MEDIUM | P2 |
-| Client-side slug / form validation | MEDIUM | LOW | P2 |
-| Presigned S3 URL download | HIGH | MEDIUM | P2 (requires S3 backend on server) |
-| Run submission via UI | MEDIUM | HIGH | P3 |
-| WDL diff viewer | LOW | HIGH | P3 |
-| Bioinformatics file viewers | LOW | HIGH | P3 |
-
-**Priority key:** P1 = must have for v2.0 launch, P2 = ship if time allows, P3 = future milestone
+| `flowy registry push` | HIGH | MEDIUM | P1 |
+| `flowy registry list` | HIGH | LOW | P1 |
+| `flowy registry pull` | HIGH | LOW | P1 |
+| `flowy registry tag` | MEDIUM | LOW | P1 |
+| `flowy registry delete-tag` | MEDIUM | LOW | P1 |
+| UI registry upload dialog | HIGH | LOW | P1 |
+| UI workflow execution (JSON textarea inputs) | HIGH | MEDIUM | P1 |
+| Run detail page polling | HIGH | LOW | P1 |
+| Runs list auto-refresh | MEDIUM | LOW | P1 |
+| Dynamic typed input form | HIGH | HIGH | P2 |
+| Tag field in upload dialog | LOW | MEDIUM | P2 |
+| "Run again" button | MEDIUM | MEDIUM | P2 |
+| `--json` CLI output flag | LOW | LOW | P2 |
+| Abort button in UI | MEDIUM | LOW | P3 |
+| Task-level status display | HIGH | HIGH | P3 |
 
 ---
 
-## Competitor Feature Analysis
+## Comparable System Analysis
 
-| Feature | Cromwell UI (WDL-native) | Nextflow Tower | Our Approach |
-|---------|--------------------------|----------------|--------------|
-| Login | Google OAuth2 (Cromwell SaaS) / no auth (local) | GitHub OAuth2 + org SSO | Username/password + JWT — self-hosted, no external IdP |
-| User management | Admin via IAM (SaaS) or no UI (local) | Workspace admin panel | Dedicated admin screen; global role gating |
-| Project/workspace | Terra Workspaces (GCP IAM backed) | Workspaces per org | `projects` table with slug + member roles |
-| Registry browsing | None (Cromwell has no built-in registry) | None natively (uses Docker Hub / Wave) | Project-scoped registry with version history and tag management UI |
-| Run history | Run list with status filtering, call-level detail | Pipeline run list with task timeline | Run list per project + status badge; call-level is future work |
-| File download | Terra file browser (GCS only) | S3/GCS download links | Output file list from OutputsJSON + presigned URL or proxy download |
-| WDL viewer | None | N/A (Nextflow DSL2) | Read-only viewer with syntax highlighting |
+These are reference systems studied, not competitors — flowy is a self-hosted engine.
+
+| Feature | Terra (Cromwell) | Nextflow Tower (Seqera) | WDL Workspace (EPAM) | flowy v2.1 approach |
+|---------|------------------|--------------------------|----------------------|---------------------|
+| Workflow selection | Browse workspace, select WDL | Select pipeline from catalog | Upload or select from library | Select from project registry |
+| Parameter input | JSON template + form hybrid | Schema-driven form (nf-core schema) | JSON input fields | JSON textarea first; typed form as differentiator |
+| Submit action | "Launch" button, async | "Launch" button, async | "Run" button | Submit button then redirect to run detail |
+| Status monitoring | Table with polling, colored states | Real-time via WebSocket | Table with status polling | 3s polling, status badge in detail page |
+| CLI registry | `dockstore tool publish` (GitHub-linked) | `nextflow` + Tower API | None | `flowy registry push/pull/list/tag/delete-tag` |
+| File upload | Via Terra workspace files | Via datasets feature | Via upload form | Single WDL file upload dialog |
 
 ---
 
 ## Sources
 
-- flowy source `internal/server/server.go` — complete route map confirming all available endpoints (HIGH confidence — direct inspection)
-- flowy source `internal/api/types.go` — all request/response DTOs confirming field names and types (HIGH confidence — direct inspection)
-- flowy source `internal/store/store.go` — Store interface confirming what queries exist and which are missing (HIGH confidence — direct inspection)
-- flowy source `internal/server/handlers.go` — `handleOutputs` confirms OutputsJSON is a flat key-value map, not a directory tree (HIGH confidence — direct inspection)
-- [JWT token storage in SPAs: in-memory vs sessionStorage vs localStorage](https://cybersierra.co/blog/react-jwt-storage-guide/) (MEDIUM confidence — WebSearch)
-- [S3 presigned URLs for React download flows](https://oneuptime.com/blog/post/2026-02-12-s3-presigned-urls-react-application/view) (MEDIUM confidence — WebSearch)
-- [Handling JWT in React admin apps — in-memory token pattern](https://marmelab.com/blog/2020/07/02/manage-your-jwt-react-admin-authentication-in-memory.html) (MEDIUM confidence — WebSearch)
-- [Azure Logic Apps / GitHub Actions workflow run history UI patterns](https://learn.microsoft.com/en-us/azure/logic-apps/view-workflow-status-run-history) (MEDIUM confidence — comparable tool UX)
-- [AWS Amplify Storage Browser for S3 — file browser pattern](https://ui.docs.amplify.aws/react/connected-components/storage/storage-browser) (MEDIUM confidence — comparable tool UX)
-- PROJECT.md — explicit out-of-scope items (WebSocket/SSE, OAuth2/LDAP, run submission via UI) (HIGH confidence — project spec)
+- Codebase analysis: `/home/uehara/flowy/internal/api/types.go`, `/home/uehara/flowy/internal/server/handlers.go`, `/home/uehara/flowy/internal/server/handlers_registry.go`, `/home/uehara/flowy/cmd/flowy/main.go`, `/home/uehara/flowy/web/src/features/runs/`, `/home/uehara/flowy/web/src/features/registry/`
+- Terra/Cromwell parameter input: https://support.terra.bio/hc/en-us/articles/360037120252-Specify-inputs
+- Seqera Platform (Nextflow Tower) monitoring: https://docs.seqera.io/platform-cloud/monitoring/overview
+- WDL Workspace (comparable open-source UI): https://github.com/epam/wdl-workspace
+- AWS HealthOmics WDL parameter detection (2025): https://aws.amazon.com/about-aws/whats-new/2025/06/aws-healthomics-automatic-detection-wdl-workflow-parameters/
+- Argo Workflows UI parameter input: https://argo-workflows.readthedocs.io/en/latest/workflow-inputs/
+- PROJECT.md milestone scope: `/home/uehara/flowy/.planning/PROJECT.md`
 
 ---
-
-*Feature research for: flowy v2.0 — Web UI management SPA*
-*Researched: 2026-03-20*
+*Feature research for: WDL workflow execution UI, CLI registry management, browser-based WDL upload (flowy v2.1)*
+*Researched: 2026-04-07*

@@ -1,8 +1,406 @@
 # Stack Research: WDL Workflow Engine (Go + React Web UI)
 
 **Project:** flowy — WDL 1.2 workflow engine (Go port of miniwdl)
-**Researched:** 2026-03-20 (v2.0 Web UI update; v1.0–v1.3 stacks preserved below)
+**Researched:** 2026-04-07 (v2.1 Job Execution & Registry CLI update; v2.0–v1.0 stacks preserved below)
 **Overall confidence:** HIGH
+
+---
+
+## v2.1 Additions: Job Execution UI, CLI Registry Commands, Browser Registry Upload
+
+This section covers NEW capabilities needed for the v2.1 milestone. The entire Go backend (v1.0–v1.3)
+and React frontend (v2.0) are unchanged — this section lists only additions and the integration
+points where they attach to the existing stack.
+
+**Scope constraint:** Three distinct feature areas, all building on existing patterns:
+1. **Execution UI** — dynamic input form from WDL input declarations, poll-based status, result display
+2. **CLI registry commands** — `flowy registry push|list|pull|tag|delete` subcommands in the existing `flowy` binary
+3. **Browser registry upload** — `multipart/form-data` file upload from the React SPA to a new server endpoint
+
+---
+
+### New Frontend Capabilities
+
+#### 1. Dynamic Input Form Generation
+
+**Recommendation:** Build a hand-written schema-driven form renderer using the existing `react-hook-form` + `zod` stack. Do NOT add `react-jsonschema-form` or `react-hook-form-jsonschema`.
+
+**Rationale:**
+
+The server already serves WDL source content via `GET /projects/{slug}/registry/{name}?digest=...` (the `RegistryPullResponse` shape). The WDL `input {}` declarations can be parsed server-side into a JSON input spec and returned in a new `GET /projects/{slug}/registry/{name}/inputs` endpoint. The frontend then renders form fields by switching on the `type` field of each input descriptor.
+
+WDL primitive types (`String`, `Int`, `Float`, `Boolean`, `File`) map directly to HTML input types:
+
+| WDL Type | HTML Input | Zod Schema |
+|----------|-----------|------------|
+| `String` | `<input type="text">` | `z.string()` |
+| `Int` | `<input type="number" step="1">` | `z.coerce.number().int()` |
+| `Float` | `<input type="number" step="any">` | `z.coerce.number()` |
+| `Boolean` | `<input type="checkbox">` | `z.boolean()` |
+| `File` | File path text input + upload button | `z.string()` |
+| `Array/Map/Struct` | `<textarea>` accepting raw JSON | `z.string()` (validated as JSON) |
+| Optional `T?` | same as T but not required | `.optional()` |
+
+A custom renderer loop is ~100 lines of TypeScript. This is the right approach because:
+- The WDL type set is small and closed (no new primitive types in WDL 1.2)
+- `react-jsonschema-form` (rjsf) brings 200+ KB of JS, complex theming adapters, and a full JSON Schema engine — this is vastly over-scoped for a known-bounded type set
+- `react-hook-form-jsonschema` is an unmaintained library (last commit 2022)
+- The existing `react-hook-form` + `zod` stack (already in `package.json`) provides all the validation primitives needed
+
+**Dynamic zod schema construction:**
+```typescript
+// Build zod schema at render time from input descriptors
+function buildSchema(inputs: WDLInputDescriptor[]): z.ZodObject<...> {
+  const shape: Record<string, z.ZodTypeAny> = {}
+  for (const input of inputs) {
+    let field = wdlTypeToZod(input.type)
+    if (input.optional) field = field.optional()
+    shape[input.name] = field
+  }
+  return z.object(shape)
+}
+```
+
+**Confidence:** HIGH — existing `react-hook-form` v7.72.1 and `zod` v4 are already installed; no new dependencies needed.
+
+---
+
+#### 2. Poll-Based Run Status Monitoring
+
+**Recommendation:** Use TanStack Query `useQuery` with `refetchInterval` to poll run status. No WebSocket, no SSE, no new library.
+
+**Rationale:**
+
+TanStack Query v5's `refetchInterval` option takes a function `(query) => number | false`:
+
+```typescript
+useQuery({
+  queryKey: ['projects', slug, 'runs', runId],
+  queryFn: () => apiClient.get<RunStatus>(`/projects/${slug}/runs/${runId}`),
+  refetchInterval: (query) => {
+    const state = query.state.data?.state
+    // Stop polling when terminal
+    if (state === 'COMPLETED' || state === 'FAILED' || state === 'ABORTED') return false
+    return 2000 // poll every 2 seconds
+  },
+})
+```
+
+This pattern:
+- Reuses the existing `useQuery` hook — no new API surface to learn
+- Automatically stops polling on terminal states (COMPLETED, FAILED, ABORTED)
+- Automatically stops if the component unmounts
+- The PROJECT.md explicitly defers WebSocket/SSE to a future milestone: "polling chosen for v2.1; revisit if real-time needs grow"
+
+The 2-second poll interval is appropriate: WDL tasks are Docker container executions (seconds to hours); sub-second latency is irrelevant for this domain.
+
+**Confidence:** HIGH — `@tanstack/react-query` v5.64.2 is already in `package.json`; `refetchInterval` as a function is documented and stable.
+
+---
+
+#### 3. File Upload from Browser (Registry Push)
+
+**Recommendation:** Use native browser `FormData` + `fetch` for multipart file upload. Do NOT add `react-dropzone`, `filepond`, or `uppy`.
+
+**Rationale:**
+
+The registry push operation is: user selects a WDL file → browser reads it as text → POST to `/projects/{slug}/registry`. This is a single-file text upload, not a media upload.
+
+Two implementation options exist:
+
+**Option A (preferred): Read as text, POST JSON**
+```typescript
+// User picks file via <input type="file">
+const text = await file.text()  // FileReader API
+await apiClient.post(`/projects/${slug}/registry`, {
+  name: entryName,
+  content: text,  // WDL source as string
+})
+```
+This uses the existing `RegistryPushRequest` API shape (`{ name, content }`). No multipart encoding needed. The `apiClient` helper already handles Authorization headers.
+
+**Option B (if new endpoint needed): multipart/form-data**
+```typescript
+// Must NOT set Content-Type — browser sets it with boundary
+const form = new FormData()
+form.append('name', entryName)
+form.append('file', file)
+const res = await fetch(`/api/projects/${slug}/registry/upload`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}` },
+  body: form,  // no Content-Type header — browser sets multipart boundary
+})
+```
+
+**Option A is strongly preferred** because:
+- The existing `POST /projects/{slug}/registry` endpoint already accepts `{ name, content }` JSON
+- No new server handler needed
+- WDL files are always text (UTF-8); reading as text with `file.text()` is correct
+- `react-dropzone` (v15.0.0) adds an npm dependency for drag-and-drop — not worth it for a single-file admin upload that works fine with `<input type="file">`
+
+Only add `react-dropzone` if drag-and-drop is a UX requirement. It is NOT needed for functional file upload.
+
+**shadcn file input:** Add a shadcn `Input` component with `type="file"` and `accept=".wdl"`. No additional component library needed.
+
+**Confidence:** HIGH — browser `FileReader.text()` is widely supported (MDN: Baseline 2022); `FormData` + `fetch` multipart pattern is standard; no library needed.
+
+---
+
+#### 4. New shadcn/ui Components Required
+
+The execution UI requires a few shadcn components not yet in the project:
+
+| Component | Usage | Install command |
+|-----------|-------|----------------|
+| `progress` | Run status progress indicator | `npx shadcn@latest add progress` |
+| `badge` | Input type labels (String, Int, File, etc.) | likely already in registry page — verify |
+| `switch` | Boolean WDL input toggle | `npx shadcn@latest add switch` |
+| `textarea` | Array/Map/Struct JSON input | `npx shadcn@latest add textarea` |
+
+These are copy-paste shadcn components; no new npm packages.
+
+**Confidence:** HIGH — shadcn/ui component list verified at ui.shadcn.com.
+
+---
+
+### New Backend Capabilities
+
+#### 5. CLI Registry Commands: Extend Existing `flag`-Based CLI
+
+**Recommendation:** Add a `registry` subcommand to the existing `flowy` binary using the same `flag.FlagSet` pattern already in `cmd/flowy/main.go`. Do NOT add `spf13/cobra`.
+
+**Rationale:**
+
+The existing `cmd/flowy/main.go` uses Go's stdlib `flag` package with a manual `switch args[0]` dispatcher. This pattern scales cleanly to a `registry` subcommand with sub-subcommands:
+
+```go
+// In cmd/flowy/main.go switch:
+case "registry":
+    return runRegistry(args[1:], stdout, stderr)
+```
+
+```go
+// New function in cmd/flowy/registry.go
+func runRegistry(args []string, stdout, stderr io.Writer) int {
+    if len(args) == 0 {
+        // print registry usage
+        return 2
+    }
+    switch args[0] {
+    case "push":   return runRegistryPush(args[1:], stdout, stderr)
+    case "list":   return runRegistryList(args[1:], stdout, stderr)
+    case "pull":   return runRegistryPull(args[1:], stdout, stderr)
+    case "tag":    return runRegistryTag(args[1:], stdout, stderr)
+    case "delete": return runRegistryDelete(args[1:], stdout, stderr)
+    default:
+        fmt.Fprintf(stderr, "unknown registry subcommand: %q\n", args[0])
+        return 2
+    }
+}
+```
+
+**Why not Cobra?** The v1.0 STACK.md notes `spf13/cobra` is in go.mod (used in the original `flowy check` / `flowy run` commands before the manual refactor). However, the current `cmd/flowy/main.go` does NOT use Cobra — it was replaced with manual flag parsing for spectool compatibility. Adding Cobra back would require migrating the existing subcommands or running a hybrid. The manual pattern is already established and is adequate for 8-10 subcommands.
+
+**Cobra IS justified** at 15+ subcommands with complex flag inheritance, or if the CLI needs shell completion, man page generation, or custom help formatting. For `flowy registry push|list|pull|tag|delete`, the manual pattern is sufficient.
+
+**Subcommand specifications:**
+
+| Subcommand | Flags | API Call |
+|------------|-------|---------|
+| `push <file.wdl>` | `--name`, `--project`, `--tag` | `POST /projects/{slug}/registry` |
+| `list` | `--project` | `GET /projects/{slug}/registry` |
+| `pull <name:tag>` | `--project`, `--output` | `GET /projects/{slug}/registry/{name}?tag={tag}` |
+| `tag <name:digest> <tag>` | `--project` | `POST /projects/{slug}/registry/{name}/tags` |
+| `delete <name>` | `--project`, `--force` | `DELETE /projects/{slug}/registry/{name}` |
+
+All registry commands need authentication. The CLI already has auth pattern precedent from `flowy run --project`. Add `--token` flag (or read from `FLOWY_TOKEN` env var) for registry commands. Alternatively read from `flowy.yaml` config (`client.token` field).
+
+**Multipart upload for push:** The CLI reads the WDL file, sends its content as the `content` field in a `RegistryPushRequest` JSON body. Same as the existing server push endpoint. No multipart needed in the CLI path — only the browser UI needs form-based upload consideration (and even there Option A above avoids multipart).
+
+**Confidence:** HIGH — the pattern is already established in `cmd/flowy/main.go`; direct extension with no new dependencies.
+
+---
+
+#### 6. New Server Endpoint: WDL Input Spec
+
+**Recommendation:** Add `GET /projects/{slug}/registry/{name}/inputs` returning a parsed input descriptor list. Use the existing WDL parser already in `wdl/parser` and `wdl/checker`.
+
+**Rationale:**
+
+The frontend needs to know each workflow/task input's name, type, and optionality to render the dynamic form. The server is the right place to compute this — it already has the WDL parser and can access registry content:
+
+```go
+// New type in internal/api/types.go
+type InputDescriptor struct {
+    Name     string `json:"name"`
+    Type     string `json:"type"`      // "String", "Int", "Float", "Boolean", "File", "Array", etc.
+    Optional bool   `json:"optional"`
+    Default  any    `json:"default,omitempty"`
+}
+
+type InputsResponse struct {
+    Name   string            `json:"name"`
+    Kind   string            `json:"kind"`  // "workflow" or "tool"
+    Inputs []InputDescriptor `json:"inputs"`
+}
+```
+
+The handler fetches the WDL content from the registry, parses it with `wdl/parser`, extracts the workflow's `Inputs` `[]*ast.Decl`, and serializes the type information. This uses zero new Go libraries — only existing internal packages.
+
+**Confidence:** HIGH — the WDL parser and checker are already in the codebase; `ast.Decl` carries `Type types.Type` with `TypeName()` string representation.
+
+---
+
+#### 7. JWT Authentication in CLI Registry Commands
+
+**Recommendation:** Add `--token` flag and `FLOWY_TOKEN` environment variable to the registry CLI commands. Store token in `flowy.yaml` under `client.token`. No new library.
+
+**Rationale:**
+
+The server's JWT middleware already protects all `/projects/*` endpoints. Registry CLI commands need to pass a JWT. The cleanest UX:
+
+1. `flowy login --server http://localhost:8080 --user admin` → prompts for password → stores JWT in `~/.flowy/token` or in `flowy.yaml`
+2. `flowy registry push ...` → reads token from config file or `FLOWY_TOKEN` env var
+
+Alternatively, accept `--token <jwt>` per-command. Either approach uses only stdlib (`os.Getenv`, file read) and the existing `client.Client` with a new `Authorization` header field.
+
+The `client.Client` struct needs an `authToken` field:
+```go
+type Client struct {
+    serverURL  string
+    httpClient *http.Client
+    authToken  string  // JWT bearer token — empty for unauthenticated requests
+}
+
+func NewWithAuth(serverURL, token string) *Client { ... }
+```
+
+**Confidence:** HIGH — purely additive change to existing client; no new library.
+
+---
+
+### No New Go Dependencies Required
+
+All v2.1 Go capabilities are achievable with the existing go.mod dependency set:
+
+| Capability | Implementation | New Dependency? |
+|-----------|---------------|-----------------|
+| CLI registry subcommands | Extend `cmd/flowy/main.go` switch; new `cmd/flowy/registry.go` | None |
+| CLI multipart file read | `os.ReadFile` + existing JSON client | None |
+| JWT in CLI | Add `authToken` field to `client.Client`; read from env/config | None |
+| Server input spec endpoint | Existing `wdl/parser`, `wdl/checker`, `internal/api/types.go` | None |
+| Server multipart upload (option B only) | `r.ParseMultipartForm(32 << 20)` in stdlib `net/http` | None |
+
+**Confidence:** HIGH — all required Go stdlib and internal packages are confirmed present.
+
+---
+
+### No New Frontend Dependencies Required
+
+All v2.1 React capabilities are achievable with the existing `package.json` dependency set:
+
+| Capability | Implementation | New Dependency? |
+|-----------|---------------|-----------------|
+| Dynamic input form | `react-hook-form` + `zod` + custom renderer loop | None |
+| File upload (Option A) | `FileReader.text()` + existing `apiClient.post` | None |
+| Poll-based status | `useQuery` with `refetchInterval` function | None |
+| Switch component | `npx shadcn@latest add switch` (shadcn copy-paste) | None |
+| Textarea component | `npx shadcn@latest add textarea` (shadcn copy-paste) | None |
+| Progress component | `npx shadcn@latest add progress` (shadcn copy-paste) | None |
+
+**If** drag-and-drop file upload is explicitly required:
+
+| Library | Version | Purpose | Install |
+|---------|---------|---------|---------|
+| `react-dropzone` | 15.0.0 | Drag-and-drop file zone | `npm install react-dropzone` |
+
+Do NOT add `react-dropzone` unless the product requirement specifically calls for drag-and-drop. A plain `<input type="file">` with a shadcn `Button` is functionally complete.
+
+**Confidence:** HIGH — existing `package.json` has all required primitives confirmed.
+
+---
+
+### Integration Points
+
+The v2.1 features integrate with the existing architecture at these specific seams:
+
+#### Frontend → Backend
+
+| New UI Feature | API Endpoint | Status |
+|---------------|--------------|--------|
+| Execute workflow dialog | `POST /projects/{slug}/workflows` (existing) | Existing, works |
+| Dynamic input form data | `GET /projects/{slug}/registry/{name}/inputs` | **NEW endpoint needed** |
+| Poll run status | `GET /projects/{slug}/runs/{id}` | Existing (verify route shape) |
+| Registry upload (Option A) | `POST /projects/{slug}/registry` (existing JSON) | Existing, works |
+| Run outputs display | `GET /projects/{slug}/runs/{id}/outputs` | Existing (verify route) |
+
+#### CLI → Server
+
+| CLI Command | Endpoint | Auth |
+|-------------|---------|------|
+| `flowy registry push` | `POST /projects/{slug}/registry` | JWT required |
+| `flowy registry list` | `GET /projects/{slug}/registry` | JWT required |
+| `flowy registry pull` | `GET /projects/{slug}/registry/{name}` | JWT required |
+| `flowy registry tag` | `POST /projects/{slug}/registry/{name}/tags` | JWT required |
+| `flowy registry delete` | `DELETE /projects/{slug}/registry/{name}` | JWT required |
+
+All of these REST endpoints already exist (`internal/server/handlers_registry.go`). The CLI simply calls them. The only new work is adding auth token support to `client.Client`.
+
+---
+
+### What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| **`react-jsonschema-form` (rjsf)** | ~200 KB bundle; full JSON Schema engine; theming adapters for each UI framework; radically over-scoped for WDL's 6 primitive types | Custom renderer loop with `react-hook-form` + `zod` (already installed) |
+| **`react-hook-form-jsonschema`** | Unmaintained since 2022; no React 19 compatibility | Same as above |
+| **`react-dropzone`** | Adds npm dep for drag-and-drop; not required for single-file admin upload | `<input type="file">` + `FileReader.text()` |
+| **`filepond` / `uppy`** | Full media upload pipelines with resumable upload, preview, progress — complete over-engineering for a WDL text file | `<input type="file">` + `file.text()` |
+| **`spf13/cobra`** | Currently not used in the `flowy` CLI despite being in go.mod; adding it back requires refactoring existing subcommands or running a hybrid; the manual flag pattern scales to 10 subcommands | Extend existing `switch args[0]` dispatcher in `cmd/flowy/main.go` |
+| **WebSocket / SSE library** | PROJECT.md explicitly defers real-time to a future milestone | `useQuery` with `refetchInterval` (already in stack) |
+| **`react-query-devtools` in production** | Only add to devDependencies; never bundle into production SPA | `import.meta.env.DEV` guard or devDependency-only |
+
+---
+
+### Alternatives Considered
+
+| Recommended | Alternative | When Alternative is Better |
+|-------------|-------------|---------------------------|
+| Custom form renderer + existing `react-hook-form` | `react-jsonschema-form` | When input schema is truly dynamic/arbitrary JSON Schema (not a closed WDL type set) |
+| `FileReader.text()` + existing JSON POST | `FormData` multipart upload | When the server needs raw bytes (e.g., binary files); WDL is always UTF-8 text |
+| Extend manual flag CLI | Add `spf13/cobra` | When CLI has 15+ subcommands with complex flag inheritance, shell completion, or man page generation |
+| `refetchInterval` polling | WebSocket / SSE | When task latency is sub-second and real-time push is a product requirement |
+| Server-side input spec endpoint | Client-side WDL parsing (WASM) | If offline form rendering is needed; adds ~2 MB WASM bundle; not justified |
+| `<input type="file">` plain | `react-dropzone` | When drag-and-drop is an explicit UX requirement in a spec |
+
+---
+
+### Version Compatibility (v2.1)
+
+No new packages. All existing packages are compatible:
+
+| Feature | Uses Package | Version in `package.json` | Compatible? |
+|---------|-------------|--------------------------|-------------|
+| Dynamic form | `react-hook-form` | ^7.72.1 | Yes — dynamic field arrays and `useForm` with computed schemas are stable v7 features |
+| Dynamic validation | `zod` | ^4.3.6 | Yes — `z.object(shape)` with runtime-constructed shape is supported in Zod v4 |
+| Zod v4 + hookform | `@hookform/resolvers` | ^5.2.2 | Yes — v5.2.x supports both Zod v3 and v4 with automatic runtime detection |
+| Status polling | `@tanstack/react-query` | ^5.64.2 | Yes — `refetchInterval` as a function is stable in TanStack Query v5 |
+| File read | Browser `FileReader` | Baseline 2022 | Yes — all modern browsers |
+| CLI auth | `client.Client` (internal) | — | Zero new deps; additive field |
+
+---
+
+### Sources
+
+- [react-hook-form docs — react-hook-form.com](https://react-hook-form.com/docs/useform) — dynamic schema construction with `useForm`; HIGH confidence
+- [TanStack Query refetchInterval docs — tanstack.com](https://tanstack.com/query/v5/docs/framework/react/reference/useQuery) — `refetchInterval` as function stopping on terminal state; HIGH confidence
+- [@hookform/resolvers Zod v4 support — GitHub issue #799](https://github.com/react-hook-form/resolvers/issues/799) — v5.2.x supports Zod v3 and v4 automatically; HIGH confidence
+- [react-dropzone v15.0.0 — npmjs.com](https://www.npmjs.com/package/react-dropzone) — latest version February 2026; drag-and-drop only (not an uploader); MEDIUM confidence
+- [FileReader.text() — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Blob/text) — Baseline 2022; universally supported; HIGH confidence
+- [FormData + fetch multipart — muffinman.io](https://muffinman.io/blog/uploading-files-using-fetch-multipart-form-data/) — must not set Content-Type; browser sets boundary; MEDIUM confidence
+- [net/http ParseMultipartForm — pkg.go.dev](https://pkg.go.dev/net/http#Request.ParseMultipartForm) — stdlib Go multipart handler; HIGH confidence
+- [spf13/cobra v1.10.2 — pkg.go.dev](https://pkg.go.dev/github.com/spf13/cobra) — latest version December 2024; 195,884 importers; HIGH confidence
+- [spf13/cobra releases — GitHub](https://github.com/spf13/cobra/releases) — v1.10.2 confirmed latest stable; HIGH confidence
 
 ---
 
@@ -1230,6 +1628,9 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 | react-router 7.13.1 | React 18+ | v2.0 frontend; library mode |
 | @tanstack/react-query 5.91.x | React 18+ | v2.0 frontend; server state |
 | zustand 5.x | React 18+ | v2.0 frontend; client state |
+| react-hook-form 7.72.1 | React 18+ | v2.0+; dynamic form generation in v2.1 requires no version bump |
+| zod 4.3.6 | React 18+ | v2.0+; runtime schema construction supported in Zod v4 |
+| @hookform/resolvers 5.2.2 | zod v3/v4 | v2.0+; v5.2.x auto-detects Zod v3 vs v4 |
 
 ---
 
@@ -1265,6 +1666,13 @@ go build -o bin/flowy-daemon   ./cmd/flowy-daemon
 - [TanStack Query v5 — npmjs.com](https://www.npmjs.com/package/@tanstack/react-query) — 5.91.2 latest March 2026
 - [React Router v7 — npmjs.com](https://www.npmjs.com/package/react-router) — 7.13.1 latest; library mode
 - [Go embed — pkg.go.dev](https://pkg.go.dev/embed) — `//go:embed all:` directive; stable since Go 1.16
+- [react-hook-form docs — react-hook-form.com](https://react-hook-form.com/docs/useform) — dynamic schema construction; HIGH confidence
+- [TanStack Query refetchInterval — tanstack.com](https://tanstack.com/query/v5/docs/framework/react/reference/useQuery) — refetchInterval as stopping function; HIGH confidence
+- [@hookform/resolvers Zod v4 — GitHub issue #799](https://github.com/react-hook-form/resolvers/issues/799) — v5.2.x auto-detects Zod v3/v4; HIGH confidence
+- [react-dropzone v15 — npmjs.com](https://www.npmjs.com/package/react-dropzone) — latest February 2026; drag-and-drop only; MEDIUM confidence
+- [FileReader.text() — MDN Web Docs](https://developer.mozilla.org/en-US/docs/Web/API/Blob/text) — Baseline 2022; universally supported; HIGH confidence
+- [spf13/cobra v1.10.2 — pkg.go.dev](https://pkg.go.dev/github.com/spf13/cobra) — latest version December 2024; HIGH confidence
+- [net/http ParseMultipartForm — pkg.go.dev](https://pkg.go.dev/net/http#Request.ParseMultipartForm) — stdlib Go multipart handler; HIGH confidence
 
 ---
 
@@ -1284,5 +1692,5 @@ See the original v1.0 research in git history for full rationale on these choice
 
 ---
 
-*Stack research for: flowy v2.0 React Web UI + v1.3 user auth + v1.2 S3 + v1.1 distributed server + v1.0 core*
-*Researched: 2026-03-20*
+*Stack research for: flowy v2.1 Job Execution & Registry CLI + v2.0 React Web UI + v1.3 user auth + v1.2 S3 + v1.1 distributed server + v1.0 core*
+*Researched: 2026-04-07*

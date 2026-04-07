@@ -1,653 +1,537 @@
 # Architecture Research
 
-**Domain:** React SPA + Go REST API integration — flowy v2.0 Web UI
-**Researched:** 2026-03-20
+**Domain:** Workflow execution UI, CLI registry commands, browser-based registry upload — flowy v2.1
+**Researched:** 2026-04-07
 **Confidence:** HIGH
 
 ---
 
 ## Context: What Is Being Added
 
-flowy ships three Go binaries (flowy, flowy-server, flowy-daemon). v2.0 adds a fourth binary,
-`flowy-ui`, that:
+v2.1 adds three distinct capability clusters to the existing four-binary system:
 
-1. Embeds a compiled React SPA (Vite build output) via `go:embed`
-2. Serves the SPA over HTTP (static files + index.html fallback for client-side routing)
-3. Proxies all `/api/*` requests to a running `flowy-server` instance
-4. Supports a dev mode where Vite dev server handles hot reload, proxying API to `flowy-server`
+1. **UI Workflow Execution** — Select a registry entry from the browser, fill an input form,
+   submit to run, and poll for status/results. Requires a new server endpoint to expose WDL input
+   schemas (type + name + optionality) without requiring the browser to parse WDL itself.
 
-The React SPA communicates exclusively with `flowy-server` for all data. `flowy-ui` is a pure
-serving layer — it knows nothing about the domain; it only serves files and forwards traffic.
+2. **CLI Registry Commands** — `flowy registry push|list|pull|tag|delete` subcommand group. The
+   server already has all registry REST endpoints (`handleRegistryPush`, `handleRegistryPull`,
+   `handleRegistryList`, `handleRegistryListVersions`, `handleRegistryTag`,
+   `handleRegistryDelete`, `handleRegistryDeleteTag`). The CLI package currently has no registry
+   client methods. Only the CLI layer needs to be added.
 
----
+3. **UI Registry Upload** — A "Push WDL" dialog in the `RegistryPage` that lets an executor
+   role user select a local WDL file, enter a name, and POST to `POST /projects/{slug}/registry`.
+   The server already accepts this request. Only the frontend needs to be added.
 
-## Standard Architecture
-
-### System Overview
-
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Browser                                                                  │
-│  React SPA (React Router, TanStack Query, shadcn/ui, Tailwind CSS)       │
-│  Auth context: JWT stored in memory (React state) + sessionStorage        │
-└────────────────────────┬─────────────────────────────────────────────────┘
-                         │ HTTP
-         ┌───────────────┴──────────────────┐
-         │ PRODUCTION                        │ DEV (vite dev server :5173)
-         ▼                                   ▼
-┌────────────────────┐             ┌──────────────────────┐
-│  flowy-ui binary   │             │  Vite dev server      │
-│  :8080             │             │  serves React files   │
-│  ┌──────────────┐  │             │  server.proxy:        │
-│  │ SPA handler  │  │             │  /api/* → :8124       │
-│  │ go:embed     │  │             └──────────┬───────────┘
-│  │ index.html   │  │                        │
-│  │ fallback     │  │   ┌────────────────────┘
-│  └──────┬───────┘  │   │
-│         │ /api/*   │   │ /api/* (with Authorization: Bearer <token>)
-│  ┌──────▼───────┐  │   │
-│  │ ReverseProxy │  │   │
-│  │ httputil     │  │   │
-│  └──────┬───────┘  │   │
-└─────────│──────────┘   │
-          └──────────────┘
-                         │
-                         ▼
-          ┌──────────────────────────────┐
-          │  flowy-server  :8124          │
-          │  chi v5 router               │
-          │  JWT middleware              │
-          │  CORS middleware (dev only)  │
-          │  REST API:                   │
-          │    POST /auth/login          │
-          │    GET  /users/me            │
-          │    GET  /projects            │
-          │    GET  /projects/{slug}/... │
-          │    GET  /projects/{slug}/    │
-          │         registry/...         │
-          │    GET  /projects/{slug}/    │
-          │         provenance/...       │
-          └──────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Implementation |
-|-----------|----------------|----------------|
-| `flowy-ui` binary | Serve embedded SPA + reverse proxy `/api/*` to flowy-server | `cmd/flowy-ui/main.go`, `net/http`, `httputil.ReverseProxy` |
-| SPA handler | Serve static assets; return `index.html` for unmatched paths | `fs.Sub(embeddedFS, "ui/dist")` + 404-intercept pattern |
-| Reverse proxy handler | Strip `/api` prefix, forward to `flowy-server`, copy response | `httputil.ReverseProxy` with `Rewrite` function |
-| React SPA | UI rendering, client-side routing, API calls, auth state | React 19, React Router, TanStack Query |
-| API client layer | Typed fetch wrappers, JWT header injection, error normalization | `ui/src/api/` — plain `fetch` or `axios`, organized by resource |
-| Auth context | In-memory JWT storage, login/logout, token injection | React context + `sessionStorage` for refresh-safe persistence |
-| TanStack Query | Server state: caching, background refetch, loading/error states | `useQuery` / `useMutation` per resource |
-| `flowy-server` CORS | Allow `http://localhost:5173` in dev; no CORS needed in prod | `go-chi/cors` middleware, config-gated |
+No new backend persistence, no schema changes, no new daemon or binary are required.
 
 ---
 
-## Recommended Project Structure
+## System Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Browser (React SPA)                                                          │
+│                                                                               │
+│  NEW: RunExecutionDialog — input form (dynamic per WDL types)                │
+│  NEW: UploadWDLDialog — file picker + name input                             │
+│  MOD: RegistryPage — "Push WDL" button for executors                        │
+│  MOD: RegistryEntryPage — "Run" button per tag/version                      │
+│  NEW: useRunSubmit() mutation hook                                            │
+│  NEW: useRegistryPush() mutation hook                                         │
+│  NEW: useRegistryInputSchema() query hook → GET /projects/{slug}/           │
+│        registry/{name}/inputs?tag=...                                         │
+│  MOD: useRuns() — refetchInterval for active runs                            │
+└──────────────────────────────┬───────────────────────────────────────────────┘
+                               │ HTTP /api/*
+                               ▼
+              ┌────────────────────────────┐
+              │  flowy-ui binary (UNCHANGED) │
+              │  Reverse proxy /api/* only   │
+              └──────────────┬─────────────┘
+                             │
+                             ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│  flowy-server                                                               │
+│                                                                             │
+│  EXISTING (unchanged): POST /projects/{slug}/runs/submit                   │
+│  EXISTING (unchanged): GET  /projects/{slug}/runs/{id}/status              │
+│  EXISTING (unchanged): GET  /projects/{slug}/runs/{id}/outputs             │
+│  EXISTING (unchanged): POST /projects/{slug}/registry (push)               │
+│  EXISTING (unchanged): GET  /projects/{slug}/registry                      │
+│  EXISTING (unchanged): GET  /projects/{slug}/registry/{name}               │
+│  EXISTING (unchanged): GET  /projects/{slug}/registry/{name}/versions      │
+│  EXISTING (unchanged): POST /projects/{slug}/registry/{name}/tags          │
+│  EXISTING (unchanged): DELETE /projects/{slug}/registry/{name}/tags/{tag}  │
+│  EXISTING (unchanged): DELETE /projects/{slug}/registry/{name}             │
+│                                                                             │
+│  NEW: GET /projects/{slug}/registry/{name}/inputs?tag=<tag>               │
+│        Returns: {inputs: [{name, type, optional, has_default}]}            │
+│        Implementation: resolve tag → WDL content → parse → reflect inputs │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  flowy CLI (cmd/flowy/main.go)                                              │
+│                                                                             │
+│  EXISTING: check, run, submit, status, outputs                             │
+│                                                                             │
+│  NEW: registry subcommand group:                                           │
+│    flowy registry push   --project <slug> --tag <tag> <file.wdl>           │
+│    flowy registry list   --project <slug>                                  │
+│    flowy registry pull   --project <slug> --tag <tag>  <name>              │
+│    flowy registry tag    --project <slug> --digest <d> <name> <tag>        │
+│    flowy registry delete --project <slug> <name>                           │
+│                                                                             │
+│  internal/client/client.go — NEW registry methods:                         │
+│    RegistryPush, RegistryList, RegistryPull, RegistryTag, RegistryDelete   │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Component Responsibilities
+
+### New and Modified Components
+
+| Component | Status | Responsibility |
+|-----------|--------|----------------|
+| `GET /projects/{slug}/registry/{name}/inputs` | NEW endpoint | Parse WDL for the named version, return input schema (name, type string, optional flag, has_default flag) |
+| `handleRegistryInputs` in `handlers_registry.go` | NEW handler | Resolve tag/digest → WDL content → `parser.Parse` → extract `Workflow.Inputs` or `Task.Inputs` → serialize |
+| `internal/client/client.go` | MODIFIED | Add `RegistryPush`, `RegistryList`, `RegistryPull`, `RegistryTag`, `RegistryDelete`, `RegistryDeleteTag`, `RegistryListVersions` methods |
+| `cmd/flowy/main.go` `run()` switch | MODIFIED | Add `"registry"` case dispatching to `runRegistry()` |
+| `cmd/flowy/registry.go` (new file) | NEW | `runRegistry()` dispatcher + `runRegistryPush`, `runRegistryList`, `runRegistryPull`, `runRegistryTag`, `runRegistryDelete` implementations |
+| `web/src/features/registry/useRegistry.ts` | MODIFIED | Add `useRegistryInputSchema()` query, `useRegistryPush()` mutation |
+| `web/src/features/registry/RegistryPage.tsx` | MODIFIED | Add "Push WDL" button (executor+), `UploadWDLDialog` integration |
+| `web/src/features/registry/UploadWDLDialog.tsx` | NEW | File picker, name input, POST to registry, close on success |
+| `web/src/features/registry/RegistryEntryPage.tsx` | MODIFIED | Add "Run" button on each version row (executor+), launch `RunExecutionDialog` |
+| `web/src/features/runs/RunExecutionDialog.tsx` | NEW | Load input schema, render dynamic form, POST to submit, navigate to run page on success |
+| `web/src/features/runs/WDLInputForm.tsx` | NEW | Render form fields per input type: String/Int/Float → text, Boolean → checkbox, File → text, complex → JSON textarea |
+| `web/src/features/runs/useRuns.ts` | MODIFIED | `useRunStatus()` hook with `refetchInterval` for live polling on active runs |
+| `web/src/App.tsx` | UNCHANGED | Routing unchanged; RunExecutionDialog is a modal, not a route |
+
+### Unchanged Components
+
+All four binaries keep their existing shape. `flowy-server` gets one new handler and one new route
+registration. `flowy-daemon`, `flowy-ui`, and `flowy-server`'s existing routes are untouched.
+
+---
+
+## New Endpoint: GET `/projects/{slug}/registry/{name}/inputs`
+
+### Purpose
+
+The browser needs to know the input declarations of a WDL workflow/task before asking the user
+to fill them in. The server already stores the raw WDL content in the registry. This endpoint
+parses that content and returns a structured list of inputs with type information.
+
+### Query Parameters
+
+- `?tag=<tag>` — resolve by tag name (e.g., `?tag=latest`)
+- `?digest=<sha256:hex>` — resolve by digest (consistent with `handleRegistryPull`)
+
+### Response Body
+
+```json
+{
+  "name": "my-workflow",
+  "kind": "workflow",
+  "inputs": [
+    {"name": "sample_name", "type": "String",  "optional": false, "has_default": false},
+    {"name": "threads",     "type": "Int",     "optional": false, "has_default": true },
+    {"name": "output_dir",  "type": "String",  "optional": true,  "has_default": false},
+    {"name": "ref_fasta",   "type": "File",    "optional": false, "has_default": false}
+  ]
+}
+```
+
+### Implementation
+
+```go
+// handlers_registry.go — new handler
+func (s *Server) handleRegistryInputs(w http.ResponseWriter, r *http.Request) {
+    proj := projectFromContext(r.Context())
+    name := chi.URLParam(r, "name")
+    tag := r.URL.Query().Get("tag")
+    digest := r.URL.Query().Get("digest")
+    // Resolve to WDL content using existing resolveRegistryRefFull logic...
+    // Parse with parser.Parse(name, []byte(wdlContent))
+    // Extract inputs from doc.Workflows[0].Inputs or doc.Tasks[0].Inputs
+    // Serialize each Decl as {name, type: decl.Type.TypeName(), optional: decl.Type.IsOptional(), has_default: decl.Expr != nil}
+}
+```
+
+Route registration in `server.go`:
+
+```go
+// Add inside the existing registry/{name} route group:
+r.With(s.projectRoleRequired("viewer")).Get("/inputs", s.handleRegistryInputs)
+```
+
+### Why This Pattern
+
+Parsing WDL in the browser is not feasible without a WASM port of the Go parser. Returning
+pre-parsed type metadata is the standard pattern used by workflow managers (e.g., Cromwell's
+`/api/workflows/v1/backends`, Nextflow Tower's form generation). The endpoint is cheap:
+WDL content is already in SQLite, parsing takes <1ms for typical files.
+
+---
+
+## Data Flows
+
+### UI Workflow Execution Flow
+
+```
+1. User on RegistryEntryPage clicks "Run" on a version row
+       ↓
+2. RunExecutionDialog opens, receives {name, digest, tag}
+       ↓
+3. useRegistryInputSchema(slug, name, {tag}) fires
+   → GET /api/projects/{slug}/registry/{name}/inputs?tag=latest
+   → flowy-server: resolve tag → parse WDL → return input schema
+       ↓
+4. WDLInputForm renders per-input fields:
+   String/Int/Float → <input type="text"> with type coercion on submit
+   Boolean → <input type="checkbox">
+   File → <input type="text"> (user enters path or s3:// URI)
+   Array/Map/Struct → <textarea> (JSON input with parse validation)
+       ↓
+5. User fills form, clicks "Run"
+       ↓
+6. useRunSubmit() mutation fires
+   → POST /api/projects/{slug}/runs/submit
+     Body: {registry_ref: "name:tag", inputs: {k: v, ...}}
+   → flowy-server: handleSubmit (EXISTING) → creates run → returns {run_id}
+       ↓
+7. Navigate to /projects/{slug}/runs/{run_id}
+       ↓
+8. RunDetailPage polls via useRunStatus(runID, refetchInterval: 2000)
+   → GET /api/projects/{slug}/runs/{run_id}/status (EXISTING)
+   → Stops polling when state is COMPLETED/FAILED/ABORTED
+       ↓
+9. On COMPLETED: useRunOutputs fires (EXISTING) → displays output table
+```
+
+### Browser Registry Upload Flow
+
+```
+1. Executor clicks "Push WDL" button on RegistryPage
+       ↓
+2. UploadWDLDialog opens
+       ↓
+3. User selects .wdl file via <input type="file">, enters name (slug format)
+       ↓
+4. useRegistryPush() mutation fires
+   → POST /api/projects/{slug}/registry
+     Body: {name: "my-tool", content: "<wdl file text>"}
+     (apiClient reads file via FileReader API — no multipart; content is base-64-free plain text)
+   → flowy-server: handleRegistryPush (EXISTING) → parse → hash → store → return {digest, kind}
+       ↓
+5. Dialog closes, toast success, invalidate useRegistryEntries query → table refreshes
+```
+
+Note: The existing `handleRegistryPush` accepts `{name, content}` as JSON. The browser reads
+the WDL file as text with `FileReader.readAsText()` and sends it as a JSON string field. No
+multipart upload, no new server endpoint needed.
+
+### CLI Registry Push Flow
+
+```
+1. flowy registry push --project my-project --tag latest ./tool.wdl
+       ↓
+2. runRegistryPush reads file from disk → os.ReadFile()
+       ↓
+3. Authenticates via JWT (reads token from config or --token flag)
+       ↓
+4. client.RegistryPush(ctx, projectSlug, api.RegistryPushRequest{Name: name, Content: content})
+   → POST /projects/{slug}/registry
+   → Returns {digest, kind, version_id}
+       ↓
+5. If --tag flag set: client.RegistryTag(ctx, projectSlug, name, tag, digest)
+   → POST /projects/{slug}/registry/{name}/tags
+       ↓
+6. Print "Pushed {name}@{digest} (kind: {kind})"
+```
+
+### CLI Registry Pull Flow
+
+```
+1. flowy registry pull --project my-project --tag latest my-tool
+       ↓
+2. client.RegistryPull(ctx, projectSlug, name, tag, "")
+   → GET /projects/{slug}/registry/{name}?tag=latest
+   → Returns {name, digest, kind, content}
+       ↓
+3. Write content to stdout or to --output file
+```
+
+---
+
+## Authentication Wiring for CLI Registry Commands
+
+The CLI currently has no authentication handling. The existing `Submit`, `Status`, `Outputs`
+client methods do not send JWT tokens. The registry endpoints require `executor` role for push
+and `viewer` role for list/pull.
+
+### Solution
+
+Add `WithToken(token string)` method or constructor option to `internal/client/client.go`.
+Load the JWT from config file (`client.token` field in `flowy.yaml`) or from a `--token` flag.
+
+```go
+// internal/client/client.go
+type Client struct {
+    serverURL  string
+    httpClient *http.Client
+    token      string // NEW: JWT for authenticated requests
+}
+
+func (c *Client) WithToken(token string) *Client {
+    c2 := *c
+    c2.token = token
+    return &c2
+}
+
+func (c *Client) addAuthHeader(req *http.Request) {
+    if c.token != "" {
+        req.Header.Set("Authorization", "Bearer "+c.token)
+    }
+}
+```
+
+Alternatively, add a `token` field to `config.ClientConfig` so existing `run`/`submit`
+subcommands can also benefit when auth is enabled on the server. This is a clean backward-
+compatible extension — no change to callers that don't set a token.
+
+---
+
+## WDLInputForm Field Rendering Rules
+
+The `WDLInputForm` component needs a consistent mapping from WDL type names to form controls.
+The server returns `type` as the canonical WDL type string (e.g., `"String"`, `"Int?"`, `"Array[String]"`).
+
+| WDL Type Pattern | Form Control | Submission Value |
+|-----------------|--------------|-----------------|
+| `String`, `String?` | `<input type="text">` | string |
+| `Int`, `Int?` | `<input type="number" step="1">` | parseInt |
+| `Float`, `Float?` | `<input type="number" step="any">` | parseFloat |
+| `Boolean`, `Boolean?` | `<input type="checkbox">` | boolean |
+| `File`, `File?` | `<input type="text" placeholder="path or s3://...">` | string |
+| `Directory`, `Directory?` | `<input type="text" placeholder="path or s3://...">` | string |
+| Anything else (Array, Map, Struct) | `<textarea placeholder="JSON value">` | JSON.parse |
+
+Optional inputs (`type.optional === true`) show "(optional)" label and allow empty submission
+(omit key from inputs map rather than sending null).
+
+Inputs with `has_default === true` show "(default)" note and can be left empty to use default.
+
+---
+
+## Polling Strategy for Run Status
+
+The `RunDetailPage` currently loads run data via `useRuns()` (list query) and derives the
+individual run. For v2.1, when a user navigates directly to a run page after submitting, it
+needs real-time status updates without a full page reload.
+
+### Approach: `refetchInterval` in TanStack Query
+
+```typescript
+// web/src/features/runs/useRuns.ts — add new hook
+export function useRunStatus(slug: string, id: string) {
+  const { data: runs } = useRuns(slug)
+  const run = runs?.find((r) => r.id === id)
+  const isActive = run?.state === 'PENDING' || run?.state === 'RUNNING'
+
+  // Refetch the runs list every 2 seconds when the run is active
+  return useQuery<RunListItem[]>({
+    queryKey: ['projects', slug, 'runs'],
+    queryFn: () => apiClient.get(`/projects/${slug}/runs`),
+    refetchInterval: isActive ? 2000 : false,
+    enabled: !!slug,
+  })
+}
+```
+
+This reuses the existing `GET /projects/{slug}/runs` list endpoint (returns all runs with state).
+No new endpoint needed. The interval stops automatically when the run reaches a terminal state.
+
+2-second polling is consistent with the existing CLI's 500ms polling (CLI is more aggressive
+because it is transient; the browser window may stay open for hours).
+
+---
+
+## Project Structure Changes
 
 ```
 flowy/
 ├── cmd/
-│   ├── flowy/                  # existing client CLI
-│   ├── flowy-server/           # existing API server
-│   ├── flowy-daemon/           # existing task daemon
-│   └── flowy-ui/               # NEW: SPA server binary
-│       └── main.go             # embed directive + HTTP wiring
-├── ui/                         # NEW: React SPA workspace
-│   ├── package.json
-│   ├── vite.config.ts          # proxy /api/* → flowy-server in dev
-│   ├── tsconfig.json
-│   ├── index.html
-│   └── src/
-│       ├── main.tsx            # React entry point
-│       ├── App.tsx             # Router setup
-│       ├── api/                # API client layer
-│       │   ├── client.ts       # base fetch wrapper, token injection
-│       │   ├── auth.ts         # login, me
-│       │   ├── users.ts        # user CRUD
-│       │   ├── projects.ts     # project + member endpoints
-│       │   ├── registry.ts     # registry list/pull endpoints
-│       │   ├── runs.ts         # run status, outputs
-│       │   └── provenance.ts   # provenance list/get
-│       ├── hooks/              # TanStack Query custom hooks
-│       │   ├── useAuth.ts      # login mutation, me query
-│       │   ├── useProjects.ts  # useQuery wrappers for projects
-│       │   ├── useRegistry.ts  # registry query hooks
-│       │   └── useProvenance.ts
-│       ├── context/
-│       │   └── AuthContext.tsx  # JWT token state, login/logout
-│       ├── components/
-│       │   ├── ui/             # shadcn/ui generated components (do not edit)
-│       │   └── app/            # application-specific components
-│       ├── pages/              # route-level components
-│       │   ├── LoginPage.tsx
-│       │   ├── UsersPage.tsx
-│       │   ├── ProjectsPage.tsx
-│       │   ├── RegistryPage.tsx
-│       │   ├── FileBrowserPage.tsx
-│       │   └── ProvenancePage.tsx
-│       └── lib/
-│           └── utils.ts        # shadcn/ui utility (cn function)
-├── internal/                   # existing Go packages
-└── go.mod                      # Go module (flowy-ui binary uses same module)
-```
-
-### Structure Rationale
-
-- **`cmd/flowy-ui/`:** Follows the established flowy pattern — one directory per binary. The `//go:embed` directive lives here and points to `../../ui/dist`.
-- **`ui/`:** Keeps the entire frontend workspace at repo root level, separate from Go packages. `go:embed` spans the boundary at build time.
-- **`ui/src/api/`:** One file per resource group mirrors the server-side handler files. This makes it trivial to find the client counterpart of any server endpoint.
-- **`ui/src/hooks/`:** TanStack Query hooks are separated from pure API functions. API functions are plain async functions (testable without React); hooks are the React integration layer.
-- **`ui/src/context/`:** Single auth context owns JWT state. All other components read from it — no token logic scattered across components.
-- **`ui/src/components/ui/`:** shadcn/ui puts generated components here by convention. These files are owned by shadcn/ui tooling and must not be hand-edited.
-
----
-
-## Architectural Patterns
-
-### Pattern 1: go:embed + Sub Filesystem for SPA
-
-**What:** The `flowy-ui` binary embeds the entire `ui/dist/` directory at compile time using
-`//go:embed`. `fs.Sub` creates a sub-filesystem so paths like `index.html` resolve correctly
-without the `ui/dist/` prefix. A 404-intercept pattern returns `index.html` for any path not
-found in the embedded FS — this is required for client-side React Router to work on hard refresh
-or direct URL navigation.
-
-**When to use:** Always for the production binary. The dev mode bypasses this entirely (Vite
-serves files directly).
-
-**Trade-offs:** Binary size grows by the size of the compiled SPA (typically 1-5 MB for a
-Tailwind + shadcn/ui app, which is negligible). The binary must be rebuilt when the SPA changes.
-This is acceptable because the build pipeline (`make build-ui`) generates the `ui/dist/` before
-Go compilation runs.
-
-**Example:**
-
-```go
-// cmd/flowy-ui/main.go
-
-package main
-
-import (
-    "embed"
-    "io/fs"
-    "log"
-    "net/http"
-    "net/http/httputil"
-    "net/url"
-    "strings"
-)
-
-//go:embed all:ui/dist
-var uiFS embed.FS
-
-func main() {
-    serverURL := "http://localhost:8124" // from config/env
-    apiBase, _ := url.Parse(serverURL)
-
-    // Sub-filesystem: paths resolve as "index.html" not "ui/dist/index.html"
-    distFS, err := fs.Sub(uiFS, "ui/dist")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    mux := http.NewServeMux()
-
-    // Proxy /api/* to flowy-server (strip /api prefix)
-    proxy := &httputil.ReverseProxy{
-        Rewrite: func(r *httputil.ProxyRequest) {
-            r.SetURL(apiBase)
-            r.Out.URL.Path = strings.TrimPrefix(r.In.URL.Path, "/api")
-            r.SetXForwarded()
-        },
-    }
-    mux.Handle("/api/", proxy)
-
-    // SPA: serve static assets, fall back to index.html for unknown paths
-    mux.Handle("/", spaHandler(distFS))
-
-    log.Fatal(http.ListenAndServe(":8080", mux))
-}
-
-// spaHandler returns index.html for any path not found in the embedded FS.
-// This is required for React Router client-side navigation to work on reload.
-func spaHandler(fsys fs.FS) http.Handler {
-    fileServer := http.FileServer(http.FS(fsys))
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Try to open the file from the embedded FS.
-        path := strings.TrimPrefix(r.URL.Path, "/")
-        if path == "" {
-            path = "index.html"
-        }
-        _, err := fsys.Open(path)
-        if err != nil {
-            // Not found in FS: serve index.html for client-side routing.
-            r2 := *r
-            r2.URL.Path = "/"
-            fileServer.ServeHTTP(w, &r2)
-            return
-        }
-        fileServer.ServeHTTP(w, r)
-    })
-}
-```
-
-### Pattern 2: Vite server.proxy for Development Mode
-
-**What:** During development, Vite's built-in dev server handles hot module replacement (HMR)
-and proxies API calls to `flowy-server`. The React SPA code makes all API calls to `/api/*`
-without knowing whether it is in dev or prod mode. In dev, Vite intercepts those calls and
-forwards them; in prod, `flowy-ui` intercepts them via the reverse proxy.
-
-**When to use:** Always during frontend development. This eliminates the need to run `flowy-ui`
-during development and avoids rebuilding the Go binary on every UI change.
-
-**Trade-offs:** Vite dev server only runs during development — it does not affect the production
-build. The proxy is configured once in `vite.config.ts` and matches the production routing scheme
-exactly.
-
-**Example:**
-
-```typescript
-// ui/vite.config.ts
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import path from 'path'
-
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8124',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-    },
-  },
-})
-```
-
-With this configuration, `fetch('/api/projects')` in the React SPA becomes
-`http://localhost:8124/projects` at the `flowy-server`. The path rewrite strips the `/api`
-prefix, matching the server's actual route scheme exactly.
-
-### Pattern 3: Centralized API Client with Token Injection
-
-**What:** A single `api/client.ts` module owns all fetch logic: base URL, token injection,
-error normalization. Resource-specific modules (`api/projects.ts`, `api/registry.ts`) call
-`client.get<T>()` / `client.post<T>()` — they never call `fetch` directly and never read from
-the auth context directly. Token injection happens in the base client layer via an exported
-`setToken(t: string)` function that the auth context calls on login.
-
-**When to use:** Always. This is the standard pattern for any SPA with a REST backend.
-
-**Trade-offs:** Module-level token state (not React context) is used to avoid React dependency
-in the API layer. This makes the API functions testable without a React context wrapper and
-avoids the need to pass token through every call site.
-
-**Example:**
-
-```typescript
-// ui/src/api/client.ts
-
-const BASE = '/api'   // same in dev (Vite proxy) and prod (flowy-ui proxy)
-
-let _token: string | null = null
-
-export function setToken(token: string | null) {
-  _token = token
-  if (token) {
-    sessionStorage.setItem('flowy_token', token)
-  } else {
-    sessionStorage.removeItem('flowy_token')
-  }
-}
-
-export function loadSavedToken(): string | null {
-  return sessionStorage.getItem('flowy_token')
-}
-
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
-
-export async function request<T>(
-  method: Method,
-  path: string,
-  body?: unknown
-): Promise<T> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-  if (_token) {
-    headers['Authorization'] = `Bearer ${_token}`
-  }
-
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new ApiError(res.status, err.error ?? res.statusText)
-  }
-
-  return res.json() as Promise<T>
-}
-
-export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message)
-  }
-}
-
-export const get = <T>(path: string) => request<T>('GET', path)
-export const post = <T>(path: string, body: unknown) => request<T>('POST', path, body)
-export const put = <T>(path: string, body: unknown) => request<T>('PUT', path, body)
-export const del = <T>(path: string) => request<T>('DELETE', path)
-```
-
-```typescript
-// ui/src/api/projects.ts
-import { get, post } from './client'
-
-export interface Project {
-  id: string
-  slug: string
-  description: string
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
-
-export const listProjects = () => get<Project[]>('/projects')
-export const getProject = (slug: string) => get<Project>(`/projects/${slug}`)
-export const createProject = (slug: string, description: string) =>
-  post<Project>('/projects', { slug, description })
-```
-
-### Pattern 4: JWT Token in sessionStorage (pragmatic choice)
-
-**What:** The JWT token is stored in `sessionStorage` and also held in module-level state in
-`api/client.ts`. On app load, `AuthContext` calls `loadSavedToken()` and restores the token from
-`sessionStorage`. This survives page refresh within the same browser tab but clears on tab close.
-
-**When to use:** This is the pragmatic choice for an internal management tool that uses JWT
-issued by `flowy-server` (7-day TTL). It is not the most secure option for a public-facing app
-but is appropriate for this domain.
-
-**Trade-offs:**
-
-- `sessionStorage` is vulnerable to XSS (same as `localStorage`). However, the flowy UI serves
-  no user-generated content and has no third-party scripts, making XSS risk minimal.
-- HttpOnly cookies are more secure but require the `flowy-ui` proxy to handle cookie setting,
-  complicating the architecture. This is out of scope for v2.0.
-- `sessionStorage` vs `localStorage`: sessionStorage is preferred because tokens clear on tab
-  close, reducing the window for token theft.
-
-The server already issues 7-day JWTs (`IssueToken` in `internal/auth/auth.go`). There is no
-refresh token mechanism. The UI should show a "session expired" screen when the server returns
-401, prompting re-login.
-
-### Pattern 5: Auth Context with Protected Routes
-
-**What:** A `AuthContext` React context provides `{token, user, login, logout}` to all
-components. `login()` calls `POST /api/auth/login`, stores the token via `setToken()`, and
-fetches `/api/users/me` to populate `user`. Protected routes check `token !== null` and redirect
-to `/login` if not authenticated.
-
-**Example:**
-
-```typescript
-// ui/src/context/AuthContext.tsx
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { setToken, loadSavedToken, get, post } from '@/api/client'
-import type { User } from '@/api/auth'
-
-interface AuthState {
-  token: string | null
-  user: User | null
-  login: (username: string, password: string) => Promise<void>
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthState | null>(null)
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(null)
-  const [user, setUser] = useState<User | null>(null)
-
-  useEffect(() => {
-    const saved = loadSavedToken()
-    if (saved) {
-      setToken(saved)
-      setTokenState(saved)
-      get<User>('/users/me').then(setUser).catch(() => logout())
-    }
-  }, [])
-
-  async function login(username: string, password: string) {
-    const { token: t } = await post<{ token: string }>(
-      '/auth/login',
-      { username, password }
-    )
-    setToken(t)
-    setTokenState(t)
-    const me = await get<User>('/users/me')
-    setUser(me)
-  }
-
-  function logout() {
-    setToken(null)
-    setTokenState(null)
-    setUser(null)
-  }
-
-  return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
-}
-```
-
----
-
-## Data Flow
-
-### Login Flow
-
-```
-LoginPage: user submits form
-    ↓
-AuthContext.login(username, password)
-    ↓
-POST /api/auth/login  →  [Vite proxy or flowy-ui proxy]  →  POST /auth/login @ flowy-server
-    ↓
-flowy-server: CheckPassword → IssueToken → { token: "eyJ..." }
-    ↓
-AuthContext: setToken(t) → sessionStorage + module-level state
-    ↓
-GET /api/users/me → flowy-server → { id, username, global_role, ... }
-    ↓
-AuthContext: setUser(me)
-    ↓
-React Router: navigate("/projects")
-```
-
-### Authenticated Data Fetch Flow
-
-```
-ProjectsPage mounts
-    ↓
-useProjects() hook: useQuery({ queryKey: ['projects'], queryFn: listProjects })
-    ↓
-TanStack Query: calls listProjects() if cache is stale
-    ↓
-listProjects() → get('/projects') → fetch('/api/projects', { Authorization: Bearer <token> })
-    ↓
-[Vite proxy or flowy-ui proxy] → GET /projects @ flowy-server
-    ↓
-flowy-server: JWTMiddleware validates token → handleListProjects
-    ↓
-JSON response → TanStack Query cache → React re-renders ProjectsPage
-```
-
-### 401 Handling Flow
-
-```
-Any API call → 401 Unauthorized
-    ↓
-ApiError(401, "invalid or expired token")
-    ↓
-TanStack Query: error state
-    ↓
-Global error handler in QueryClient (onError) checks status === 401
-    ↓
-AuthContext.logout()  →  navigate("/login")
-```
-
-### State Management
-
-```
-[AuthContext] — owns token + user identity (React state + sessionStorage)
-    ↓ (token injected into module-level client.ts)
-[TanStack Query] — owns all server state (projects, users, registry, etc.)
-    ↓ (useQuery / useMutation per resource)
-[Components] — read from TanStack Query, write via mutations
-    ↓ (invalidate queries after mutations to trigger refetch)
-```
-
-No Zustand, Redux, or Jotai is needed. TanStack Query handles all server state; React context
-handles auth state. Component-local state handles UI-only state (form values, modal open/closed).
-
----
-
-## CORS Configuration on flowy-server
-
-### When CORS Is Needed
-
-CORS headers are only required when the browser's origin (Vite dev server at `:5173`) differs
-from the API origin (flowy-server at `:8124`). In production, `flowy-ui` serves both the SPA
-and the proxied API on the same origin (`:8080`), so no CORS is needed.
-
-CORS must be config-gated so it is not active in production by accident.
-
-### Implementation
-
-Add `go-chi/cors` as a new dependency to `flowy-server`. CORS middleware must be registered
-as the first middleware on the chi router (before JWT middleware).
-
-```go
-// internal/server/server.go — modified newRouter()
-
-import "github.com/go-chi/cors"
-
-func (s *Server) newRouter() *chi.Mux {
-    r := chi.NewRouter()
-    r.Use(middleware.Logger)
-    r.Use(middleware.Recoverer)
-
-    // CORS: only active when cfg.CORS.Enabled = true (dev mode).
-    // Must be first middleware so OPTIONS preflight requests are handled
-    // before JWTMiddleware rejects them as unauthenticated.
-    if s.cfg.CORS.Enabled {
-        r.Use(cors.Handler(cors.Options{
-            AllowedOrigins:   s.cfg.CORS.AllowedOrigins, // ["http://localhost:5173"]
-            AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-            AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-            AllowCredentials: false,
-            MaxAge:           300,
-        }))
-    }
-
-    // ... rest of router unchanged
-}
-```
-
-Add to `config.Config`:
-
-```go
-type CORSConfig struct {
-    Enabled        bool     `yaml:"enabled"`
-    AllowedOrigins []string `yaml:"allowed_origins"`
-}
-
-type Config struct {
-    // ... existing fields ...
-    CORS CORSConfig `yaml:"cors"`
-}
-```
-
-Example `flowy.yaml` for development:
-
-```yaml
-cors:
-  enabled: true
-  allowed_origins:
-    - "http://localhost:5173"
+│   └── flowy/
+│       ├── main.go              MODIFIED: add "registry" case to run() switch
+│       └── registry.go          NEW: runRegistry(), runRegistryPush(), runRegistryList(),
+│                                     runRegistryPull(), runRegistryTag(), runRegistryDelete()
+├── internal/
+│   ├── api/
+│   │   └── types.go             MODIFIED: add RegistryInputsResponse, RegistryInputDecl types
+│   ├── client/
+│   │   └── client.go            MODIFIED: add registry methods + WithToken()
+│   └── server/
+│       ├── server.go            MODIFIED: add /inputs route in registry/{name} group
+│       └── handlers_registry.go MODIFIED: add handleRegistryInputs
+└── web/src/features/
+    ├── registry/
+    │   ├── RegistryPage.tsx     MODIFIED: add "Push WDL" button + UploadWDLDialog
+    │   ├── RegistryEntryPage.tsx MODIFIED: add "Run" button + RunExecutionDialog
+    │   ├── UploadWDLDialog.tsx   NEW: file picker + push mutation
+    │   └── useRegistry.ts       MODIFIED: add useRegistryInputSchema(), useRegistryPush()
+    └── runs/
+        ├── RunDetailPage.tsx    MODIFIED: use refetchInterval for active run polling
+        ├── RunExecutionDialog.tsx NEW: input form + submit mutation
+        ├── WDLInputForm.tsx     NEW: dynamic field rendering per WDL type
+        └── useRuns.ts           MODIFIED: add useRunStatus() with refetchInterval
 ```
 
 ---
 
 ## Integration Points
 
-### New vs. Modified Components
+### Existing Architecture Touch Points
 
-| Component | Status | What Changes |
-|-----------|--------|--------------|
-| `cmd/flowy-ui/main.go` | NEW | `//go:embed`, `spaHandler`, `ReverseProxy`, HTTP listen |
-| `ui/` directory | NEW | Full React SPA workspace (Vite, React, TanStack Query, shadcn/ui) |
-| `internal/server/server.go` | MODIFIED | Add CORS middleware (config-gated); no other changes |
-| `internal/config/config.go` | MODIFIED | Add `CORSConfig` struct |
-| `go.mod` | MODIFIED | Add `github.com/go-chi/cors` |
-| All existing handlers | UNCHANGED | No handler changes needed |
-| `flowy-server` routing | UNCHANGED | No route changes; existing `/auth/login`, `/projects/*` etc. work as-is |
-| `flowy-daemon` | UNCHANGED | Not involved in UI |
-| `flowy` CLI | UNCHANGED | Not involved in UI |
+| Existing Component | How v2.1 Integrates |
+|-------------------|---------------------|
+| `handleRegistryPush` (POST /registry) | Browser upload calls this directly via existing JSON contract |
+| `handleSubmit` (POST /runs/submit) | UI execution calls this; `registry_ref` field already supported |
+| `handleStatus` (GET /runs/{id}/status) | UI polling calls this unchanged |
+| `handleOutputs` (GET /runs/{id}/outputs) | UI result display calls this unchanged |
+| `handleRegistryList` (GET /registry) | CLI `registry list` calls this |
+| `handleRegistryPull` (GET /registry/{name}) | CLI `registry pull` calls this |
+| `handleRegistryTag` (POST /registry/{name}/tags) | CLI `registry tag` calls this |
+| `handleRegistryDelete` (DELETE /registry/{name}) | CLI `registry delete` calls this |
+| `handleRegistryDeleteTag` (DELETE /registry/{name}/tags/{tag}) | CLI `registry delete-tag` calls this |
+| WDL `parser.Parse` | `handleRegistryInputs` reuses parser to extract input schema |
+| `resolveRegistryRefFull` | `handleRegistryInputs` reuses this to resolve tag/digest → content |
 
-### External Boundaries
+### RBAC Boundaries for New Features
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Browser SPA ↔ flowy-ui | HTTP (static assets + `/api/*` proxy) | Same origin in prod; no CORS needed |
-| Browser SPA ↔ Vite dev server | HTTP (HMR + `/api/*` proxy) | Dev only; Vite forwards to flowy-server |
-| flowy-ui ↔ flowy-server | HTTP reverse proxy | `ReverseProxy.Rewrite` strips `/api` prefix |
-| Vite dev server ↔ flowy-server | HTTP proxy | `server.proxy` in vite.config.ts strips `/api` |
-| flowy-server CORS ↔ browser | preflight + response headers | Only when `cors.enabled: true` |
+| Feature | Required Role | Why |
+|---------|--------------|-----|
+| Registry push (browser) | executor | Matches existing POST /registry permission |
+| Registry pull (CLI) | viewer | Matches existing GET /registry/{name} permission |
+| Registry list (CLI) | viewer | Matches existing GET /registry permission |
+| Registry tag (CLI) | admin | Matches existing POST /registry/{name}/tags permission |
+| Registry delete (CLI) | admin | Matches existing DELETE /registry/{name} permission |
+| Get input schema | viewer | Read-only; same level as pull |
+| Submit run from UI | executor | Matches existing POST /runs/submit permission |
 
-### Build Pipeline Integration
+No new RBAC roles or permission changes required.
+
+---
+
+## Build Order
+
+Dependencies drive this order. Each step has a clear gate.
 
 ```
-make build-ui:
-  cd ui && npm run build     # outputs ui/dist/
-  go build ./cmd/flowy-ui/   # go:embed picks up ui/dist/
+Step 1: New API type definitions
+  internal/api/types.go — RegistryInputDecl, RegistryInputsResponse
+  Gate: types compile cleanly
 
-make dev-ui:
-  # Terminal 1: flowy-server (with cors.enabled: true)
-  go run ./cmd/flowy-server/ --config flowy-dev.yaml
-  # Terminal 2: Vite dev server
-  cd ui && npm run dev
+Step 2: Server endpoint for input schema
+  internal/server/handlers_registry.go — handleRegistryInputs
+  internal/server/server.go — add /inputs route
+  Gate: GET /projects/test/registry/my-wf/inputs?tag=latest returns input JSON
+
+Step 3: Client library registry methods
+  internal/client/client.go — RegistryPush, RegistryList, RegistryPull, RegistryTag,
+                               RegistryDelete, RegistryListVersions + WithToken()
+  Gate: client_test.go or integration test covers each method
+
+Step 4: CLI registry subcommand
+  cmd/flowy/registry.go — new file with all subcommand implementations
+  cmd/flowy/main.go — add "registry" dispatch case
+  Gate: flowy registry push --project demo tool.wdl works end-to-end
+
+Step 5: Browser registry upload
+  web/src/features/registry/UploadWDLDialog.tsx — new component
+  web/src/features/registry/useRegistry.ts — useRegistryPush mutation
+  web/src/features/registry/RegistryPage.tsx — "Push WDL" button (executor only)
+  Gate: Upload dialog pushes WDL, entry appears in registry table
+
+Step 6: Browser workflow execution
+  web/src/features/runs/WDLInputForm.tsx — new component (type-driven fields)
+  web/src/features/runs/RunExecutionDialog.tsx — new component
+  web/src/features/registry/RegistryEntryPage.tsx — "Run" button on version rows
+  web/src/features/registry/useRegistry.ts — useRegistryInputSchema query
+  web/src/features/runs/useRuns.ts — useRunStatus with refetchInterval
+  web/src/features/runs/RunDetailPage.tsx — refetch when run is active
+  Gate: Select registry entry → fill form → submit → poll → see outputs
 ```
 
-The `//go:embed all:ui/dist` directive requires `ui/dist/` to exist at Go compile time.
-If it does not exist, `go build` fails with a clear error. This prevents accidentally shipping
-a binary with a missing UI.
+Step 1-3 are pure backend with no frontend dependency. Step 4 (CLI) depends only on Step 3.
+Steps 5-6 (frontend) depend on Step 2 for the input schema endpoint. Steps 5 and 6 are
+independent of each other — Step 5 (upload) can be built before Step 6 (execution).
+
+---
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: WDL Parsing in the Browser
+
+**What people do:** Attempt to parse WDL content (already available via `handleRegistryPull`)
+in TypeScript to extract input types.
+
+**Why it's wrong:** The WDL parser is 5,000+ lines of Go. There is no TypeScript WDL parser.
+Implementing one in the browser is out of scope and would duplicate a complex, tested codebase.
+
+**Do this instead:** `GET /registry/{name}/inputs?tag=...` — let the server parse WDL and return
+structured metadata. One new endpoint, zero duplication.
+
+### Anti-Pattern 2: Polling via setInterval in a Component
+
+**What people do:** `useEffect(() => { const id = setInterval(pollStatus, 2000); ... }, [])`
+
+**Why it's wrong:** Component unmount cancels the interval but the interval fires regardless of
+whether the query is in flight, causing overlapping requests. React Strict Mode double-invokes
+effects, creating duplicate intervals in development.
+
+**Do this instead:** `refetchInterval` in TanStack Query. The library handles backoff, dedup,
+and cleanup automatically. The interval pauses when the window is hidden (via `refetchIntervalInBackground: false`).
+
+### Anti-Pattern 3: Reading WDL File as Binary / FormData for Upload
+
+**What people do:** Use `<input type="file">` with a `FormData` POST (multipart/form-data).
+
+**Why it's wrong:** `handleRegistryPush` accepts `application/json` with `{name, content}`. The
+existing contract sends WDL as a plain string field. Multipart would require a new parser on
+the server and a different content type.
+
+**Do this instead:** Use `FileReader.readAsText(file)` to read the WDL file as a UTF-8 string,
+then POST as JSON `{name: enteredName, content: wdlText}`. This is what the CLI already does
+(`os.ReadFile` → string).
+
+### Anti-Pattern 4: Token Storage in CLI Without Config
+
+**What people do:** Require users to pass `--token <jwt>` on every CLI registry command.
+
+**Why it's wrong:** JWTs are long (hundreds of characters). Typing or copy-pasting on every
+command defeats the ergonomics of a CLI tool.
+
+**Do this instead:** Store token in `flowy.yaml` under `client.token`. Add a `flowy login`
+command (or reuse `flowy registry push --login`) that authenticates and writes the token to
+the config file. The token field is already present as a natural extension of the existing
+`ClientConfig` struct.
+
+### Anti-Pattern 5: Navigation on Submit Instead of Modal
+
+**What people do:** Create a separate `/projects/{slug}/registry/{name}/run` route for the
+execution form.
+
+**Why it's wrong:** The execution form is lightweight (one dialog). A separate route adds
+browser history entries and requires a full page load. After submission the user is immediately
+redirected to the run page anyway.
+
+**Do this instead:** `RunExecutionDialog` as a modal triggered from `RegistryEntryPage`. On
+successful submit, `navigate('/projects/${slug}/runs/${runId}')`. Stays in the established
+shadcn/ui Dialog pattern used throughout the existing UI.
 
 ---
 
@@ -655,167 +539,34 @@ a binary with a missing UI.
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| Single operator (lab server) | Single `flowy-ui` + single `flowy-server` on same host; no load balancing needed |
-| Team (10-50 users) | Same architecture; SQLite WAL handles concurrent reads; `flowy-server` is the bottleneck before UI |
-| Larger deployment | Run `flowy-server` behind nginx/caddy; `flowy-ui` stays unchanged (no state) |
+| Lab / small team | Current architecture is fine; polling at 2s intervals adds negligible load |
+| Many concurrent browser sessions polling | `GET /runs` returns all project runs (could grow large); consider `GET /runs/{id}/status` per-run polling if list grows beyond ~1000 items |
+| Very large WDL files (>1MB) | Input schema endpoint parses WDL on every call; consider caching parsed schema in memory by digest (immutable content = safe cache key) |
 
-The UI binary is stateless — it holds no session state and no database connection. Horizontal
-scaling of `flowy-ui` is trivial (run multiple instances behind a load balancer). `flowy-server`
-is the stateful component.
-
-### Scaling Priorities
-
-1. **First bottleneck:** SQLite write lock under concurrent workflow submissions — not UI-related;
-   addressed by existing WAL + atomic task claiming architecture.
-2. **Second bottleneck:** `flowy-server` CPU for JWT validation — stateless; can add multiple
-   `flowy-server` instances with a shared SQLite file on a network filesystem (NFS/EFS).
-
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Reading Token from AuthContext in API Functions
-
-**What people do:** Import `useAuth()` inside `api/projects.ts` to get the token for each call.
-
-**Why it's wrong:** API functions (`api/*.ts`) must be plain async functions, not React hooks.
-Calling a hook outside a component violates React's hook rules and prevents testing API
-functions outside React.
-
-**Do this instead:** Store token in module-level state in `client.ts` via `setToken()`. The auth
-context calls `setToken()` once on login. All subsequent API calls pick up the token automatically
-without any React dependency in the API layer.
-
-### Anti-Pattern 2: Wildcard CORS in Production
-
-**What people do:** Set `AllowedOrigins: []string{"*"}` and leave `cors.enabled: true` in the
-production config.
-
-**Why it's wrong:** Any origin can make credentialed requests to flowy-server, bypassing the
-same-origin protection that `flowy-ui` provides for free in production.
-
-**Do this instead:** `cors.enabled: false` in production configs (the default). CORS middleware
-is a dev-only feature. The `flowy-ui` reverse proxy makes CORS irrelevant in production because
-the SPA and the API share the same origin.
-
-### Anti-Pattern 3: Using Director Instead of Rewrite in ReverseProxy
-
-**What people do:** Use `httputil.NewSingleHostReverseProxy(target)` which uses the deprecated
-`Director` internally, then try to modify the request after the fact.
-
-**Why it's wrong:** `Director` has documented security issues: it does not clean incoming
-X-Forwarded-* headers from clients, allowing header spoofing. `NewSingleHostReverseProxy` also
-does not rewrite the Host header, which can confuse some backends.
-
-**Do this instead:** Use `&httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) {...}}`
-with `r.SetURL(target)` and `r.SetXForwarded()`. This is the current Go stdlib recommendation
-as of Go 1.20+.
-
-### Anti-Pattern 4: Fetching Token from sessionStorage in Every API Call
-
-**What people do:** Read `sessionStorage.getItem('flowy_token')` inside every fetch call.
-
-**Why it's wrong:** `sessionStorage` access is synchronous and slow if called in a tight loop.
-More importantly, it decentralizes token management — if the storage key changes, every call
-site breaks.
-
-**Do this instead:** Load from `sessionStorage` once on app startup in `AuthContext.useEffect`.
-Thereafter, token is in module-level state in `client.ts`. Zero storage reads after init.
-
-### Anti-Pattern 5: Serving API Routes Under the SPA Handler
-
-**What people do:** Register both the SPA catch-all and API routes on the same `http.ServeMux`
-but in wrong order, causing API routes to be shadowed by the SPA catch-all.
-
-**Why it's wrong:** `http.ServeMux` applies longest-prefix matching. If `"/"` is registered, it
-matches everything including `/api/...` unless `/api/` is also registered with higher specificity.
-
-**Do this instead:** Register `/api/` before the SPA catch-all `/`. In Go's `http.ServeMux`,
-`"/api/"` (with trailing slash) is more specific than `"/"` and takes precedence. Explicitly
-verify by testing that `GET /api/health` returns JSON, not HTML.
-
-### Anti-Pattern 6: Storing JWT in localStorage
-
-**What people do:** Use `localStorage` because it persists across browser restarts.
-
-**Why it's wrong:** `localStorage` is accessible from any JavaScript on the page. While XSS
-risk is low for this internal tool, using `sessionStorage` costs nothing and reduces the attack
-window by clearing on tab close.
-
-**Do this instead:** `sessionStorage`. Tokens clear when the tab closes. For users who want
-persistence, the 7-day token TTL means they must re-login at most once per week anyway.
-
----
-
-## Build Order for v2.0 Phases
-
-Dependencies between components drive this order:
-
-```
-Step 1: Go binary scaffold (flowy-ui)
-  cmd/flowy-ui/main.go — embed directive, SPA handler, ReverseProxy stub
-  Serves static "coming soon" page, forwards /api/* to flowy-server
-  Gate: binary builds and serves index.html
-
-Step 2: React SPA scaffold
-  ui/ — Vite init, React Router, TanStack Query, shadcn/ui, Tailwind CSS
-  ui/src/api/client.ts — base client, setToken, ApiError
-  ui/src/context/AuthContext.tsx — token state, login, logout
-  Gate: npm run dev starts, /api/health returns JSON via proxy
-
-Step 3: CORS on flowy-server + Login page
-  internal/config/config.go — CORSConfig
-  internal/server/server.go — cors middleware (config-gated)
-  go.mod — add go-chi/cors
-  ui/src/pages/LoginPage.tsx — login form
-  Gate: login form calls POST /auth/login, receives JWT, stores in sessionStorage
-
-Step 4: User management UI
-  ui/src/api/users.ts + hooks/useUsers.ts
-  ui/src/pages/UsersPage.tsx
-  Gate: admin can list users, create user, toggle active
-
-Step 5: Project management UI
-  ui/src/api/projects.ts + hooks/useProjects.ts
-  ui/src/pages/ProjectsPage.tsx (list + create)
-  ui/src/pages/ProjectDetailPage.tsx (members, roles)
-  Gate: create project, add members, change roles
-
-Step 6: Registry browsing UI
-  ui/src/api/registry.ts + hooks/useRegistry.ts
-  ui/src/pages/RegistryPage.tsx
-  Gate: list entries, view versions, view tags
-
-Step 7: File browsing and provenance UI
-  ui/src/api/provenance.ts + hooks/useProvenance.ts
-  ui/src/pages/ProvenancePage.tsx
-  ui/src/pages/FileBrowserPage.tsx
-  Gate: view provenance records, browse output files with download links
-
-Step 8: go:embed integration + production build
-  cmd/flowy-ui/main.go — switch from stub to embedded ui/dist/
-  Makefile — build-ui target, pre-build check
-  Gate: make build-ui produces a single binary that serves the full SPA
-```
-
-Steps 1-2 are the foundation; Steps 3-8 are independent features that can be worked in
-parallel once the scaffold exists. Step 8 is integration validation — it must be done before
-any phase is considered complete for production delivery.
+Polling at 2-second intervals from the browser calls `GET /projects/{slug}/runs` which is a
+single SQLite read. This is not a bottleneck at lab scale. For larger deployments,
+per-run status (`GET /runs/{id}/status`) is lighter but requires the run ID to be known, which
+it is after submission.
 
 ---
 
 ## Sources
 
-- Go stdlib `net/http/httputil` — ReverseProxy.Rewrite pattern: https://pkg.go.dev/net/http/httputil#ReverseProxy (HIGH confidence, official Go documentation)
-- go-chi/cors documentation: https://pkg.go.dev/github.com/go-chi/cors (HIGH confidence, official package docs)
-- Vite server.proxy configuration: https://vite.dev/config/server-options (HIGH confidence, official Vite docs)
-- Serving SPA from Go with 404 fallback pattern: https://hackandsla.sh/posts/2021-11-06-serve-spa-from-go/ (MEDIUM confidence, well-regarded community post; pattern verified against stdlib behavior)
-- Embedding React app in Go binary: https://www.smartinary.com/blog/how-to-embed-a-react-app-in-a-go-binary/ (MEDIUM confidence, consistent with stdlib embed docs)
-- JWT token storage comparison: https://www.descope.com/blog/post/developer-guide-jwt-storage (MEDIUM confidence, multiple sources agree)
-- TanStack Query best practices: https://tanstack.com/query/latest/docs/framework/react/overview (HIGH confidence, official docs)
-- Direct codebase analysis: `internal/server/server.go`, `internal/server/middleware.go`, `internal/auth/auth.go`, `internal/api/types.go`, `cmd/flowy-server/main.go` — existing architecture constraints (HIGH confidence)
+- Direct codebase analysis — `internal/server/handlers_registry.go`, `internal/server/server.go`,
+  `internal/api/types.go`, `cmd/flowy/main.go`, `internal/client/client.go`,
+  `web/src/features/registry/`, `web/src/features/runs/`, `wdl/ast/ast.go`, `wdl/types/types.go`
+  (HIGH confidence — primary source)
+- TanStack Query `refetchInterval` documentation:
+  https://tanstack.com/query/latest/docs/framework/react/guides/query-options#refetchinterval
+  (HIGH confidence — official docs)
+- FileReader.readAsText MDN documentation:
+  https://developer.mozilla.org/en-US/docs/Web/API/FileReader/readAsText
+  (HIGH confidence — official Web API docs)
+- Cromwell input schema pattern (Swagger UI generates forms from WDL metadata):
+  https://cromwell.readthedocs.io/en/stable/api/RESTAPI/
+  (MEDIUM confidence — architectural reference only)
 
 ---
 
-*Architecture research for: flowy v2.0 — React SPA + Go REST API integration*
-*Researched: 2026-03-20*
+*Architecture research for: flowy v2.1 — Workflow execution UI, CLI registry commands, browser registry upload*
+*Researched: 2026-04-07*

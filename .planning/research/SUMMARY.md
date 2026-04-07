@@ -1,345 +1,200 @@
 # Project Research Summary
 
-**Project:** flowy v2.0 — React Web UI management SPA
-**Domain:** React SPA embedded in Go binary, consuming an existing chi v5 REST API
-**Researched:** 2026-03-20
+**Project:** flowy v2.1 — Job Execution UI, CLI Registry Commands, Browser Registry Upload
+**Domain:** WDL 1.2 workflow engine additive features (Go backend + React SPA)
+**Researched:** 2026-04-07
 **Confidence:** HIGH
 
 ## Executive Summary
 
-flowy v2.0 adds a browser-based management UI to an existing, fully functional Go workflow
-engine. The approach is a pure SPA (React 19 + TypeScript + Vite 6) embedded into a new
-`flowy-ui` Go binary via `go:embed`. In production the binary serves the SPA and reverse-proxies
-`/api/*` to `flowy-server`, keeping both on the same origin and eliminating CORS entirely. In
-development, the Vite dev server handles hot-module replacement and proxies API calls, so the Go
-binary never needs to be rebuilt during UI development. This is a well-understood pattern with
-official Go and Vite documentation, and the existing backend requires only one minimal change: a
-config-gated CORS middleware added to `flowy-server` for development mode.
+flowy v2.1 is an additive milestone that closes three user-facing capability gaps in an already-functional v2.0 system: users cannot execute workflows from the browser, cannot manage the WDL registry from the CLI, and cannot push WDL files from the browser. All required backend REST endpoints already exist — the server is feature-complete for this scope. The implementation work is confined to new frontend components, new CLI subcommands, one new server endpoint (WDL input schema), and authentication wiring in the CLI client. No new databases, no schema migrations, no new binaries.
 
-All five screens — Login, User Management, Project Management, Registry Browsing, and File
-Browsing — map directly to existing REST endpoints. The one exception is the File Browser, which
-requires three new backend endpoints (`GET /projects/{slug}/runs`, a file listing endpoint, and a
-file download/presigned-URL endpoint) that do not exist yet. This is the only hard backend
-dependency blocking a frontend phase. Everything else can be built against the current API surface.
+The recommended approach is strictly additive and dependency-conservative. The existing React 19 + TanStack Query + react-hook-form + zod + shadcn/ui stack handles the frontend work with zero new npm packages. The Go backend extends with zero new go.mod dependencies. The one substantive architectural decision is to add a `GET /projects/{slug}/registry/{name}/inputs` endpoint that server-parses WDL and returns structured input metadata — this is the prerequisite for the dynamic input form and must be built before the form component. Build order flows: API types and server endpoint, then CLI subcommands and browser upload in parallel, then execution dialog last.
 
-The main risks are implementation-level rather than architectural. The SPA routing fallback on the
-Go side must be wired correctly from day one (browser refresh breaks all routes otherwise), the
-`fs.Sub` call on the embedded FS must be present (otherwise all assets 404), and the JWT storage
-strategy must be decided before any auth code is written. None of these risks are blocking; all
-have clear, verified prevention strategies documented in PITFALLS.md.
+The primary risks are (1) `File`-typed WDL inputs — the browser cannot pass local file paths to the daemon, requiring an upload-first pattern that is explicitly out of scope for v2.1 MVP (treat File inputs as path-entry strings pointing to server-accessible locations), and (2) infinite polling if `refetchInterval` is not gated on terminal run state. Both are well-understood and avoidable with patterns already present in the codebase. Overall risk is LOW given the high proportion of existing, working infrastructure being reused.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The frontend adds React 19, TypeScript 5.x, Vite 6, Tailwind CSS v4, shadcn/ui, React Router v7
-(library mode), TanStack Query v5, zustand, and axios to the project. Every version choice is
-driven by shadcn/ui compatibility: Vite 6 (not 8) because shadcn CLI targets 6; Tailwind v4
-because shadcn now defaults to it; React 19 because both TanStack Query v5 and shadcn fully
-support it. The Go side adds only `github.com/go-chi/cors` and a new `cmd/flowy-ui/` binary — the
-existing codebase is otherwise untouched.
-
-See `.planning/research/STACK.md` for full library comparison, rejected alternatives, version
-compatibility matrix, and installation commands.
+v2.1 requires no new dependencies in either Go or TypeScript. The existing stack is complete for all planned features.
 
 **Core technologies:**
-- React 19.2.4 — UI rendering — current stable; React 19 removes `forwardRef` boilerplate
-- TypeScript 5.x (5.9.3 stable) — type safety — TS 6.0 is RC-only as of March 2026; stay on 5.x
-- Vite 6.x — build tool and dev server — shadcn CLI targets Vite 6; avoid Vite 8 until shadcn catches up
-- Tailwind CSS v4 — styling — CSS-first config (`@import "tailwindcss"`); no `tailwind.config.js`
-- shadcn/ui (CLI-managed) — component library — React 19 + Tailwind v4 fully supported; never edit generated files manually
-- React Router v7 library mode — client routing — use `react-router` package only (v7 merged `react-router-dom`); library mode is not Remix
-- TanStack Query v5 — server state — CRUD-heavy management UI benefits from `invalidateQueries` + mutation model
-- zustand v5 — client state — auth token + user session; avoids React Context re-render churn for global state
-- axios v1 — HTTP client — request/response interceptors for global JWT injection and 401 redirect
-- `go:embed` + `httputil.ReverseProxy` — production binary — single binary deployment; no Node.js runtime needed in production
-- Node.js 22 LTS — runtime for build tools — Vite 6 requires Node 18+
+- `react-hook-form` v7.72.1 + `zod` v4: dynamic input form — already installed; build schema at render time from server-returned input descriptors via a ~100-line custom renderer loop
+- `@tanstack/react-query` v5.64.2: poll-based status monitoring — `refetchInterval` function gated on terminal state, automatic cleanup on component unmount
+- `shadcn/ui` (copy-paste components): `switch`, `textarea`, `progress` components needed — install via `npx shadcn@latest add`, no new npm packages added
+- Go stdlib `flag.FlagSet`: CLI registry subcommands — extend existing `switch args[0]` dispatcher in `cmd/flowy/main.go`; do not add `spf13/cobra`
+- Go `wdl/parser` (internal): WDL input schema endpoint — reuse existing parser to extract `Workflow.Inputs` AST declarations; zero new libraries
+- `FileReader.text()` (Web API): browser WDL upload — read file as UTF-8 text, POST as JSON `{name, content}` to the existing `POST /projects/{slug}/registry` endpoint
 
-**Critical version notes:**
-- Use Vite 6, NOT Vite 8 (Rolldown-based; shadcn init targets Vite 6)
-- Use `react-router` (v7), NOT `react-router-dom` (merged in v7; both packages would be redundant)
-- Use Tailwind v4, NOT v3 (shadcn CLI defaults to v4 as of early 2026)
-- TypeScript 5.x, NOT 6.0 (6.0 is RC as of March 2026)
-- `//go:embed all:web/dist` — the `all:` prefix is required to include dot-files in the Vite output
+**Explicit rejections:** `react-jsonschema-form` (200 KB bundle, over-scoped for 6 WDL primitive types), `react-dropzone` (not required for single-file admin upload), `spf13/cobra` (hybrid migration cost unjustified for 8 subcommands), WebSocket/SSE (explicitly deferred in PROJECT.md).
 
 ### Expected Features
 
-All five screens are required for v2.0 to be useful. Login is the prerequisite for all other
-screens. User Management and Project Management can be built in parallel. Registry Browsing
-depends on project selection being navigable. File Browsing is blocked by three missing backend
-endpoints and should be the last screen built.
+**Must have (v2.1 table stakes):**
+- `flowy registry push <file> --name <name> --project <slug>` — primary CLI registry management command
+- `flowy registry list/pull/tag/delete-tag --project <slug>` — full registry lifecycle from CLI
+- UI registry upload dialog — file picker + name field on RegistryPage (executor role only)
+- UI workflow execution — select from registry, input form (JSON textarea for MVP), submit, redirect to run detail
+- Run detail page polling — 3s interval while PENDING/RUNNING, stops on terminal state
+- Runs list auto-refresh — conditional refetch while any run is active
 
-See `.planning/research/FEATURES.md` for full feature tables, competitor analysis, MVP definition,
-and complete feature dependency graph.
+**Should have (v2.1.x after user validation):**
+- Dynamic typed input form — WDL declarations parsed into per-type fields (String/Int/Float/Boolean/File), replacing raw JSON textarea
+- "Run again" from run detail — pre-populate form with previous run's `ProvenanceDetailResponse.inputs`
+- Tag field in browser upload dialog — immediate tagging in same form after push
+- `--json` output flag for `flowy registry list` — machine-readable output for automation
 
-**Must have (table stakes):**
-- Login screen: username/password form, JWT session (sessionStorage or httpOnly cookie), 401 auto-redirect, disable-on-submit
-- User Management (admin only): list users, create user, deactivate user — no edit (API has no `PUT /users/{id}`)
-- Project list + create; project detail with description edit and member management (add/change-role/remove)
-- Registry entry list with kind badge (tool/workflow) and tags; entry detail with version history, WDL content viewer, tag management
-- Run list per project with status badges — requires new `GET /projects/{slug}/runs` endpoint
-- File browser: output file list + download per run — requires three new backend endpoints
-- CORS support on flowy-server (dev mode only, config-gated via `cors.enabled`)
-- `flowy-ui` binary embedding built SPA and proxying `/api/*` to flowy-server with configurable `--api-addr` flag
-
-**Should have (v2.0 if time allows):**
-- WDL syntax highlighting in content viewer (highlight.js or Prism)
-- Client-side form validation before API calls (slug format regex, password length)
-- Presigned S3 URL redirect for file downloads (browser downloads directly from S3 for large files)
-- Prevent-last-admin client-side hint on project member removal
-- Role badge color coding (admin/executor/viewer)
-- Digest truncated display with copy-full-digest on click
-
-**Defer to v2.x or later:**
-- Run submission form (requires WDL input schema → form generation)
-- WDL diff viewer (two-version side-by-side comparison)
-- Provenance detail screen (full inputs snapshot rendered as table)
-- Refresh token / auto-renew
-- Real-time run status via WebSocket or SSE
-- OAuth2/SSO login
-- Bioinformatics file viewers (IGV.js, BAM/VCF in-browser viewing)
+**Defer (v2.2+):**
+- Task-level status and progress display — requires new task status API endpoint
+- Abort button in UI — endpoint exists, just needs UI
+- In-browser WDL source editor — large scope, requires syntax highlighting
+- Registry entry deletion (full entry, not just tag) — requires new backend endpoint
+- File upload staging for File-typed WDL inputs — upload-before-submit infrastructure, deferred per ADR 0001
 
 ### Architecture Approach
 
-The architecture is a clean separation of concerns: `flowy-ui` binary is a pure static file server
-plus transparent reverse proxy with no domain knowledge; `flowy-server` is unchanged except for a
-config-gated CORS middleware; the React SPA communicates exclusively with `flowy-server` through
-the `/api/` prefix intercepted by both the Vite proxy (dev) and the Go reverse proxy (prod).
-State management is split: TanStack Query owns all server state; zustand (or React context) owns
-auth token and user session; component local state handles UI-only concerns such as form values
-and modal open state.
-
-See `.planning/research/ARCHITECTURE.md` for full component diagram, code examples for all key
-patterns, data flow diagrams (login, authenticated fetch, 401 handling), CORS configuration, and
-the eight-step build order.
+v2.1 touches six files on the backend and ten on the frontend, adding one new server endpoint and no new binaries. The system's four-binary shape (flowy-server, flowy-ui, flowy-daemon, flowy CLI) is unchanged. The single new server endpoint — `GET /projects/{slug}/registry/{name}/inputs` — reuses the existing WDL parser and `resolveRegistryRefFull` tag resolution logic. The CLI gains one new file (`cmd/flowy/registry.go`) and a new dispatch case in `main.go`. The frontend gains three new components (`UploadWDLDialog`, `RunExecutionDialog`, `WDLInputForm`) and modifications to four existing ones.
 
 **Major components:**
-1. `cmd/flowy-ui/main.go` — `go:embed all:web/dist`; `spaHandler` with 404-fallback to `index.html`; `httputil.ReverseProxy` at `/api/`; configurable `--api-addr` flag; startup assertion on embedded FS
-2. `web/src/api/client.ts` — centralized fetch/axios wrapper; module-level token state; `ApiError` class with HTTP status; 401 handler
-3. `web/src/context/AuthContext.tsx` (or zustand auth store) — JWT state; login/logout; sessionStorage hydration on mount
-4. `web/src/hooks/` — TanStack Query hooks per resource (`useUsers`, `useProjects`, `useRegistry`, `useRuns`, `useProvenance`)
-5. `web/src/pages/` — route-level components (LoginPage, UsersPage, ProjectsPage, RegistryPage, FileBrowserPage)
-6. `internal/server/server.go` (modified) — `go-chi/cors` middleware, registered at top-level router only, config-gated
-
-**Note on directory naming:** STACK.md uses `web/` while ARCHITECTURE.md uses `ui/` for the
-frontend workspace and corresponding `go:embed` path. Pick one name in Phase 1 and use it
-everywhere.
-
-**Build pipeline:**
-```
-make build-ui:
-  cd web && npm run build     # outputs web/dist/
-  go build ./cmd/flowy-ui/   # go:embed picks up web/dist/
-```
+1. `internal/api/types.go` — `RegistryInputDecl` and `RegistryInputsResponse` type definitions (foundation for all new features)
+2. `handleRegistryInputs` + `/inputs` route in `handlers_registry.go` — server parses WDL, returns structured input schema (unblocks execution UI)
+3. `internal/client/client.go` with `WithToken()` — registry methods + JWT auth support (unblocks CLI)
+4. `cmd/flowy/registry.go` — CLI registry subcommands dispatcher and implementations (depends on 3)
+5. `UploadWDLDialog.tsx` + `useRegistryPush()` — browser upload (uses existing endpoint; independent of CLI)
+6. `WDLInputForm.tsx` + `RunExecutionDialog.tsx` + `useRegistryInputSchema()` — execution dialog (depends on 2)
+7. `useRunStatus()` with `refetchInterval` + `RunDetailPage` modifications — live status polling (depends on nothing new; can land with 5 or 6)
 
 ### Critical Pitfalls
 
-See `.planning/research/PITFALLS.md` for full detail including recovery costs, verification
-checklists, security mistakes, and the "Looks Done But Isn't" acceptance checklist.
+1. **WDL File inputs passed as browser-local paths** — the daemon runs server-side and cannot access the user's local filesystem. For v2.1 MVP, label `File` inputs as path-entry fields requiring server-accessible paths (e.g., `s3://` or absolute paths). Do not silently allow `C:\Users\alice\data.bam`. Full upload-then-reference infrastructure is deferred per ADR 0001.
 
-1. **SPA routing breaks on browser refresh** — React Router routes exist only in JS; hard refresh sends real HTTP to the Go server, which has no matching route and returns JSON 404. Fix: `spaHandler` with 404-intercept that returns `index.html` for all non-`/api/` paths. Must be in place before any route is tested. Verify by pressing F5 on `/projects` — must return the React app, not a JSON error.
+2. **WDL input schema inferred client-side** — WDL declaration grammar is non-trivial (nested generic types, optional `?` suffix, multi-line default expressions, struct definitions). Do not regex-parse WDL source in the browser. Build `GET /registry/{name}/inputs` first; the server handles this in <1ms using the existing Go parser.
 
-2. **`go:embed` wrong subtree — all assets 404** — `//go:embed all:web/dist` preserves the `web/dist/` prefix inside the embedded FS. Without `fs.Sub(embeddedFS, "web/dist")`, the file server finds nothing at `index.html`. Add `fs.Sub` immediately and add a startup assertion (`fs.Stat(uiFS, "index.html")`) that panics if the subtree is wrong.
+3. **Polling runs forever after terminal state** — `refetchInterval: 3000` (number literal) never stops. Always pass a function: `(query) => TERMINAL_STATES.has(query.state.data?.state) ? false : 3000`. Failure mode is continuous DB reads for every open completed-run tab and unnecessary re-renders on stale data.
 
-3. **CORS middleware in wrong router position — OPTIONS preflight returns 404** — `go-chi/cors` must be registered at the top-level chi router (`r.Use(cors.Handler(...))`), before any route groups. Placement inside a route group causes preflight OPTIONS requests to hit `NotFound` before the middleware runs. Never use `AllowedOrigins: ["*"]` with `AllowCredentials: true` — browsers refuse this combination per the CORS spec.
+4. **CLI auth not designed before registry commands** — all `/projects/*` endpoints require JWT. Do not add `--token` to every subcommand. Add `flowy login` writing credentials to `~/.flowy/credentials.yaml` (mode 0600), not `./flowy.yaml`. The `client.Client` struct needs a `token` field that injects `Authorization: Bearer` on every request.
 
-4. **JWT in localStorage — XSS token theft** — For an internal tool managing genomic data with RBAC, a stolen admin JWT grants full access to all projects, registry entries, and output files. Use `httpOnly; SameSite=Strict` cookies set by the server, or at minimum `sessionStorage` (not `localStorage`). This decision must be made before any auth code is written; retrofitting requires coordinated frontend + backend changes.
-
-5. **TanStack Query retries 401 three times by default** — When a JWT expires, every active query fires simultaneously and each retries 3x, creating a flood of concurrent auth calls. Configure `QueryClient.defaultOptions.queries.retry` to return `false` for 401 and 403 before building any authenticated screen.
-
-6. **S3 file downloads buffered in memory** — `io.ReadAll(s3Result.Body)` allocates the entire file on the Go heap. For 2 GB BAM files this causes OOM. Always stream with `io.Copy(w, result.Body)`. Presigned S3 URL redirect (browser downloads directly from S3) is even better for large files and eliminates the memory issue entirely.
-
-7. **`flowy-ui` API URL hardcoded** — `localhost:8124` baked in makes the binary unusable in any real deployment. Expose as `--api-addr` flag from the first line of `cmd/flowy-ui/main.go`.
-
-8. **Vite default `base: "/"` breaks sub-path deployment** — Absolute asset paths in `index.html` break when `flowy-ui` is placed behind a reverse proxy at a non-root path. Set `base: "./"` in `vite.config.ts` at project initialization. Verify: `grep 'src="/' web/dist/index.html` must return nothing.
+5. **`handleOutputs` returns 409 for non-completed runs** — calling the outputs endpoint before `COMPLETED` produces an error query state, not a loading state. Gate `useRunOutputs` on `run.state === 'COMPLETED'`. The correct pattern already exists in `RunDetailPage.tsx`; replicate it consistently in all new polling code.
 
 ## Implications for Roadmap
 
-The architecture research prescribes a clear build order driven by two dependency types: the Go
-binary scaffold must exist before the SPA can be integrated, and certain screens depend on others
-or on new backend endpoints. The recommended phase structure directly maps to the eight-step build
-order in ARCHITECTURE.md.
+Based on build-order dependencies and pitfall prevention requirements, five phases are suggested:
 
-### Phase 1: Binary Scaffold and SPA Foundation
+### Phase 1: API Foundation — Types and Input Schema Endpoint
 
-**Rationale:** All frontend work requires the Go binary and SPA skeleton to exist. The four
-critical pitfalls that affect the binary (SPA routing fallback, go:embed subtree, Vite base path,
-hardcoded API URL) must all be resolved here — retrofitting them later disrupts every subsequent
-phase.
+**Rationale:** The new `RegistryInputDecl`/`RegistryInputsResponse` type definitions and the `/inputs` server endpoint are prerequisites for the execution dialog (Phase 5). Landing them first creates a stable API contract for all downstream work and allows the endpoint to be independently tested before the frontend is built.
 
-**Delivers:**
-- `cmd/flowy-ui/main.go` with `go:embed all:web/dist`, `spaHandler` with 404 fallback, `httputil.ReverseProxy`, `--api-addr` flag
-- `web/` Vite 6 + React 19 + TypeScript 5.x + Tailwind v4 + shadcn/ui scaffold
-- `web/vite.config.ts` with `base: "./"` and `/api` proxy to `flowy-server`
-- `web/src/api/client.ts` base HTTP client (token injection layer, `ApiError` class)
-- `make build-ui` target with correct dependency ordering (npm build before go build)
-- Startup assertion: `fs.Stat(uiFS, "index.html")` panics on wrong subtree
+**Delivers:** New API types compiled and exported; `GET /projects/{slug}/registry/{name}/inputs?tag=...` returning correct JSON schema for workflows and tasks; route registered with viewer role.
 
-**Avoids pitfalls:** SPA routing fallback (Pitfall 1), go:embed wrong subtree (Pitfall 2), Vite absolute base path (Pitfall 8), hardcoded API URL (Pitfall 7)
+**Addresses:** Pitfall 2 (WDL parsing in browser avoided at the root); architecture foundation for dynamic form.
 
-### Phase 2: CORS and Authentication
+**Avoids:** Risk of API shape churn during execution dialog implementation.
 
-**Rationale:** CORS must be configured before any authenticated API call can be made from the
-Vite dev server. JWT session strategy must be locked in before any auth code is written —
-changing storage strategy later requires coordinated frontend + backend changes.
+### Phase 2: CLI Registry Commands
 
-**Delivers:**
-- `internal/config/config.go` — `CORSConfig` struct (enabled flag, allowed origins)
-- `internal/server/server.go` — `go-chi/cors` at top-level router, config-gated
-- `go.mod` — `github.com/go-chi/cors`
-- `web/src/context/AuthContext.tsx` — JWT state, login, logout, sessionStorage hydration on mount
-- `web/src/pages/LoginPage.tsx` — username/password form, disable-on-submit, error display, redirect to original URL after login
-- `QueryClient` with custom `retry` (disabled for 401/403)
-- Protected route wrapper that redirects unauthenticated users to `/login`
-- Auto-logout on 401: global error handler in QueryClient calls `AuthContext.logout()`
+**Rationale:** Depends only on Phase 1 types and existing server endpoints (all already live). Independent of the frontend phases. Ships tangible value to CLI users before any UI work lands.
 
-**Avoids pitfalls:** CORS middleware position (Pitfall 3), JWT in localStorage (Pitfall 4), TanStack Query retry storm (Pitfall 5)
+**Delivers:** `flowy registry push|list|pull|tag|delete-tag`; `internal/client` registry methods with `WithToken()`; `flowy login` writing credentials to `~/.flowy/credentials.yaml` (mode 0600); human-readable table output by default.
 
-### Phase 3: User Management
+**Addresses:** All CLI registry table-stakes features; Pitfall 4 (credential design); Pitfall 7 (CLI push sends file content, not path).
 
-**Rationale:** User Management is independent of all other screens except Login. It can be built
-immediately after auth is wired, in parallel with Project screens. Admin-only route gating
-(checking `global_role === "admin"` from JWT claims) is validated here before it is needed
-elsewhere.
+**Avoids:** Token storage in project-level config; per-command `--token` flags.
 
-**Delivers:**
-- `web/src/api/users.ts` + `web/src/hooks/useUsers.ts`
-- `web/src/pages/UsersPage.tsx` — list users with active/inactive status, create user form, deactivate with confirm dialog
-- Admin-only route guard (hide from nav, guard route for non-admins)
-- Client-side filter by username or display name
-- No edit fields for fields with no corresponding PUT endpoint (no phantom `PUT /users/{id}`)
+**Research flag:** Standard patterns — no phase research needed. Go stdlib flag extension and HTTP client auth are well-documented; credential file handling is a one-time design decision resolved in Pitfall 4.
 
-### Phase 4: Project Management
+### Phase 3: Browser WDL Upload
 
-**Rationale:** Projects are the organizing unit for all subsequent screens. Registry and File
-Browsing both require a project slug in the URL. The project list must be navigable before any
-project-scoped screen can be reached.
+**Rationale:** Depends only on the existing `POST /projects/{slug}/registry` endpoint (live since v1.3). Independent of CLI and execution dialog. Simplest frontend feature; validates the upload dialog pattern (file-read as text + mutation + cache invalidation) that the execution dialog will also use.
 
-**Delivers:**
-- `web/src/api/projects.ts` + `web/src/hooks/useProjects.ts`
-- `web/src/pages/ProjectsPage.tsx` — project list (cards), create project with slug format validation
-- `web/src/pages/ProjectDetailPage.tsx` — description edit, member list with role badges, add/change/remove member, prevent-last-admin hint
-- Role badge color coding (admin/executor/viewer)
-- Slug is read-only after creation (no slug-change API endpoint exists)
+**Delivers:** `UploadWDLDialog.tsx`; `useRegistryPush()` mutation; "Push WDL" button on RegistryPage gated to executor role; success toast with digest shorthand; registry entry list cache invalidation on success.
 
-### Phase 5: Registry Browsing
+**Addresses:** Browser WDL upload table-stakes; RBAC role gating pattern.
 
-**Rationale:** Registry is the read-oriented core of the workflow engine UI. All endpoints exist
-in the current API. This phase depends on Phase 4 (project slug must be in the URL route).
+**Avoids:** Pitfall 5 — use `file.text()` not `readAsArrayBuffer`; validate `.wdl` extension client-side before submission.
 
-**Delivers:**
-- `web/src/api/registry.ts` + `web/src/hooks/useRegistry.ts`
-- `web/src/pages/RegistryPage.tsx` — entry list with kind badge (tool/workflow), tags as chips, filter by kind
-- Registry entry detail: version history with digest truncation, WDL content viewer, tag management (admin), copy registry reference to clipboard
-- WDL syntax highlighting (highlight.js with WDL grammar, or generic fallback)
+**Research flag:** Standard patterns — no phase research needed. FileReader, TanStack mutation, shadcn Dialog are all established and officially documented.
 
-**Open question for planning:** Verify highlight.js WDL grammar or Prism WDL plugin availability before implementation. Fall back to generic code highlighting if no WDL-specific grammar is satisfactory.
+### Phase 4: Run Status Polling
 
-### Phase 6: File Browsing and Download
+**Rationale:** Polling infrastructure is a prerequisite for the execution dialog to be useful (users need live feedback after submitting a run). Building and validating this independently — against existing runs in the system — reduces risk for Phase 5.
 
-**Rationale:** This is the only phase with hard backend dependencies. Three new endpoints must be
-built before any frontend work can proceed. S3 streaming and presigned URL patterns have specific
-correctness requirements distinct from the other screens.
+**Delivers:** `useRunStatus()` hook with conditional `refetchInterval`; `RunDetailPage` updated to poll while active and display live duration; runs list page auto-refresh while any run is in a non-terminal state.
 
-**Delivers (backend — new endpoints on flowy-server):**
-- `GET /projects/{slug}/runs` — list runs with `run_state`, `created_at`, `registry_ref`
-- `GET /projects/{slug}/runs/{id}/files` — list output files resolved from OutputsJSON
-- `GET /projects/{slug}/runs/{id}/files/download?path=...` — stream file bytes OR redirect to presigned S3 URL
+**Addresses:** Run status monitoring table-stakes (auto-refresh, live status badge, duration counter, terminal state indication).
 
-**Delivers (frontend):**
-- `web/src/api/runs.ts` + `web/src/hooks/useRuns.ts`
-- `web/src/pages/FileBrowserPage.tsx` — run list with status badges, filter by status, output file list, download button
-- `Content-Disposition: attachment` and `Content-Length` headers on all downloads
-- Streaming via `io.Copy` (never `io.ReadAll`)
-- Authorization check: validate that requested file path belongs to a run the caller has viewer access to
-- Presigned S3 URL redirect for S3 backend (browser downloads directly from S3)
+**Avoids:** Pitfall 3 (infinite polling — `refetchInterval` function form); Pitfall 6 (outputs 409 breaking run detail — gate `useRunOutputs` on `COMPLETED`).
 
-**Avoids pitfalls:** S3 download memory buffering (Pitfall 6), missing Content-Disposition header, download authorization absent
+**Research flag:** Standard patterns — no phase research needed. TanStack Query `refetchInterval` is a stable, well-documented API.
 
-### Phase 7: Production Integration and Build Validation
+### Phase 5: UI Workflow Execution Dialog
 
-**Rationale:** The `go:embed` production path must be validated end-to-end before any phase is
-considered production-ready. This is the integration gate.
+**Rationale:** Most complex frontend feature. Depends on Phase 1 (input schema endpoint) and Phase 4 (polling infrastructure). Building last minimizes rework risk from API shape changes in earlier phases.
 
-**Delivers:**
-- Verified `make build-ui` producing a single `flowy-ui` binary that serves the full SPA
-- All items from PITFALLS.md "Looks Done But Isn't" checklist verified green
-- Production CORS disabled verification (flowy-server must NOT have `cors_enabled: true` in production)
-- Deployment documentation
+**Delivers:** `RunExecutionDialog.tsx` (modal triggered from RegistryEntryPage version rows); `WDLInputForm.tsx` (per-type field rendering: text, number, checkbox, File path, JSON textarea for complex types); `useRegistryInputSchema()` query; post-submit navigation to run detail; "Run" button on RegistryEntryPage (executor role).
+
+**Addresses:** UI workflow execution table-stakes; optional input labeling; post-submit UX (redirect, not new route).
+
+**Avoids:** Pitfall 1 (File inputs — document server-path requirement with clear placeholder text); anti-pattern of separate route for execution form (use modal pattern consistent with existing dialogs).
+
+**Research flag:** No deep research needed. The one open question — exact UX for `File` input path entry (placeholder text, tooltip, documentation link) — is a design decision, not a research gap. Decide during phase planning.
 
 ### Phase Ordering Rationale
 
-- Phase 1 before all others: the binary and SPA scaffold are the foundation; all embed, routing fallback, Vite base path, and API URL pitfalls must be resolved here or they block every subsequent phase.
-- Phase 2 before Phases 3-6: all authenticated screens require JWT session and 401 handling; CORS configuration must precede any API call from the Vite dev server.
-- Phases 3 and 4 are independent of each other and can be parallelized after Phase 2 completes.
-- Phase 5 requires Phase 4 (project slug must be navigable before entering registry; TanStack Query query key `['registry', slug]` requires slug from the URL).
-- Phase 6 is last among feature phases because it requires new backend endpoints and has the most complex implementation (streaming, presigned URLs, authorization checks on download paths).
-- Phase 7 is the integration gate and must follow all feature phases.
+- Phase 1 must come first: the new API types underpin all downstream code
+- Phases 2, 3, and 4 are mutually independent after Phase 1 and can be parallelized if resources allow; the suggested serial order delivers CLI value first, then UI upload, then UI monitoring
+- Phase 5 requires Phase 1 (input schema endpoint) and Phase 4 (polling) to be stable before implementation begins
+- This order delivers value incrementally: CLI users gain registry management (Phase 2) before the execution UI lands; UI users gain upload capability (Phase 3) and live run monitoring (Phase 4) as standalone improvements before the full execution dialog ships (Phase 5)
 
 ### Research Flags
 
-Phases needing deeper research during planning:
-- **Phase 6 (File Browsing):** Three new backend endpoints require Store-layer design (`ListRunsByProject`, output file resolution from OutputsJSON). S3 presigned URL redirect pattern (AWS SDK v2 `PresignGetObject`, 302 redirect flow, S3 bucket CORS policy for presigned URLs) needs implementation detail verification. Download authorization logic needs explicit design (what membership check applies to a file path from OutputsJSON).
+Phases likely needing deeper research during planning:
+- None. All five phases use patterns either already established in this codebase or covered by official library documentation with high confidence.
 
-Phases with standard patterns (skip `/gsd:research-phase`):
-- **Phase 1:** go:embed, Vite scaffold, `fs.Sub`, `httputil.ReverseProxy` are all documented in official Go and Vite sources with HIGH confidence.
-- **Phase 2:** chi CORS middleware, React auth context pattern, TanStack Query retry configuration are well-documented standard patterns.
-- **Phase 3:** User CRUD against existing endpoints — no novel patterns.
-- **Phase 4:** Project + member CRUD against existing endpoints — no novel patterns.
-- **Phase 5:** Registry browsing against existing endpoints. WDL highlighting worth a quick check during implementation but does not block planning.
-- **Phase 7:** Integration verification is mechanical; no research needed.
+Phases with standard patterns (skip research-phase):
+- **All five phases** — implementation patterns are well-understood; the primary unknowns are design decisions (File input UX, credential file location, polling interval for idle runs list) that should be resolved during phase planning discussions, not research tasks.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All technology choices verified against official docs. Version pinning is specific and based on a compatibility matrix (React 19 + shadcn/ui + TanStack Query v5 + Vite 6 + Tailwind v4 all confirmed compatible). |
-| Features | HIGH (screens 1-4), MEDIUM (screen 5) | Screens 1-4 derived from direct code inspection of `server.go`, `types.go`, `store.go`. File browser feature scope is MEDIUM because the three required backend endpoints do not exist yet — scope may shift when they are designed. |
-| Architecture | HIGH | Go stdlib patterns (`go:embed`, `httputil.ReverseProxy`, `http.FileServer`, `fs.Sub`) sourced from official docs. React architecture patterns (TanStack Query, centralized API client, Auth context) are well-established with multiple confirming sources. |
-| Pitfalls | HIGH | All 8 critical pitfalls sourced from official docs or well-regarded community posts with verified reproduction steps and prevention patterns. |
+| Stack | HIGH | All findings from direct codebase inspection of `package.json`, `go.mod`, `cmd/flowy/main.go`, `internal/client/client.go`; confirmed against official library docs |
+| Features | HIGH | Table-stakes derived from codebase analysis of existing API surface and confirmed against PROJECT.md milestone scope; comparable system analysis (Terra, Seqera, Argo) used only for differentiator framing |
+| Architecture | HIGH | All integration points verified by reading actual source files; build order derived from real import dependencies, not assumption; component responsibilities match existing codebase conventions |
+| Pitfalls | HIGH | Based on direct codebase inspection, ADR 0001 (File staging decision), v2.0 milestone audit, and RETROSPECTIVE.md cross-milestone lessons |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **`web/` vs `ui/` directory name:** STACK.md uses `web/` and ARCHITECTURE.md uses `ui/` for the frontend workspace. Pick one name in Phase 1 planning and use it everywhere (including the `//go:embed` path). Either is fine; consistency matters.
-- **JWT storage strategy — final decision:** ARCHITECTURE.md recommends `sessionStorage` (pragmatic for internal tool); PITFALLS.md recommends `httpOnly` cookies (more secure, eliminates XSS token theft). The team must decide before Phase 2 begins. sessionStorage is acceptable for MVP if documented as technical debt. httpOnly cookies require a Go-side `SetCookie` call in `handleLogin` and `credentials: 'include'` in fetch calls.
-- **WDL syntax highlighting library:** Prism WDL plugin availability has LOW confidence. Verify `highlight.js` WDL grammar or Prism WDL plugin during Phase 5 planning. Generic code highlighting (any language) is an acceptable fallback and should not block planning.
-- **File browser backend scope:** The three new endpoints for Phase 6 have no existing implementation. Store-layer interface changes need design before Phase 6 planning begins. Be explicit about scope: `ListRunsByProject` is a query, output file resolution requires parsing OutputsJSON string values to extract file paths. Keep new endpoints minimal to avoid turning a UI milestone into a large backend feature.
+- **File input UX specifics:** v2.1 MVP treats `File` inputs as path-entry strings. The placeholder text, tooltip, and help link for communicating "server-accessible path required" should be decided during Phase 5 planning. No research needed — this is a product decision.
+- **`flowy login` token expiry UX:** When a stored token expires, CLI registry commands must fail with a human-readable "authentication required — run flowy login" message, not a raw `{"error":"..."}` JSON 401 body. The error handling path in `internal/client` needs to be specified during Phase 2 planning.
+- **Runs list polling idle behavior:** FEATURES.md specifies auto-refresh "while any run is active." The exact condition for stopping list-level polling (all runs terminal vs. no PENDING/RUNNING runs visible) should be decided during Phase 4 planning.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- flowy source `internal/server/server.go` — complete route map (direct code inspection)
-- flowy source `internal/api/types.go` — all request/response DTOs confirming field names and types (direct code inspection)
-- flowy source `internal/store/store.go` — Store interface confirming what queries exist and which are missing (direct code inspection)
-- flowy source `internal/server/handlers.go` — `handleOutputs` confirms OutputsJSON is a flat key-value map (direct code inspection)
-- Go stdlib `embed` package — `pkg.go.dev/embed` — `//go:embed all:` directive
-- Go stdlib `net/http/httputil` — `pkg.go.dev/net/http/httputil` — `ReverseProxy.Rewrite` pattern (Go 1.20+)
-- go-chi/cors — `pkg.go.dev/github.com/go-chi/cors` — CORS middleware placement and credentials rules
-- Vite server.proxy — `vite.dev/config/server-options` — dev proxy configuration
-- Vite build options — `vite.dev/guide/build` — `base` option and relative paths
-- React 19 release — `react.dev/blog/2024/12/05/react-19` — stable December 2024
-- shadcn/ui React 19 docs — `ui.shadcn.com/docs/react-19` — full React 19 compatibility confirmed
-- shadcn/ui Tailwind v4 docs — `ui.shadcn.com/docs/tailwind-v4` — Tailwind v4 fully supported
-- TanStack Query v5 official docs — `tanstack.com/query/latest` — query keys, retry configuration, mutation invalidation
-- React Router v7 SPA mode — `reactrouter.com/how-to/spa` — library mode vs framework mode
-- PROJECT.md — explicit out-of-scope items (WebSocket/SSE, OAuth2, run submission via UI)
+
+- Codebase — `internal/api/types.go`, `internal/server/handlers_registry.go`, `internal/server/server.go`, `internal/client/client.go`, `cmd/flowy/main.go` — server endpoint inventory, client structure, CLI dispatch pattern
+- Codebase — `web/src/features/runs/`, `web/src/features/registry/` — existing React component patterns, query hook shapes, RBAC role checks
+- Codebase — `wdl/ast/ast.go`, `wdl/types/types.go`, `wdl/parser/` — WDL AST structure for input schema extraction
+- Codebase — `docs/adr/0001-remove-heuristic-file-staging-from-client.md` — authoritative File input staging decision
+- `.planning/PROJECT.md` — v2.1 milestone scope, WebSocket/SSE deferral decision
+- `.planning/RETROSPECTIVE.md` — cross-milestone lessons (v1.0 through v2.0)
+- TanStack Query v5 docs (tanstack.com) — `refetchInterval` function signature and behavior
+- MDN `FileReader.readAsText` — `file.text()` browser support (Baseline 2022)
 
 ### Secondary (MEDIUM confidence)
-- Serving SPA from Go — `hackandsla.sh/posts/2021-11-06-serve-spa-from-go/` — spaResponseWriter 404-intercept pattern
-- Embedding React in Go binary — `smartinary.com/blog/how-to-embed-a-react-app-in-a-go-binary/` — fs.Sub pattern
-- JWT token storage comparison — `descope.com/blog/post/developer-guide-jwt-storage` — sessionStorage vs localStorage security tradeoffs
-- React Query auth token refresh — `elazizi.com/posts/react-query-auth-token-refresh/` — 401 retry deduplication with TanStack Query
-- S3 presigned URLs for React downloads — OneUptime blog — presigned URL redirect pattern
-- S3 streaming download — DEV Community — memory pitfalls of buffered (`io.ReadAll`) S3 downloads
-- shadcn/ui production pitfalls — `paulserban.eu` — bundle size and barrel import warnings
-- State management 2026 survey — zustand as pragmatic default for most React apps
-- JWT in React SPAs — marmelab.com — in-memory token pattern and sessionStorage trade-offs
+
+- Terra/Cromwell parameter input (support.terra.bio) — WDL input form pattern reference
+- Seqera Platform monitoring docs (docs.seqera.io) — polling vs push comparison for bioinformatics jobs
+- Cromwell REST API (cromwell.readthedocs.io) — server-side input schema pattern reference
 
 ### Tertiary (LOW confidence)
-- WDL syntax highlighting — Prism WDL plugin availability is unverified; needs validation during Phase 5 planning before committing to a specific highlighting library.
+
+- WDL Workspace (EPAM, github.com/epam/wdl-workspace) — comparable open-source WDL UI; architecture reference only
+- AWS HealthOmics WDL parameter detection (2025) — confirms server-side schema extraction as industry pattern; cited in FEATURES.md
 
 ---
-*Research completed: 2026-03-20*
+*Research completed: 2026-04-07*
 *Ready for roadmap: yes*
