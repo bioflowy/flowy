@@ -48,6 +48,23 @@ export function useRegistryContent(slug: string, name: string, digest: string) {
   })
 }
 
+export interface RegistryPushResponse {
+  name: string
+  digest: string
+  kind: string
+  version_id: string
+}
+
+export function usePushWDL(slug: string) {
+  const queryClient = useQueryClient()
+  return useMutation<RegistryPushResponse, Error, { name: string; content: string }>({
+    mutationFn: ({ name, content }) =>
+      apiClient.post(`/projects/${slug}/registry`, { name, content }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['projects', slug, 'registry'] }),
+  })
+}
+
 export function useDeleteRegistryEntry(slug: string) {
   const queryClient = useQueryClient()
   return useMutation({
