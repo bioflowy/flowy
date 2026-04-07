@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Completed 31-02-PLAN.md
-last_updated: "2026-04-07T05:29:00.000Z"
+stopped_at: Completed 31-01-PLAN.md
+last_updated: "2026-04-07T05:30:27.734Z"
 last_activity: 2026-04-07
 progress:
   total_phases: 7
@@ -52,6 +52,7 @@ Plan: 2 of 2
 | Phase 29 P01 | 5 | 2 tasks | 5 files |
 | Phase 30-file-browsing P01 | 4 | 2 tasks | 7 files |
 | Phase 30-file-browsing P02 | 4m 3s | 2 tasks | 6 files |
+| Phase 31 P01 | 187 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Recent decisions affecting current work:
 - [Phase 30-02]: useAuthStore.getState().token used for raw fetch calls to support binary downloads and text previews (not apiClient)
 - [Phase 30-02]: Run detail finds run from list via useRuns — no dedicated single-run GET endpoint in backend
 - [Phase 30-02]: formatDuration exported from RunsPage.tsx and imported into RunDetailPage.tsx to avoid duplication
+- [Phase 31-01]: Sidebar Members and Overview share /projects/:slug path; both use NavLink end=true to prevent false active state on child routes
+- [Phase 31-01]: Auth-disabled login redirects to / (not /login) — no credentials needed in auth-disabled mode so app root is the correct destination
 
 ### Pending Todos
 
@@ -113,5 +116,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-07
-Stopped at: Completed 31-02-PLAN.md
+Stopped at: Completed 31-01-PLAN.md
 Resume file: None
