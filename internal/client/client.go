@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -13,11 +14,18 @@ import (
 	"github.com/bioflowy/flowy/internal/api"
 )
 
+// ErrUnauthorized is returned when the server responds with HTTP 401.
+var ErrUnauthorized = errors.New("unauthorized")
+
+// ErrForbidden is returned when the server responds with HTTP 403.
+var ErrForbidden = errors.New("forbidden")
+
 // Client is an HTTP client for the flowy-server REST API.
 // All methods are safe for concurrent use.
 type Client struct {
 	serverURL  string
 	httpClient *http.Client
+	token      string
 }
 
 // New constructs a new Client targeting the given server URL (e.g. "http://localhost:8124").
@@ -27,6 +35,60 @@ func New(serverURL string) *Client {
 		serverURL:  serverURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// NewWithToken constructs a Client that sets an Authorization Bearer token on
+// every HTTP request. Use this when a saved JWT is available.
+func NewWithToken(serverURL, token string) *Client {
+	return &Client{
+		serverURL:  serverURL,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		token:      token,
+	}
+}
+
+// doRequest executes req, injecting the Authorization Bearer header when a token
+// is configured. All Client methods must use doRequest instead of httpClient.Do
+// so that token injection applies uniformly.
+func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	return c.httpClient.Do(req)
+}
+
+// Login sends POST /auth/login and returns the JWT token on success.
+// On network error the error message contains the server URL to aid diagnosis.
+// On non-200 the error message contains the server-provided description.
+func (c *Client) Login(ctx context.Context, username, password string) (string, error) {
+	body, err := json.Marshal(api.LoginRequest{Username: username, Password: password})
+	if err != nil {
+		return "", fmt.Errorf("client: marshal login request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.serverURL+"/auth/login", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("client: build login request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("cannot connect to server at %s: %w", c.serverURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return "", fmt.Errorf("login failed: %s", errResp.Error)
+	}
+
+	var lr api.LoginResponse
+	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+		return "", fmt.Errorf("client: decode login response: %w", err)
+	}
+	return lr.Token, nil
 }
 
 // Submit sends POST /workflows with the given SubmitRequest and returns the SubmitResponse.
@@ -43,7 +105,7 @@ func (c *Client) Submit(ctx context.Context, req api.SubmitRequest) (*api.Submit
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: POST /workflows: %w", err)
 	}
@@ -77,7 +139,7 @@ func (c *Client) SubmitToProject(ctx context.Context, projectSlug string, req ap
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: POST /projects/%s/workflows: %w", projectSlug, err)
 	}
@@ -111,7 +173,7 @@ func (c *Client) TaskRunInProject(ctx context.Context, projectSlug string, req a
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: POST /projects/%s/tasks/run: %w", projectSlug, err)
 	}
@@ -139,7 +201,7 @@ func (c *Client) Status(ctx context.Context, runID string) (*api.StatusResponse,
 		return nil, fmt.Errorf("client: build status request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: GET /workflows/%s/status: %w", runID, err)
 	}
@@ -167,7 +229,7 @@ func (c *Client) StatusInProject(ctx context.Context, projectSlug string, runID 
 		return nil, fmt.Errorf("client: build status request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: GET /projects/%s/runs/%s/status: %w", projectSlug, runID, err)
 	}
@@ -196,7 +258,7 @@ func (c *Client) OutputsInProject(ctx context.Context, projectSlug string, runID
 		return nil, fmt.Errorf("client: build outputs request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: GET /projects/%s/runs/%s/outputs: %w", projectSlug, runID, err)
 	}
@@ -234,7 +296,7 @@ func (c *Client) Outputs(ctx context.Context, runID string) (*api.OutputsRespons
 		return nil, fmt.Errorf("client: build outputs request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: GET /workflows/%s/outputs: %w", runID, err)
 	}
@@ -277,7 +339,7 @@ func (c *Client) TaskRun(ctx context.Context, req api.TaskRunRequest) (*api.Task
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("client: POST /tasks/run: %w", err)
 	}
