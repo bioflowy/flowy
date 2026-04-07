@@ -18,6 +18,8 @@ import { CreateProjectPage } from '@/features/projects/CreateProjectPage'
 import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage'
 import { RegistryPage } from '@/features/registry/RegistryPage'
 import { RegistryEntryPage } from '@/features/registry/RegistryEntryPage'
+import { RunsPage } from '@/features/runs/RunsPage'
+import { RunDetailPage } from '@/features/runs/RunDetailPage'
 
 const handleAuthError = (error: unknown) => {
   if (error instanceof ApiError && error.status === 401) {
@@ -54,6 +56,8 @@ export function App() {
               <Route path="projects/:slug" element={<ProjectDetailPage />} />
               <Route path="projects/:slug/registry" element={<RegistryPage />} />
               <Route path="projects/:slug/registry/:name" element={<RegistryEntryPage />} />
+              <Route path="projects/:slug/runs" element={<RunsPage />} />
+              <Route path="projects/:slug/runs/:id" element={<RunDetailPage />} />
               <Route path="*" element={<div>Select a page from the sidebar.</div>} />
             </Route>
           </Route>
