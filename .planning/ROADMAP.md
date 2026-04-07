@@ -141,7 +141,7 @@ Plans:
   4. Submitting a non-`.wdl` file is rejected client-side with an inline validation message before any network request is made
 **Plans**: 2 plans
 Plans:
-- [ ] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
+- [x] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
 - [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
 
 ### Phase 35: Run Status Polling
@@ -184,6 +184,6 @@ Plans:
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 33. CLI Auth and Registry Commands | v2.1 | 2/2 | Complete    | 2026-04-07 |
-| 34. Browser Registry Upload | v2.1 | 0/2 | Planning done | - |
+| 34. Browser Registry Upload | v2.1 | 1/2 | In Progress|  |
 | 35. Run Status Polling | v2.1 | 0/TBD | Not started | - |
 | 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
