@@ -4,8 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { useAddMember } from '@/features/projects/useProjects'
-import { useUsers } from '@/features/users/useUsers'
+import { useAddMember, useProjectUsers } from '@/features/projects/useProjects'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -46,7 +45,7 @@ interface AddMemberDialogProps {
 
 export function AddMemberDialog({ open, onOpenChange, slug, existingMembers }: AddMemberDialogProps) {
   const addMember = useAddMember(slug)
-  const { data: users } = useUsers()
+  const { data: users } = useProjectUsers(slug)
 
   const form = useForm<AddMemberFormValues>({
     resolver: zodResolver(addMemberSchema),

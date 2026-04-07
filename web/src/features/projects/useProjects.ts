@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/apiClient'
+import type { UserResponse } from '@/features/users/useUsers'
 
 export interface ProjectResponse {
   id: string
@@ -91,5 +92,13 @@ export function useRemoveMember(slug: string) {
     mutationFn: (username: string) =>
       apiClient.delete(`/projects/${slug}/members/${username}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', slug, 'members'] }),
+  })
+}
+
+export function useProjectUsers(slug: string) {
+  return useQuery<UserResponse[]>({
+    queryKey: ['projects', slug, 'users'],
+    queryFn: () => apiClient.get(`/projects/${slug}/users`),
+    enabled: !!slug,
   })
 }

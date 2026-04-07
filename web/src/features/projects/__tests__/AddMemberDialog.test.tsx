@@ -4,14 +4,10 @@ import React from 'react'
 
 vi.mock('@/features/projects/useProjects', () => ({
   useAddMember: vi.fn(),
+  useProjectUsers: vi.fn(),
 }))
 
-vi.mock('@/features/users/useUsers', () => ({
-  useUsers: vi.fn(),
-}))
-
-import { useAddMember } from '@/features/projects/useProjects'
-import { useUsers } from '@/features/users/useUsers'
+import { useAddMember, useProjectUsers } from '@/features/projects/useProjects'
 import { AddMemberDialog } from '../AddMemberDialog'
 
 const mockUsers = [
@@ -56,10 +52,10 @@ describe('AddMemberDialog', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useAddMember>)
 
-    vi.mocked(useUsers).mockReturnValue({
+    vi.mocked(useProjectUsers).mockReturnValue({
       data: mockUsers,
       isLoading: false,
-    } as ReturnType<typeof useUsers>)
+    } as ReturnType<typeof useProjectUsers>)
   })
 
   it('renders "Add Member" title', () => {
