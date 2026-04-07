@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event'
 vi.mock('@/features/registry/useRegistry', () => ({
   useRegistryEntries: vi.fn(),
   useDeleteRegistryEntry: vi.fn(),
+  usePushWDL: vi.fn(),
 }))
 
 // Mock useProjectMembers
@@ -32,9 +33,15 @@ vi.mock('react-router', () => ({
   useNavigate: vi.fn(() => mockNavigate),
 }))
 
+// Mock PushWDLDialog to avoid rendering its internal complexity
+vi.mock('@/features/registry/PushWDLDialog', () => ({
+  PushWDLDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="push-wdl-dialog">PushWDLDialog</div> : null,
+}))
+
 const mockNavigate = vi.fn()
 
-import { useRegistryEntries, useDeleteRegistryEntry } from '@/features/registry/useRegistry'
+import { useRegistryEntries, useDeleteRegistryEntry, usePushWDL } from '@/features/registry/useRegistry'
 import { useProjectMembers } from '@/features/projects/useProjects'
 import { useAuthStore } from '@/store/authStore'
 import { RegistryPage } from '@/features/registry/RegistryPage'
@@ -58,15 +65,19 @@ const mockEntries = [
 
 const adminMembers = [{ username: 'alice', role: 'admin', user_id: 'u1', created_at: '2026-01-01T00:00:00Z' }]
 const viewerMembers = [{ username: 'alice', role: 'viewer', user_id: 'u1', created_at: '2026-01-01T00:00:00Z' }]
+const executorMembers = [{ username: 'alice', role: 'executor', user_id: 'u1', created_at: '2026-01-01T00:00:00Z' }]
 
 function setupMocks({
   username = 'alice',
+  globalRole = 'user',
   entries = mockEntries,
   isLoading = false,
   isError = false,
   members = adminMembers,
 } = {}) {
-  vi.mocked(useAuthStore).mockImplementation((selector) => selector({ username } as never))
+  vi.mocked(useAuthStore).mockImplementation((selector) =>
+    selector({ username, role: globalRole } as never)
+  )
   vi.mocked(useRegistryEntries).mockReturnValue({
     data: isLoading ? undefined : entries,
     isLoading,
@@ -79,6 +90,10 @@ function setupMocks({
   vi.mocked(useDeleteRegistryEntry).mockReturnValue({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
   } as unknown as ReturnType<typeof useDeleteRegistryEntry>)
+  vi.mocked(usePushWDL).mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof usePushWDL>)
 }
 
 describe('RegistryPage', () => {
@@ -162,5 +177,49 @@ describe('RegistryPage', () => {
     render(<RegistryPage />)
 
     expect(screen.getByText(/Failed to load registry/)).toBeInTheDocument()
+  })
+
+  it('Push WDL button visible for project admin', () => {
+    setupMocks({ members: adminMembers, globalRole: 'user' })
+    render(<RegistryPage />)
+
+    expect(screen.getByRole('button', { name: /push wdl/i })).toBeInTheDocument()
+  })
+
+  it('Push WDL button visible for project executor', () => {
+    setupMocks({ members: executorMembers, globalRole: 'user' })
+    render(<RegistryPage />)
+
+    expect(screen.getByRole('button', { name: /push wdl/i })).toBeInTheDocument()
+  })
+
+  it('Push WDL button hidden for viewer', () => {
+    setupMocks({ members: viewerMembers, globalRole: 'user' })
+    render(<RegistryPage />)
+
+    expect(screen.queryByRole('button', { name: /push wdl/i })).not.toBeInTheDocument()
+  })
+
+  it('Push WDL button visible for global admin without project membership', () => {
+    setupMocks({ members: [], globalRole: 'admin' })
+    render(<RegistryPage />)
+
+    expect(screen.getByRole('button', { name: /push wdl/i })).toBeInTheDocument()
+  })
+
+  it('clicking Push WDL opens dialog', async () => {
+    setupMocks({ members: adminMembers })
+    render(<RegistryPage />)
+
+    await user.click(screen.getByRole('button', { name: /push wdl/i }))
+
+    expect(screen.getByTestId('push-wdl-dialog')).toBeInTheDocument()
+  })
+
+  it('empty state mentions Push WDL button above', () => {
+    setupMocks({ entries: [], members: adminMembers })
+    render(<RegistryPage />)
+
+    expect(screen.getByText(/Push WDL button above/)).toBeInTheDocument()
   })
 })
