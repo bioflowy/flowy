@@ -46,6 +46,12 @@ func LoadCredentials() (*Credentials, error) {
 	if err := yaml.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("credentials: parsing credentials file: %w", err)
 	}
+	if creds.Server == "" {
+		return nil, fmt.Errorf("credentials: server URL is empty in credentials file — run `flowy login --server <url>`")
+	}
+	if creds.Token == "" {
+		return nil, fmt.Errorf("credentials: token is empty in credentials file — run `flowy login --server <url>`")
+	}
 	return &creds, nil
 }
 
