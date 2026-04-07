@@ -334,6 +334,13 @@ type RegistryInputsResponse struct {
 	Inputs []RegistryInputItem `json:"inputs"`
 }
 
+// UploadResponse is the response body for POST /projects/{slug}/uploads.
+type UploadResponse struct {
+	// Path is the server-accessible absolute path where the uploaded file is stored.
+	// Clients use this path as a File-typed workflow input value.
+	Path string `json:"path"`
+}
+
 // ProvenanceSummaryResponse is a single item in the provenance list response.
 type ProvenanceSummaryResponse struct {
 	RunID          string `json:"run_id"`

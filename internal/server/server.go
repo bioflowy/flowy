@@ -182,6 +182,9 @@ func (s *Server) newRouter() *chi.Mux {
 					r.With(s.projectRoleRequired("viewer")).Get("/", s.handleListProvenance)
 					r.With(s.projectRoleRequired("viewer")).Get("/{run_id}", s.handleGetProvenance)
 				})
+
+				// File uploads
+				r.With(s.projectRoleRequired("executor")).Post("/uploads", s.handleUpload)
 			})
 		})
 
