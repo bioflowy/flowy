@@ -139,7 +139,10 @@ Plans:
   2. Clicking the button opens a dialog where the user can select a `.wdl` file and enter a registry entry name
   3. After submitting, the registry entry list refreshes and the new entry appears with the correct name and digest
   4. Submitting a non-`.wdl` file is rejected client-side with an inline validation message before any network request is made
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
+- [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
 
 ### Phase 35: Run Status Polling
 **Goal**: Browser users see live run status without manual page refresh, and polling stops automatically when a run reaches a terminal state
@@ -150,7 +153,10 @@ Plans:
   2. Polling stops automatically when the run reaches COMPLETED, FAILED, or ABORTED — no further requests are made
   3. RunsPage auto-refreshes the run list while any run in the visible list is in a non-terminal state, then stops
   4. Opening a RunDetailPage for an already-completed run never triggers polling
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
+- [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
 
 ### Phase 36: UI Workflow Execution
 **Goal**: Browser users with executor role can select a workflow from the registry, fill in input parameters, submit execution, and view results — all from the browser
@@ -162,7 +168,10 @@ Plans:
   3. Submitting the form creates a new run and navigates the user to the RunDetailPage for that run
   4. File-typed inputs display a placeholder and tooltip explaining that server-accessible paths are required (e.g., `s3://` or absolute paths), not browser-local file paths
   5. After the run completes, the RunDetailPage shows the output files section reusing the Phase 30 output viewer
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
+- [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
 
 ## Progress
 
@@ -175,6 +184,6 @@ Plans:
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 33. CLI Auth and Registry Commands | v2.1 | 2/2 | Complete    | 2026-04-07 |
-| 34. Browser Registry Upload | v2.1 | 0/TBD | Not started | - |
+| 34. Browser Registry Upload | v2.1 | 0/2 | Planning done | - |
 | 35. Run Status Polling | v2.1 | 0/TBD | Not started | - |
 | 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
