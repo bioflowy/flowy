@@ -18,9 +18,10 @@ func testdataDir() string {
 }
 
 // runArgs is a helper that calls run() with given args and captures stdout/stderr.
+// It uses an empty stdin since non-login subcommands do not read from stdin.
 func runArgs(args []string) (code int, stdout, stderr string) {
 	var outBuf, errBuf bytes.Buffer
-	code = run(args, &outBuf, &errBuf)
+	code = run(args, bytes.NewReader(nil), &outBuf, &errBuf)
 	return code, outBuf.String(), errBuf.String()
 }
 

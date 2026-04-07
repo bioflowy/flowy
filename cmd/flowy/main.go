@@ -30,8 +30,9 @@ import (
 var version = "dev"
 
 // run is the testable main function. args is os.Args[1:].
+// stdin is used by the login subcommand to read the username.
 // Returns exit code: 0 = success, 1 = execution error, 2 = usage error.
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		usage(stderr)
 		return 2
@@ -51,6 +52,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runStatus(args[1:], stdout, stderr)
 	case "outputs":
 		return runOutputs(args[1:], stdout, stderr)
+	case "login":
+		return runLogin(args[1:], stdin, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown subcommand: %q\n\n", args[0])
 		usage(stderr)
@@ -60,7 +63,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // main is the real entry point.
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // usage writes the help text to w.
@@ -68,6 +71,7 @@ func usage(w io.Writer) {
 	fmt.Fprint(w, `Usage: flowy <command> [options]
 
 Commands:
+  login    Authenticate with a flowy-server
   check    Parse and type-check a WDL file
   run      Execute a WDL workflow or task
   submit   Submit a WDL workflow to a flowy-server
