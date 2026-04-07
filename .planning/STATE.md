@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Completed 30-01-PLAN.md
-last_updated: "2026-04-07T03:08:36.770Z"
+stopped_at: Completed 30-02-PLAN.md
+last_updated: "2026-04-07T03:14:26.598Z"
 last_activity: 2026-04-07
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -51,6 +51,7 @@ Plan: 1 of 2
 | Phase 28 P02 | 4 | 2 tasks | 6 files |
 | Phase 29 P01 | 5 | 2 tasks | 5 files |
 | Phase 30-file-browsing P01 | 4 | 2 tasks | 7 files |
+| Phase 30-file-browsing P02 | 4m 3s | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,9 @@ Recent decisions affecting current work:
 - [Phase 30-01]: File download handler accepts raw ?path= query param directly as storage path, not constructed from baseDir/runID
 - [Phase 30-01]: Preview mode reads full file into memory then truncates at 100KB (DownloadFile), not streaming partial read
 - [Phase 30-01]: Empty run list returns [] not null via explicit nil-to-empty-slice guard before writeJSON
+- [Phase 30-02]: useAuthStore.getState().token used for raw fetch calls to support binary downloads and text previews (not apiClient)
+- [Phase 30-02]: Run detail finds run from list via useRuns — no dedicated single-run GET endpoint in backend
+- [Phase 30-02]: formatDuration exported from RunsPage.tsx and imported into RunDetailPage.tsx to avoid duplication
 
 ### Pending Todos
 
@@ -107,5 +111,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-07
-Stopped at: Completed 30-01-PLAN.md
+Stopped at: Completed 30-02-PLAN.md
 Resume file: None

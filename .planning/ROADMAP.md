@@ -79,7 +79,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 27: User Management** — Admin user list, create, deactivate/reactivate, password reset (completed 2026-04-06)
 - [x] **Phase 28: Project Management** — Project list/create, project detail, member management with RBAC roles (completed 2026-04-06)
 - [x] **Phase 29: Registry Browsing** — Registry entry list, version history, WDL source viewer, tag management (completed 2026-04-07)
-- [ ] **Phase 30: File Browsing** — Run list, output file list, file download (S3/local), inline text preview
+- [x] **Phase 30: File Browsing** — Run list, output file list, file download (S3/local), inline text preview (completed 2026-04-07)
 
 ## Phase Details
 
@@ -207,4 +207,4 @@ Plans:
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
 | 28. Project Management | 2/2 | Complete    | 2026-04-06 | - |
 | 29. Registry Browsing | 2/2 | Complete    | 2026-04-07 | - |
-| 30. File Browsing | 1/2 | In Progress|  | - |
+| 30. File Browsing | 2/2 | Complete   | 2026-04-07 | - |
