@@ -114,6 +114,27 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleListUsersForProject handles GET /projects/{slug}/users.
+// Returns active users for the Add Member dropdown.
+// Requires project admin role (not global admin).
+func (s *Server) handleListUsersForProject(w http.ResponseWriter, r *http.Request) {
+	users, err := s.store.ListUsers(r.Context())
+	if err != nil {
+		log.Printf("handleListUsersForProject: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to list users")
+		return
+	}
+	resp := make([]api.UserResponse, 0, len(users))
+	for _, u := range users {
+		if !u.IsActive {
+			continue
+		}
+		u := u
+		resp = append(resp, userToResponse(&u))
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // handleDeleteUser handles DELETE /users/{id} (admin only).
 // Soft-deletes the user and returns 204.
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {

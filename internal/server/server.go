@@ -119,7 +119,7 @@ func (s *Server) newRouter() *chi.Mux {
 			// User management routes.
 			r.Get("/users/me", s.handleGetMe)
 			r.Put("/users/me/password", s.handleChangePassword)
-			r.Get("/users", s.handleListUsers)
+			r.With(roleRequired("admin")).Get("/users", s.handleListUsers)
 			r.With(roleRequired("admin")).Post("/users", s.handleCreateUser)
 			r.With(roleRequired("admin")).Delete("/users/{id}", s.handleDeleteUser)
 			r.With(roleRequired("admin")).Patch("/users/{id}/reactivate", s.handleReactivateUser)
@@ -144,6 +144,9 @@ func (s *Server) newRouter() *chi.Mux {
 				r.With(s.projectRoleRequired("admin")).Post("/members", s.handleAddMember)
 				r.With(s.projectRoleRequired("admin")).Put("/members/{username}", s.handleUpdateMember)
 				r.With(s.projectRoleRequired("admin")).Delete("/members/{username}", s.handleRemoveMember)
+
+				// User list for project admin (Add Member dropdown)
+				r.With(s.projectRoleRequired("admin")).Get("/users", s.handleListUsersForProject)
 
 				// Runs sub-resource (project-scoped workflow runs).
 				r.Route("/runs", func(r chi.Router) {

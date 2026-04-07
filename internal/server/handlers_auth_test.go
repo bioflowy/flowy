@@ -274,15 +274,36 @@ func TestHandleListUsers_NonAdmin(t *testing.T) {
 	userToken := issueTestToken(t, "user-1", "alice", "executor")
 
 	w := doAuthRequest(t, srv, "GET", "/users", nil, userToken)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleListUsersForProject_ProjectAdmin(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "admin-1", "admin", "adminpass", "admin")
+	createTestUser(t, st, "user-1", "alice", "pass", "user")
+
+	// Create project and add alice as project admin using the existing helper pattern.
+	createTestProject(t, st, "proj-1", "test-proj", "user-1")
+
+	aliceToken := issueTestToken(t, "user-1", "alice", "user")
+	w := doAuthRequest(t, srv, "GET", "/projects/test-proj/users", nil, aliceToken)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
+
 	var resp []api.UserResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf("decode: %v", err)
 	}
-	if len(resp) == 0 {
-		t.Error("expected non-empty user list")
+	// Should return only active users.
+	for _, u := range resp {
+		if !u.IsActive {
+			t.Errorf("expected only active users, got inactive user %s", u.Username)
+		}
 	}
 }
 
