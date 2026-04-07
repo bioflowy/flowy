@@ -43,7 +43,14 @@ func runLogin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// Prompt for username (reads from stdin for testability).
 	fmt.Fprint(stdout, "Username: ")
 	scanner := bufio.NewScanner(stdin)
-	scanner.Scan()
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(stderr, "error: reading username: %v\n", err)
+		} else {
+			fmt.Fprintln(stderr, "error: unexpected EOF reading username")
+		}
+		return 1
+	}
 	username := strings.TrimSpace(scanner.Text())
 
 	// Prompt for password (uses readPasswordFn so tests can override).
