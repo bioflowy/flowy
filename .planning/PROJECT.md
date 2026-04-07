@@ -50,7 +50,11 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-(None — next milestone not yet defined)
+- [ ] UI workflow execution from registry (select, input parameters, submit)
+- [ ] Poll-based run status monitoring in browser
+- [ ] Dynamic input form for basic WDL types (String, Int, Float, Boolean, File)
+- [ ] CLI registry commands (push, list, pull, tag, delete)
+- [ ] UI registry upload (push WDL from browser)
 
 ### Out of Scope
 
@@ -61,7 +65,7 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - Execution cache (task output reuse) — deferred to future milestone
 - Workflow resume from checkpoint — deferred to future milestone
 - Docker-alternative backends (Podman, Singularity) — deferred to future milestone
-- WebSocket/SSE for status — polling sufficient for batch workflows; revisit in v2.1 job execution UI
+- WebSocket/SSE for status — polling chosen for v2.1; revisit if real-time needs grow
 - OAuth2/LDAP/SSO authentication — simple username/password sufficient for now
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
@@ -123,5 +127,32 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Backend proxies file downloads | No presigned S3 URLs — frontend stays simple and secure | ✓ Good — storage-agnostic downloads |
 | Project-scoped user list for AddMemberDialog | Avoids relaxing global user list to non-admins | ✓ Good — proper security boundary |
 
+## Current Milestone: v2.1 Job Execution & Registry CLI
+
+**Goal:** Users can execute workflows from the web UI with parameter input and poll-based status monitoring, push/pull/manage registry entries via CLI, and upload WDL files from the browser.
+
+**Target features:**
+- UI workflow execution: select from registry, input parameters (basic WDL types), submit, poll-based status monitoring, results display
+- CLI registry commands: push, list, pull, tag, delete
+- UI registry upload: upload WDL file from browser to push to registry
+- Dynamic input form for String, Int, Float, Boolean, File; Array/Map/Struct via JSON input
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-04-07 after v2.0 milestone*
+*Last updated: 2026-04-07 after v2.1 milestone start*

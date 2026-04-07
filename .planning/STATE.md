@@ -1,31 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Web UI — Management
-status: unknown
-stopped_at: Completed 31-01-PLAN.md
-last_updated: "2026-04-07T05:46:01.212Z"
+milestone: v2.1
+milestone_name: Job Execution & Registry CLI
+status: active
+stopped_at: Defining requirements
+last_updated: "2026-04-07"
 last_activity: 2026-04-07
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 16
-  completed_plans: 16
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-20)
+See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 31 — audit-gap-closure
+**Current focus:** Defining requirements for v2.1
 
 ## Current Position
 
-Phase: 31 (audit-gap-closure) — COMPLETE
-Plan: 2 of 2
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-07 — Milestone v2.1 started
 
 ## Performance Metrics
 
