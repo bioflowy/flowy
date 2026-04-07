@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/bioflowy/flowy/internal/api"
@@ -322,6 +323,210 @@ func (c *Client) Outputs(ctx context.Context, runID string) (*api.OutputsRespons
 		var errResp api.ErrorResponse
 		_ = json.NewDecoder(resp.Body).Decode(&errResp)
 		return nil, fmt.Errorf("client: outputs failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
+// RegistryPush sends POST /projects/{slug}/registry with name+content, returns RegistryPushResponse.
+// Returns ErrUnauthorized on 401, ErrForbidden on 403.
+func (c *Client) RegistryPush(ctx context.Context, projectSlug, name, content string) (*api.RegistryPushResponse, error) {
+	body, err := json.Marshal(api.RegistryPushRequest{Name: name, Content: content})
+	if err != nil {
+		return nil, fmt.Errorf("client: marshal registry push request: %w", err)
+	}
+
+	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("client: build registry push request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: POST /projects/%s/registry: %w", projectSlug, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated:
+		var result api.RegistryPushResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, fmt.Errorf("client: decode registry push response: %w", err)
+		}
+		return &result, nil
+	case http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	case http.StatusForbidden:
+		return nil, ErrForbidden
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: registry push failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
+// RegistryList sends GET /projects/{slug}/registry and returns a list of registry entries.
+// Returns ErrUnauthorized on 401, ErrForbidden on 403.
+func (c *Client) RegistryList(ctx context.Context, projectSlug string) ([]api.RegistryEntryResponse, error) {
+	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("client: build registry list request: %w", err)
+	}
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: GET /projects/%s/registry: %w", projectSlug, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var result []api.RegistryEntryResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, fmt.Errorf("client: decode registry list response: %w", err)
+		}
+		return result, nil
+	case http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	case http.StatusForbidden:
+		return nil, ErrForbidden
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: registry list failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
+// RegistryPull sends GET /projects/{slug}/registry/{name}?tag={tag} (or ?digest={digest}).
+// Returns ErrUnauthorized on 401, ErrForbidden on 403.
+func (c *Client) RegistryPull(ctx context.Context, projectSlug, name, tag, digest string) (*api.RegistryPullResponse, error) {
+	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name
+	if tag != "" {
+		reqURL += "?tag=" + url.QueryEscape(tag)
+	} else if digest != "" {
+		reqURL += "?digest=" + url.QueryEscape(digest)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("client: build registry pull request: %w", err)
+	}
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("client: GET /projects/%s/registry/%s: %w", projectSlug, name, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var result api.RegistryPullResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, fmt.Errorf("client: decode registry pull response: %w", err)
+		}
+		return &result, nil
+	case http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	case http.StatusForbidden:
+		return nil, ErrForbidden
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("client: registry pull failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
+// RegistryTag sends POST /projects/{slug}/registry/{name}/tags with tag+digest body.
+// Returns ErrUnauthorized on 401, ErrForbidden on 403.
+func (c *Client) RegistryTag(ctx context.Context, projectSlug, name, tag, digest string) error {
+	body, err := json.Marshal(api.RegistryTagRequest{Tag: tag, Digest: digest})
+	if err != nil {
+		return fmt.Errorf("client: marshal registry tag request: %w", err)
+	}
+
+	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name + "/tags"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("client: build registry tag request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return fmt.Errorf("client: POST /projects/%s/registry/%s/tags: %w", projectSlug, name, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("client: registry tag failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
+// RegistryDeleteTag sends DELETE /projects/{slug}/registry/{name}/tags/{tag}.
+// Returns nil on 204. Returns ErrUnauthorized on 401, ErrForbidden on 403.
+func (c *Client) RegistryDeleteTag(ctx context.Context, projectSlug, name, tag string) error {
+	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name + "/tags/" + tag
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("client: build registry delete-tag request: %w", err)
+	}
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return fmt.Errorf("client: DELETE /projects/%s/registry/%s/tags/%s: %w", projectSlug, name, tag, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("client: registry delete-tag failed (status %d): %s", resp.StatusCode, errResp.Error)
+	}
+}
+
+// RegistryDelete sends DELETE /projects/{slug}/registry/{name}.
+// Returns nil on 204. Returns ErrUnauthorized on 401, ErrForbidden on 403.
+func (c *Client) RegistryDelete(ctx context.Context, projectSlug, name string) error {
+	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("client: build registry delete request: %w", err)
+	}
+
+	resp, err := c.doRequest(httpReq)
+	if err != nil {
+		return fmt.Errorf("client: DELETE /projects/%s/registry/%s: %w", projectSlug, name, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		return ErrForbidden
+	default:
+		var errResp api.ErrorResponse
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("client: registry delete failed (status %d): %s", resp.StatusCode, errResp.Error)
 	}
 }
 
