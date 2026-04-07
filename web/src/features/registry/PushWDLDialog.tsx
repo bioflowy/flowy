@@ -150,7 +150,24 @@ export function PushWDLDialog({ open, onOpenChange, slug }: PushWDLDialogProps) 
                       type="file"
                       accept=".wdl"
                       ref={fileInputRef}
-                      onChange={(e) => field.onChange(e.target.files)}
+                      onChange={(e) => {
+                        const files = e.target.files
+                        field.onChange(files)
+                        // Manually validate file extension for immediate feedback
+                        if (files && files.length > 0) {
+                          if (!files[0].name.endsWith('.wdl')) {
+                            form.setError('file', {
+                              type: 'manual',
+                              message:
+                                'Only .wdl files are accepted. Please select a valid WDL file.',
+                            })
+                          } else {
+                            form.clearErrors('file')
+                          }
+                        } else {
+                          form.setError('file', { type: 'manual', message: 'Select a file' })
+                        }
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
