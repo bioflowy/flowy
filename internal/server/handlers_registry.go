@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/bioflowy/flowy/internal/api"
+	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/parser"
 )
 
@@ -314,4 +316,96 @@ func (s *Server) handleRegistryDeleteTag(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRegistryInputs handles GET /projects/{slug}/registry/{name}/inputs?tag=<tag>.
+// Returns the declared inputs for the WDL workflow or task stored under the given tag.
+// Accessible by project viewers.
+func (s *Server) handleRegistryInputs(w http.ResponseWriter, r *http.Request) {
+	proj := projectFromContext(r.Context())
+	if proj == nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+	tag := r.URL.Query().Get("tag")
+	if tag == "" {
+		writeError(w, http.StatusBadRequest, "must specify ?tag= query parameter")
+		return
+	}
+
+	v, _, err := s.store.GetRegistryVersionByTag(r.Context(), proj.ID, name, tag)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("tag %q not found for entry %q", tag, name))
+		return
+	}
+
+	doc, err := parser.Parse(name, []byte(v.WDLContent))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "WDL parse error")
+		return
+	}
+
+	inputs := extractInputs(doc)
+	writeJSON(w, http.StatusOK, api.RegistryInputsResponse{Inputs: inputs})
+}
+
+// extractInputs extracts the declared input list from the first workflow or task in doc.
+func extractInputs(doc *ast.Document) []api.RegistryInputItem {
+	var decls []*ast.Decl
+	if len(doc.Workflows) > 0 {
+		decls = doc.Workflows[0].Inputs
+	} else if len(doc.Tasks) > 0 {
+		decls = doc.Tasks[0].Inputs
+	}
+
+	items := make([]api.RegistryInputItem, 0, len(decls))
+	for _, d := range decls {
+		items = append(items, api.RegistryInputItem{
+			Name:     d.Name,
+			Type:     d.Type.TypeName(),
+			Optional: d.Type.IsOptional(),
+			Default:  declDefaultString(d.Expr),
+		})
+	}
+	return items
+}
+
+// declDefaultString converts a simple literal AST expression to its string representation.
+// Returns nil for complex or nil expressions (interpolated strings, function calls, etc.).
+func declDefaultString(e ast.Expr) *string {
+	if e == nil {
+		return nil
+	}
+	var s string
+	switch v := e.(type) {
+	case *ast.IntLit:
+		s = strconv.FormatInt(v.Value, 10)
+	case *ast.FloatLit:
+		s = strconv.FormatFloat(v.Value, 'f', -1, 64)
+	case *ast.BoolLit:
+		if v.Value {
+			s = "true"
+		} else {
+			s = "false"
+		}
+	case *ast.NullLit:
+		s = "null"
+	case *ast.StringExpr:
+		if len(v.Parts) == 0 {
+			s = ""
+		} else if len(v.Parts) == 1 {
+			raw, ok := v.Parts[0].(*ast.RawStringPart)
+			if !ok {
+				return nil // interpolated — cannot reduce to plain string
+			}
+			s = raw.Val
+		} else {
+			return nil // multi-part interpolated string
+		}
+	default:
+		return nil
+	}
+	return &s
 }

@@ -170,6 +170,7 @@ func (s *Server) newRouter() *chi.Mux {
 					r.Route("/{name}", func(r chi.Router) {
 						r.With(s.projectRoleRequired("viewer")).Get("/", s.handleRegistryPull)
 						r.With(s.projectRoleRequired("viewer")).Get("/versions", s.handleRegistryListVersions)
+						r.With(s.projectRoleRequired("viewer")).Get("/inputs", s.handleRegistryInputs)
 						r.With(s.projectRoleRequired("admin")).Delete("/", s.handleRegistryDelete)
 						r.With(s.projectRoleRequired("admin")).Post("/tags", s.handleRegistryTag)
 						r.With(s.projectRoleRequired("admin")).Delete("/tags/{tag}", s.handleRegistryDeleteTag)

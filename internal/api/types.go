@@ -321,6 +321,19 @@ type RegistryTagRequest struct {
 	Digest string `json:"digest"`
 }
 
+// RegistryInputItem describes a single declared input from a WDL workflow or task.
+type RegistryInputItem struct {
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	Optional bool    `json:"optional"`
+	Default  *string `json:"default"`
+}
+
+// RegistryInputsResponse is the response body for GET /projects/{slug}/registry/{name}/inputs.
+type RegistryInputsResponse struct {
+	Inputs []RegistryInputItem `json:"inputs"`
+}
+
 // ProvenanceSummaryResponse is a single item in the provenance list response.
 type ProvenanceSummaryResponse struct {
 	RunID          string `json:"run_id"`
