@@ -187,7 +187,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [ ] 31-01-PLAN.md — Fix sidebar Members link and auth-disabled login redirect
-- [ ] 31-02-PLAN.md — Restore admin guard on GET /users with project-scoped user list
+- [x] 31-02-PLAN.md — Restore admin guard on GET /users with project-scoped user list
 
 ## Progress
 
@@ -223,4 +223,4 @@ Plans:
 | 28. Project Management | 2/2 | Complete    | 2026-04-06 | - |
 | 29. Registry Browsing | 2/2 | Complete    | 2026-04-07 | - |
 | 30. File Browsing | 2/2 | Complete    | 2026-04-07 | - |
-| 31. Audit Gap Closure | 0/2 | Not started | - | - |
+| 31. Audit Gap Closure | 2/2 | In Progress|  | 2026-04-07 |

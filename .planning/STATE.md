@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Completed 30-02-PLAN.md
-last_updated: "2026-04-07T03:14:26.598Z"
+stopped_at: Completed 31-02-PLAN.md
+last_updated: "2026-04-07T05:29:00.000Z"
 last_activity: 2026-04-07
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 16
+  completed_plans: 16
 ---
 
 # Project State
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 30 — file-browsing
+**Current focus:** Phase 31 — audit-gap-closure
 
 ## Current Position
 
-Phase: 30 (file-browsing) — EXECUTING
-Plan: 1 of 2
+Phase: 31 (audit-gap-closure) — COMPLETE
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -86,6 +86,8 @@ Recent decisions affecting current work:
 - [Phase 28-01]: Zustand selector mock pattern: mockImplementation((selector) => selector(state)) for (s) => s.field usage
 - [Phase 28-02]: Project admin detection uses currentMember?.role === 'admin' from members list, not global authStore.role — enables project-scoped access control
 - [Phase 28-02]: AddMemberDialog always uses Select dropdown (no text-input fallback) — GET /users relaxed to all authenticated users in Plan 01
+- [Phase 31-02]: GET /users re-restricted to global admin only; project-scoped GET /projects/{slug}/users added for project admin Add Member dropdown
+- [Phase 31-02]: handleListUsersForProject filters inactive users — only active users can be added as project members
 - [Phase 28-02]: Sidebar project nav items guarded by activeSlug && to prevent null-slug URL generation
 - [Phase 29]: RegistryEntryPage placeholder created in Plan 01 to satisfy App.tsx import; full implementation deferred to Plan 02
 - [Phase 29]: Kind badges use variant=outline with conditional className for blue tool / purple workflow styling
@@ -111,5 +113,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-07
-Stopped at: Completed 30-02-PLAN.md
+Stopped at: Completed 31-02-PLAN.md
 Resume file: None
