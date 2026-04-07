@@ -2,8 +2,8 @@
 phase: 34
 slug: browser-registry-upload
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-07
 ---
 
@@ -38,7 +38,11 @@ created: 2026-04-07
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 34-01-01 | 01 | 1 | REG-UI-01 | — | Role gating (executor+) | unit | `cd web && npx vitest run src/features/registry/PushWDLDialog.test.tsx` | ❌ W0 | ⬜ pending |
+| 34-01-01 | 01 | 1 | REG-UI-01 | — | N/A | build | `cd web && npx tsc --noEmit` | ✅ | ⬜ pending |
+| 34-01-02 | 01 | 1 | REG-UI-01 | — | N/A | build | `cd web && npx tsc --noEmit` | ✅ | ⬜ pending |
+| 34-01-03 | 01 | 1 | REG-UI-01 | — | .wdl validation | unit | `cd web && npx vitest run src/features/registry --reporter=verbose` | TDD | ⬜ pending |
+| 34-02-01 | 02 | 2 | REG-UI-01 | — | Role gating (executor+) | unit | `cd web && npx vitest run src/features/registry --reporter=verbose` | TDD | ⬜ pending |
+| 34-02-02 | 02 | 2 | REG-UI-01 | — | Role gating tests | unit | `cd web && npx vitest run src/features/registry --reporter=verbose` | TDD | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -46,9 +50,7 @@ created: 2026-04-07
 
 ## Wave 0 Requirements
 
-- [ ] `web/src/features/registry/PushWDLDialog.test.tsx` — tests for push dialog component
-
-*Existing test infrastructure covers shared fixtures.*
+*No Wave 0 needed. `tsc --noEmit` is the per-task fast gate for Tasks 1-2. Tests are created via TDD in Task 3 (Plan 01) and Tasks 1-2 (Plan 02). Full vitest suite runs as wave-level gate.*
 
 ---
 
