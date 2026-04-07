@@ -127,7 +127,7 @@ Plans:
   8. `flowy registry delete --project <slug> --name <name>` removes the entry (admin only)
 **Plans**: 2 plans
 Plans:
-- [ ] 33-01-PLAN.md — Credential infrastructure and login command (CLI-01, CLI-02)
+- [x] 33-01-PLAN.md — Credential infrastructure and login command (CLI-01, CLI-02)
 - [ ] 33-02-PLAN.md — Registry subcommands (REG-CLI-01, REG-CLI-02, REG-CLI-03, REG-CLI-04, REG-CLI-05)
 
 ### Phase 34: Browser Registry Upload
@@ -174,7 +174,7 @@ Plans:
 | 19-24 | v1.3 | 14/14 | Complete | 2026-03-20 |
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
-| 33. CLI Auth and Registry Commands | v2.1 | 0/2 | Planning | - |
+| 33. CLI Auth and Registry Commands | v2.1 | 1/2 | In Progress|  |
 | 34. Browser Registry Upload | v2.1 | 0/TBD | Not started | - |
 | 35. Run Status Polling | v2.1 | 0/TBD | Not started | - |
 | 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
