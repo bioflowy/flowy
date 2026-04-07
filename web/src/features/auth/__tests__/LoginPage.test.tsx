@@ -173,6 +173,24 @@ describe('LoginPage', () => {
     })
   })
 
+  it('redirects to / when backend returns empty token (auth-disabled mode)', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ token: '' })
+
+    renderLoginPage()
+
+    await user.type(screen.getByLabelText(/username/i), 'any')
+    await user.type(screen.getByLabelText(/password/i), 'any')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true })
+    })
+
+    // Auth store should NOT be populated (no valid token)
+    const state = useAuthStore.getState()
+    expect(state.token).toBeNull()
+  })
+
   it('navigates to redirect path from query param after login', async () => {
     const token = makeJwt({ username: 'admin', role: 'admin' })
     vi.mocked(apiClient.post).mockResolvedValue({ token })
