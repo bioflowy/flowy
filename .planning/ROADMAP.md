@@ -207,4 +207,4 @@ Plans:
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
 | 28. Project Management | 2/2 | Complete    | 2026-04-06 | - |
 | 29. Registry Browsing | 2/2 | Complete    | 2026-04-07 | - |
-| 30. File Browsing | v2.0 | 0/2 | Not started | - |
+| 30. File Browsing | 1/2 | In Progress|  | - |

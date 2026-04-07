@@ -46,10 +46,10 @@ Requirements for Web UI management milestone. Each maps to roadmap phases.
 
 ### File Browsing
 
-- [ ] **FILE-01**: User can view list of workflow runs in a project
+- [x] **FILE-01**: User can view list of workflow runs in a project
 - [ ] **FILE-02**: User can view output files for a completed run
-- [ ] **FILE-03**: User can download output files (S3/local)
-- [ ] **FILE-04**: User can preview small text files inline
+- [x] **FILE-03**: User can download output files (S3/local)
+- [x] **FILE-04**: User can preview small text files inline
 
 ## v2.1 Requirements (Deferred)
 
@@ -102,10 +102,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REG-02 | Phase 29 | Complete |
 | REG-03 | Phase 29 | Complete |
 | REG-04 | Phase 29 | Complete |
-| FILE-01 | Phase 30 | Pending |
+| FILE-01 | Phase 30 | Complete |
 | FILE-02 | Phase 30 | Pending |
-| FILE-03 | Phase 30 | Pending |
-| FILE-04 | Phase 30 | Pending |
+| FILE-03 | Phase 30 | Complete |
+| FILE-04 | Phase 30 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 26 total

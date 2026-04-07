@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Web UI — Management
 status: unknown
-stopped_at: Phase 30 context gathered
-last_updated: "2026-04-07T02:38:03.445Z"
+stopped_at: Completed 30-01-PLAN.md
+last_updated: "2026-04-07T03:08:36.770Z"
 last_activity: 2026-04-07
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 14
+  completed_plans: 13
 ---
 
 # Project State
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 29 — registry-browsing
+**Current focus:** Phase 30 — file-browsing
 
 ## Current Position
 
-Phase: 29 (registry-browsing) — COMPLETE
-Plan: 2 of 2 (all plans complete)
+Phase: 30 (file-browsing) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Plan: 2 of 2 (all plans complete)
 | Phase 27 P02 | 20 | 2 tasks | 9 files |
 | Phase 28 P02 | 4 | 2 tasks | 6 files |
 | Phase 29 P01 | 5 | 2 tasks | 5 files |
+| Phase 30-file-browsing P01 | 4 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,9 @@ Recent decisions affecting current work:
 - [Phase 29]: Kind badges use variant=outline with conditional className for blue tool / purple workflow styling
 - [Phase 29-02]: RegistryEntryPage kind badge wrapper changed from <p> to <div> — Badge renders as div, p cannot contain block elements
 - [Phase 29-02]: truncateDigest uses slice(7,23) on full sha256 string giving 16 hex chars: sha256:abcdef1234567890...
+- [Phase 30-01]: File download handler accepts raw ?path= query param directly as storage path, not constructed from baseDir/runID
+- [Phase 30-01]: Preview mode reads full file into memory then truncates at 100KB (DownloadFile), not streaming partial read
+- [Phase 30-01]: Empty run list returns [] not null via explicit nil-to-empty-slice guard before writeJSON
 
 ### Pending Todos
 
@@ -103,5 +107,5 @@ None.
 ## Session Continuity
 
 Last activity: 2026-04-07
-Stopped at: Phase 30 context gathered
-Resume file: .planning/phases/30-file-browsing/30-CONTEXT.md
+Stopped at: Completed 30-01-PLAN.md
+Resume file: None
