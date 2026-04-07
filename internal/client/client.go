@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -58,6 +59,24 @@ func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
 	return c.httpClient.Do(req)
 }
 
+// readErrorMessage decodes an api.ErrorResponse from the body. When the body is
+// not valid JSON or the Error field is empty, it falls back to a raw body snippet
+// (up to 256 bytes) so the caller always gets a non-empty diagnostic string.
+func readErrorMessage(body io.Reader) string {
+	limited := io.LimitReader(body, 4096)
+	raw, _ := io.ReadAll(limited)
+	var errResp api.ErrorResponse
+	if err := json.Unmarshal(raw, &errResp); err == nil && errResp.Error != "" {
+		return errResp.Error
+	}
+	// Fallback: include raw body snippet (up to 256 bytes).
+	snippet := string(raw)
+	if len(snippet) > 256 {
+		snippet = snippet[:256] + "..."
+	}
+	return snippet
+}
+
 // Login sends POST /auth/login and returns the JWT token on success.
 // On network error the error message contains the server URL to aid diagnosis.
 // On non-200 the error message contains the server-provided description.
@@ -80,9 +99,7 @@ func (c *Client) Login(ctx context.Context, username, password string) (string, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return "", fmt.Errorf("login failed: %s", errResp.Error)
+		return "", fmt.Errorf("login failed: %s", readErrorMessage(resp.Body))
 	}
 
 	var lr api.LoginResponse
@@ -113,9 +130,7 @@ func (c *Client) Submit(ctx context.Context, req api.SubmitRequest) (*api.Submit
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: submit failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: submit failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 
 	var result api.SubmitResponse
@@ -133,8 +148,8 @@ func (c *Client) SubmitToProject(ctx context.Context, projectSlug string, req ap
 		return nil, fmt.Errorf("client: marshal submit request: %w", err)
 	}
 
-	url := c.serverURL + "/projects/" + projectSlug + "/workflows"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/workflows"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("client: build submit request: %w", err)
 	}
@@ -147,9 +162,7 @@ func (c *Client) SubmitToProject(ctx context.Context, projectSlug string, req ap
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: submit failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: submit failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 
 	var result api.SubmitResponse
@@ -167,8 +180,8 @@ func (c *Client) TaskRunInProject(ctx context.Context, projectSlug string, req a
 		return nil, fmt.Errorf("client: marshal task run request: %w", err)
 	}
 
-	url := c.serverURL + "/projects/" + projectSlug + "/tasks/run"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/tasks/run"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("client: build task run request: %w", err)
 	}
@@ -181,9 +194,7 @@ func (c *Client) TaskRunInProject(ctx context.Context, projectSlug string, req a
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: task run failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: task run failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 
 	var result api.TaskRunResponse
@@ -196,8 +207,8 @@ func (c *Client) TaskRunInProject(ctx context.Context, projectSlug string, req a
 // Status sends GET /workflows/{runID}/status and returns the StatusResponse.
 // Returns an error if the server returns a non-200 status.
 func (c *Client) Status(ctx context.Context, runID string) (*api.StatusResponse, error) {
-	url := c.serverURL + "/workflows/" + runID + "/status"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	reqURL := c.serverURL + "/workflows/" + url.PathEscape(runID) + "/status"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("client: build status request: %w", err)
 	}
@@ -209,9 +220,7 @@ func (c *Client) Status(ctx context.Context, runID string) (*api.StatusResponse,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: status failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: status failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 
 	var result api.StatusResponse
@@ -224,8 +233,8 @@ func (c *Client) Status(ctx context.Context, runID string) (*api.StatusResponse,
 // StatusInProject sends GET /projects/{projectSlug}/runs/{runID}/status and returns the StatusResponse.
 // Returns an error if the server returns a non-200 status.
 func (c *Client) StatusInProject(ctx context.Context, projectSlug string, runID string) (*api.StatusResponse, error) {
-	url := c.serverURL + "/projects/" + projectSlug + "/runs/" + runID + "/status"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/runs/" + url.PathEscape(runID) + "/status"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("client: build status request: %w", err)
 	}
@@ -237,9 +246,7 @@ func (c *Client) StatusInProject(ctx context.Context, projectSlug string, runID 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: status failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: status failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 
 	var result api.StatusResponse
@@ -253,8 +260,8 @@ func (c *Client) StatusInProject(ctx context.Context, projectSlug string, runID 
 // On 409 (run not completed), returns a descriptive error including the current state.
 // On 404 (run not found), returns a descriptive error.
 func (c *Client) OutputsInProject(ctx context.Context, projectSlug string, runID string) (*api.OutputsResponse, error) {
-	url := c.serverURL + "/projects/" + projectSlug + "/runs/" + runID + "/outputs"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/runs/" + url.PathEscape(runID) + "/outputs"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("client: build outputs request: %w", err)
 	}
@@ -273,17 +280,11 @@ func (c *Client) OutputsInProject(ctx context.Context, projectSlug string, runID
 		}
 		return &result, nil
 	case http.StatusConflict:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: workflow not yet completed (state: %s)", errResp.Error)
+		return nil, fmt.Errorf("client: workflow not yet completed (state: %s)", readErrorMessage(resp.Body))
 	case http.StatusNotFound:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: run not found: %s", errResp.Error)
+		return nil, fmt.Errorf("client: run not found: %s", readErrorMessage(resp.Body))
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: outputs failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: outputs failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
@@ -291,8 +292,8 @@ func (c *Client) OutputsInProject(ctx context.Context, projectSlug string, runID
 // On 409 (run not completed), returns a descriptive error including the current state.
 // On 404 (run not found), returns a descriptive error.
 func (c *Client) Outputs(ctx context.Context, runID string) (*api.OutputsResponse, error) {
-	url := c.serverURL + "/workflows/" + runID + "/outputs"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	reqURL := c.serverURL + "/workflows/" + url.PathEscape(runID) + "/outputs"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("client: build outputs request: %w", err)
 	}
@@ -312,17 +313,11 @@ func (c *Client) Outputs(ctx context.Context, runID string) (*api.OutputsRespons
 		return &result, nil
 	case http.StatusConflict:
 		// Run not yet completed — parse the error message to include the current state.
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: workflow not yet completed (state: %s)", errResp.Error)
+		return nil, fmt.Errorf("client: workflow not yet completed (state: %s)", readErrorMessage(resp.Body))
 	case http.StatusNotFound:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: run not found: %s", errResp.Error)
+		return nil, fmt.Errorf("client: run not found: %s", readErrorMessage(resp.Body))
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: outputs failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: outputs failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
@@ -334,7 +329,7 @@ func (c *Client) RegistryPush(ctx context.Context, projectSlug, name, content st
 		return nil, fmt.Errorf("client: marshal registry push request: %w", err)
 	}
 
-	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry"
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/registry"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("client: build registry push request: %w", err)
@@ -359,16 +354,14 @@ func (c *Client) RegistryPush(ctx context.Context, projectSlug, name, content st
 	case http.StatusForbidden:
 		return nil, ErrForbidden
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: registry push failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: registry push failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
 // RegistryList sends GET /projects/{slug}/registry and returns a list of registry entries.
 // Returns ErrUnauthorized on 401, ErrForbidden on 403.
 func (c *Client) RegistryList(ctx context.Context, projectSlug string) ([]api.RegistryEntryResponse, error) {
-	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry"
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/registry"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("client: build registry list request: %w", err)
@@ -392,16 +385,14 @@ func (c *Client) RegistryList(ctx context.Context, projectSlug string) ([]api.Re
 	case http.StatusForbidden:
 		return nil, ErrForbidden
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: registry list failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: registry list failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
 // RegistryPull sends GET /projects/{slug}/registry/{name}?tag={tag} (or ?digest={digest}).
 // Returns ErrUnauthorized on 401, ErrForbidden on 403.
 func (c *Client) RegistryPull(ctx context.Context, projectSlug, name, tag, digest string) (*api.RegistryPullResponse, error) {
-	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/registry/" + url.PathEscape(name)
 	if tag != "" {
 		reqURL += "?tag=" + url.QueryEscape(tag)
 	} else if digest != "" {
@@ -431,9 +422,7 @@ func (c *Client) RegistryPull(ctx context.Context, projectSlug, name, tag, diges
 	case http.StatusForbidden:
 		return nil, ErrForbidden
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: registry pull failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: registry pull failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
@@ -445,7 +434,7 @@ func (c *Client) RegistryTag(ctx context.Context, projectSlug, name, tag, digest
 		return fmt.Errorf("client: marshal registry tag request: %w", err)
 	}
 
-	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name + "/tags"
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/registry/" + url.PathEscape(name) + "/tags"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("client: build registry tag request: %w", err)
@@ -466,16 +455,14 @@ func (c *Client) RegistryTag(ctx context.Context, projectSlug, name, tag, digest
 	case http.StatusForbidden:
 		return ErrForbidden
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return fmt.Errorf("client: registry tag failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return fmt.Errorf("client: registry tag failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
 // RegistryDeleteTag sends DELETE /projects/{slug}/registry/{name}/tags/{tag}.
 // Returns nil on 204. Returns ErrUnauthorized on 401, ErrForbidden on 403.
 func (c *Client) RegistryDeleteTag(ctx context.Context, projectSlug, name, tag string) error {
-	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name + "/tags/" + tag
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/registry/" + url.PathEscape(name) + "/tags/" + url.PathEscape(tag)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("client: build registry delete-tag request: %w", err)
@@ -495,16 +482,14 @@ func (c *Client) RegistryDeleteTag(ctx context.Context, projectSlug, name, tag s
 	case http.StatusForbidden:
 		return ErrForbidden
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return fmt.Errorf("client: registry delete-tag failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return fmt.Errorf("client: registry delete-tag failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
 // RegistryDelete sends DELETE /projects/{slug}/registry/{name}.
 // Returns nil on 204. Returns ErrUnauthorized on 401, ErrForbidden on 403.
 func (c *Client) RegistryDelete(ctx context.Context, projectSlug, name string) error {
-	reqURL := c.serverURL + "/projects/" + projectSlug + "/registry/" + name
+	reqURL := c.serverURL + "/projects/" + url.PathEscape(projectSlug) + "/registry/" + url.PathEscape(name)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("client: build registry delete request: %w", err)
@@ -524,9 +509,7 @@ func (c *Client) RegistryDelete(ctx context.Context, projectSlug, name string) e
 	case http.StatusForbidden:
 		return ErrForbidden
 	default:
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return fmt.Errorf("client: registry delete failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return fmt.Errorf("client: registry delete failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 }
 
@@ -551,9 +534,7 @@ func (c *Client) TaskRun(ctx context.Context, req api.TaskRunRequest) (*api.Task
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		var errResp api.ErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("client: task run failed (status %d): %s", resp.StatusCode, errResp.Error)
+		return nil, fmt.Errorf("client: task run failed (status %d): %s", resp.StatusCode, readErrorMessage(resp.Body))
 	}
 
 	var result api.TaskRunResponse
