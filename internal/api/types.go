@@ -48,6 +48,16 @@ type OutputsResponse struct {
 	Outputs map[string]interface{} `json:"outputs"`
 }
 
+// RunListItem is a single row in the project runs list.
+type RunListItem struct {
+	ID          string `json:"id"`
+	State       string `json:"state"`
+	RegistryRef string `json:"registry_ref,omitempty"`
+	WDLPath     string `json:"wdl_path,omitempty"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 // AbortResponse is the response body for POST /workflows/{run_id}/abort.
 type AbortResponse struct {
 	// RunID is the UUID v4 of the aborted run.

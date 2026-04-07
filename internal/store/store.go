@@ -210,6 +210,8 @@ type Store interface {
 	UpdateRunState(ctx context.Context, id string, state RunState) error
 	// UpdateRunOutputs stores the JSON-encoded outputs for a completed run.
 	UpdateRunOutputs(ctx context.Context, id string, outputsJSON string) error
+	// ListRunsByProject returns all runs for the given project, newest first.
+	ListRunsByProject(ctx context.Context, projectID string) ([]Run, error)
 
 	// Task operations
 

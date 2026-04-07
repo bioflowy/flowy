@@ -95,6 +95,30 @@ func (s *SQLiteStore) UpdateRunOutputs(ctx context.Context, id string, outputsJS
 	return nil
 }
 
+// ListRunsByProject returns all runs for the given project ordered by created_at DESC (newest first).
+func (s *SQLiteStore) ListRunsByProject(ctx context.Context, projectID string) ([]store.Run, error) {
+	rows, err := s.reader.QueryContext(ctx,
+		`SELECT id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id, registry_ref, registry_digest
+		   FROM runs WHERE project_id = ? ORDER BY created_at DESC`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: ListRunsByProject: %w", err)
+	}
+	defer rows.Close()
+
+	runs := []store.Run{}
+	for rows.Next() {
+		r, err := scanRunRows(rows)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: ListRunsByProject scan: %w", err)
+		}
+		runs = append(runs, *r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: ListRunsByProject rows: %w", err)
+	}
+	return runs, nil
+}
+
 // scanRun scans a single run from a *sql.Row.
 // Expects columns: id, wdl_path, inputs_json, state, outputs_json, created_at, updated_at, project_id, registry_ref, registry_digest
 func scanRun(row *sql.Row) (*store.Run, error) {
