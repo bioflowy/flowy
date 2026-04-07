@@ -155,11 +155,10 @@ Plans:
   3. User selects a version and sees the WDL source code rendered in a code viewer.
   4. Admin creates a new tag on a registry entry version; the tag appears on the entry in the list.
   5. Admin deletes or moves a tag; the change is reflected in the entry detail immediately.
-**Plans**: 3 plans
+**Plans**: 2 plans
 Plans:
-- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
-- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
-- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
+- [ ] 29-01-PLAN.md — Registry data layer (hooks/types) and entry list page with admin delete
+- [ ] 29-02-PLAN.md — Entry detail page with version history, WDL source viewer, and tag management
 
 ### Phase 30: File Browsing
 **Goal**: Users can view workflow runs for a project, browse output files for completed runs, and download files directly from S3 or local storage through the browser.
