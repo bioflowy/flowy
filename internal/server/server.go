@@ -58,7 +58,7 @@ func New(cfg *config.Config, st store.Store, backend storage.Backend) *Server {
 	if cfg.Auth.Enabled {
 		secret, err := auth.ResolveJWTSecret(context.Background(), cfg.Auth.JWTSecret, st)
 		if err != nil {
-			log.Printf("server: resolve jwt secret: %v", err)
+			log.Fatalf("server: resolve jwt secret: %v", err)
 		}
 		s.jwtSecret = secret
 	}
