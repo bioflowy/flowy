@@ -51,10 +51,11 @@ Matches existing RegistryPage typography exactly — no new sizes introduced.
 
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
-| Body | 14px (text-sm) | 400 (regular) | 1.5 |
-| Label | 14px (text-sm) | 500 (medium) | 1.4 |
+| Body / Label | 14px (text-sm) | 400 (regular) | 1.5 |
 | Heading | 20px (text-xl) | 600 (semibold) | 1.2 |
 | Dialog title | 18px (text-lg) | 600 (semibold) | 1.2 |
+
+Note: Label role merged into Body at weight 400 (regular). Weight 500 (medium) is not used in this phase — maximum 2 weights: 400 and 600.
 
 Source: RegistryPage `h1` uses `text-xl font-semibold`; shadcn Dialog uses `text-lg font-semibold` for DialogTitle. No new declarations needed.
 
@@ -90,9 +91,9 @@ Kind badge colors (workflow / task) are semantic, not accent:
 | Entry name placeholder | "e.g. align-reads, variant-call" |
 | File picker label | "WDL file" |
 | File picker helper | "Only .wdl files are accepted." |
-| Submit button (idle) | "Push" |
+| Submit button (idle) | "Push WDL" |
 | Submit button (loading) | "Pushing..." (with Loader2 spinner) |
-| Cancel button | "Cancel" |
+| Cancel button | "Discard" |
 | Success toast | "{name} pushed. Digest: {digest_short}" |
 | Empty state heading | "No registry entries." |
 | Empty state body (updated) | "Push a WDL workflow or task using the CLI or the Push WDL button above." |
@@ -103,9 +104,7 @@ Kind badge colors (workflow / task) are semantic, not accent:
 | Destructive confirmation title | "Delete registry entry" |
 | Destructive confirmation body | "This will permanently delete \"{name}\" and all its versions. This action cannot be undone." |
 | Destructive cancel | "Keep Entry" |
-| Destructive confirm | "Delete" |
-
-Note: The destructive confirmation copy is unchanged from existing RegistryPage — no new text needed.
+| Destructive confirm | "Delete Entry" |
 
 ---
 
@@ -114,6 +113,8 @@ Note: The destructive confirmation copy is unchanged from existing RegistryPage 
 New component introduced in this phase:
 
 ### PushWDLDialog
+
+Primary focal point: The "Entry name" input field — auto-focused on dialog open via `autoFocus` prop. This is the first required field and anchors the upload flow.
 
 shadcn components used (all already installed):
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`
