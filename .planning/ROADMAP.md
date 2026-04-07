@@ -169,11 +169,10 @@ Plans:
   2. User selects a completed run and sees its output files listed by path.
   3. User clicks a download button for an output file and the browser downloads the file (works for both S3 and local storage backends).
   4. User can preview the contents of small text output files inline without downloading.
-**Plans**: 3 plans
+**Plans**: 2 plans
 Plans:
-- [ ] 25-01-PLAN.md — Vite + React + TypeScript scaffold with app shell layout
-- [ ] 25-02-PLAN.md — CORS middleware on flowy-server
-- [ ] 25-03-PLAN.md — flowy-ui Go binary, reverse proxy, and Makefile build-ui target
+- [ ] 30-01-PLAN.md — Backend endpoints: ListRunsByProject store method, handleListRuns and handleFileDownload handlers
+- [ ] 30-02-PLAN.md — Frontend: RunsPage, RunDetailPage with download and inline preview, route wiring
 
 ## Progress
 
@@ -207,5 +206,5 @@ Plans:
 | 26. Authentication | 3/3 | Complete    | 2026-04-06 | - |
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
 | 28. Project Management | 2/2 | Complete    | 2026-04-06 | - |
-| 29. Registry Browsing | 2/2 | Complete   | 2026-04-07 | - |
-| 30. File Browsing | v2.0 | 0/TBD | Not started | - |
+| 29. Registry Browsing | 2/2 | Complete    | 2026-04-07 | - |
+| 30. File Browsing | v2.0 | 0/2 | Not started | - |
