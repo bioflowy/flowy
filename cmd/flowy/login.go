@@ -55,6 +55,11 @@ func runLogin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	password := string(passwordBytes)
+	// Zero the byte slice so the plaintext password is not retained in memory
+	// longer than necessary (e.g. visible in heap dumps or core files).
+	for i := range passwordBytes {
+		passwordBytes[i] = 0
+	}
 
 	// Authenticate with the server.
 	c := client.New(*serverFlag)
