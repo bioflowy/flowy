@@ -50,8 +50,11 @@ export function LoginPage() {
         password: values.password,
       })
 
-      // Guard: if no token returned (auth-disabled backend mode)
-      if (!token) return
+      // Guard: if no token returned (auth-disabled backend mode), redirect to app root
+      if (!token) {
+        navigate('/', { replace: true })
+        return
+      }
 
       // Decode JWT payload to extract username and role
       const payload = JSON.parse(atob(token.split('.')[1]))

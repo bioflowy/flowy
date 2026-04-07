@@ -65,12 +65,12 @@ export function Sidebar() {
             { to: `/projects/${activeSlug}`, label: 'Overview', icon: Package },
             { to: `/projects/${activeSlug}/registry`, label: 'Registry', icon: Package },
             { to: `/projects/${activeSlug}/runs`, label: 'Runs', icon: Play },
-            { to: `/projects/${activeSlug}/members`, label: 'Members', icon: Users2 },
+            { to: `/projects/${activeSlug}`, label: 'Members', icon: Users2 },
           ].map((item) => (
             <NavLink
-              key={item.to}
+              key={item.label}
               to={item.to}
-              end={item.label === 'Overview'}
+              end={item.label === 'Overview' || item.label === 'Members'}
               className={({ isActive }) =>
                 `flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
                   isActive
