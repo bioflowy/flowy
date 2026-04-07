@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router'
-import { Package, Play, Users, Users2, Shield, UserCircle } from 'lucide-react'
+import { Package, Play, Users2, Shield, UserCircle } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import {
   Select,
