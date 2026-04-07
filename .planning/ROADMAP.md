@@ -174,6 +174,18 @@ Plans:
 - [ ] 30-01-PLAN.md — Backend endpoints: ListRunsByProject store method, handleListRuns and handleFileDownload handlers
 - [ ] 30-02-PLAN.md — Frontend: RunsPage, RunDetailPage with download and inline preview, route wiring
 
+### Phase 31: Audit Gap Closure
+**Goal**: Fix cross-phase integration gaps found in v2.0 milestone audit — broken sidebar Members route, missing admin guard on GET /users, and auth-disabled mode login hang.
+**Depends on**: Phase 28, Phase 27, Phase 26
+**Requirements**: PROJ-03, PROJ-04, USER-01, AUTH-01
+**Gap Closure**: Closes gaps from v2.0 audit
+**Success Criteria** (what must be TRUE):
+  1. Clicking sidebar "Members" link navigates to the project detail page showing the members table (not the wildcard fallback).
+  2. Non-admin authenticated user calling GET /api/users receives 403 Forbidden.
+  3. When auth is disabled on the backend, the login page redirects to / instead of hanging.
+  4. REQUIREMENTS.md traceability checkboxes for INFRA-01, INFRA-02, INFRA-05 are marked complete.
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -207,4 +219,5 @@ Plans:
 | 27. User Management | 2/2 | Complete    | 2026-04-06 | - |
 | 28. Project Management | 2/2 | Complete    | 2026-04-06 | - |
 | 29. Registry Browsing | 2/2 | Complete    | 2026-04-07 | - |
-| 30. File Browsing | 2/2 | Complete   | 2026-04-07 | - |
+| 30. File Browsing | 2/2 | Complete    | 2026-04-07 | - |
+| 31. Audit Gap Closure | 0/TBD | Not started | - | - |
