@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -41,6 +42,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	filename := filepath.Base(header.Filename)
 	uploadID := uuid.New().String()
 	storagePath := filepath.Join(s.cfg.BaseDir, "projects", proj.Slug, "uploads", uploadID, filename)
+
+	// Guard against a slug that somehow contains a path separator escaping BaseDir.
+	expectedPrefix := filepath.Clean(s.cfg.BaseDir) + string(filepath.Separator)
+	if !strings.HasPrefix(storagePath, expectedPrefix) {
+		writeError(w, http.StatusBadRequest, "invalid upload path")
+		return
+	}
 
 	if err := s.backend.UploadFileStream(storagePath, file); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store uploaded file")
