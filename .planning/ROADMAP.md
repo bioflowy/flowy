@@ -90,7 +90,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 
 **Milestone Goal:** Users can execute workflows from the web UI with parameter input and poll-based status monitoring, push/pull/manage registry entries via CLI, and upload WDL files from the browser.
 
-- [ ] **Phase 32: API Foundation** - Add input schema endpoint and file upload endpoint to flowy-server
+- [x] **Phase 32: API Foundation** - Add input schema endpoint and file upload endpoint to flowy-server (completed 2026-04-07)
 - [ ] **Phase 33: CLI Auth and Registry Commands** - Add `flowy login` and `flowy registry` subcommands
 - [ ] **Phase 34: Browser Registry Upload** - Add WDL upload dialog on RegistryPage
 - [ ] **Phase 35: Run Status Polling** - Add poll-based auto-refresh to RunDetailPage and RunsPage
@@ -109,8 +109,8 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
   4. Both endpoints are protected by JWT and respect project viewer/executor role gating
 **Plans**: 2 plans
 Plans:
-- [ ] 32-01-PLAN.md — Input schema introspection endpoint (API-01)� Input schema introspection endpoint (API-01)
-- [ ] 32-02-PLAN.md — File upload endpoint (API-02)� File upload endpoint (API-02)
+- [x] 32-01-PLAN.md — Input schema introspection endpoint (API-01)� Input schema introspection endpoint (API-01)
+- [x] 32-02-PLAN.md — File upload endpoint (API-02)� File upload endpoint (API-02)
 
 ### Phase 33: CLI Auth and Registry Commands
 **Goal**: CLI users can authenticate once with `flowy login` and then push, list, pull, tag, and delete registry entries without repeating credentials
@@ -170,7 +170,7 @@ Plans:
 | 14-18 | v1.2 | 10/10 | Complete | 2026-03-13 |
 | 19-24 | v1.3 | 14/14 | Complete | 2026-03-20 |
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
-| 32. API Foundation | v2.1 | 0/2 | Not started | - |
+| 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 33. CLI Auth and Registry Commands | v2.1 | 0/TBD | Not started | - |
 | 34. Browser Registry Upload | v2.1 | 0/TBD | Not started | - |
 | 35. Run Status Polling | v2.1 | 0/TBD | Not started | - |
