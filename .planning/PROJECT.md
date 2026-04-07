@@ -76,7 +76,9 @@ Shipped v2.0 with 37,776 LOC Go + 7,557 LOC TypeScript/React. Five milestones co
 
 v2.0 delivered a browser-based management UI as a single-binary deployment (`flowy-ui`). The SPA covers authentication (login, password change, logout with session persistence), user administration (create, deactivate, reactivate, reset password — admin only), project management (create, edit, delete projects; add/remove members; inline role changes), registry browsing (entry list with kind badges, version history, WDL source viewer with line numbers and copy, tag create/move/delete for admins), and file browsing (workflow run list with status badges, output files table, file download via backend proxy, inline text preview for small files). 112 frontend tests across 19 files, all passing. Backend test suite covers all new endpoints.
 
-**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, and web management UI for users, projects, registry, and run output browsing.
+Phase 32 (API Foundation) complete — added input schema introspection endpoint (`GET /projects/{slug}/registry/{name}/inputs`) and file upload endpoint (`POST /projects/{slug}/uploads`) with 12 tests.
+
+**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, web management UI for users, projects, registry, and run output browsing, API input schema introspection, and file upload endpoint.
 
 ## Context
 
