@@ -27,15 +27,15 @@ decisions:
   - "Run button placed in entry header flex row alongside h1, not in the Versions section toolbar"
   - "isGlobalAdmin and canRun follow exact same pattern as RegistryPage.tsx canPush"
 metrics:
-  completed_date: "2026-04-08"
-  duration_minutes: 15
-  tasks: 1
+  completed_date: "2026-04-07"
+  duration_minutes: 20
+  tasks: 2
   files: 2
 ---
 
 # Phase 36 Plan 02: RegistryEntryPage Run Button Integration Summary
 
-**One-liner:** Role-gated Run button in RegistryEntryPage header wires into RunWorkflowDialog with executor/admin/global-admin visibility and 4 new tests covering all role cases.
+**One-liner:** Role-gated Run button in RegistryEntryPage header wires into RunWorkflowDialog with executor/admin/global-admin visibility and 4 new tests covering all role cases, human-verified end-to-end.
 
 ## What Was Built
 
@@ -61,6 +61,16 @@ metrics:
   3. "global admin sees Run button regardless of project role"
   4. "opens RunWorkflowDialog when Run button is clicked"
 
+### Task 2: Visual verification of full workflow execution flow
+
+Human-verified and approved. The full end-to-end flow was confirmed working:
+
+- Run button visible for executor/admin role users on RegistryEntryPage
+- Run button hidden for viewer role users
+- Clicking "Run" opens RunWorkflowDialog with version selector and dynamic input form
+- Workflow submission navigates to RunDetailPage
+- Output files displayed after run completion
+
 ## Test Results
 
 ```
@@ -73,10 +83,6 @@ All 14 RegistryEntryPage tests pass (10 existing + 4 new). All 49 registry tests
 ## Deviations from Plan
 
 None - plan executed exactly as written.
-
-## Task 2: Visual Verification (Checkpoint)
-
-Task 2 is a `checkpoint:human-verify` gate. Execution stopped here per protocol. The automated portion (Task 1) is complete and committed.
 
 ## Known Stubs
 
@@ -93,5 +99,6 @@ No new threat surface. The `canRun` client-side check is defense-in-depth; serve
 | `web/src/features/registry/RegistryEntryPage.tsx` modified | FOUND |
 | `web/src/features/registry/__tests__/RegistryEntryPage.test.tsx` modified | FOUND |
 | Commit `460a968` (Task 1) | FOUND |
+| Task 2 human-verify | APPROVED |
 | TypeScript: `npx tsc --noEmit` | PASS (0 errors) |
 | Tests: 49 passed / 0 failed | PASS |
