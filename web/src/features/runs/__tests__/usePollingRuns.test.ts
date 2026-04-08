@@ -69,16 +69,16 @@ describe('usePollingRuns', () => {
     expect(result).toBe(false)
   })
 
-  it('returns false when data is undefined', () => {
+  it('returns 5000 when data is undefined (keep polling for new runs)', () => {
     const fn = getRefetchInterval()
     const result = fn({ state: { data: undefined } })
-    expect(result).toBe(false)
+    expect(result).toBe(5000)
   })
 
-  it('returns false when data is empty array', () => {
+  it('returns 5000 when data is empty array (keep polling for new runs)', () => {
     const fn = getRefetchInterval()
     const result = fn({ state: { data: [] } })
-    expect(result).toBe(false)
+    expect(result).toBe(5000)
   })
 
   it('passes refetchIntervalInBackground: false', () => {

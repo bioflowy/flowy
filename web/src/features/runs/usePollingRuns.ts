@@ -10,7 +10,9 @@ export function usePollingRuns(slug: string) {
     enabled: !!slug,
     refetchInterval: (query) => {
       const data = query.state.data
-      if (!data || data.length === 0) return false
+      // No data yet or empty list: keep polling so newly submitted runs appear
+      if (!data || data.length === 0) return 5000
+      // All runs terminal: stop polling
       return data.some((r) => !TERMINAL_STATES.has(r.state)) ? 3000 : false
     },
     refetchIntervalInBackground: false,
