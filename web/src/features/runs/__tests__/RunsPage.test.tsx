@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
-// Mock useRuns hook
+// Mock useRuns hook (kept for RunListItem type usage)
 vi.mock('@/features/runs/useRuns', () => ({
   useRuns: vi.fn(),
+  TERMINAL_STATES: new Set(['COMPLETED', 'FAILED', 'ABORTED']),
+}))
+
+// Mock usePollingRuns hook
+vi.mock('@/features/runs/usePollingRuns', () => ({
+  usePollingRuns: vi.fn(),
 }))
 
 // Mock react-router
@@ -13,7 +19,7 @@ vi.mock('react-router', () => ({
   useNavigate: vi.fn(() => mockNavigate),
 }))
 
-import { useRuns } from '@/features/runs/useRuns'
+import { usePollingRuns } from '@/features/runs/usePollingRuns'
 import { RunsPage } from '@/features/runs/RunsPage'
 
 const mockRuns = [
@@ -35,6 +41,17 @@ const mockRuns = [
   },
 ]
 
+const mockRunWithRunning = [
+  {
+    id: 'abcdef12-3456-7890-abcd-ef1234567890',
+    state: 'RUNNING',
+    registry_ref: 'my-workflow:latest',
+    wdl_path: undefined,
+    created_at: '2026-04-01T10:00:00Z',
+    updated_at: '2026-04-01T10:05:00Z',
+  },
+]
+
 function setupMocks({
   runs = mockRuns,
   isLoading = false,
@@ -44,11 +61,11 @@ function setupMocks({
   isLoading?: boolean
   isError?: boolean
 } = {}) {
-  vi.mocked(useRuns).mockReturnValue({
+  vi.mocked(usePollingRuns).mockReturnValue({
     data: isLoading ? undefined : runs,
     isLoading,
     isError,
-  } as ReturnType<typeof useRuns>)
+  } as ReturnType<typeof usePollingRuns>)
 }
 
 describe('RunsPage', () => {
@@ -108,5 +125,17 @@ describe('RunsPage', () => {
     render(<RunsPage />)
 
     expect(screen.getByText(/Failed to load runs/)).toBeInTheDocument()
+  })
+
+  it('shows pulsing dot for RUNNING run', () => {
+    setupMocks({ runs: mockRunWithRunning })
+    render(<RunsPage />)
+    expect(screen.getByLabelText('polling active')).toBeInTheDocument()
+  })
+
+  it('does not show pulsing dot for COMPLETED run', () => {
+    setupMocks()  // default mockRuns has COMPLETED and FAILED
+    render(<RunsPage />)
+    expect(screen.queryByLabelText('polling active')).not.toBeInTheDocument()
   })
 })

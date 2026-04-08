@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-// Mock useRuns hooks
+// Mock useRuns hooks (kept for useRunOutputs)
 vi.mock('@/features/runs/useRuns', () => ({
   useRuns: vi.fn(),
   useRunOutputs: vi.fn(),
+  TERMINAL_STATES: new Set(['COMPLETED', 'FAILED', 'ABORTED']),
+}))
+
+// Mock usePollingRuns hook
+vi.mock('@/features/runs/usePollingRuns', () => ({
+  usePollingRuns: vi.fn(),
 }))
 
 // Mock react-router
@@ -27,7 +33,8 @@ vi.mock('sonner', () => ({
   },
 }))
 
-import { useRuns, useRunOutputs } from '@/features/runs/useRuns'
+import { useRunOutputs } from '@/features/runs/useRuns'
+import { usePollingRuns } from '@/features/runs/usePollingRuns'
 import { RunDetailPage } from '@/features/runs/RunDetailPage'
 
 const mockCompletedRun = {
@@ -67,11 +74,11 @@ function setupMocks({
   outputs?: typeof mockOutputs | null
   outputsLoading?: boolean
 } = {}) {
-  vi.mocked(useRuns).mockReturnValue({
+  vi.mocked(usePollingRuns).mockReturnValue({
     data: [run],
     isLoading: false,
     isError: false,
-  } as ReturnType<typeof useRuns>)
+  } as ReturnType<typeof usePollingRuns>)
   vi.mocked(useRunOutputs).mockReturnValue({
     data: outputsLoading ? undefined : (outputs ?? undefined),
     isLoading: outputsLoading,
@@ -149,11 +156,11 @@ describe('RunDetailPage', () => {
 
   it('does not show Preview button for non-text file outputs (.bam)', () => {
     // Only mock a run with bam file output
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(usePollingRuns).mockReturnValue({
       data: [mockCompletedRun],
       isLoading: false,
       isError: false,
-    } as ReturnType<typeof useRuns>)
+    } as ReturnType<typeof usePollingRuns>)
     vi.mocked(useRunOutputs).mockReturnValue({
       data: {
         run_id: 'test-run-id-1234-5678-abcd',
@@ -168,5 +175,23 @@ describe('RunDetailPage', () => {
     // bam_file should have Download but no Preview
     expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /preview/i })).not.toBeInTheDocument()
+  })
+
+  it('shows pulsing dot for a RUNNING run', () => {
+    setupMocks({ run: mockRunningRun })
+    render(<RunDetailPage />)
+    expect(screen.getByLabelText('polling active')).toBeInTheDocument()
+  })
+
+  it('does not show pulsing dot for a COMPLETED run', () => {
+    setupMocks()
+    render(<RunDetailPage />)
+    expect(screen.queryByLabelText('polling active')).not.toBeInTheDocument()
+  })
+
+  it('shows pulsing dot for a PENDING run', () => {
+    setupMocks({ run: { ...mockCompletedRun, state: 'PENDING' } })
+    render(<RunDetailPage />)
+    expect(screen.getByLabelText('polling active')).toBeInTheDocument()
   })
 })
