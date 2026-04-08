@@ -50,11 +50,11 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-- [ ] UI workflow execution from registry (select, input parameters, submit)
+- ✓ UI workflow execution from registry (select, input parameters, submit) — v2.1
 - ✓ Poll-based run status monitoring in browser — v2.1
-- [ ] Dynamic input form for basic WDL types (String, Int, Float, Boolean, File)
-- [ ] CLI registry commands (push, list, pull, tag, delete)
-- [ ] UI registry upload (push WDL from browser)
+- ✓ Dynamic input form for basic WDL types (String, Int, Float, Boolean, File) — v2.1
+- ✓ CLI registry commands (push, list, pull, tag, delete) — v2.1
+- ✓ UI registry upload (push WDL from browser) — v2.1
 
 ### Out of Scope
 
