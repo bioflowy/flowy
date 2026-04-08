@@ -86,8 +86,8 @@ export function RunDetailPage() {
   const [, setTick] = useState(0)
   useEffect(() => {
     if (run?.state !== 'RUNNING') return
-    const id = setInterval(() => setTick((n) => n + 1), 1000)
-    return () => clearInterval(id)
+    const timer = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(timer)
   }, [run?.state])
 
   async function handleTogglePreview(key: string, path: string) {
