@@ -15,6 +15,8 @@ export interface OutputsResponse {
   outputs: Record<string, unknown>
 }
 
+export const TERMINAL_STATES = new Set(['COMPLETED', 'FAILED', 'ABORTED'])
+
 export function useRuns(slug: string) {
   return useQuery<RunListItem[]>({
     queryKey: ['projects', slug, 'runs'],
