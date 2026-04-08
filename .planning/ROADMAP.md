@@ -170,8 +170,8 @@ Plans:
   5. After the run completes, the RunDetailPage shows the output files section reusing the Phase 30 output viewer
 **Plans**: 2 plans
 Plans:
-- [ ] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
-- [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
+- [ ] 36-01-PLAN.md — RunWorkflowDialog component + hooks + dynamic form + tests (EXEC-01, EXEC-02, EXEC-03)
+- [ ] 36-02-PLAN.md — Wire into RegistryEntryPage with role gating + visual verification (EXEC-01, EXEC-05)
 
 ## Progress
 
