@@ -100,3 +100,32 @@ export function useDeleteTag(slug: string, name: string) {
     },
   })
 }
+
+export interface RegistryInputItem {
+  name: string
+  type: string
+  optional: boolean
+  default: string | null
+}
+
+export interface RegistryInputsResponse {
+  inputs: RegistryInputItem[]
+}
+
+export function useRegistryInputs(slug: string, name: string, tag: string) {
+  return useQuery<RegistryInputsResponse>({
+    queryKey: ['projects', slug, 'registry', name, 'inputs', tag],
+    queryFn: () => apiClient.get(`/projects/${slug}/registry/${name}/inputs?tag=${encodeURIComponent(tag)}`),
+    enabled: !!slug && !!name && !!tag,
+  })
+}
+
+export function useRunWorkflow(slug: string) {
+  const queryClient = useQueryClient()
+  return useMutation<{ run_id: string }, Error, { registry_ref: string; inputs: Record<string, unknown> }>({
+    mutationFn: ({ registry_ref, inputs }) =>
+      apiClient.post(`/projects/${slug}/workflows`, { registry_ref, inputs }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['projects', slug, 'runs'] }),
+  })
+}
