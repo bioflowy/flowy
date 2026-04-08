@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { useRuns, useRunOutputs } from '@/features/runs/useRuns'
+import { useRunOutputs, TERMINAL_STATES } from '@/features/runs/useRuns'
+import { usePollingRuns } from '@/features/runs/usePollingRuns'
 import { useAuthStore } from '@/store/authStore'
 import { formatDuration } from '@/features/runs/RunsPage'
 import { Badge } from '@/components/ui/badge'
@@ -70,7 +71,7 @@ async function fetchPreview(slug: string, runId: string, path: string): Promise<
 export function RunDetailPage() {
   const { slug, id } = useParams<{ slug: string; id: string }>()
 
-  const { data: runs } = useRuns(slug ?? '')
+  const { data: runs } = usePollingRuns(slug ?? '')
   const run = runs?.find((r) => r.id === id)
 
   const { data: outputsData, isLoading: outputsLoading } = useRunOutputs(
@@ -81,6 +82,13 @@ export function RunDetailPage() {
   const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({})
   const [previewContent, setPreviewContent] = useState<Record<string, string | null | 'loading' | 'error'>>({})
   const [downloading, setDownloading] = useState<Record<string, boolean>>({})
+
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (run?.state !== 'RUNNING') return
+    const id = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [run?.state])
 
   async function handleTogglePreview(key: string, path: string) {
     if (previewOpen[key]) {
@@ -283,9 +291,17 @@ export function RunDetailPage() {
       </TooltipProvider>
       <p className="font-mono text-sm text-muted-foreground mt-1">{run.id}</p>
       <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-        <Badge variant="outline" className={statusBadgeClassName(run.state)}>
-          {run.state}
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          {run.state && !TERMINAL_STATES.has(run.state) && (
+            <span
+              className="inline-block h-2 w-2 rounded-full bg-yellow-400 animate-pulse"
+              aria-label="polling active"
+            />
+          )}
+          <Badge variant="outline" className={statusBadgeClassName(run.state)}>
+            {run.state}
+          </Badge>
+        </div>
         <span>
           {new Date(run.created_at).toLocaleString('en-US', {
             dateStyle: 'medium',

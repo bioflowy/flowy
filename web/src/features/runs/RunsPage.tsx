@@ -14,7 +14,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useRuns, RunListItem } from '@/features/runs/useRuns'
+import { type RunListItem, TERMINAL_STATES } from '@/features/runs/useRuns'
+import { usePollingRuns } from '@/features/runs/usePollingRuns'
 
 function statusBadgeClassName(state: string): string {
   switch (state) {
@@ -54,7 +55,7 @@ function truncateSource(source: string | undefined): string {
 export function RunsPage() {
   const { slug } = useParams<{ slug: string }>()
   const navigate = useNavigate()
-  const { data: runs, isLoading, isError } = useRuns(slug ?? '')
+  const { data: runs, isLoading, isError } = usePollingRuns(slug ?? '')
 
   return (
     <div className="p-6">
@@ -125,9 +126,17 @@ export function RunsPage() {
                     </TooltipProvider>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={statusBadgeClassName(run.state)}>
-                      {run.state}
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      {!TERMINAL_STATES.has(run.state) && (
+                        <span
+                          className="inline-block h-2 w-2 rounded-full bg-yellow-400 animate-pulse"
+                          aria-label="polling active"
+                        />
+                      )}
+                      <Badge variant="outline" className={statusBadgeClassName(run.state)}>
+                        {run.state}
+                      </Badge>
+                    </div>
                   </TableCell>
                   <TableCell>
                     {truncateSource(run.registry_ref || run.wdl_path)}
