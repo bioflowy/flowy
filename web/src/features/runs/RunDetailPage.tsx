@@ -118,7 +118,9 @@ export function RunDetailPage() {
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = path.split('/').pop() ?? 'file'
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(a.href)
     } catch {
       toast.error('Download failed. Please try again.')
