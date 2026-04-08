@@ -329,7 +329,7 @@ export function RunWorkflowDialog({
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <Info className="ml-1 inline h-4 w-4 text-muted-foreground cursor-help" />
+                                      <Info data-testid="file-input-tooltip-trigger" className="ml-1 inline h-4 w-4 text-muted-foreground cursor-help" />
                                     </TooltipTrigger>
                                     <TooltipContent>
                                       <p>

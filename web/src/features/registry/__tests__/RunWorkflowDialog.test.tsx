@@ -181,11 +181,9 @@ describe('RunWorkflowDialog', () => {
   it('File input shows tooltip with server-accessible path explanation', async () => {
     render(<RunWorkflowDialog {...defaultProps} />)
 
-    // Hover the Info icon to trigger the tooltip
-    const infoIcon = document.querySelector('svg.lucide-info') as HTMLElement
-    if (infoIcon) {
-      await user.hover(infoIcon)
-    }
+    // Assert the Info icon is present before hovering — fails explicitly if missing
+    const infoIcon = screen.getByTestId('file-input-tooltip-trigger')
+    await user.hover(infoIcon)
 
     await waitFor(() => {
       // Tooltip content may be rendered multiple times (visible + hidden by Radix)
