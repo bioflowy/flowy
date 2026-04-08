@@ -47,14 +47,15 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ Registry browsing (entries, versions, tags) — v2.0
 - ✓ File browsing and download (S3/local storage output files) — v2.0
 - ✓ CORS support on flowy-server for development mode — v2.0
-
-### Active
-
 - ✓ UI workflow execution from registry (select, input parameters, submit) — v2.1
 - ✓ Poll-based run status monitoring in browser — v2.1
 - ✓ Dynamic input form for basic WDL types (String, Int, Float, Boolean, File) — v2.1
 - ✓ CLI registry commands (push, list, pull, tag, delete) — v2.1
 - ✓ UI registry upload (push WDL from browser) — v2.1
+
+### Active
+
+(None — v2.1 complete, next milestone not yet defined)
 
 ### Out of Scope
 
@@ -72,7 +73,9 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ## Current State
 
-Shipped v2.0 with 37,776 LOC Go + 7,557 LOC TypeScript/React. Five milestones complete (v1.0–v2.0).
+Shipped v2.1 with 37,776 LOC Go + 8,582 LOC TypeScript/React. Six milestones complete (v1.0–v2.1).
+
+v2.1 delivered CLI authentication (`flowy login` with JWT credential storage), CLI registry commands (push/list/pull/tag/delete), browser-based WDL upload, poll-based run status monitoring with auto-stop, and browser workflow execution with dynamic input forms per WDL type. 158 frontend tests across 22 files, all passing.
 
 v2.0 delivered a browser-based management UI as a single-binary deployment (`flowy-ui`). The SPA covers authentication (login, password change, logout with session persistence), user administration (create, deactivate, reactivate, reset password — admin only), project management (create, edit, delete projects; add/remove members; inline role changes), registry browsing (entry list with kind badges, version history, WDL source viewer with line numbers and copy, tag create/move/delete for admins), and file browsing (workflow run list with status badges, output files table, file download via backend proxy, inline text preview for small files). 112 frontend tests across 19 files, all passing. Backend test suite covers all new endpoints.
 

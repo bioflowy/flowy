@@ -1,5 +1,24 @@
 # Milestones
 
+## v2.1 Job Execution & Registry CLI (Shipped: 2026-04-08)
+
+**Phases completed:** 5 phases, 10 plans, 9 tasks
+
+**Key accomplishments:**
+
+- One-liner:
+- One-liner:
+- One-liner:
+- One-liner:
+- `usePushWDL(slug)`
+- One-liner:
+- One-liner:
+- RunsPage and RunDetailPage wired to usePollingRuns with pulsing yellow dot for PENDING/RUNNING states and 1-second duration tick for RUNNING runs on detail page.
+- One-liner:
+- One-liner:
+
+---
+
 ## v2.0 Web UI — Management (Shipped: 2026-04-07)
 
 **Phases completed:** 7 phases, 16 plans, 2 tasks
