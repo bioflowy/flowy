@@ -94,7 +94,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 - [x] **Phase 33: CLI Auth and Registry Commands** - Add `flowy login` and `flowy registry` subcommands (completed 2026-04-07)
 - [x] **Phase 34: Browser Registry Upload** - Add WDL upload dialog on RegistryPage (completed 2026-04-07)
 - [x] **Phase 35: Run Status Polling** - Add poll-based auto-refresh to RunDetailPage and RunsPage (completed 2026-04-08)
-- [ ] **Phase 36: UI Workflow Execution** - Add execution dialog with dynamic input form and result display
+- [x] **Phase 36: UI Workflow Execution** - Add execution dialog with dynamic input form and result display (completed 2026-04-08)
 
 ## Phase Details
 
@@ -170,8 +170,8 @@ Plans:
   5. After the run completes, the RunDetailPage shows the output files section reusing the Phase 30 output viewer
 **Plans**: 2 plans
 Plans:
-- [ ] 36-01-PLAN.md — RunWorkflowDialog component + hooks + dynamic form + tests (EXEC-01, EXEC-02, EXEC-03)
-- [ ] 36-02-PLAN.md — Wire into RegistryEntryPage with role gating + visual verification (EXEC-01, EXEC-05)
+- [x] 36-01-PLAN.md — RunWorkflowDialog component + hooks + dynamic form + tests (EXEC-01, EXEC-02, EXEC-03)
+- [x] 36-02-PLAN.md — Wire into RegistryEntryPage with role gating + visual verification (EXEC-01, EXEC-05)
 
 ## Progress
 
@@ -186,4 +186,4 @@ Plans:
 | 33. CLI Auth and Registry Commands | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 34. Browser Registry Upload | v2.1 | 2/2 | Complete   | 2026-04-07 |
 | 35. Run Status Polling | v2.1 | 2/2 | Complete    | 2026-04-08 |
-| 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
+| 36. UI Workflow Execution | v2.1 | 2/2 | Complete    | 2026-04-08 |

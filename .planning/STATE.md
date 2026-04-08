@@ -4,13 +4,13 @@ milestone: v2.1
 milestone_name: Job Execution & Registry CLI
 status: executing
 stopped_at: Roadmap written — ROADMAP.md, STATE.md, REQUIREMENTS.md traceability updated
-last_updated: "2026-04-08T01:25:49.454Z"
+last_updated: "2026-04-08T02:14:12.901Z"
 last_activity: 2026-04-08
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 5
+  total_plans: 10
+  completed_plans: 10
   percent: 100
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 34 — Browser Registry Upload
+**Current focus:** Phase 36 — UI Workflow Execution
 
 ## Current Position
 
 Phase: 36
 Plan: Not started
-Status: Executing Phase 34
+Status: Executing Phase 36
 Last activity: 2026-04-08
 
 Progress: [░░░░░░░░░░] 0%
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 6 (v2.1)
+- Total plans completed: 8 (v2.1)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | 32 | 2 | - | - |
 | 33 | 2 | - | - |
 | 35 | 2 | - | - |
+| 36 | 2 | - | - |
 
 *Updated after each plan completion*
 
