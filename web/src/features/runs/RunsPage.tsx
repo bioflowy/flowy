@@ -34,9 +34,12 @@ export function formatDuration(createdAt: string, updatedAt: string, state: stri
   if (state === 'PENDING') return '\u2014'
 
   const start = new Date(createdAt).getTime()
-  const end = state === 'RUNNING' ? Date.now() : new Date(updatedAt).getTime()
-  const totalSeconds = Math.floor((end - start) / 1000)
+  const rawEnd = state === 'RUNNING' ? Date.now() : new Date(updatedAt).getTime()
 
+  if (isNaN(start) || isNaN(rawEnd)) return '\u2014'
+
+  const totalSeconds = Math.floor((rawEnd - start) / 1000)
+  if (totalSeconds < 0) return '\u2014'
   if (totalSeconds < 60) return `${totalSeconds}s`
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
