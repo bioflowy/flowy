@@ -93,7 +93,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 - [x] **Phase 32: API Foundation** - Add input schema endpoint and file upload endpoint to flowy-server (completed 2026-04-07)
 - [x] **Phase 33: CLI Auth and Registry Commands** - Add `flowy login` and `flowy registry` subcommands (completed 2026-04-07)
 - [x] **Phase 34: Browser Registry Upload** - Add WDL upload dialog on RegistryPage (completed 2026-04-07)
-- [ ] **Phase 35: Run Status Polling** - Add poll-based auto-refresh to RunDetailPage and RunsPage
+- [x] **Phase 35: Run Status Polling** - Add poll-based auto-refresh to RunDetailPage and RunsPage (completed 2026-04-08)
 - [ ] **Phase 36: UI Workflow Execution** - Add execution dialog with dynamic input form and result display
 
 ## Phase Details
@@ -156,7 +156,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 35-01-PLAN.md — usePollingRuns hook + TERMINAL_STATES export + hook tests
-- [ ] 35-02-PLAN.md — Wire polling into RunsPage and RunDetailPage with pulsing dot and duration tick
+- [x] 35-02-PLAN.md — Wire polling into RunsPage and RunDetailPage with pulsing dot and duration tick
 
 ### Phase 36: UI Workflow Execution
 **Goal**: Browser users with executor role can select a workflow from the registry, fill in input parameters, submit execution, and view results — all from the browser
@@ -185,5 +185,5 @@ Plans:
 | 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 33. CLI Auth and Registry Commands | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 34. Browser Registry Upload | v2.1 | 2/2 | Complete   | 2026-04-07 |
-| 35. Run Status Polling | v2.1 | 1/2 | In Progress|  |
+| 35. Run Status Polling | v2.1 | 2/2 | Complete    | 2026-04-08 |
 | 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
