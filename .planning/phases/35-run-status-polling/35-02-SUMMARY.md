@@ -48,7 +48,7 @@ completed: "2026-04-07"
 - **Duration:** ~12 min
 - **Started:** 2026-04-07T01:05:00Z
 - **Completed:** 2026-04-07T01:17:00Z
-- **Tasks:** 2 of 3 complete (Task 3 is human-verify checkpoint)
+- **Tasks:** 3 of 3 complete
 - **Files modified:** 4
 
 ## Accomplishments
@@ -63,7 +63,7 @@ completed: "2026-04-07"
 
 1. **Task 1: Wire polling and pulsing dot into RunsPage and RunDetailPage** - `3a152c4` (feat)
 2. **Task 2: Extend page tests for polling indicator and hook swap** - `fda87ae` (test)
-3. **Task 3: Visual verification** - checkpoint:human-verify (pending human)
+3. **Task 3: Visual verification** - checkpoint:human-verify (approved by user)
 
 ## Files Created/Modified
 
@@ -96,8 +96,8 @@ None.
 
 ## Next Phase Readiness
 
-- EXEC-04 (Poll-based run status monitoring in browser) is complete pending human visual verification
-- Task 3 checkpoint requires human to verify: pulsing dot visibility, 3-second poll auto-refresh, 1-second duration tick, polling stops on terminal state, background tab pause behavior
+- EXEC-04 (Poll-based run status monitoring in browser) is complete — human visual verification approved
+- Human verified: pulsing dot visibility, 3-second poll auto-refresh, 1-second duration tick, polling stops on terminal state, background tab pause behavior
 - No blockers for subsequent phases
 
 ---

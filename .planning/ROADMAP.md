@@ -155,7 +155,7 @@ Plans:
   4. Opening a RunDetailPage for an already-completed run never triggers polling
 **Plans**: 2 plans
 Plans:
-- [ ] 35-01-PLAN.md — usePollingRuns hook + TERMINAL_STATES export + hook tests
+- [x] 35-01-PLAN.md — usePollingRuns hook + TERMINAL_STATES export + hook tests
 - [ ] 35-02-PLAN.md — Wire polling into RunsPage and RunDetailPage with pulsing dot and duration tick
 
 ### Phase 36: UI Workflow Execution
@@ -185,5 +185,5 @@ Plans:
 | 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 33. CLI Auth and Registry Commands | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 34. Browser Registry Upload | v2.1 | 2/2 | Complete   | 2026-04-07 |
-| 35. Run Status Polling | v2.1 | 0/2 | Not started | - |
+| 35. Run Status Polling | v2.1 | 1/2 | In Progress|  |
 | 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
