@@ -172,7 +172,7 @@ export function RunWorkflowDialog({
     return defaults
   }, [inputsData?.inputs])
 
-  const form = useForm({
+  const form = useForm<Record<string, unknown>>({
     resolver: zodResolver(schema),
     defaultValues: computedDefaults,
   })
@@ -245,7 +245,7 @@ export function RunWorkflowDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit as Parameters<typeof form.handleSubmit>[0])} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {/* Version selector */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Version</label>
@@ -288,7 +288,7 @@ export function RunWorkflowDialog({
               </p>
             )}
 
-            {!inputsLoading && !inputsError && inputsData?.inputs.length === 0 && (
+            {!inputsLoading && !inputsError && inputsData?.inputs?.length === 0 && (
               <p className="text-muted-foreground text-sm">
                 This workflow declares no inputs. Click Run Workflow to execute with defaults.
               </p>
