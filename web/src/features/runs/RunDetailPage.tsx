@@ -73,7 +73,7 @@ async function fetchPreview(slug: string, runId: string, path: string): Promise<
 export function RunDetailPage() {
   const { slug, id } = useParams<{ slug: string; id: string }>()
 
-  const { data: runs } = usePollingRuns(slug ?? '')
+  const { data: runs, isLoading } = usePollingRuns(slug ?? '')
   const run = runs?.find((r) => r.id === id)
 
   const { data: outputsData, isLoading: outputsLoading } = useRunOutputs(
@@ -131,10 +131,18 @@ export function RunDetailPage() {
     }
   }
 
-  if (!run) {
+  if (isLoading && !run) {
     return (
       <div className="p-6">
         <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+      </div>
+    )
+  }
+
+  if (!run) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground text-sm">Run not found.</p>
       </div>
     )
   }
