@@ -55,9 +55,13 @@ Exceptions:
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px (text-sm) | 400 (regular) | 1.5 |
-| Label | 14px (text-sm) | 500 (medium, via FormLabel) | 1.25 |
+| Label | 14px (text-sm) | 400 (regular) | 1.25 |
 | Heading (dialog title) | 18px (text-lg, shadcn DialogTitle default) | 600 (semibold) | 1.2 |
 | Subtext / helper | 12px (text-xs) | 400 (regular) | 1.4 |
+
+**Declared weights: 400 (regular) and 600 (semibold) only.**
+
+Note: shadcn's `FormLabel` component applies `font-medium` (weight 500) as its own internal rendering default. This is a component-level styling detail, not a declared design system weight. Do not add 500 to the weight inventory.
 
 **Source:** Derived from existing components (PushWDLDialog, CreateTagDialog, RegistryEntryPage) — no custom overrides.
 
