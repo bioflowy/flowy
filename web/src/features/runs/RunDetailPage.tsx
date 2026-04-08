@@ -48,7 +48,9 @@ function isFilePath(value: unknown): boolean {
 const PREVIEWABLE_EXTENSIONS = new Set(['.txt', '.log', '.wdl', '.json', '.yaml', '.yml', '.tsv', '.csv'])
 
 function isPreviewable(path: string): boolean {
-  const ext = path.slice(path.lastIndexOf('.'))
+  const dotIndex = path.lastIndexOf('.')
+  if (dotIndex === -1) return false
+  const ext = path.slice(dotIndex)
   return PREVIEWABLE_EXTENSIONS.has(ext)
 }
 
