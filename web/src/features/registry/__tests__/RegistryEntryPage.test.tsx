@@ -42,6 +42,11 @@ vi.mock('@/features/registry/DeleteTagDialog', () => ({
     open ? <div data-testid="delete-tag-dialog" /> : null,
 }))
 
+vi.mock('@/features/registry/RunWorkflowDialog', () => ({
+  RunWorkflowDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="run-workflow-dialog" /> : null,
+}))
+
 import { useRegistryVersions, useRegistryContent } from '@/features/registry/useRegistry'
 import { useProjectMembers } from '@/features/projects/useProjects'
 import { useAuthStore } from '@/store/authStore'
@@ -71,9 +76,11 @@ const mockContent = {
 
 const adminMembers = [{ username: 'alice', role: 'admin', user_id: 'u1', created_at: '2026-01-01T00:00:00Z' }]
 const viewerMembers = [{ username: 'alice', role: 'viewer', user_id: 'u1', created_at: '2026-01-01T00:00:00Z' }]
+const executorMembers = [{ username: 'alice', role: 'executor', user_id: 'u1', created_at: '2026-01-01T00:00:00Z' }]
 
 function setupMocks({
   username = 'alice',
+  globalRole,
   versions = mockVersions,
   versionsLoading = false,
   content = mockContent,
@@ -82,6 +89,7 @@ function setupMocks({
   members = adminMembers,
 }: {
   username?: string
+  globalRole?: string
   versions?: typeof mockVersions
   versionsLoading?: boolean
   content?: typeof mockContent | null
@@ -89,7 +97,9 @@ function setupMocks({
   contentError?: boolean
   members?: typeof adminMembers
 } = {}) {
-  vi.mocked(useAuthStore).mockImplementation((selector) => selector({ username } as never))
+  vi.mocked(useAuthStore).mockImplementation((selector) =>
+    selector({ username, role: globalRole ?? 'user' } as never)
+  )
   vi.mocked(useRegistryVersions).mockReturnValue({
     data: versionsLoading ? undefined : versions,
     isLoading: versionsLoading,
@@ -220,6 +230,42 @@ describe('RegistryEntryPage', () => {
     await user.click(deleteButtons[0])
     await waitFor(() => {
       expect(screen.getByTestId('delete-tag-dialog')).toBeInTheDocument()
+    })
+  })
+
+  it('executor sees Run button; viewer does not', () => {
+    // Executor
+    setupMocks({ members: executorMembers })
+    const { unmount } = render(<RegistryEntryPage />)
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+    unmount()
+
+    // Viewer
+    setupMocks({ members: viewerMembers })
+    render(<RegistryEntryPage />)
+    expect(screen.queryByRole('button', { name: 'Run' })).not.toBeInTheDocument()
+  })
+
+  it('admin sees Run button', () => {
+    setupMocks({ members: adminMembers })
+    render(<RegistryEntryPage />)
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+  })
+
+  it('global admin sees Run button regardless of project role', () => {
+    setupMocks({ members: viewerMembers, globalRole: 'admin' })
+    render(<RegistryEntryPage />)
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+  })
+
+  it('opens RunWorkflowDialog when Run button is clicked', async () => {
+    setupMocks({ members: executorMembers })
+    render(<RegistryEntryPage />)
+
+    expect(screen.queryByTestId('run-workflow-dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Run' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('run-workflow-dialog')).toBeInTheDocument()
     })
   })
 })

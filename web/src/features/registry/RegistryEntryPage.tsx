@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import { WDLSourceViewer } from '@/features/registry/WDLSourceViewer'
 import { CreateTagDialog } from '@/features/registry/CreateTagDialog'
 import { DeleteTagDialog } from '@/features/registry/DeleteTagDialog'
+import { RunWorkflowDialog } from '@/features/registry/RunWorkflowDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -53,16 +54,25 @@ export function RegistryEntryPage() {
 
   const { data: members } = useProjectMembers(slug!)
   const currentUsername = useAuthStore((s) => s.username)
+  const globalRole = useAuthStore((s) => s.role)
   const currentMember = members?.find((m) => m.username === currentUsername)
   const isProjectAdmin = currentMember?.role === 'admin'
+  const isGlobalAdmin = globalRole === 'admin'
+  const canRun = isGlobalAdmin || currentMember?.role === 'admin' || currentMember?.role === 'executor'
 
   const [createTagOpen, setCreateTagOpen] = useState(false)
   const [deleteTagName, setDeleteTagName] = useState<string | null>(null)
+  const [runOpen, setRunOpen] = useState(false)
 
   return (
     <div className="p-6">
       {/* Entry header */}
-      <h1 className="text-xl font-semibold">{name}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">{name}</h1>
+        {canRun && (
+          <Button onClick={() => setRunOpen(true)}>Run</Button>
+        )}
+      </div>
       <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
         {content ? (
           <>
@@ -207,6 +217,13 @@ export function RegistryEntryPage() {
         slug={slug!}
         entryName={name!}
         tagName={deleteTagName}
+      />
+      <RunWorkflowDialog
+        open={runOpen}
+        onOpenChange={setRunOpen}
+        slug={slug!}
+        name={name!}
+        versions={versions ?? []}
       />
     </div>
   )
