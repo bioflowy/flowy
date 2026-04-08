@@ -92,7 +92,7 @@ Full details: `.planning/milestones/v2.0-ROADMAP.md`
 
 - [x] **Phase 32: API Foundation** - Add input schema endpoint and file upload endpoint to flowy-server (completed 2026-04-07)
 - [x] **Phase 33: CLI Auth and Registry Commands** - Add `flowy login` and `flowy registry` subcommands (completed 2026-04-07)
-- [ ] **Phase 34: Browser Registry Upload** - Add WDL upload dialog on RegistryPage
+- [x] **Phase 34: Browser Registry Upload** - Add WDL upload dialog on RegistryPage (completed 2026-04-07)
 - [ ] **Phase 35: Run Status Polling** - Add poll-based auto-refresh to RunDetailPage and RunsPage
 - [ ] **Phase 36: UI Workflow Execution** - Add execution dialog with dynamic input form and result display
 
@@ -142,7 +142,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
-- [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
+- [x] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
 
 ### Phase 35: Run Status Polling
 **Goal**: Browser users see live run status without manual page refresh, and polling stops automatically when a run reaches a terminal state
@@ -155,8 +155,8 @@ Plans:
   4. Opening a RunDetailPage for an already-completed run never triggers polling
 **Plans**: 2 plans
 Plans:
-- [ ] 34-01-PLAN.md — PushWDLDialog component + usePushWDL hook + dialog tests
-- [ ] 34-02-PLAN.md — Wire into RegistryPage with role gating + page tests + visual verification
+- [ ] 35-01-PLAN.md — usePollingRuns hook + TERMINAL_STATES export + hook tests
+- [ ] 35-02-PLAN.md — Wire polling into RunsPage and RunDetailPage with pulsing dot and duration tick
 
 ### Phase 36: UI Workflow Execution
 **Goal**: Browser users with executor role can select a workflow from the registry, fill in input parameters, submit execution, and view results — all from the browser
@@ -184,6 +184,6 @@ Plans:
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32. API Foundation | v2.1 | 2/2 | Complete    | 2026-04-07 |
 | 33. CLI Auth and Registry Commands | v2.1 | 2/2 | Complete    | 2026-04-07 |
-| 34. Browser Registry Upload | v2.1 | 1/2 | In Progress|  |
-| 35. Run Status Polling | v2.1 | 0/TBD | Not started | - |
+| 34. Browser Registry Upload | v2.1 | 2/2 | Complete   | 2026-04-07 |
+| 35. Run Status Polling | v2.1 | 0/2 | Not started | - |
 | 36. UI Workflow Execution | v2.1 | 0/TBD | Not started | - |
