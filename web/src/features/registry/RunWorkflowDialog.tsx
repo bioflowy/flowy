@@ -65,12 +65,15 @@ function getDefaultTag(versions: RegistryVersionResponse[]): string {
   for (const v of versions) {
     if (v.tags.includes('latest')) return 'latest'
   }
-  return versions[0].tags[0] ?? ''
+  // Fall back to first tag, or digest if version is tagless
+  return versions[0].tags[0] ?? versions[0].digest
 }
 
-function getDigestForTag(versions: RegistryVersionResponse[], tag: string): string {
+function getDigestForTag(versions: RegistryVersionResponse[], tagOrDigest: string): string {
   for (const v of versions) {
-    if (v.tags.includes(tag)) return v.digest
+    if (v.tags.includes(tagOrDigest)) return v.digest
+    // Tagless versions are selected by their full digest
+    if (v.digest === tagOrDigest) return v.digest
   }
   return ''
 }
@@ -254,13 +257,22 @@ export function RunWorkflowDialog({
                   <SelectValue placeholder="Select a version" />
                 </SelectTrigger>
                 <SelectContent>
-                  {versions.map((v) =>
-                    v.tags.map((tag) => (
-                      <SelectItem key={tag} value={tag}>
-                        {tag}
+                  {versions.map((v) => {
+                    if (v.tags.length > 0) {
+                      return v.tags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
+                        </SelectItem>
+                      ))
+                    }
+                    // Tagless version — use digest as both key and value
+                    const shortDigest = truncateDigest(v.digest)
+                    return (
+                      <SelectItem key={v.digest} value={v.digest}>
+                        {shortDigest}
                       </SelectItem>
-                    ))
-                  )}
+                    )
+                  })}
                 </SelectContent>
               </Select>
               {selectedDigest && (
