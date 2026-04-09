@@ -51,12 +51,12 @@ These requirements were considered but deferred to a later milestone:
 
 | REQ-ID | Phase | Plan |
 |--------|-------|------|
-| FILE-01 | — | — |
-| FILE-02 | — | — |
-| IMPORT-01 | — | — |
-| IMPORT-02 | — | — |
-| IMPORT-03 | — | — |
-| AUTOREG-01 | — | — |
-| ANNOT-01 | — | — |
-| PICKER-01 | — | — |
-| PICKER-02 | — | — |
+| FILE-01 | Phase 38 | — |
+| FILE-02 | Phase 38 | — |
+| IMPORT-01 | Phase 38 | — |
+| IMPORT-02 | Phase 38 | — |
+| IMPORT-03 | Phase 38 | — |
+| AUTOREG-01 | Phase 39 | — |
+| ANNOT-01 | Phase 39 | — |
+| PICKER-01 | Phase 40 | — |
+| PICKER-02 | Phase 40 | — |
