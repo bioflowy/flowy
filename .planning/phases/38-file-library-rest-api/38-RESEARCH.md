@@ -468,7 +468,7 @@ Step 2.6: SKIPPED — Phase 38 is code/config-only changes. All storage backends
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **S3 import: which bucket does `backend.Stat(key)` use?**
    - What we know: `S3Backend` is constructed with a specific bucket from `cfg.Storage.Bucket`. `Stat(key)` issues HeadObject against that configured bucket.
