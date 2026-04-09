@@ -46,6 +46,10 @@ type Backend interface {
 	// response body, pipe) to avoid double-buffering large payloads.
 	UploadFileStream(path string, r io.Reader) error
 	DownloadFileStream(path string, w io.Writer) error
+
+	// Stat returns the size in bytes of the file or object at path.
+	// Returns (0, error) if the file does not exist or cannot be inspected.
+	Stat(path string) (int64, error)
 }
 
 // ParseS3URI parses an S3 URI of the form "s3://bucket/key" and returns the

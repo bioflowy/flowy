@@ -28,6 +28,7 @@ type S3APIClient interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 }
 
 // TransferManagerUploader is the subset of the transfermanager.Client API used
@@ -270,6 +271,22 @@ func (b *S3Backend) DownloadDirectory(path string, localDst string) error {
 		continuationToken = out.NextContinuationToken
 	}
 	return nil
+}
+
+// Stat returns the size in bytes of the S3 object at the given key.
+// Uses HeadObject internally -- does not download the object body.
+func (b *S3Backend) Stat(path string) (int64, error) {
+	out, err := b.s3c.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: aws.String(b.bucket),
+		Key:    aws.String(path),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("s3: stat %s: %w", path, err)
+	}
+	if out.ContentLength == nil {
+		return 0, nil
+	}
+	return *out.ContentLength, nil
 }
 
 // WriteJSON marshals v to JSON and uploads it to the S3 key identified by path.

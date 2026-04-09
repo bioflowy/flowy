@@ -197,3 +197,40 @@ func TestNewBackend_ReturnsBackend(t *testing.T) {
 	// Verify it satisfies the Backend interface at compile time (type assertion).
 	var _ storage.Backend = b
 }
+
+// TestLocalBackend_Stat verifies that Stat returns correct file sizes and errors.
+func TestLocalBackend_Stat(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		b := &storage.LocalBackend{}
+		dir := t.TempDir()
+		path := filepath.Join(dir, "testfile.txt")
+
+		// Write exactly 42 bytes.
+		content := make([]byte, 42)
+		for i := range content {
+			content[i] = 'x'
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+
+		size, err := b.Stat(path)
+		if err != nil {
+			t.Fatalf("Stat returned unexpected error: %v", err)
+		}
+		if size != 42 {
+			t.Errorf("Stat size: want 42, got %d", size)
+		}
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		b := &storage.LocalBackend{}
+		size, err := b.Stat("/nonexistent/path/to/missing/file.txt")
+		if err == nil {
+			t.Fatal("Stat on non-existent file should return error, got nil")
+		}
+		if size != 0 {
+			t.Errorf("Stat on non-existent file should return size 0, got %d", size)
+		}
+	})
+}

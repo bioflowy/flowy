@@ -103,6 +103,15 @@ func (l *LocalBackend) DownloadFileStream(path string, w io.Writer) error {
 	return nil
 }
 
+// Stat returns the size in bytes of the local file at path.
+func (l *LocalBackend) Stat(path string) (int64, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("storage: stat %q: %w", path, err)
+	}
+	return fi.Size(), nil
+}
+
 // WriteJSON marshals v to JSON and writes it to path via UploadFile.
 func (l *LocalBackend) WriteJSON(path string, v interface{}) error {
 	data, err := json.Marshal(v)
