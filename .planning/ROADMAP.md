@@ -121,7 +121,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   3. `Backend.Stat(path)` returns the byte size of a file for both LocalBackend (via `os.Stat`) and S3Backend (via `HeadObject`)
   4. The S3APIClient interface includes `HeadObject` and the real AWS client satisfies it
   5. All existing tests pass unchanged after the interface additions
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
+- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
 
 ### Phase 38: File Library REST API
 **Goal**: Users and the system can list, import, and delete managed files in a project through a well-guarded REST API
@@ -133,7 +136,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   3. `POST /projects/{slug}/files` with a browser multipart upload stores the file and registers it in the library
   4. `POST /projects/{slug}/files` with an `s3://` URI validates the path and registers an S3-backed managed file record with size from HeadObject
   5. `POST /projects/{slug}/files` with a server local path is rejected with HTTP 400 if the path traverses outside the configured ImportRoot directory; a valid path within ImportRoot registers the file
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
+- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
 
 ### Phase 39: Workflow Completion Hook and Type Annotation
 **Goal**: Every completed workflow run automatically populates the project file library, and file type metadata from WDL parameter_meta flows through to managed file records
@@ -145,7 +151,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   3. When a WDL workflow output has `parameter_meta { output_name: { type: "fastq" } }`, the registered managed file record carries `file_type = "fastq"`
   4. Existing WDL files that use non-type-annotated `parameter_meta` (e.g., `{ help: "...", suggestions: [...] }`) continue to execute correctly without panics
   5. All 156 spectool conformance tests continue to pass after the dispatch.go changes
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
+- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
 
 ### Phase 40: UI — Files Tab and File Picker
 **Goal**: Users can manage their project's file library from the browser and select managed files directly when launching workflows
@@ -157,7 +166,10 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   3. User can delete a managed file record from the Files tab; the row disappears and a confirmation is shown
   4. File-typed inputs in RunWorkflowDialog display a file picker component that lists managed files from the project library instead of a free-text field
   5. When a WDL input has a type constraint in parameter_meta, the file picker shows only managed files whose `file_type` matches that constraint; a manual path fallback remains available
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
+- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
 **UI hint**: yes
 
 ## Progress
@@ -170,7 +182,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 | 19-24 | v1.3 | 14/14 | Complete | 2026-03-20 |
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32-36 | v2.1 | 10/10 | Complete | 2026-04-09 |
-| 37. Backend Foundation | v2.2 | 0/? | Not started | - |
+| 37. Backend Foundation | v2.2 | 0/2 | Not started | - |
 | 38. File Library REST API | v2.2 | 0/? | Not started | - |
 | 39. Workflow Completion Hook and Type Annotation | v2.2 | 0/? | Not started | - |
 | 40. UI — Files Tab and File Picker | v2.2 | 0/? | Not started | - |
