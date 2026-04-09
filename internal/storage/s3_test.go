@@ -32,6 +32,7 @@ type mockS3Client struct {
 	putObjectFn   func(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 	getObjectFn   func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	listObjectsFn func(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	headObjectFn  func(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 
 	// lastPutInput records the most recent PutObjectInput for assertions.
 	lastPutInput *s3.PutObjectInput
@@ -60,6 +61,13 @@ func (m *mockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 		return m.listObjectsFn(ctx, params, optFns...)
 	}
 	return &s3.ListObjectsV2Output{}, nil
+}
+
+func (m *mockS3Client) HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+	if m.headObjectFn != nil {
+		return m.headObjectFn(ctx, params, optFns...)
+	}
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -512,6 +520,76 @@ func TestS3Backend_DownloadDirectory(t *testing.T) {
 			t.Errorf("file %q: want %q, got %q", localPath, o.content, got)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Task: S3Backend.Stat tests
+// ---------------------------------------------------------------------------
+
+// TestS3Backend_Stat verifies that Stat calls HeadObject and returns the
+// correct object size, handles nil ContentLength, and propagates errors.
+func TestS3Backend_Stat(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		var capturedParams *s3.HeadObjectInput
+		mock := &mockS3Client{
+			headObjectFn: func(_ context.Context, params *s3.HeadObjectInput, _ ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+				capturedParams = params
+				return &s3.HeadObjectOutput{ContentLength: aws.Int64(1234)}, nil
+			},
+		}
+		b := newTestBackend("test-bucket", "", 0, mock, &mockTransferManager{})
+
+		size, err := b.Stat("some/key")
+		if err != nil {
+			t.Fatalf("Stat returned unexpected error: %v", err)
+		}
+		if size != 1234 {
+			t.Errorf("Stat size: want 1234, got %d", size)
+		}
+		if capturedParams == nil {
+			t.Fatal("HeadObject was not called")
+		}
+		if got := aws.ToString(capturedParams.Bucket); got != "test-bucket" {
+			t.Errorf("HeadObject bucket: want %q, got %q", "test-bucket", got)
+		}
+		if got := aws.ToString(capturedParams.Key); got != "some/key" {
+			t.Errorf("HeadObject key: want %q, got %q", "some/key", got)
+		}
+	})
+
+	t.Run("nil_content_length", func(t *testing.T) {
+		mock := &mockS3Client{
+			headObjectFn: func(_ context.Context, _ *s3.HeadObjectInput, _ ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+				return &s3.HeadObjectOutput{ContentLength: nil}, nil
+			},
+		}
+		b := newTestBackend("bucket", "", 0, mock, &mockTransferManager{})
+
+		size, err := b.Stat("some/key")
+		if err != nil {
+			t.Fatalf("Stat with nil ContentLength should not return error, got: %v", err)
+		}
+		if size != 0 {
+			t.Errorf("Stat with nil ContentLength: want 0, got %d", size)
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		mock := &mockS3Client{
+			headObjectFn: func(_ context.Context, _ *s3.HeadObjectInput, _ ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+				return nil, fmt.Errorf("not found")
+			},
+		}
+		b := newTestBackend("bucket", "", 0, mock, &mockTransferManager{})
+
+		size, err := b.Stat("some/key")
+		if err == nil {
+			t.Fatal("Stat should return error when HeadObject fails, got nil")
+		}
+		if size != 0 {
+			t.Errorf("Stat on error: want size 0, got %d", size)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
