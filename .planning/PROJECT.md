@@ -58,7 +58,13 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-(None — v2.1 complete, next milestone not yet defined)
+- [ ] Managed file library with project-scoped File/Directory tracking (size, creation date, path, type, label)
+- [ ] File label: defaults to filename; derived via shell-style template in parameter_meta (e.g. `label: "${fastq%%.fastq*}.bam"`)
+- [ ] File type annotation via WDL parameter_meta (e.g. `parameter_meta { reads: { type: "fastq" } }`)
+- [ ] File import: browser upload (reuse /uploads endpoint), S3/MinIO path, server local path
+- [ ] Auto-register all File/Directory workflow outputs as managed files on run completion
+- [ ] File picker in RunWorkflowDialog for File-typed inputs (filter by type from parameter_meta; manual path fallback)
+- [ ] "Files" tab in project detail page (browse, import, view metadata)
 
 ### Out of Scope
 
@@ -74,6 +80,19 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
 - Browser file picker for File-typed workflow inputs — uploads endpoint built (v2.1) but not wired; users supply server-accessible paths (s3://, absolute) directly; deferred to v2.2+
+
+## Current Milestone: v2.2 Managed File Library
+
+**Goal:** Introduce a project-scoped managed file library so workflow inputs and outputs are tracked centrally, enabling file-picker-based workflow execution.
+
+**Target features:**
+- Managed file library (File + Directory, project-scoped) with metadata: size, creation date, path, type, label
+- File label: defaults to filename; auto-derived via shell-style parameter_meta template expressions
+- File type annotation via WDL parameter_meta (e.g. `parameter_meta { reads: { type: "fastq" } }`)
+- Import: browser upload, S3/MinIO path, server local path
+- Auto-register all File/Directory workflow outputs as managed files on run completion
+- File picker in RunWorkflowDialog (filter by type; manual path fallback)
+- "Files" tab in project detail page
 
 ## Current State
 
