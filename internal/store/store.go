@@ -194,6 +194,19 @@ type ProvenanceDetail struct {
 	UpdatedAt          time.Time
 }
 
+// ManagedFile represents a file tracked in the project library.
+// RunID is nil for manually imported files that have no originating run.
+type ManagedFile struct {
+	ID        string
+	ProjectID string
+	RunID     *string // nil for manually imported files
+	Path      string
+	FileType  string
+	Label     string
+	Size      int64
+	CreatedAt time.Time
+}
+
 // Store is the persistence abstraction for runs and tasks.
 // Implementations must be safe for concurrent use.
 type Store interface {
@@ -349,6 +362,21 @@ type Store interface {
 	// entryFilter limits results to a specific registry entry name (empty = all entries).
 	// userFilter limits results to a specific username (empty = all users).
 	ListProvenance(ctx context.Context, projectID, entryFilter, userFilter string) ([]ProvenanceSummary, error)
+
+	// ManagedFile operations
+
+	// CreateManagedFile persists a new managed file. f.ID must be set by the caller.
+	CreateManagedFile(ctx context.Context, f *ManagedFile) error
+	// ListManagedFiles returns all managed files for the given project.
+	ListManagedFiles(ctx context.Context, projectID string) ([]ManagedFile, error)
+	// GetManagedFileByID returns the managed file with the given ID.
+	GetManagedFileByID(ctx context.Context, id string) (*ManagedFile, error)
+	// DeleteManagedFile removes the managed file record with the given ID.
+	DeleteManagedFile(ctx context.Context, id string) error
+	// CompleteRun atomically marks a run as COMPLETED with the given outputs and
+	// inserts any provided managed file records in a single transaction.
+	// Pass nil or empty slice for files when no file registration is needed.
+	CompleteRun(ctx context.Context, runID string, projectID string, outputsJSON string, files []ManagedFile) error
 
 	// Lifecycle
 
