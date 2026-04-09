@@ -24,7 +24,7 @@ TEST_BUCKET  := flowy-spectool-test
 S3_CONFIG    := /tmp/flowy-s3.yaml
 S3_PORT      := 8125
 
-.PHONY: build build-ui spectool spectool-s3 integration test clean
+.PHONY: build build-ui dev dev-stop spectool spectool-s3 integration test clean
 
 # --- Build targets ---
 
@@ -40,6 +40,46 @@ $(SERVER_BIN): $(GO_SOURCES)
 
 $(DAEMON_BIN): $(GO_SOURCES)
 	go build -o $(DAEMON_BIN) ./cmd/flowy-daemon
+
+# --- Dev targets ---
+
+dev: build build-ui
+	@echo "Starting flowy-server, flowy-daemon, and flowy-ui..."
+	@rm -f $(SERVER_PID) $(DAEMON_PID) .ui.pid
+	$(SERVER_BIN) & echo $$! > $(SERVER_PID)
+	@echo "Waiting for flowy-server..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s -o /dev/null http://localhost:8124/runs 2>/dev/null; then \
+			echo "flowy-server is ready (PID $$(cat $(SERVER_PID)))"; \
+			break; \
+		fi; \
+		if [ $$i -eq 10 ]; then \
+			echo "ERROR: flowy-server failed to start"; \
+			kill `cat $(SERVER_PID)` 2>/dev/null; rm -f $(SERVER_PID); \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+	$(DAEMON_BIN) --workers 4 & echo $$! > $(DAEMON_PID)
+	@sleep 1
+	@echo "flowy-daemon started (PID $$(cat $(DAEMON_PID)))"
+	$(UI_BIN) & echo $$! > .ui.pid
+	@sleep 1
+	@echo "flowy-ui started (PID $$(cat .ui.pid))"
+	@echo ""
+	@echo "All components running:"
+	@echo "  flowy-server  http://localhost:8124  (PID $$(cat $(SERVER_PID)))"
+	@echo "  flowy-daemon                         (PID $$(cat $(DAEMON_PID)))"
+	@echo "  flowy-ui      http://localhost:3000   (PID $$(cat .ui.pid))"
+	@echo ""
+	@echo "Stop with: make dev-stop"
+
+dev-stop:
+	@echo "Stopping dev processes..."
+	@if [ -f .ui.pid ]; then kill $$(cat .ui.pid) 2>/dev/null; rm -f .ui.pid; echo "flowy-ui stopped"; fi
+	@if [ -f $(DAEMON_PID) ]; then kill $$(cat $(DAEMON_PID)) 2>/dev/null; rm -f $(DAEMON_PID); echo "flowy-daemon stopped"; fi
+	@if [ -f $(SERVER_PID) ]; then kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); echo "flowy-server stopped"; fi
+	@echo "All stopped."
 
 # --- UI build targets ---
 

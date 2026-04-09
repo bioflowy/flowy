@@ -176,7 +176,8 @@ export function RunWorkflowDialog({
   }, [inputsData?.inputs])
 
   const form = useForm<Record<string, unknown>>({
-    resolver: zodResolver(schema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(schema) as any,
     defaultValues: computedDefaults,
   })
 
