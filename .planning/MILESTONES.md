@@ -1,5 +1,20 @@
 # Milestones
 
+## v2.1 Job Execution & Registry CLI (Shipped: 2026-04-09)
+
+**Phases completed:** 5 phases, 10 plans | Go: 41,483 LOC | TS: 9,193 LOC | 533 Go tests | 3 days
+
+**Key accomplishments:**
+
+- Input schema introspection endpoint (`GET /registry/{name}/inputs`) returns structured WDL input declarations enabling dynamic browser forms
+- File upload endpoint (`POST /projects/{slug}/uploads`) with path-traversal protection, 100 MB limit, executor role gating, and 12 passing tests
+- `flowy login` with secure JWT credential storage (~/.flowy/credentials.yaml, 0600/0700 permissions) and `flowy registry` subcommands (push/list/pull/tag/delete-tag/delete)
+- PushWDLDialog for browser-based WDL upload with FileReader, client-side .wdl validation, 422/409 error handling, and executor+ role gating
+- `usePollingRuns` hook with exported `TERMINAL_STATES` — auto-refreshes at 3s for active runs, stops on terminal state; pulsing dot in RunsPage and RunDetailPage
+- RunWorkflowDialog with dynamic zod schema and per-type controls (String/Int/Float/Boolean/File/JSON) driven by the inputs endpoint; submission navigates to RunDetailPage
+
+---
+
 ## v2.1 Job Execution & Registry CLI (Shipped: 2026-04-08)
 
 **Phases completed:** 5 phases, 10 plans, 9 tasks

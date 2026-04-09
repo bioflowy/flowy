@@ -2,7 +2,7 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as four binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), `flowy-daemon` (Docker task executor), and `flowy-ui` (web management UI). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution, run provenance tracking, and a browser-based management interface for users, projects, registry, and run output browsing.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as four binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), `flowy-daemon` (Docker task executor), and `flowy-ui` (web management UI). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution with CLI and browser clients, run provenance tracking, a browser-based management interface for users, projects, registry, and run output browsing, and full browser-based workflow execution with dynamic input forms and poll-based status monitoring.
 
 ## Core Value
 
@@ -47,11 +47,14 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ Registry browsing (entries, versions, tags) — v2.0
 - ✓ File browsing and download (S3/local storage output files) — v2.0
 - ✓ CORS support on flowy-server for development mode — v2.0
-- ✓ UI workflow execution from registry (select, input parameters, submit) — v2.1
-- ✓ Poll-based run status monitoring in browser — v2.1
-- ✓ Dynamic input form for basic WDL types (String, Int, Float, Boolean, File) — v2.1
-- ✓ CLI registry commands (push, list, pull, tag, delete) — v2.1
-- ✓ UI registry upload (push WDL from browser) — v2.1
+- ✓ Input schema introspection endpoint (GET /registry/{name}/inputs) — v2.1
+- ✓ File upload endpoint (POST /projects/{slug}/uploads) — v2.1
+- ✓ CLI authentication (`flowy login` with JWT credential storage, 0600 permissions) — v2.1
+- ✓ CLI registry commands (push, list, pull, tag, delete-tag, delete) — v2.1
+- ✓ Browser WDL upload (PushWDLDialog with FileReader + role gating) — v2.1
+- ✓ Poll-based run status monitoring with auto-stop on terminal state — v2.1
+- ✓ Browser workflow execution with dynamic input form (String, Int, Float, Boolean, File, JSON) — v2.1
+- ✓ RunWorkflowDialog submission → RunDetailPage navigation with polling — v2.1
 
 ### Active
 
@@ -70,22 +73,19 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - OAuth2/LDAP/SSO authentication — simple username/password sufficient for now
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
+- Browser file picker for File-typed workflow inputs — uploads endpoint built (v2.1) but not wired; users supply server-accessible paths (s3://, absolute) directly; deferred to v2.2+
 
 ## Current State
 
-Shipped v2.1 with 37,776 LOC Go + 8,582 LOC TypeScript/React. Six milestones complete (v1.0–v2.1).
+Shipped v2.1 with 41,483 LOC Go + 9,193 LOC TypeScript/React. Six milestones complete (v1.0–v2.1). 533 Go tests, 158 frontend tests across 22 files.
 
-v2.1 delivered CLI authentication (`flowy login` with JWT credential storage), CLI registry commands (push/list/pull/tag/delete), browser-based WDL upload, poll-based run status monitoring with auto-stop, and browser workflow execution with dynamic input forms per WDL type. 158 frontend tests across 22 files, all passing.
+v2.1 delivered: input schema introspection endpoint enabling dynamic browser forms; server-side file upload endpoint; `flowy login` with secure JWT credential storage (0600/0700 permissions); `flowy registry` subcommands (push/list/pull/tag/delete-tag/delete) with automatic credential loading; PushWDLDialog for browser-based WDL upload with FileReader and role gating; `usePollingRuns` hook with TERMINAL_STATES for 3s auto-polling with pulsing dot indicators; RunWorkflowDialog with dynamic zod schema and per-type input controls (String/Int/Float/Boolean/File/JSON) wired to the inputs endpoint; and full submission → RunDetailPage navigation flow.
 
-v2.0 delivered a browser-based management UI as a single-binary deployment (`flowy-ui`). The SPA covers authentication (login, password change, logout with session persistence), user administration (create, deactivate, reactivate, reset password — admin only), project management (create, edit, delete projects; add/remove members; inline role changes), registry browsing (entry list with kind badges, version history, WDL source viewer with line numbers and copy, tag create/move/delete for admins), and file browsing (workflow run list with status badges, output files table, file download via backend proxy, inline text preview for small files). 112 frontend tests across 19 files, all passing. Backend test suite covers all new endpoints.
-
-Phase 32 (API Foundation) complete — added input schema introspection endpoint (`GET /projects/{slug}/registry/{name}/inputs`) and file upload endpoint (`POST /projects/{slug}/uploads`) with 12 tests.
-
-**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution, run provenance tracking, web management UI for users, projects, registry, and run output browsing, API input schema introspection, and file upload endpoint.
+**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution via CLI and browser, run provenance tracking, browser management UI (users/projects/registry/file browsing), browser workflow execution with dynamic input forms, poll-based run monitoring, and CLI registry management.
 
 ## Context
 
-Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt. Frontend: React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS v4, React Router, TanStack Query, Zustand.
+Tech stack: Go 1.24, Docker SDK for Go, AWS SDK for Go v2, hand-written lexer (Rob Pike pattern), Pratt expression parser, chi v5 HTTP router, modernc.org/sqlite (CGO-free), goose migrations, testcontainers-go, golang-jwt/jwt/v5, bcrypt, golang.org/x/term (CLI password input). Frontend: React 19, TypeScript, Vite, shadcn/ui, Tailwind CSS v4, React Router, TanStack Query v5, Zustand, zod, react-hook-form.
 Spectool conformance: 156/156 WDL 1.2 tests passing (100% of supported features; 4 categories excluded: Object type, sub-workflow calls, deferred input defaults, read_tsv with Object).
 Architecture: four binaries (flowy, flowy-server, flowy-daemon, flowy-ui), SQLite task queue with WAL, local filesystem or S3/MinIO storage backends, JWT-protected REST API with RBAC middleware, embedded React SPA with reverse proxy.
 Reference implementation: `../miniwdl` (Python, ~20k lines).
@@ -131,16 +131,11 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Embedded SPA in Go binary (go:embed) | Single binary deployment, no separate static file hosting | ✓ Good — zero-config deployment |
 | Backend proxies file downloads | No presigned S3 URLs — frontend stays simple and secure | ✓ Good — storage-agnostic downloads |
 | Project-scoped user list for AddMemberDialog | Avoids relaxing global user list to non-admins | ✓ Good — proper security boundary |
-
-## Current Milestone: v2.1 Job Execution & Registry CLI
-
-**Goal:** Users can execute workflows from the web UI with parameter input and poll-based status monitoring, push/pull/manage registry entries via CLI, and upload WDL files from the browser.
-
-**Target features:**
-- UI workflow execution: select from registry, input parameters (basic WDL types), submit, poll-based status monitoring, results display
-- CLI registry commands: push, list, pull, tag, delete
-- UI registry upload: upload WDL file from browser to push to registry
-- Dynamic input form for String, Int, Float, Boolean, File; Array/Map/Struct via JSON input
+| ~/.flowy/credentials.yaml with 0600/0700 | Secure per-user JWT storage for CLI; follows SSH convention | ✓ Good — no credential leaks in shared environments |
+| Dynamic zod schema from server input list | Form validation built at runtime from /inputs endpoint response | ✓ Good — schema always matches WDL source |
+| File inputs as server-path text fields (v2.1) | Browser file picker deferred; users supply s3:// or absolute paths | ✓ Good — consistent with ADR 0001; uploads endpoint ready for v2.2 |
+| usePollingRuns returns 5000ms for undefined data | Ensures new runs appear without manual refresh after submit | ✓ Good — intentional deviation; minor SC4 edge case accepted |
+| TERMINAL_STATES exported from useRuns.ts | Single source of truth for stopped-state detection across all polling consumers | ✓ Good — no divergence between RunsPage, RunDetailPage, usePollingRuns |
 
 ## Evolution
 
@@ -160,4 +155,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-07 after v2.1 milestone start*
+*Last updated: 2026-04-09 after v2.1 milestone*

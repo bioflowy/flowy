@@ -228,6 +228,51 @@
 
 ---
 
+## Milestone: v2.1 — Job Execution & Registry CLI
+
+**Shipped:** 2026-04-09
+**Phases:** 5 | **Plans:** 10 | **Commits:** 114
+
+### What Was Built
+- Input schema introspection endpoint (`GET /registry/{name}/inputs`) returning structured WDL input declarations
+- File upload endpoint (`POST /projects/{slug}/uploads`) with path-traversal protection and executor role gating
+- `flowy login` with secure JWT credential storage (0600/0700 permissions) and `flowy registry` subcommands (push/list/pull/tag/delete-tag/delete)
+- PushWDLDialog: browser-based WDL upload with FileReader, client-side .wdl validation, and executor+ role gating
+- `usePollingRuns` hook with exported `TERMINAL_STATES` — 3s polling for active runs, auto-stops on terminal state, pulsing dot indicators
+- RunWorkflowDialog with dynamic zod schema driven by the inputs endpoint, per-type controls, and submission → RunDetailPage navigation
+
+### What Worked
+- Server-driven form generation (inputs endpoint → dynamic zod schema) eliminated hard-coded type assumptions in the browser
+- `TERMINAL_STATES` exported from a single location ensured zero divergence between polling consumers (usePollingRuns, RunsPage, RunDetailPage)
+- Integration checker caught the uploads endpoint / File input gap early — non-blocking but worth documenting for v2.2
+- Milestone audit flow (audit → tech_debt status → complete) worked cleanly for a no-blocker milestone
+- Dynamic zod schema with `z.preprocess` for numeric fields handled empty-string-to-number coercion correctly
+
+### What Was Inefficient
+- SUMMARY.md `one_liner` frontmatter still not populated by the executor — MILESTONES.md auto-extraction produced garbage ("One-liner:" placeholders); had to write accomplishments manually
+- REQUIREMENTS.md traceability table never updated from initial draft (all `[ ]` Pending) — cosmetic but creates false signal during audit
+- uploads endpoint (API-02) was built in Phase 32 as a prerequisite for File input browser upload, but Phase 36 chose the text-field path instead — coordination between Phase 32 plan and Phase 36 design could have been tighter
+
+### Patterns Established
+- `loadCredsAndClient()` helper pattern: all CLI subcommands that need auth call this first, producing human-readable errors for missing/expired tokens
+- Server-driven form schema: browser form validation generated at runtime from a server endpoint, never hard-coded
+- `usePollingRuns` with `refetchInterval` callback — TanStack Query v5 pattern for conditional polling using `query.state.data`
+- TERMINAL_STATES as a named Set exported from the data layer — prevents magic string duplication across polling consumers
+- Audit → tech_debt → complete flow: audit is not a blocker gate, it's a quality signal; tech_debt status is a valid path to shipping
+
+### Key Lessons
+1. Server-driven form schemas are resilient — adding a new WDL type requires only a server change; the browser form adapts automatically
+2. Pre-built endpoints that aren't wired end-to-end are tech debt, not features — the uploads endpoint needs a browser consumer in v2.2 to justify its existence
+3. TanStack Query v5 `refetchInterval` callback receives `query` (not `data`) — `query.state.data` is the correct access pattern; this tripped up the initial plan
+4. `z.preprocess` is the right tool for optional numeric fields where empty string should become undefined, not 0
+
+### Cost Observations
+- Model mix: ~20% opus (orchestration), ~80% sonnet (execution, verification, audit)
+- Timeline: 3 days (2026-04-07 → 2026-04-09)
+- Notable: 5 phases, 10 plans, 114 commits; milestone audit found no blockers on first pass
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -239,26 +284,30 @@
 | v1.2 | 81 | 5 | S3 storage backend — cloud-native WDL execution |
 | v1.3 | ~50 | 6 | Auth, RBAC, registry, provenance — multi-user platform |
 | v2.0 | ~60 | 7 | Web UI — React SPA with full management interface |
+| v2.1 | 114 | 5 | Job execution & CLI — browser + CLI close the loop |
 
 ### Cumulative Quality
 
-| Milestone | Go LOC | Frontend LOC | Test Files | Spectool |
-|-----------|--------|-------------|------------|----------|
-| v1.0 | 17,648 | — | ~40 | 45/160 (28%) |
-| v1.1 | 25,433 | — | ~55 | 156/156 (100%) |
-| v1.2 | 29,277 | — | ~65 | 156/156 (100%) |
-| v1.3 | 37,776 | — | ~80 | 156/156 (100%) |
-| v2.0 | 37,776 | 7,557 | ~100 | 156/156 (100%) |
+| Milestone | Go LOC | Frontend LOC | Go Tests | Spectool |
+|-----------|--------|-------------|----------|----------|
+| v1.0 | 17,648 | — | ~200 | 45/160 (28%) |
+| v1.1 | 25,433 | — | ~300 | 156/156 (100%) |
+| v1.2 | 29,277 | — | ~350 | 156/156 (100%) |
+| v1.3 | 37,776 | — | ~400 | 156/156 (100%) |
+| v2.0 | 37,776 | 7,557 | ~450 | 156/156 (100%) |
+| v2.1 | 41,483 | 9,193 | 533 | 156/156 (100%) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Linear phase dependencies produce clean architecture but limit parallelization — verified v1.0, v1.1, v1.2
 2. Mock interfaces (ContainerRunner, ShellRunner, mockS3Client) are essential for fast test cycles — verified v1.0, v1.1, v1.2
 3. TDD RED-GREEN pattern catches bugs early and produces well-tested code — verified v1.0, v1.1, v1.2
-4. Milestone audit catches doc/code drift and tech debt — verified v1.1, v1.2, v2.0
+4. Milestone audit catches doc/code drift and tech debt — verified v1.1, v1.2, v2.0, v2.1
 5. Quick-fix tasks after integration testing catch real cross-component issues — established v1.2
 6. Well-designed interfaces pay off in later phases — Backend interface (Phase 14) made S3Backend (Phase 16) clean
-7. Cross-phase integration testing matters more than individual phase verification — verified v1.3, v2.0
+7. Cross-phase integration testing matters more than individual phase verification — verified v1.3, v2.0, v2.1
 8. Gap closure phases are lightweight and effective for fixing audit-discovered issues — verified v1.3, v2.0
 9. UI-SPEC design contracts prevent design rework in frontend phases — established v2.0
 10. Sidebar/navigation is a high-risk integration surface requiring dedicated wiring checks — established v2.0
+11. Server-driven schemas (form, validation) are more resilient than hard-coded browser logic — established v2.1
+12. Pre-built endpoints without browser consumers are tech debt — coordinate phase scopes to avoid — established v2.1
