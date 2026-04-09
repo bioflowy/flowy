@@ -104,7 +104,7 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
 
 **Milestone Goal:** Introduce a project-scoped managed file library so workflow inputs and outputs are tracked centrally, enabling file-picker-based workflow execution.
 
-- [ ] **Phase 37: Backend Foundation** - DB migration, Store interface with CompleteRun, Backend.Stat, S3APIClient HeadObject
+- [x] **Phase 37: Backend Foundation** - DB migration, Store interface with CompleteRun, Backend.Stat, S3APIClient HeadObject (completed 2026-04-09)
 - [ ] **Phase 38: File Library REST API** - GET/POST/DELETE /projects/{slug}/files endpoints, ImportRoot path guard
 - [ ] **Phase 39: Workflow Completion Hook and Type Annotation** - Auto-register run outputs, parameter_meta type extraction
 - [ ] **Phase 40: UI — Files Tab and File Picker** - Files tab in ProjectDetailPage, ImportFileDialog, FilePicker in RunWorkflowDialog
@@ -123,8 +123,8 @@ Full details: `.planning/milestones/v2.1-ROADMAP.md`
   5. All existing tests pass unchanged after the interface additions
 **Plans**: 2 plans
 Plans:
-- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
-- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
+- [x] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
+- [x] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
 
 ### Phase 38: File Library REST API
 **Goal**: Users and the system can list, import, and delete managed files in a project through a well-guarded REST API
@@ -138,8 +138,8 @@ Plans:
   5. `POST /projects/{slug}/files` with a server local path is rejected with HTTP 400 if the path traverses outside the configured ImportRoot directory; a valid path within ImportRoot registers the file
 **Plans**: 2 plans
 Plans:
-- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
-- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
+- [x] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
+- [x] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
 
 ### Phase 39: Workflow Completion Hook and Type Annotation
 **Goal**: Every completed workflow run automatically populates the project file library, and file type metadata from WDL parameter_meta flows through to managed file records
@@ -182,7 +182,7 @@ Plans:
 | 19-24 | v1.3 | 14/14 | Complete | 2026-03-20 |
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32-36 | v2.1 | 10/10 | Complete | 2026-04-09 |
-| 37. Backend Foundation | v2.2 | 0/2 | Not started | - |
+| 37. Backend Foundation | v2.2 | 2/2 | Complete   | 2026-04-09 |
 | 38. File Library REST API | v2.2 | 0/? | Not started | - |
 | 39. Workflow Completion Hook and Type Annotation | v2.2 | 0/? | Not started | - |
 | 40. UI — Files Tab and File Picker | v2.2 | 0/? | Not started | - |
