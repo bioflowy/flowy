@@ -14,8 +14,8 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 4
-  info: 2
-  total: 6
+  info: 3
+  total: 7
 status: issues_found
 ---
 
@@ -28,129 +28,143 @@ status: issues_found
 
 ## Summary
 
-This phase introduces run-status polling via `usePollingRuns` and wires it into `RunDetailPage` and `RunsPage`. The polling hook itself is well-structured: it uses TanStack Query's `refetchInterval` callback to stop polling once all runs reach a terminal state, and `refetchIntervalInBackground: false` prevents unnecessary background traffic.
+This phase introduces run-status polling via `usePollingRuns` and wires it into `RunDetailPage` and `RunsPage`. The polling hook is well-structured: it uses TanStack Query's `refetchInterval` callback to adapt polling frequency based on run states, stops when all runs reach terminal states, and avoids unnecessary background traffic via `refetchIntervalInBackground: false`. Previously reported issues (variable shadowing, detached anchor element, `isPreviewable` off-by-one, and the polling dead-zone on empty list) have all been fixed in the current code.
 
-Four warnings were found:
+Four new warnings were found: an indefinite loading skeleton when a run ID is not present in the polled list; a shared `queryKey` collision between the dead `useRuns` hook and the active `usePollingRuns` hook; a `NaN`-producing code path in `formatDuration` for invalid date strings; and a cross-page import that couples two independent page components through a utility function. Three informational items cover dead code and a missing explanatory comment on the tick timer.
 
-1. A variable shadowing bug in `RunDetailPage` where an inner `id` (setInterval handle) shadows the outer route-param `id` from `useParams`.
-2. A cross-browser reliability issue with the detached anchor element used for file downloads.
-3. A broken extension-extraction expression in `isPreviewable` that silently produces a wrong `ext` string for files with no dot in their name.
-4. A polling dead-zone: once the runs list is empty, `refetchInterval` returns `false` permanently, so externally submitted runs will never appear without a page refresh.
-
-Two info-level items were also found: dead code (`useRuns` hook) and a fragile non-null assertion pattern inside `renderOutputsSection`.
+No critical (security or data-loss) issues were found.
 
 ---
 
 ## Warnings
 
-### WR-01: Variable shadowing — `id` (setInterval handle) shadows route param `id`
+### WR-01: Run not found renders loading skeleton indefinitely
 
-**File:** `web/src/features/runs/RunDetailPage.tsx:89`
+**File:** `web/src/features/runs/RunDetailPage.tsx:76-139`
 
-**Issue:** `useParams` destructures `{ slug, id }` at line 72. Inside the `useEffect` callback at line 89, `const id = setInterval(...)` declares a new `id` in the inner block scope, silently shadowing the route-param `id`. TypeScript does not error because the inner `const` is in a nested closure scope. The `clearInterval(id)` cleanup correctly uses the inner variable, but any future developer who reads the `useEffect` and expects `id` to refer to the run UUID will be misled.
+**Issue:** `run` is derived by searching the polled list: `runs?.find((r) => r.id === id)`. If the run ID from the URL does not match any item in the list — because polling has not yet returned data, the run was deleted, or the URL is malformed — the `!run` guard at line 134 falls through to a skeleton placeholder that never resolves. There is no timeout, no error message, and no distinction between "still loading" and "loaded but not found."
 
-**Fix:**
+**Fix:** Distinguish loading state from a genuine not-found condition:
+
+```tsx
+const { data: runs, isLoading } = usePollingRuns(slug ?? '')
+const run = runs?.find((r) => r.id === id)
+
+if (isLoading && !run) {
+  return (
+    <div className="p-6">
+      <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+    </div>
+  )
+}
+
+if (!run) {
+  return (
+    <div className="p-6">
+      <p className="text-muted-foreground text-sm">Run not found.</p>
+    </div>
+  )
+}
+```
+
+---
+
+### WR-02: Shared `queryKey` between dead `useRuns` and active `usePollingRuns` — latent cache collision
+
+**File:** `web/src/features/runs/useRuns.ts:22` and `web/src/features/runs/usePollingRuns.ts:9`
+
+**Issue:** Both hooks register the identical query key `['projects', slug, 'runs']`. TanStack Query deduplicates cache entries by key, so if any component ever calls `useRuns` alongside `usePollingRuns` for the same slug, the query registered second will silently override the first's configuration — including whether `refetchInterval` is active. Since `useRuns` has no `refetchInterval`, this could silently disable polling. The fact that `useRuns` is currently unused (see IN-01) mitigates this in practice, but the duplicate key is a trap for future developers.
+
+**Fix:** Either delete `useRuns` entirely (preferred — see IN-01), or assign it a distinct query key if a non-polling variant is intentionally needed:
+
 ```ts
+// In useRuns.ts — only if the hook must be retained:
+queryKey: ['projects', slug, 'runs', 'snapshot'],
+```
+
+---
+
+### WR-03: `formatDuration` produces `NaN` output for invalid date strings
+
+**File:** `web/src/features/runs/RunsPage.tsx:36-46`
+
+**Issue:** `new Date(createdAt).getTime()` returns `NaN` for any non-ISO string. Arithmetic with `NaN` propagates through all subsequent operations, and comparisons like `NaN < 60` evaluate to `false`, so the function falls through to return a string such as `"NaNh NaNm"`. The `RunListItem` interface types `created_at` and `updated_at` as `string` with no runtime validation, so malformed server data reaches this function unchecked.
+
+**Fix:** Guard against invalid dates before doing arithmetic:
+
+```ts
+export function formatDuration(createdAt: string, updatedAt: string, state: string): string {
+  if (state === 'PENDING') return '\u2014'
+
+  const start = new Date(createdAt).getTime()
+  const rawEnd = state === 'RUNNING' ? Date.now() : new Date(updatedAt).getTime()
+
+  if (isNaN(start) || isNaN(rawEnd)) return '\u2014'
+
+  const totalSeconds = Math.floor((rawEnd - start) / 1000)
+  if (totalSeconds < 0) return '\u2014'
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes < 60) return `${minutes}m ${seconds}s`
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return `${hours}h ${mins}m`
+}
+```
+
+---
+
+### WR-04: `formatDuration` imported from `RunsPage` into `RunDetailPage` — cross-page coupling
+
+**File:** `web/src/features/runs/RunDetailPage.tsx:9`
+
+**Issue:** `formatDuration` is a pure utility function exported from `RunsPage.tsx` and imported directly into `RunDetailPage.tsx`. This couples two independent page-level components at the module level: a rename or relocation of `RunsPage.tsx` would break `RunDetailPage.tsx`. It also prevents tree-shaking from eliminating `RunsPage` code when only `RunDetailPage` is in the render tree.
+
+**Fix:** Move `formatDuration` (and `statusBadgeClassName`, which is duplicated verbatim in both files — see IN-02) to a shared utility module such as `web/src/features/runs/runUtils.ts`, and import from there in both pages.
+
+---
+
+## Info
+
+### IN-01: `useRuns` is dead code
+
+**File:** `web/src/features/runs/useRuns.ts:20-26`
+
+**Issue:** `useRuns` is exported but not imported anywhere in the codebase. All run-list fetching goes through `usePollingRuns`. The mock in `RunsPage.test.tsx` and `RunDetailPage.test.tsx` still includes `useRuns: vi.fn()` even though neither test uses it. The dead hook inflates the bundle and creates the query-key collision risk described in WR-02.
+
+**Fix:** Delete the `useRuns` function from `useRuns.ts` and remove the corresponding `useRuns: vi.fn()` entries from both test mock factories.
+
+---
+
+### IN-02: `statusBadgeClassName` is duplicated verbatim in both page components
+
+**File:** `web/src/features/runs/RunsPage.tsx:20-31` and `web/src/features/runs/RunDetailPage.tsx:28-39`
+
+**Issue:** The two function bodies are identical. Any future addition of a new state string (e.g., `'ABORTED'`) to one file must be manually mirrored in the other.
+
+**Fix:** Move to the shared utility module proposed in WR-04 (`runUtils.ts`) and import in both pages.
+
+---
+
+### IN-03: 1-second tick timer in `RunDetailPage` lacks an explanatory comment
+
+**File:** `web/src/features/runs/RunDetailPage.tsx:88-93`
+
+**Issue:** The `setTick` state and associated `useEffect` exist solely to re-render the component every second while a run is `RUNNING`, so the live duration display in the header stays current. The purpose is non-obvious — a future reader may mistake it for redundant polling or remove it assuming `usePollingRuns`'s 3-second refetch is sufficient.
+
+**Fix:** Add a brief inline comment:
+
+```tsx
+// Re-render every second while RUNNING so the live duration counter updates smoothly.
+// usePollingRuns only refetches server data every 3 s; this local tick drives the UI clock.
+const [, setTick] = useState(0)
 useEffect(() => {
   if (run?.state !== 'RUNNING') return
   const timer = setInterval(() => setTick((n) => n + 1), 1000)
   return () => clearInterval(timer)
 }, [run?.state])
 ```
-
----
-
-### WR-02: Detached anchor element used for file download — unreliable in Firefox
-
-**File:** `web/src/features/runs/RunDetailPage.tsx:119-121`
-
-**Issue:** The download handler creates an `<a>` element, sets `href` and `download`, and calls `a.click()` without ever appending the element to the document. Chromium accepts clicks on detached elements, but Firefox requires the element to be in the DOM for programmatic `click()` to trigger a download. This will silently fail in Firefox.
-
-**Fix:**
-```ts
-const a = document.createElement('a')
-a.href = URL.createObjectURL(blob)
-a.download = path.split('/').pop() ?? 'file'
-document.body.appendChild(a)
-a.click()
-document.body.removeChild(a)
-URL.revokeObjectURL(a.href)
-```
-
----
-
-### WR-03: `isPreviewable` produces wrong `ext` for paths with no file extension
-
-**File:** `web/src/features/runs/RunDetailPage.tsx:51`
-
-**Issue:** `path.lastIndexOf('.')` returns `-1` when the path contains no dot. `path.slice(-1)` then returns only the last character of the path string — not a file extension. The lookup against `PREVIEWABLE_EXTENSIONS` happens to return `false` in practice (because no single character is in the set), but this is accidental correctness. If `PREVIEWABLE_EXTENSIONS` ever gains a single-character entry, or if the logic is reused in a different context, the function will misfire for extensionless paths.
-
-**Fix:**
-```ts
-function isPreviewable(path: string): boolean {
-  const dotIndex = path.lastIndexOf('.')
-  if (dotIndex === -1) return false
-  const ext = path.slice(dotIndex)
-  return PREVIEWABLE_EXTENSIONS.has(ext)
-}
-```
-
----
-
-### WR-04: Polling stops permanently when runs list is empty — new runs never appear
-
-**File:** `web/src/features/runs/usePollingRuns.ts:12-15`
-
-**Issue:** `refetchInterval` returns `false` when `data` is `undefined` or an empty array. This is correct for the initial load (where `enabled: !!slug` drives the first fetch). However, once the initial fetch resolves to an empty array, polling is disabled and never re-enabled. If a user lands on the Runs page before submitting any jobs, and then submits a run via the CLI, the page will never auto-update — the new run will not appear until the user manually refreshes.
-
-This is a product-level UX regression compared to a simple unconditional poll.
-
-**Fix:** Return a fixed interval (e.g., `5000`) when data is empty or undefined, so the page continues checking for newly submitted runs. Only stop polling when all _existing_ runs are in terminal states and the list is non-empty:
-
-```ts
-refetchInterval: (query) => {
-  const data = query.state.data
-  // No data yet or empty list: keep polling so new runs appear
-  if (!data || data.length === 0) return 5000
-  // All runs terminal: stop
-  return data.some((r) => !TERMINAL_STATES.has(r.state)) ? 3000 : false
-},
-```
-
-Note: the existing unit test at `usePollingRuns.test.ts:72-79` asserts that `false` is returned for empty/undefined data. If the above fix is applied, those two test cases must be updated to expect `5000`.
-
----
-
-## Info
-
-### IN-01: `useRuns` is exported but never used — dead code
-
-**File:** `web/src/features/runs/useRuns.ts:20-26`
-
-**Issue:** `useRuns` is defined and exported but neither `RunsPage` nor `RunDetailPage` imports it. Both pages use `usePollingRuns` instead. The function is dead code that duplicates the same TanStack Query setup without the polling behavior, which could confuse future developers about which hook to use.
-
-**Fix:** Remove the `useRuns` function, or add a JSDoc comment explicitly marking it as the non-polling variant (if it is intentionally kept for future use). The `RunsPage.test.tsx` and `RunDetailPage.test.tsx` mock files also list `useRuns: vi.fn()` in their `vi.mock` factory, which can be cleaned up once the function is removed.
-
----
-
-### IN-02: Non-null assertion on `run` inside `renderOutputsSection` is fragile
-
-**File:** `web/src/features/runs/RunDetailPage.tsx:144`
-
-**Issue:** `renderOutputsSection` uses `run!.state` and `run!.state` (lines 144, 146, 147, 148). The function is only ever called after the `if (!run)` guard at line 130, so the assertion is safe today. But the function is defined before the guard and could be called or extracted earlier without TypeScript complaining, because the outer `run` variable's type is `RunListItem | undefined`.
-
-**Fix:** Pass `run` as an explicit parameter to enforce type safety at the call site:
-
-```ts
-function renderOutputsSection(run: RunListItem) {
-  if (run.state !== 'COMPLETED') { ... }
-  // ...
-}
-// at call site:
-{renderOutputsSection(run)}
-```
-
-Alternatively, keep the pattern but remove the `!` assertions and use optional chaining, since `run` is guaranteed non-null by the guard above.
 
 ---
 
