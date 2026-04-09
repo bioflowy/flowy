@@ -1,200 +1,134 @@
 # Project Research Summary
 
-**Project:** flowy v2.1 — Job Execution UI, CLI Registry Commands, Browser Registry Upload
-**Domain:** WDL 1.2 workflow engine additive features (Go backend + React SPA)
-**Researched:** 2026-04-07
+**Project:** flowy v2.2 — Managed File Library
+**Domain:** WDL 1.2 workflow engine — project-scoped file catalog and file picker
+**Researched:** 2026-04-09
 **Confidence:** HIGH
 
 ## Executive Summary
 
-flowy v2.1 is an additive milestone that closes three user-facing capability gaps in an already-functional v2.0 system: users cannot execute workflows from the browser, cannot manage the WDL registry from the CLI, and cannot push WDL files from the browser. All required backend REST endpoints already exist — the server is feature-complete for this scope. The implementation work is confined to new frontend components, new CLI subcommands, one new server endpoint (WDL input schema), and authentication wiring in the CLI client. No new databases, no schema migrations, no new binaries.
+The v2.2 Managed File Library adds a project-scoped file catalog to a fully-operational workflow engine. Every comparable bioinformatics platform (Galaxy, Terra, Seven Bridges, DNAnexus, Seqera Tower) treats file auto-registration and type-filtered file picking as table stakes. The recommended approach follows a strict dependency graph: DB migration and Store interface first, then REST API and Backend.Stat, then auto-registration with parameter_meta extraction, then UI. The `managed_files` table is the single root dependency — nothing else can be built without it.
 
-The recommended approach is strictly additive and dependency-conservative. The existing React 19 + TanStack Query + react-hook-form + zod + shadcn/ui stack handles the frontend work with zero new npm packages. The Go backend extends with zero new go.mod dependencies. The one substantive architectural decision is to add a `GET /projects/{slug}/registry/{name}/inputs` endpoint that server-parses WDL and returns structured input metadata — this is the prerequisite for the dynamic input form and must be built before the form component. Build order flows: API types and server endpoint, then CLI subcommands and browser upload in parallel, then execution dialog last.
+Zero new Go dependencies are required (stdlib and existing internal packages only). One new frontend package is needed: `@radix-ui/react-tabs` (shadcn tabs component for the Files tab in ProjectDetailPage). The most significant backend change is adding a `CompleteRun` atomic method to the `Store` interface wrapping output registration and state transition in a single SQLite transaction — without this, the system is permanently inconsistable on crash.
 
-The primary risks are (1) `File`-typed WDL inputs — the browser cannot pass local file paths to the daemon, requiring an upload-first pattern that is explicitly out of scope for v2.1 MVP (treat File inputs as path-entry strings pointing to server-accessible locations), and (2) infinite polling if `refetchInterval` is not gated on terminal run state. Both are well-understood and avoidable with patterns already present in the codebase. Overall risk is LOW given the high proportion of existing, working infrastructure being reused.
+The highest-risk implementation details are not algorithmic but correctness-discipline issues: five independent code paths each have a specific failure mode producing silent, persistent corruption (non-atomic run completion, missing HeadObject on S3APIClient, FileValue/StringValue JSON ambiguity, parameter_meta type assertion panics, label template injection). All five are preventable with patterns already established in the codebase. Shell-style label templates in `parameter_meta` are a novel differentiator with no ecosystem precedent and should be treated as P2 scope.
 
 ## Key Findings
 
 ### Recommended Stack
 
-v2.1 requires no new dependencies in either Go or TypeScript. The existing stack is complete for all planned features.
+**Go additions (zero new go.mod entries):**
+- `os.Stat` (stdlib) — file size for local paths
+- `s3.HeadObject` via existing AWS SDK for Go v2 — file size for S3 paths (requires `HeadObject` addition to `S3APIClient` interface)
+- goose migration `00009_managed_files.sql` — follows exact existing pattern
 
-**Core technologies:**
-- `react-hook-form` v7.72.1 + `zod` v4: dynamic input form — already installed; build schema at render time from server-returned input descriptors via a ~100-line custom renderer loop
-- `@tanstack/react-query` v5.64.2: poll-based status monitoring — `refetchInterval` function gated on terminal state, automatic cleanup on component unmount
-- `shadcn/ui` (copy-paste components): `switch`, `textarea`, `progress` components needed — install via `npx shadcn@latest add`, no new npm packages added
-- Go stdlib `flag.FlagSet`: CLI registry subcommands — extend existing `switch args[0]` dispatcher in `cmd/flowy/main.go`; do not add `spf13/cobra`
-- Go `wdl/parser` (internal): WDL input schema endpoint — reuse existing parser to extract `Workflow.Inputs` AST declarations; zero new libraries
-- `FileReader.text()` (Web API): browser WDL upload — read file as UTF-8 text, POST as JSON `{name, content}` to the existing `POST /projects/{slug}/registry` endpoint
+**Frontend additions:**
+- `@radix-ui/react-tabs@^1.1.13` — install via `npx shadcn@latest add tabs` for Files tab in ProjectDetailPage
+- All other UI needs (table, dialog, search, upload) met by existing shadcn/ui components
 
-**Explicit rejections:** `react-jsonschema-form` (200 KB bundle, over-scoped for 6 WDL primitive types), `react-dropzone` (not required for single-file admin upload), `spf13/cobra` (hybrid migration cost unjustified for 8 subcommands), WebSocket/SSE (explicitly deferred in PROJECT.md).
+**Explicit rejections:** No MIME-type detection library (file_type stores WDL-semantic annotations, not MIME); no external shell evaluator library for label templates (narrow Go evaluator ~50 lines handles bioinformatics cases).
 
 ### Expected Features
 
-**Must have (v2.1 table stakes):**
-- `flowy registry push <file> --name <name> --project <slug>` — primary CLI registry management command
-- `flowy registry list/pull/tag/delete-tag --project <slug>` — full registry lifecycle from CLI
-- UI registry upload dialog — file picker + name field on RegistryPage (executor role only)
-- UI workflow execution — select from registry, input form (JSON textarea for MVP), submit, redirect to run detail
-- Run detail page polling — 3s interval while PENDING/RUNNING, stops on terminal state
-- Runs list auto-refresh — conditional refetch while any run is active
+**Must have (P1 — table stakes):**
+- `managed_files` DB table + Store CRUD (root dependency)
+- Auto-register all File/Directory workflow outputs on run completion
+- Files tab in ProjectDetailPage (list, delete, import)
+- Import: browser upload (extend existing handler), S3/MinIO path, server local path
+- File type annotation from `parameter_meta { reads: { type: "fastq" } }`
+- File picker in RunWorkflowDialog (replaces text field for File-typed inputs, filter by type)
+- Delete managed file record (record-only, never touches storage object)
 
-**Should have (v2.1.x after user validation):**
-- Dynamic typed input form — WDL declarations parsed into per-type fields (String/Int/Float/Boolean/File), replacing raw JSON textarea
-- "Run again" from run detail — pre-populate form with previous run's `ProvenanceDetailResponse.inputs`
-- Tag field in browser upload dialog — immediate tagging in same form after push
-- `--json` output flag for `flowy registry list` — machine-readable output for automation
+**Should have (P2):**
+- Shell-style label templates in parameter_meta (e.g. `label: "${fastq%%.fastq*}.bam"`) — novel, HIGH complexity, no ecosystem precedent
+- Run provenance link in Files tab (which run produced this file)
+- Pagination for large file libraries
+- Search/filter by name or type in Files tab
 
-**Defer (v2.2+):**
-- Task-level status and progress display — requires new task status API endpoint
-- Abort button in UI — endpoint exists, just needs UI
-- In-browser WDL source editor — large scope, requires syntax highlighting
-- Registry entry deletion (full entry, not just tag) — requires new backend endpoint
-- File upload staging for File-typed WDL inputs — upload-before-submit infrastructure, deferred per ADR 0001
+**Anti-features (never add):**
+- Automatic MIME-type detection replacing WDL semantic types
+- Cross-project file sharing (RBAC boundary violation)
+- File versioning (out of scope, different domain problem)
 
 ### Architecture Approach
 
-v2.1 touches six files on the backend and ten on the frontend, adding one new server endpoint and no new binaries. The system's four-binary shape (flowy-server, flowy-ui, flowy-daemon, flowy CLI) is unchanged. The single new server endpoint — `GET /projects/{slug}/registry/{name}/inputs` — reuses the existing WDL parser and `resolveRegistryRefFull` tag resolution logic. The CLI gains one new file (`cmd/flowy/registry.go`) and a new dispatch case in `main.go`. The frontend gains three new components (`UploadWDLDialog`, `RunExecutionDialog`, `WDLInputForm`) and modifications to four existing ones.
+**New components:**
+- `00009_managed_files.sql` — goose migration (root dependency for all phases)
+- `internal/store/managed_files.go` — Store interface +5 methods + sqlite implementation
+- `internal/server/handlers_files.go` — List/Delete/Import endpoints (`/projects/{slug}/files`)
+- `internal/label/label.go` — pure Go label template engine (no external deps)
+- `web/src/features/files/` — FilesTab, ImportFileDialog, FilePicker, useFiles hook
 
-**Major components:**
-1. `internal/api/types.go` — `RegistryInputDecl` and `RegistryInputsResponse` type definitions (foundation for all new features)
-2. `handleRegistryInputs` + `/inputs` route in `handlers_registry.go` — server parses WDL, returns structured input schema (unblocks execution UI)
-3. `internal/client/client.go` with `WithToken()` — registry methods + JWT auth support (unblocks CLI)
-4. `cmd/flowy/registry.go` — CLI registry subcommands dispatcher and implementations (depends on 3)
-5. `UploadWDLDialog.tsx` + `useRegistryPush()` — browser upload (uses existing endpoint; independent of CLI)
-6. `WDLInputForm.tsx` + `RunExecutionDialog.tsx` + `useRegistryInputSchema()` — execution dialog (depends on 2)
-7. `useRunStatus()` with `refetchInterval` + `RunDetailPage` modifications — live status polling (depends on nothing new; can land with 5 or 6)
+**Modified components:**
+- `storage/backend.go` — add `Stat(path string) (int64, error)` method
+- `storage/local.go` + `storage/s3.go` — implement `Stat()`; `s3.go` also adds `HeadObject` to S3APIClient interface
+- `internal/store/store.go` — add `CompleteRun(ctx, runID, outputs, files)` atomic method
+- `internal/server/dispatch.go` — call `registerRunOutputFiles()` in run completion branch
+- `internal/server/handlers_registry.go` — extend `extractInputs()` to include `file_type`/`label_template` from parameter_meta
+- `internal/api/types.go` — extend `RegistryInputItem` with `FileType` and `LabelTemplate` fields
+- `web/src/features/registry/RunWorkflowDialog.tsx` — integrate FilePicker for File-typed inputs
+
+**Build order (mandatory dependency chain):**
+1. DB migration + Store interface (including `CompleteRun`) + Backend.Stat + S3APIClient HeadObject — all must be atomic to keep codebase compilable
+2. File Library REST API — `handlers_files.go` + route registration + ImportRoot guard; Phase 2 and 3 can proceed in parallel after this
+3. Workflow completion hook + parameter_meta extension — `label.go` + `registerRunOutputFiles()` + `extractInputs()` extension
+4. UI — Files tab + ImportFileDialog + FilePicker + RunWorkflowDialog integration (file picker last — highest-risk change)
 
 ### Critical Pitfalls
 
-1. **WDL File inputs passed as browser-local paths** — the daemon runs server-side and cannot access the user's local filesystem. For v2.1 MVP, label `File` inputs as path-entry fields requiring server-accessible paths (e.g., `s3://` or absolute paths). Do not silently allow `C:\Users\alice\data.bam`. Full upload-then-reference infrastructure is deferred per ADR 0001.
+1. **Non-atomic run completion** — `Store.CompleteRun` must wrap `UpdateRunOutputs` + managed_files inserts + `UpdateRunState` in one SQLite transaction. The current server holds `store.Store` interface only; `WriterDB()` on the concrete type is inaccessible. Design `CompleteRun` in Phase 1.
 
-2. **WDL input schema inferred client-side** — WDL declaration grammar is non-trivial (nested generic types, optional `?` suffix, multi-line default expressions, struct definitions). Do not regex-parse WDL source in the browser. Build `GET /registry/{name}/inputs` first; the server handles this in <1ms using the existing Go parser.
+2. **S3APIClient missing HeadObject** — add it in the same phase as the migration. S3-sourced managed files will have size=0 permanently if deferred; the `S3APIClient` interface in `s3.go` currently only has `PutObject`, `GetObject`, `ListObjectsV2`.
 
-3. **Polling runs forever after terminal state** — `refetchInterval: 3000` (number literal) never stops. Always pass a function: `(query) => TERMINAL_STATES.has(query.state.data?.state) ? false : 3000`. Failure mode is continuous DB reads for every open completed-run tab and unnecessary re-renders on stale data.
+3. **FileValue/StringValue JSON ambiguity** — `ValueToInterface` in `values/convert.go` produces identical JSON for `FileValue`, `DirectoryValue`, and `StringValue`. Auto-registration must correlate against `doc.Workflows[0].Outputs` WDL type declarations — never use path heuristics. Handle `Array[File]` by walking each element individually.
 
-4. **CLI auth not designed before registry commands** — all `/projects/*` endpoints require JWT. Do not add `--token` to every subcommand. Add `flowy login` writing credentials to `~/.flowy/credentials.yaml` (mode 0600), not `./flowy.yaml`. The `client.Client` struct needs a `token` field that injects `Authorization: Bearer` on every request.
+4. **parameter_meta backward compatibility** — existing `ex_paramter_meta_task.wdl` uses `{ help: "...", suggestions: [...] }` object hints with no `type` or `label` keys. Every type assertion on `ParamMeta` must use comma-ok checks or the conformance suite will panic.
 
-5. **`handleOutputs` returns 409 for non-completed runs** — calling the outputs endpoint before `COMPLETED` produces an error query state, not a loading state. Gate `useRunOutputs` on `run.state === 'COMPLETED'`. The correct pattern already exists in `RunDetailPage.tsx`; replicate it consistently in all new polling code.
+5. **Label template injection** — `${fastq%%.fastq*}.bam` must be evaluated by a narrow Go evaluator (~50 lines), not `text/template`. The `{{.Method}}` Go template syntax allows calling arbitrary methods against Go objects.
+
+6. **Path traversal in local-path import** — add `ImportRoot` config field (default: `cfg.Storage.BaseDir`); always run `filepath.Clean` + HasPrefix assertion before accepting any user-supplied local path. Return 400 with a generic error message (do not leak the ImportRoot value).
 
 ## Implications for Roadmap
 
-Based on build-order dependencies and pitfall prevention requirements, five phases are suggested:
+**Suggested phases: 4**
 
-### Phase 1: API Foundation — Types and Input Schema Endpoint
+| Phase | Name | Delivers |
+|-------|------|----------|
+| 37 | Backend Foundation | DB migration, Store interface + `CompleteRun`, Backend.Stat, S3APIClient HeadObject |
+| 38 | File Library REST API | GET/POST/DELETE /projects/{slug}/files, ImportRoot path guard, integration tests |
+| 39 | Workflow Completion Hook + parameter_meta | `label.go`, `registerRunOutputFiles()` in dispatch.go, `RegistryInputItem` extension |
+| 40 | UI — Files Tab + File Picker | FilesTab, ImportFileDialog, FilePicker, RunWorkflowDialog integration |
 
-**Rationale:** The new `RegistryInputDecl`/`RegistryInputsResponse` type definitions and the `/inputs` server endpoint are prerequisites for the execution dialog (Phase 5). Landing them first creates a stable API contract for all downstream work and allows the endpoint to be independently tested before the frontend is built.
+Phase 37→38→40 and 37→39→40 are hard dependency chains. Phases 38 and 39 can be developed in parallel after Phase 37 completes.
 
-**Delivers:** New API types compiled and exported; `GET /projects/{slug}/registry/{name}/inputs?tag=...` returning correct JSON schema for workflows and tasks; route registered with viewer role.
+**Research flags:** No phase needs `/gsd-research-phase` — all patterns established in existing codebase.
 
-**Addresses:** Pitfall 2 (WDL parsing in browser avoided at the root); architecture foundation for dynamic form.
-
-**Avoids:** Risk of API shape churn during execution dialog implementation.
-
-### Phase 2: CLI Registry Commands
-
-**Rationale:** Depends only on Phase 1 types and existing server endpoints (all already live). Independent of the frontend phases. Ships tangible value to CLI users before any UI work lands.
-
-**Delivers:** `flowy registry push|list|pull|tag|delete-tag`; `internal/client` registry methods with `WithToken()`; `flowy login` writing credentials to `~/.flowy/credentials.yaml` (mode 0600); human-readable table output by default.
-
-**Addresses:** All CLI registry table-stakes features; Pitfall 4 (credential design); Pitfall 7 (CLI push sends file content, not path).
-
-**Avoids:** Token storage in project-level config; per-command `--token` flags.
-
-**Research flag:** Standard patterns — no phase research needed. Go stdlib flag extension and HTTP client auth are well-documented; credential file handling is a one-time design decision resolved in Pitfall 4.
-
-### Phase 3: Browser WDL Upload
-
-**Rationale:** Depends only on the existing `POST /projects/{slug}/registry` endpoint (live since v1.3). Independent of CLI and execution dialog. Simplest frontend feature; validates the upload dialog pattern (file-read as text + mutation + cache invalidation) that the execution dialog will also use.
-
-**Delivers:** `UploadWDLDialog.tsx`; `useRegistryPush()` mutation; "Push WDL" button on RegistryPage gated to executor role; success toast with digest shorthand; registry entry list cache invalidation on success.
-
-**Addresses:** Browser WDL upload table-stakes; RBAC role gating pattern.
-
-**Avoids:** Pitfall 5 — use `file.text()` not `readAsArrayBuffer`; validate `.wdl` extension client-side before submission.
-
-**Research flag:** Standard patterns — no phase research needed. FileReader, TanStack mutation, shadcn Dialog are all established and officially documented.
-
-### Phase 4: Run Status Polling
-
-**Rationale:** Polling infrastructure is a prerequisite for the execution dialog to be useful (users need live feedback after submitting a run). Building and validating this independently — against existing runs in the system — reduces risk for Phase 5.
-
-**Delivers:** `useRunStatus()` hook with conditional `refetchInterval`; `RunDetailPage` updated to poll while active and display live duration; runs list page auto-refresh while any run is in a non-terminal state.
-
-**Addresses:** Run status monitoring table-stakes (auto-refresh, live status badge, duration counter, terminal state indication).
-
-**Avoids:** Pitfall 3 (infinite polling — `refetchInterval` function form); Pitfall 6 (outputs 409 breaking run detail — gate `useRunOutputs` on `COMPLETED`).
-
-**Research flag:** Standard patterns — no phase research needed. TanStack Query `refetchInterval` is a stable, well-documented API.
-
-### Phase 5: UI Workflow Execution Dialog
-
-**Rationale:** Most complex frontend feature. Depends on Phase 1 (input schema endpoint) and Phase 4 (polling infrastructure). Building last minimizes rework risk from API shape changes in earlier phases.
-
-**Delivers:** `RunExecutionDialog.tsx` (modal triggered from RegistryEntryPage version rows); `WDLInputForm.tsx` (per-type field rendering: text, number, checkbox, File path, JSON textarea for complex types); `useRegistryInputSchema()` query; post-submit navigation to run detail; "Run" button on RegistryEntryPage (executor role).
-
-**Addresses:** UI workflow execution table-stakes; optional input labeling; post-submit UX (redirect, not new route).
-
-**Avoids:** Pitfall 1 (File inputs — document server-path requirement with clear placeholder text); anti-pattern of separate route for execution form (use modal pattern consistent with existing dialogs).
-
-**Research flag:** No deep research needed. The one open question — exact UX for `File` input path entry (placeholder text, tooltip, documentation link) — is a design decision, not a research gap. Decide during phase planning.
-
-### Phase Ordering Rationale
-
-- Phase 1 must come first: the new API types underpin all downstream code
-- Phases 2, 3, and 4 are mutually independent after Phase 1 and can be parallelized if resources allow; the suggested serial order delivers CLI value first, then UI upload, then UI monitoring
-- Phase 5 requires Phase 1 (input schema endpoint) and Phase 4 (polling) to be stable before implementation begins
-- This order delivers value incrementally: CLI users gain registry management (Phase 2) before the execution UI lands; UI users gain upload capability (Phase 3) and live run monitoring (Phase 4) as standalone improvements before the full execution dialog ships (Phase 5)
-
-### Research Flags
-
-Phases likely needing deeper research during planning:
-- None. All five phases use patterns either already established in this codebase or covered by official library documentation with high confidence.
-
-Phases with standard patterns (skip research-phase):
-- **All five phases** — implementation patterns are well-understood; the primary unknowns are design decisions (File input UX, credential file location, polling interval for idle runs list) that should be resolved during phase planning discussions, not research tasks.
+**Test coverage gates (not research gaps):**
+- Phase 38: path-traversal negative test (`path=../../etc/passwd` returns 400)
+- Phase 39: label template edge cases (empty match, glob suffix, missing variable, adversarial input); `Array[File]` output registration
+- Phase 39: parameter_meta backward compat — `ex_paramter_meta_task.wdl` must still pass
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All findings from direct codebase inspection of `package.json`, `go.mod`, `cmd/flowy/main.go`, `internal/client/client.go`; confirmed against official library docs |
-| Features | HIGH | Table-stakes derived from codebase analysis of existing API surface and confirmed against PROJECT.md milestone scope; comparable system analysis (Terra, Seqera, Argo) used only for differentiator framing |
-| Architecture | HIGH | All integration points verified by reading actual source files; build order derived from real import dependencies, not assumption; component responsibilities match existing codebase conventions |
-| Pitfalls | HIGH | Based on direct codebase inspection, ADR 0001 (File staging decision), v2.0 milestone audit, and RETROSPECTIVE.md cross-milestone lessons |
+| Stack | HIGH | Direct `go.mod` and `package.json` inspection; zero new Go deps confirmed |
+| Features | HIGH | Ecosystem analysis of 5 platforms + direct codebase insertion point inspection |
+| Architecture | HIGH | All integration points from direct file inspection with specific line references |
+| Pitfalls | HIGH | All pitfalls identified from specific files and lines; not theoretical |
 
 **Overall confidence:** HIGH
 
-### Gaps to Address
-
-- **File input UX specifics:** v2.1 MVP treats `File` inputs as path-entry strings. The placeholder text, tooltip, and help link for communicating "server-accessible path required" should be decided during Phase 5 planning. No research needed — this is a product decision.
-- **`flowy login` token expiry UX:** When a stored token expires, CLI registry commands must fail with a human-readable "authentication required — run flowy login" message, not a raw `{"error":"..."}` JSON 401 body. The error handling path in `internal/client` needs to be specified during Phase 2 planning.
-- **Runs list polling idle behavior:** FEATURES.md specifies auto-refresh "while any run is active." The exact condition for stopping list-level polling (all runs terminal vs. no PENDING/RUNNING runs visible) should be decided during Phase 4 planning.
-
 ## Sources
 
-### Primary (HIGH confidence)
-
-- Codebase — `internal/api/types.go`, `internal/server/handlers_registry.go`, `internal/server/server.go`, `internal/client/client.go`, `cmd/flowy/main.go` — server endpoint inventory, client structure, CLI dispatch pattern
-- Codebase — `web/src/features/runs/`, `web/src/features/registry/` — existing React component patterns, query hook shapes, RBAC role checks
-- Codebase — `wdl/ast/ast.go`, `wdl/types/types.go`, `wdl/parser/` — WDL AST structure for input schema extraction
-- Codebase — `docs/adr/0001-remove-heuristic-file-staging-from-client.md` — authoritative File input staging decision
-- `.planning/PROJECT.md` — v2.1 milestone scope, WebSocket/SSE deferral decision
-- `.planning/RETROSPECTIVE.md` — cross-milestone lessons (v1.0 through v2.0)
-- TanStack Query v5 docs (tanstack.com) — `refetchInterval` function signature and behavior
-- MDN `FileReader.readAsText` — `file.text()` browser support (Baseline 2022)
-
-### Secondary (MEDIUM confidence)
-
-- Terra/Cromwell parameter input (support.terra.bio) — WDL input form pattern reference
-- Seqera Platform monitoring docs (docs.seqera.io) — polling vs push comparison for bioinformatics jobs
-- Cromwell REST API (cromwell.readthedocs.io) — server-side input schema pattern reference
-
-### Tertiary (LOW confidence)
-
-- WDL Workspace (EPAM, github.com/epam/wdl-workspace) — comparable open-source WDL UI; architecture reference only
-- AWS HealthOmics WDL parameter detection (2025) — confirms server-side schema extraction as industry pattern; cited in FEATURES.md
+- Codebase — `internal/store/store.go`, `internal/server/dispatch.go`, `storage/backend.go`, `storage/s3.go`
+- Codebase — `values/convert.go`, `wdl/ast/ast.go`, `wdl/parser/parser.go`
+- Codebase — `web/src/features/registry/RunWorkflowDialog.tsx`, `web/src/features/projects/ProjectDetailPage.tsx`
+- Codebase — `internal/server/migrations/` (goose pattern), `internal/api/types.go`
+- Terra, Galaxy, Seven Bridges, DNAnexus, Seqera Tower — file library / file picker patterns
+- pkg.go.dev/mvdan.cc/sh/v3/shell — confirmed `%%` suffix stripping is NOT supported
+- ui.shadcn.com/docs/components/tabs, npmjs.com/package/@radix-ui/react-tabs — version confirmed
 
 ---
-*Research completed: 2026-04-07*
+*Research completed: 2026-04-09*
 *Ready for roadmap: yes*
