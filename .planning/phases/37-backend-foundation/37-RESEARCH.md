@@ -452,7 +452,7 @@ func TestCreateManagedFile_Basic(t *testing.T) {
 
 **All claims verified:** No `[ASSUMED]` tags in this research.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **UNIQUE (project_id, path) constraint**
    - What we know: CONTEXT.md marks this as Claude's Discretion
