@@ -169,7 +169,7 @@ func TestLoginRequestBody(t *testing.T) {
 	readPasswordFn = func() ([]byte, error) { return []byte("mypassword"), nil }
 	defer func() { readPasswordFn = old }()
 
-	code, _, _ := run([]string{"login", "--server", srv.URL}, strings.NewReader("myusername\n"), &strings.Builder{}, &strings.Builder{})
+	code := run([]string{"login", "--server", srv.URL}, strings.NewReader("myusername\n"), &strings.Builder{}, &strings.Builder{})
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}

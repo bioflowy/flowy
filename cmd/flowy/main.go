@@ -261,7 +261,7 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		searchPaths = []string{*pathFlag}
 	}
 
-	c := client.New(serverURL)
+	c := newClient(serverURL)
 	var submittedRunID string
 
 	if *taskFlag != "" {
@@ -440,6 +440,17 @@ func readSourceLine(file string, line int) string {
 	return ""
 }
 
+// newClient constructs a client for serverURL, injecting a saved JWT if one exists.
+// If no credentials file is present the client is returned without a token (for
+// servers that run with auth disabled).
+func newClient(serverURL string) *client.Client {
+	creds, err := client.LoadCredentials()
+	if err == nil && creds.Token != "" {
+		return client.NewWithToken(serverURL, creds.Token)
+	}
+	return client.New(serverURL)
+}
+
 // loadConfigOptional loads config from the given path. If path is empty, it tries
 // "./flowy.yaml". If neither exists, it falls back to config.Default().
 func loadConfigOptional(path string, stderr io.Writer) *config.Config {
@@ -586,7 +597,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 		SearchPaths: searchPaths,
 	}
 
-	c := client.New(serverURL)
+	c := newClient(serverURL)
 	var resp *api.SubmitResponse
 	var err error
 	if registryRef != "" {
@@ -628,7 +639,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	cfg := loadConfigOptional(*configFlag, stderr)
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
-	c := client.New(serverURL)
+	c := newClient(serverURL)
 	resp, err := c.Status(context.Background(), runID)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
@@ -665,7 +676,7 @@ func runOutputs(args []string, stdout, stderr io.Writer) int {
 	cfg := loadConfigOptional(*configFlag, stderr)
 	serverURL := resolveServerURL(*serverFlag, cfg)
 
-	c := client.New(serverURL)
+	c := newClient(serverURL)
 	resp, err := c.Outputs(context.Background(), runID)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
