@@ -138,8 +138,8 @@ Plans:
   5. `POST /projects/{slug}/files` with a server local path is rejected with HTTP 400 if the path traverses outside the configured ImportRoot directory; a valid path within ImportRoot registers the file
 **Plans**: 2 plans
 Plans:
-- [x] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
-- [x] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
+- [ ] 38-01-PLAN.md — API types, Config.ImportRoot, route wiring, GET/DELETE handlers and tests
+- [ ] 38-02-PLAN.md — POST handler with browser upload, S3 URI, and local path import modes
 
 ### Phase 39: Workflow Completion Hook and Type Annotation
 **Goal**: Every completed workflow run automatically populates the project file library, and file type metadata from WDL parameter_meta flows through to managed file records
@@ -153,8 +153,8 @@ Plans:
   5. All 156 spectool conformance tests continue to pass after the dispatch.go changes
 **Plans**: 2 plans
 Plans:
-- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
-- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
+- [ ] 39-01-PLAN.md — (to be planned)
+- [ ] 39-02-PLAN.md — (to be planned)
 
 ### Phase 40: UI — Files Tab and File Picker
 **Goal**: Users can manage their project's file library from the browser and select managed files directly when launching workflows
@@ -168,8 +168,8 @@ Plans:
   5. When a WDL input has a type constraint in parameter_meta, the file picker shows only managed files whose `file_type` matches that constraint; a manual path fallback remains available
 **Plans**: 2 plans
 Plans:
-- [ ] 37-01-PLAN.md — ManagedFile model, Store CRUD, and CompleteRun transaction
-- [ ] 37-02-PLAN.md — Backend.Stat and S3APIClient.HeadObject
+- [ ] 40-01-PLAN.md — (to be planned)
+- [ ] 40-02-PLAN.md — (to be planned)
 **UI hint**: yes
 
 ## Progress
@@ -183,6 +183,6 @@ Plans:
 | 25-31 | v2.0 | 16/16 | Complete | 2026-04-07 |
 | 32-36 | v2.1 | 10/10 | Complete | 2026-04-09 |
 | 37. Backend Foundation | v2.2 | 2/2 | Complete   | 2026-04-09 |
-| 38. File Library REST API | v2.2 | 0/? | Not started | - |
+| 38. File Library REST API | v2.2 | 0/2 | Not started | - |
 | 39. Workflow Completion Hook and Type Annotation | v2.2 | 0/? | Not started | - |
 | 40. UI — Files Tab and File Picker | v2.2 | 0/? | Not started | - |
