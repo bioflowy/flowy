@@ -1,242 +1,259 @@
 # Feature Research
 
-**Domain:** Workflow execution UI, CLI registry management, browser-based WDL upload — additive features for a WDL 1.2 engine (flowy v2.1)
-**Researched:** 2026-04-07
-**Confidence:** HIGH (codebase analysis) / MEDIUM (domain patterns from comparable systems)
+**Domain:** Managed file library for WDL 1.2 workflow engine UI (flowy v2.2)
+**Researched:** 2026-04-09
+**Confidence:** HIGH (existing codebase) / MEDIUM (ecosystem patterns from Terra, Galaxy, Seven Bridges, DNAnexus, Seqera)
 
 ---
 
 ## Context: What Already Exists
 
-These features build on v2.0 foundations. Understanding existing capabilities is essential for scoping.
+This milestone adds a managed file library to an existing system. Understanding what is already
+built prevents re-implementing solved problems.
 
-**Existing backend API (all ready to call):**
-- `POST /projects/{slug}/registry` — push WDL (JSON body with `name` + `content`)
-- `GET /projects/{slug}/registry` — list entries
-- `GET /projects/{slug}/registry/{name}` — pull WDL content
-- `GET /projects/{slug}/registry/{name}/versions` — list versions
-- `POST /projects/{slug}/registry/{name}/tags` — create/move tag
-- `DELETE /projects/{slug}/registry/{name}/tags/{tag}` — delete tag
-- `POST /projects/{slug}/runs/submit` — submit run via `{registry_ref, inputs}` JSON
-- `GET /projects/{slug}/runs` — list runs (returns state, registry_ref, timing)
-- `GET /projects/{slug}/runs/{id}/status` — poll status
-- `GET /projects/{slug}/runs/{id}/outputs` — fetch outputs
+**Existing backend capabilities (ready to call or extend):**
+- `POST /projects/{slug}/uploads` — file upload endpoint (v2.1); stores file, returns server-side path; not yet wired to any file registry
+- Run completion path in `dispatch.go` calls `UpdateRunOutputs`; outputs_json is persisted before COMPLETED state transition — this is the insertion point for auto-registration
+- SQLite via goose migrations (migration 00009 would be the managed_files table)
+- `S3Backend` + `LocalBackend` storage abstraction; both implement `UploadFileStream` and `Stat`-equivalent operations
+- Project-scoped RBAC middleware (`admin`, `executor`, `viewer`) — established pattern, reusable on new endpoints
+- WDL `parameter_meta` parsing — server parses the WDL AST already; `type` key extraction requires minor addition to the inputs handler
 
-**Existing frontend infrastructure (React 19, TanStack Query, shadcn/ui, Tailwind):**
-- Registry page: lists entries, versions table, WDL source viewer, tag create/delete dialogs
-- Runs page: list with status badges (PENDING/RUNNING/COMPLETED/FAILED), duration, click-through to detail
-- Run detail page: outputs table, file download, inline preview
+**Existing frontend capabilities:**
+- `RunWorkflowDialog` with per-type input controls; `File` inputs currently render as text fields with a tooltip explaining server-path requirement — this is the insertion point for the file picker
+- TanStack Query, shadcn/ui Combobox, Dialog, Command components — available in existing stack
+- React 19, TypeScript, zod, react-hook-form — established
+- `ProjectDetailPage` is a single-panel page; adding a tab bar (for Members, Files) is a contained UI change
 
-**Existing CLI client package (`internal/client`):**
-- `Submit`, `SubmitToProject`, `Status`, `StatusInProject`, `Outputs`, `OutputsInProject`
-- No registry methods exist in `internal/client`
-
----
-
-## Feature Area 1: UI Workflow Execution (Select + Submit + Monitor)
-
-### Table Stakes
-
-Features users of comparable systems (Terra, Nextflow Tower, Argo Workflows UI) expect as baseline.
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Select workflow from registry dropdown | Registry browsing already works; execution must follow naturally | LOW | Populated from existing `GET /projects/{slug}/registry` filtered to `kind=workflow` |
-| Input form for basic scalar types (String, Int, Float, Boolean) | Cromwell/WES all require parameter input at submit time; no raw JSON editing for simple cases | MEDIUM | Requires parsing WDL inputs from WDL source — server returns raw WDL, client parses input declarations |
-| Submit button with loading state | Every job-submission UI has submit + spinner | LOW | Calls `POST /projects/{slug}/runs/submit` with `{registry_ref, inputs}` |
-| Post-submit redirect to run detail | Users need to know where their run went | LOW | Navigate to `/projects/{slug}/runs/{run_id}` after submit response |
-| Status polling on run detail page | Runs page already shows status; detail page must refresh while RUNNING | MEDIUM | TanStack Query `refetchInterval` on `GET .../status`; stop when terminal state reached |
-| Status badge updates without page reload | Users expect live-ish status; full-page reload is unacceptable | LOW | Already implemented in Runs page; apply same pattern to detail page poll |
-| Outputs display on completion | Detail page already renders outputs; must trigger fetch when status transitions to COMPLETED | LOW | Already exists — `useRunOutputs` only fetches when state === 'COMPLETED' |
-
-### Differentiators
-
-Features that make the execution UI meaningfully better than just a raw JSON POST.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Dynamic input form derived from WDL declarations | Users see typed fields (string input, number input, checkbox) instead of raw JSON — matches what Terra/Seqera do | HIGH | Parse WDL source in frontend. Requires scanning `input {}` block declarations. Only feasible for primitive types; complex types fall back to JSON textarea |
-| Optional input detection (show/hide) | WDL optional inputs (`String?`) should not require user input — mark clearly | MEDIUM | Parsing `?` type suffix from WDL input declarations |
-| File-type input via path entry | WDL `File` inputs are common in bioinformatics; user must provide s3:// or absolute paths | LOW | String input with `File` label; no actual upload (files live on storage backend) |
-| Registry ref display in submit form | Show which digest/tag will be used for traceability | LOW | Pull from the version selected; display sha256 prefix |
-| "Run again" from run detail | Bioinformatics users re-run with tweaked parameters frequently | MEDIUM | Pre-populate submission form with previous run's inputs from `ProvenanceDetailResponse.inputs` |
-
-### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Real-time log streaming | Users want to see task logs while running | WebSocket/SSE explicitly deferred in PROJECT.md; adds server complexity for v2.1 | Poll-based status with state transitions is sufficient; logs visible post-run via file download |
-| File upload for WDL File inputs | Users want to upload data files | Files must live on the shared filesystem or S3 backend — browser uploads bypass the LED execution pattern entirely; would require server-side staging | Document that File inputs must use server-accessible paths (s3://, absolute) |
-| DAG visualization | Nice for understanding workflow structure | High complexity; requires WDL parsing + graph rendering library; not needed for basic execution | Show task names in run detail if/when task-level status is added |
-| Cancel/abort button in UI | Users want to stop running jobs | The abort endpoint exists (`POST .../abort`) but the UI currently has no cancel UX; low priority for v2.1 | Defer to v2.2 |
+**What is NOT yet built for this milestone:**
+- `managed_files` DB table
+- File library REST API (`/projects/{slug}/files` CRUD)
+- Shell-style label template evaluation
+- File picker component replacing text fields in RunWorkflowDialog
+- "Files" tab on project detail page
+- Auto-registration hook on run completion
 
 ---
 
-## Feature Area 2: Run Status Monitoring (Polling)
+## Ecosystem Findings: How Comparable Platforms Handle This
 
-### Table Stakes
+### Galaxy (bioinformatics, closest structural analog)
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Automatic status refresh on run detail page | Users leave the page open; status must update | LOW | TanStack Query `refetchInterval: 3000` while state is PENDING/RUNNING; disable on terminal state |
-| Status badge that reflects live state | Text description alone is insufficient; color coding expected | LOW | Already done in RunsPage and RunDetailPage — apply same `statusBadgeClassName` |
-| Duration counter updating while RUNNING | Users want to know how long a run has been going | LOW | `formatDuration` already handles RUNNING state by using `Date.now()` — just needs a re-render trigger from polling |
-| Clear terminal state indication (COMPLETED/FAILED) | Users must know when to look at outputs | LOW | Already handled via state-conditional output section in RunDetailPage |
-| Error message on FAILED state | Users need actionable information | MEDIUM | Currently shows "check CLI logs" — server stores error field on run record but UI does not display it |
+Galaxy tracks every tool execution output as a numbered "dataset" appended to a per-user History.
+Each dataset records: name (editable), file format (auto-detected datatype: FASTQ, BAM, VCF, etc.),
+size, creation timestamp, the tool that produced it, and user-applied tags. Format auto-detection
+runs at upload and at output collection. Tools declare accepted/produced formats; Galaxy enforces
+compatibility at wiring time — input slots only show datasets whose format matches the declared type.
+Collections (arrays of datasets) group related files for scatter/gather.
 
-### Differentiators
+Galaxy also has a project-shared "Data Library" for admin-curated files, imported via: local server
+path, FTP, existing History datasets, or cloud plugins (S3/Google Drive). Files have genome metadata
+alongside type and size.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Runs list page auto-refresh | Users can leave Runs page open and see new runs appear or status change | LOW | `refetchInterval` on `useRuns` hook — currently fires once on mount |
-| "Submit new run" button on Runs page | Obvious entry point to execution flow | LOW | Button or link to execution dialog/page |
+**Key lesson:** The datatype filter on tool inputs is the highest-value feature. When a tool needs
+a BAM file, Galaxy shows only BAM datasets. Users never see irrelevant files.
 
-### Anti-Features
+### Terra (Cromwell/WDL, same language)
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| WebSocket/SSE push updates | Instant status without polling | Explicitly out of scope in PROJECT.md for v2.1; requires server-side streaming infrastructure | 3s polling interval is imperceptible for long-running bioinformatics jobs |
-| Task-level progress (individual task status) | Users want fine-grained progress | Requires task polling loop and DB join; tasks table exists but has no project-scoped API endpoint | Defer — would be a compelling v2.2 feature |
+Terra uses workspace data tables as its file organization layer. Each table row corresponds to an
+entity (sample, cohort, etc.) and columns hold file paths (GCS URIs) and metadata attributes.
+After a workflow run, users configure `this.output_name` patterns to write output file paths back
+into named columns of the same table row that provided inputs. There is no separate "file library"
+entity — files are referenced by path, organized by table column, typed only by column naming
+convention (e.g., a column named `bam_file`). The write-back pattern is the de facto standard for
+Terra workflows.
+
+**Key lesson:** Auto-registration of output file paths is expected behavior after run completion.
+Requiring users to manually import their own workflow outputs is a usability regression.
+
+### Seven Bridges (commercial bioinformatics platform)
+
+Files are first-class project-scoped objects. Tracked metadata: name, tags (user labels), types
+array, properties (arbitrary key/value pairs, up to 1,000), media type (MIME), size, creation/
+modification timestamps, creator (user/job ID), folder path, state. Tags and types are independent:
+types drive tool compatibility; tags are for human organization. Tools declare `patterns` arrays
+(e.g., `["*.fastq", "*.fastq.gz"]`) in their input specifications to constrain accepted files.
+
+**Key lesson:** Separating type (for filtering) from label (for human display) from tags (for
+organization) is a mature pattern. File types are most valuable when they drive UI filtering.
+
+### DNAnexus (commercial bioinformatics platform)
+
+Files are project-scoped with: ID, name, tags, types array, properties, media type, size, MD5 hash,
+creator, folder path, creation/modification timestamps, archival state. Apps declare `inputSpec` with
+`patterns` (e.g., `["*.fastq", "*.fastq.gz"]`) for file extension filtering. A `suggestions` field
+can direct users to specific project folders containing compatible files — the closest analog to
+type-aware file browsing. Required inputs shown visually distinct from optional ones.
+
+**Key lesson:** Visual distinction between required and optional inputs, with a state showing
+"missing required files," significantly reduces submission errors.
+
+### Seqera/Nextflow Tower (Nextflow equivalent of this project's UI)
+
+"Tower Datasets" manages structured CSV/TSV input data at workspace level. Each dataset is versioned;
+every workflow execution records which dataset version was used. Schema validation (via nf-core
+parameter schema) filters available datasets to only those matching the pipeline's expected format —
+only valid datasets for a pipeline input are surfaced. "Data Explorer" provides direct browse/search/
+upload against cloud buckets (S3/Azure/GCS), bridging raw object storage and pipeline-ready data.
+
+**Key lesson:** Type-filtered input pickers are table stakes for workflow tools. Showing all files
+regardless of type is a usability failure. Schema-driven filtering is the preferred mechanism.
+
+### WDL parameter_meta conventions
+
+The WDL 1.2 spec does not standardize `parameter_meta` keys — they are community convention.
+The pattern `parameter_meta { reads: { type: "fastq" } }` (structured object value, not a string)
+is used at ENCODE, in Broad Institute workflows, and in Terra-based workflows, but is not formally
+specified. The OpenWDL spec says items must correspond to declared inputs/outputs and that keys are
+added "by convention for each code base and/or tool." The existing flowy inputs endpoint already
+parses `parameter_meta` for descriptions; extracting the `type` key is a minor addition.
+
+Shell-style label templates in `parameter_meta` (e.g., `label: "${fastq%%.fastq*}.bam"`) are
+entirely custom to this project — no other platform uses this pattern. The concept is sound but
+has no ecosystem precedent, which increases implementation risk.
 
 ---
 
-## Feature Area 3: CLI Registry Commands
+## Feature Landscape
 
-### Table Stakes
+### Table Stakes (Users Expect These)
 
-Commands that users of Docker-registry-style CLIs (Docker CLI, Dockstore CLI) expect.
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `flowy registry push <file.wdl> --name <name> --project <slug>` | Backend `POST /projects/{slug}/registry` already exists; CLI wrapper is the user's primary interface | MEDIUM | Read file, POST JSON `{name, content}`, print digest + version ID on success. Needs auth token from config |
-| `flowy registry list --project <slug>` | Users need to see what's in the registry | LOW | `GET /projects/{slug}/registry`, format as table: name, kind, versions, tags |
-| `flowy registry pull <name[:tag|@digest]> --project <slug>` | Users need to retrieve WDL source locally | LOW | `GET /projects/{slug}/registry/{name}` with optional tag/digest query param, write content to stdout or `--output` file |
-| `flowy registry tag <name> <digest> <tag> --project <slug>` | Mutable tags are core to the registry model (Docker pattern) | LOW | `POST /projects/{slug}/registry/{name}/tags` with `{tag, digest}` body |
-| `flowy registry delete-tag <name> <tag> --project <slug>` | Lifecycle management; admins need to clean up | LOW | `DELETE /projects/{slug}/registry/{name}/tags/{tag}` |
-| Authentication propagation | Registry commands need auth — same JWT flow as `flowy run` | LOW | Read token from config file or `FLOWY_TOKEN` env var; add `Authorization: Bearer` header via existing client |
-
-### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| `--output` flag on `pull` to save WDL to file | Scripting and automation workflows need file output | LOW | `os.WriteFile` if flag set, else stdout |
-| Human-readable table output (default) + `--json` flag | Matches modern CLI conventions (cf. `gh`, `docker`) | LOW | For `list` command — default prints aligned columns, `--json` emits raw API response |
-| Push prints tag suggestion | After push, print "use `flowy registry tag <name> <digest> latest` to tag this version" | LOW | Pure UX improvement in push output |
-| Config `default_project` fallback | `flowy registry list` without `--project` falls back to `cfg.Client.DefaultProject` | LOW | Consistent with how `flowy run --project` already works |
-
-### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| `flowy registry delete` (entry-level delete) | Cleanup of entire entries | Backend delete-entry endpoint does not exist; scope creep for v2.1 | Implement tag cleanup; full entry deletion is a separate backend feature |
-| Import resolution at push time | Validate imports before pushing | HTTP imports are out of scope; local imports are not resolvable from the server side | Push sends raw content; server validates WDL parse only (already implemented in handler) |
-| Bulk push from directory | Push all `.wdl` files in a folder | Rarely needed; adds complexity | Shell loop: `for f in *.wdl; do flowy registry push $f ...; done` |
-
----
-
-## Feature Area 4: Browser-Based WDL Upload (UI Registry Push)
-
-### Table Stakes
+Features that users of comparable platforms treat as baseline. Missing any makes the library feel broken.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| File picker for `.wdl` files | Browser upload convention; users should not paste WDL text manually | LOW | `<input type="file" accept=".wdl">` reads file content via FileReader API |
-| Name field for registry entry | Required by `POST /projects/{slug}/registry` | LOW | Text input validated against slug format (lowercase alphanumeric + hyphens) |
-| Upload button with loading state | Any form submission needs progress feedback | LOW | Show spinner during POST |
-| Success feedback with digest displayed | Users need confirmation and traceability | LOW | Toast or inline message showing `sha256:...` (short) and kind detected |
-| Error feedback (parse failure, name conflict) | Server returns 422 for invalid WDL, 409 for kind mismatch | LOW | Display server error message inline |
-| Admin/executor role gating | Only admins and executors should push — matches RBAC model | LOW | Check `currentMember.role` in `['admin', 'executor']`; hide button for viewers |
+| List files in project with name, size, creation date, type, label | Every file system shows these fields; Galaxy, DNAnexus, Seqera all display them | LOW | New `GET /projects/{slug}/files` endpoint; `managed_files` table with these columns |
+| Import via browser upload | Primary import path; `/uploads` endpoint already built in v2.1; wiring it to create library entries is the expected completion | LOW | Extend upload handler to insert into `managed_files` after storing file; return file ID alongside path |
+| Import via S3/MinIO path | Files already live in S3; users must register by path without re-uploading | LOW | Accept `s3://bucket/key`; validate existence via S3Backend; insert managed_file with source=s3 |
+| Import via server local path | Admin/HPC use case for large files mounted on server FS | LOW | Accept absolute path; server stat() to get size; role-gate to admin or executor; source=local |
+| File type annotation from `parameter_meta` | Galaxy filters by datatype; Seqera filters by schema type; type-aware picking is universally expected | MEDIUM | Parse `parameter_meta { input: { type: "fastq" } }` at registry-push time; expose in inputs endpoint; store on managed_file at auto-registration |
+| User-editable label (defaults to filename) | Galaxy custom dataset names; DNAnexus file renaming; Seven Bridges name field — all support this | LOW | `label` column in `managed_files`; default to `filepath.Base(path)`; editable via PATCH |
+| Auto-register all File/Directory outputs on run completion | Terra write-back; Galaxy auto-appends to History; DNAnexus output folder — this is expected behavior in all WDL platforms | MEDIUM | Hook in dispatch.go after `UpdateRunOutputs`; parse outputs_json; for each File/Directory value insert managed_file row with source=workflow_output and run_id FK |
+| File picker in RunWorkflowDialog for File-typed inputs | Seqera and DNAnexus both replace text fields with typed pickers; the v2.1 text field was explicitly noted as deferred to v2.2 | MEDIUM | Replace File-type text input with Combobox showing managed_files filtered by type; preserve manual path fallback as toggle |
+| Filter managed files by type in picker | Galaxy and Seqera both filter; showing all files regardless of type is a usability failure | MEDIUM | `?file_type=fastq` query param on list endpoint; Combobox filters client-side from fetched list |
+| "Files" tab on project detail page | Users need a browsable, importable file list; no navigation to files currently exists | MEDIUM | New tab in ProjectDetailPage; table with columns: label, type badge, size, source, created; Import button; Delete action |
+| Delete file from library (record only) | Users must remove stale entries; standard CRUD | LOW | `DELETE /projects/{slug}/files/{id}`; removes DB record; does NOT delete underlying storage object |
 
-### Differentiators
+### Differentiators (Competitive Advantage)
+
+Features that make flowy's file library meaningfully better than a plain file list.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| WDL content preview before upload | User can confirm they selected the right file | LOW | Read file via FileReader, display first N lines in a code block |
-| Auto-populate name from filename | Remove manual entry step; strip `.wdl` extension, convert to slug format | LOW | `filename.replace(/\.wdl$/, '').toLowerCase().replace(/[^a-z0-9-]/g, '-')` |
-| Tag field (optional) | User can immediately tag the version after push in the same form | MEDIUM | Make optional; if set, POST tag after successful push |
-| Registry page "Upload" button | Discoverable entry point to the upload flow | LOW | Add button to RegistryPage header alongside existing entries list |
+| Shell-style label templates in `parameter_meta` (e.g., `"${fastq%%.fastq*}.bam"`) | Automatically derives meaningful output file labels from input file names without manual annotation; unique to this project | HIGH | Evaluate `${var}`, `${var%suffix}`, `${var%%suffix}`, `${var#prefix}`, `${var##prefix}` at auto-registration time; input variable values available from runs table; no ecosystem precedent — treat as P2 |
+| File origin tracking with run link (source_type + run_id FK) | Answers "where did this file come from?" with one click; Seqera added this as a highlighted 2025 feature | LOW | `source_type` enum column (`upload`/`s3_path`/`local_path`/`workflow_output`); `run_id` FK nullable; link in Files tab when source=workflow_output |
+| Type inherited from WDL output `parameter_meta` at auto-register | Output files automatically know their type without user annotation; enables downstream filtering immediately | MEDIUM | At auto-registration, look up the WDL output declaration's `parameter_meta` type field; store on managed_file |
+| Manual path fallback in file picker | Power users who know exact S3 paths can bypass the picker; DNAnexus CLI supports this; prevents lock-in to the library | LOW | "Enter path manually" toggle in the picker; shows text input when active; always available for inputs with no type match |
+| Search/filter in Files tab | As file counts grow, users need to find files quickly; Galaxy added history search as a major v2 feature | LOW | Client-side filter by label, type, path against fetched list; sufficient for typical project sizes (<1,000 files) |
 
-### Anti-Features
+### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Drag-and-drop upload | Modern UX convention | Adds complexity with no functional gain for WDL — users typically navigate to specific files | Standard file picker is sufficient; can be added later as enhancement |
-| Multi-file upload (for import dependencies) | WDL workflows can import other files | HTTP imports deferred; local imports not resolvable server-side — pushing a bundle is not supported | Single-file push; document that workflows with local imports must use CLI |
-| In-browser WDL editor | Users want to write WDL in the browser | High complexity (syntax highlighting, error markers); out of scope | Use WDLSourceViewer for read-only display; direct users to local editors |
+| Delete underlying storage object when removing from library | Users want full cleanup | Destructive and irreversible; output files may be referenced by other runs or re-registered; storage management is a separate operational concern | Remove DB record only; document that the storage path is preserved; provide admin tooling for storage cleanup in a future milestone |
+| Content-hash deduplication | Avoid duplicate storage for identical files | MD5/SHA computation on genomic files (>10GB) adds significant latency to uploads and imports; complicates S3 path imports (file may not be server-accessible for hashing); adds schema complexity | Allow duplicate registrations; the library is a metadata index, not a storage deduplication layer |
+| Global (cross-project) file library | Share files across projects | Breaks project-scoped RBAC isolation; requires re-evaluating the permission model across the entire system | S3 path import already works cross-project implicitly; explicit cross-project sharing is future scope |
+| Folder/directory hierarchy in library | Organise files as a filesystem tree | Significant UI complexity; WDL Directory type is uncommon in practice; most bioinformatics workflows deal with flat file lists | Use type + label filtering for organization; Directory files tracked as single entries with their path |
+| Automatic file type detection from extension | Infer type from `.bam`, `.fastq.gz`, `.vcf` | Extension sniffing creates false confidence; `.gz` complicates extension parsing; `parameter_meta` is the authoritative declared type | Derive type from `parameter_meta` at auto-registration; user sets type on manual import; no guessing |
+| Pagination for large file libraries | Standard for large data sets | Adds API and client complexity; for typical project sizes (hundreds to low thousands) client-side filtering is sufficient | Implement client-side filtering first; server-side pagination only when profiling shows need |
+| File preview / viewer | Users want to inspect file contents | Genomic files (BAM, FASTQ, VCF) require specialized viewers; serving raw content through a browser API has security implications (path traversal, content-type spoofing) | Provide download only; format-specific viewers are out of scope for this milestone |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[UI Workflow Execution]
-    requires ──> [Registry entry list] (existing v2.0)
-    requires ──> [WDL source retrieval] (existing v2.0 — needed to derive input schema)
-    requires ──> [Run submission API] (existing v1.3)
-    enhances ──> [Run status monitoring]
+[managed_files DB table + Store interface methods]
+    required_by ──> [Files tab in ProjectDetailPage]
+    required_by ──> [File picker in RunWorkflowDialog]
+    required_by ──> [Auto-register outputs on run completion]
+    required_by ──> [Import via browser upload]
+    required_by ──> [Import via S3/MinIO path]
+    required_by ──> [Import via server local path]
 
-[Run status monitoring]
-    requires ──> [Run detail page] (existing v2.0)
-    enhances ──> [Runs list page] (existing v2.0)
+[Import via browser upload]
+    requires ──> [POST /projects/{slug}/uploads] (existing v2.1)
+    requires ──> [managed_files table] (new)
 
-[CLI registry push]
-    requires ──> [internal/client registry push method] (new)
-    requires ──> [auth token in config] (existing config structure)
-    enhances ──> [UI registry upload] (same backend API)
+[Import via S3/MinIO path]
+    requires ──> [S3Backend Stat/existence check] (existing v1.2)
+    requires ──> [managed_files table] (new)
 
-[CLI registry list/pull/tag/delete-tag]
-    requires ──> [internal/client registry methods] (new)
-    enhances ──> [UI registry browsing] (same data)
+[Auto-register outputs on run completion]
+    requires ──> [run completion hook in dispatch.go] (new insertion point)
+    requires ──> [outputs_json in runs table] (existing v1.3)
+    requires ──> [managed_files table] (new)
+    optionally_enhanced_by ──> [Label template evaluation]
 
-[UI registry upload]
-    requires ──> [Registry push API] (existing v1.3)
-    requires ──> [RBAC role check] (existing v2.0 pattern)
-    enhances ──> [CLI registry push] (same data; different entry point)
+[Label template evaluation]
+    requires ──> [Auto-register outputs on run completion] (called at same time)
+    requires ──> [run inputs_json from runs table] (existing — to resolve variable values)
+    requires ──> [managed_files of inputs] (to resolve File-typed variable labels)
 
-[Dynamic WDL input form]
-    requires ──> [UI workflow execution] (context for form)
-    requires ──> [WDL source content] (to derive input schema)
-    enhances ──> [UI workflow execution] (replaces raw JSON textarea)
+[File type annotation from parameter_meta]
+    requires ──> [WDL parameter_meta parsing] (existing — server parses WDL AST)
+    requires ──> [inputs endpoint extension] (minor: extract "type" key from structured object value)
+    enhances ──> [File picker type filter]
+    enhances ──> [Auto-register output type]
+
+[File picker in RunWorkflowDialog]
+    requires ──> [GET /projects/{slug}/files?file_type=] (new endpoint)
+    requires ──> [RunWorkflowDialog] (existing v2.1)
+    requires ──> [File type annotation] (to enable useful filtering)
+    requires ──> [manual path fallback] (preserve existing UX for users bypassing picker)
+
+[Files tab in ProjectDetailPage]
+    requires ──> [GET /projects/{slug}/files] (new)
+    requires ──> [ProjectDetailPage refactor to tabs] (existing page, new tab structure)
+    requires ──> [Import dialog] (Upload / S3 path / Local path modes)
+    requires ──> [DELETE /projects/{slug}/files/{id}] (new)
 ```
 
 ### Dependency Notes
 
-- **Dynamic input form requires WDL parsing in the frontend.** The server returns raw WDL content in `RegistryPullResponse.content`. The UI must parse `input {}` declarations to render typed fields. A lightweight line-by-line scan of the WDL input block is feasible for primitive types; full AST parsing in the browser is not justified for v2.1.
-- **CLI registry commands require new `internal/client` methods.** The client package has no registry methods. Six new methods are needed (`Push`, `List`, `Pull`, `CreateTag`, `DeleteTag`, and their project-scoped variants). This is the foundation for all CLI registry subcommands.
-- **UI registry upload and CLI push share the same API endpoint.** The `POST /projects/{slug}/registry` endpoint accepts JSON `{name, content}`. The UI reads file content via FileReader and posts this JSON — identical to the CLI flow.
-- **`flowy registry` subcommand requires a new command dispatcher.** Currently `cmd/flowy/main.go` handles `check`, `run`, `submit`, `status`, `outputs`. A new `registry` case must be added, with sub-dispatch to `push`, `list`, `pull`, `tag`, `delete-tag`.
+- **managed_files table is the root dependency.** Every other feature in this milestone depends on it. Migration 00009 must be the first deliverable.
+
+- **File picker requires type annotation to be useful.** A picker showing all files regardless of type is only marginally better than a text field. Build the type annotation extraction in the same phase as the managed_files table, before wiring the picker.
+
+- **Auto-register outputs is the highest-value feature and has medium complexity.** The insertion point (dispatch.go after `UpdateRunOutputs`) is clearly identified. The WDL type information (knowing which outputs are File/Directory) is available from the in-memory workflow object at dispatch time — this is the key data point that makes type inference at auto-registration tractable.
+
+- **Label template evaluation depends on managed files of inputs.** The template `${fastq%%.fastq.gz}` resolves `fastq` against the run's input managed_file records. This means: (1) the file picker must store managed_file IDs alongside paths as input values, and (2) the auto-registration path must look up those IDs. This creates a bidirectional dependency that makes label templates a P2 feature, not P1.
+
+- **Browser upload import reuses the v2.1 uploads endpoint entirely.** The handler already stores the file and returns its path. Adding managed_file insertion is a 5-line change in `handleUpload`.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v2.1)
+### Launch With (v2.2)
 
-These are the minimum features to satisfy the milestone goal stated in PROJECT.md.
+Minimum viable product: users can browse, import, and pick files.
 
-- [ ] `flowy registry push <file> --name <name> --project <slug>` — primary registry management CLI command
-- [ ] `flowy registry list --project <slug>` — list registry entries from CLI
-- [ ] `flowy registry pull <name[:tag]> --project <slug>` — retrieve WDL source from CLI
-- [ ] `flowy registry tag <name> <digest> <tag> --project <slug>` — tag a version
-- [ ] `flowy registry delete-tag <name> <tag> --project <slug>` — remove a tag
-- [ ] UI registry upload dialog on RegistryPage — file picker, name field, submit, success/error feedback
-- [ ] UI workflow execution — select from registry, JSON textarea for inputs, submit, redirect to run detail
-- [ ] Run detail page polling — 3s interval while RUNNING/PENDING, stop on terminal state
-- [ ] Runs list auto-refresh — same polling while any run is active
+- [ ] `managed_files` DB table (migration 00009): id, project_id, label, path, file_type (nullable), size_bytes (nullable), source_type (upload/s3_path/local_path/workflow_output), run_id (nullable FK to runs), created_at
+- [ ] Store interface additions: `CreateManagedFile`, `ListManagedFiles(projectID, fileType string)`, `GetManagedFileByID`, `DeleteManagedFile`
+- [ ] `GET /projects/{slug}/files` — list files; `?file_type=` filter param; viewer role
+- [ ] `POST /projects/{slug}/files` — register S3 path or local path; executor role
+- [ ] `PATCH /projects/{slug}/files/{id}` — update label or file_type; executor role
+- [ ] `DELETE /projects/{slug}/files/{id}` — remove DB record; executor role; does NOT touch storage
+- [ ] Extend `handleUpload` (POST /uploads): after storing file, insert managed_file with source_type=upload; return file_id in response alongside path
+- [ ] Auto-register all File/Directory outputs in dispatch.go run completion path (source_type=workflow_output, run_id FK populated)
+- [ ] Extract `type` key from structured `parameter_meta` object values in inputs endpoint; include in `RegistryInputItem.FileType` field
+- [ ] "Files" tab in ProjectDetailPage: table with label, file_type badge, human-readable size, source_type badge, created_at; Import button opens import dialog
+- [ ] Import dialog: three tabs (Upload via file picker → POST /uploads, S3 Path entry, Local Path entry → POST /files)
+- [ ] File picker in RunWorkflowDialog for File-typed inputs: Combobox filtered by file_type from parameter_meta; shows label + path; "Enter path manually" fallback toggle
 
-### Add After Validation (v2.1.x)
+### Add After Validation (v2.2.x)
 
-- [ ] Dynamic typed input form (parse WDL input declarations) — trigger: user feedback that raw JSON is painful
-- [ ] "Run again" from run detail — trigger: power users requesting it
-- [ ] Tag field in UI upload dialog — trigger: users finding post-upload tag creation cumbersome
-- [ ] `--json` output flag for `flowy registry list` — trigger: automation/scripting needs
+- [ ] Shell-style label template evaluation at auto-registration — HIGH complexity, MEDIUM value; add when users report that auto-generated output labels (UUID paths) are unreadable
+- [ ] Run provenance link in Files tab (click source run from a file) — LOW complexity; add as quick follow-on
+- [ ] Search/filter field in Files tab — LOW complexity; add when projects accumulate >50 files
 
-### Future Consideration (v2.2+)
+### Future Consideration (v2.3+)
 
-- [ ] Task-level status and progress display — requires task status API endpoint
-- [ ] Abort button in UI — abort endpoint exists, just needs UI
-- [ ] In-browser WDL source editor — large scope, requires syntax highlighting
-- [ ] Registry entry deletion (full entry, not just tag) — requires new backend endpoint
+- [ ] Directory type files (WDL `Directory`) — rare in practice for current workflows; defer
+- [ ] Cross-project file sharing (explicit) — scope creep for v2.2; S3 path import works today
+- [ ] File versioning — significant schema change; requires product validation first
+- [ ] Bulk operations (select all, bulk delete) — needed only at scale; adds substantial UI complexity
 
 ---
 
@@ -244,49 +261,57 @@ These are the minimum features to satisfy the milestone goal stated in PROJECT.m
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| `flowy registry push` | HIGH | MEDIUM | P1 |
-| `flowy registry list` | HIGH | LOW | P1 |
-| `flowy registry pull` | HIGH | LOW | P1 |
-| `flowy registry tag` | MEDIUM | LOW | P1 |
-| `flowy registry delete-tag` | MEDIUM | LOW | P1 |
-| UI registry upload dialog | HIGH | LOW | P1 |
-| UI workflow execution (JSON textarea inputs) | HIGH | MEDIUM | P1 |
-| Run detail page polling | HIGH | LOW | P1 |
-| Runs list auto-refresh | MEDIUM | LOW | P1 |
-| Dynamic typed input form | HIGH | HIGH | P2 |
-| Tag field in upload dialog | LOW | MEDIUM | P2 |
-| "Run again" button | MEDIUM | MEDIUM | P2 |
-| `--json` CLI output flag | LOW | LOW | P2 |
-| Abort button in UI | MEDIUM | LOW | P3 |
-| Task-level status display | HIGH | HIGH | P3 |
+| managed_files table + Store interface | HIGH | LOW | P1 |
+| Auto-register workflow outputs (no templates) | HIGH | MEDIUM | P1 |
+| Files tab in ProjectDetailPage | HIGH | MEDIUM | P1 |
+| Import via browser upload (extend /uploads) | HIGH | LOW | P1 |
+| Import via S3 path | MEDIUM | LOW | P1 |
+| File type from parameter_meta (inputs endpoint) | HIGH | LOW | P1 |
+| File picker in RunWorkflowDialog (type filter) | HIGH | MEDIUM | P1 |
+| Manual path fallback in file picker | MEDIUM | LOW | P1 |
+| Import via local server path | LOW | LOW | P1 |
+| Delete file from library | LOW | LOW | P1 |
+| Edit label/file_type on existing file | MEDIUM | LOW | P2 |
+| Search/filter in Files tab | MEDIUM | LOW | P2 |
+| Run provenance link in Files tab | MEDIUM | LOW | P2 |
+| Source type display in Files tab | MEDIUM | LOW | P2 |
+| Shell-style label template evaluation | MEDIUM | HIGH | P2 |
+
+**Priority key:**
+- P1: Must have for v2.2 launch
+- P2: Should add in v2.2.x follow-on
+- P3: Future milestone
 
 ---
 
 ## Comparable System Analysis
 
-These are reference systems studied, not competitors — flowy is a self-hosted engine.
-
-| Feature | Terra (Cromwell) | Nextflow Tower (Seqera) | WDL Workspace (EPAM) | flowy v2.1 approach |
-|---------|------------------|--------------------------|----------------------|---------------------|
-| Workflow selection | Browse workspace, select WDL | Select pipeline from catalog | Upload or select from library | Select from project registry |
-| Parameter input | JSON template + form hybrid | Schema-driven form (nf-core schema) | JSON input fields | JSON textarea first; typed form as differentiator |
-| Submit action | "Launch" button, async | "Launch" button, async | "Run" button | Submit button then redirect to run detail |
-| Status monitoring | Table with polling, colored states | Real-time via WebSocket | Table with status polling | 3s polling, status badge in detail page |
-| CLI registry | `dockstore tool publish` (GitHub-linked) | `nextflow` + Tower API | None | `flowy registry push/pull/list/tag/delete-tag` |
-| File upload | Via Terra workspace files | Via datasets feature | Via upload form | Single WDL file upload dialog |
+| Feature | Galaxy History | Terra data tables | Seven Bridges files | DNAnexus files | Seqera Tower | flowy v2.2 approach |
+|---------|--------------|-------------------|---------------------|----------------|--------------|---------------------|
+| Metadata tracked | name, format, size, tags, timestamp | path (in column), attribute columns | name, tags, types, props, size, md5, timestamps | name, tags, types, props, size, md5, folder, timestamps | dataset name, version, created_by, last_used | label, file_type, size_bytes, source_type, run_id, created_at |
+| Type filtering in picker | Yes — by format= datatype | Column convention only, no automated filter | Yes — types array drives tool compat | Yes — inputSpec patterns array | Yes — nf-core param schema | Yes — file_type from parameter_meta; Combobox filtered |
+| Auto-register outputs | Yes — all tool outputs to History | Write-back configured per workflow, not automatic | Outputs appear in project files (automatic) | Outputs appear in output folder (automatic) | No — user creates Datasets manually | Yes — on COMPLETED, all File/Directory outputs |
+| Import methods | upload, FTP, server path, S3 plugin | GCS path entry | upload, API, copy | upload, CLI, API | CSV/TSV upload, S3 event | browser upload, S3 path, local path |
+| User-editable labels | Yes — dataset name editable | Column name is label | name field editable | name field editable | dataset name editable | label column, defaults to filename |
+| Origin tracking | Links to generating tool | Implicit via table row | Creator (user/job) | Creator (user/job) | Version history | source_type + run_id FK |
+| Search/filter | Advanced search (2023+) | Table filter | Metadata-based search | Name/tag search | Filter by metadata | Client-side by label/type (v2.2); server-side later |
 
 ---
 
 ## Sources
 
-- Codebase analysis: `/home/uehara/flowy/internal/api/types.go`, `/home/uehara/flowy/internal/server/handlers.go`, `/home/uehara/flowy/internal/server/handlers_registry.go`, `/home/uehara/flowy/cmd/flowy/main.go`, `/home/uehara/flowy/web/src/features/runs/`, `/home/uehara/flowy/web/src/features/registry/`
-- Terra/Cromwell parameter input: https://support.terra.bio/hc/en-us/articles/360037120252-Specify-inputs
-- Seqera Platform (Nextflow Tower) monitoring: https://docs.seqera.io/platform-cloud/monitoring/overview
-- WDL Workspace (comparable open-source UI): https://github.com/epam/wdl-workspace
-- AWS HealthOmics WDL parameter detection (2025): https://aws.amazon.com/about-aws/whats-new/2025/06/aws-healthomics-automatic-detection-wdl-workflow-parameters/
-- Argo Workflows UI parameter input: https://argo-workflows.readthedocs.io/en/latest/workflow-inputs/
-- PROJECT.md milestone scope: `/home/uehara/flowy/.planning/PROJECT.md`
+- Terra workflow outputs to data table: https://support.terra.bio/hc/en-us/articles/4500420806299 (403 in current session; content confirmed via web search)
+- Terra data management overview: https://support.terra.bio/hc/en-us/articles/360034335332
+- Galaxy datatypes: https://galaxyproject.org/learn/datatypes/
+- Galaxy 2024 update (RO-Crate, workflow export): https://academic.oup.com/nar/article/52/W1/W83/7676834
+- Seven Bridges file metadata: https://docs.sevenbridges.com/docs/metadata-on-the-seven-bridges-platform
+- DNAnexus file objects: https://documentation.dnanexus.com/developer/api/introduction-to-data-object-classes/files
+- DNAnexus app metadata (inputSpec patterns): https://documentation.dnanexus.com/developer/apps/app-metadata
+- Seqera Tower Datasets (type-filtered picker): https://seqera.io/blog/introducing-tower-datasets/
+- Seqera Data Explorer: https://seqera.io/blog/introducing-data-explorer/
+- WDL parameter_meta spec: https://docs.openwdl.org/en/1.0.0/WDL/parameter_meta/ (404; content from OpenWDL GitHub and community)
+- WDL best practices (Dockstore): https://docs.dockstore.org/en/develop/advanced-topics/best-practices/wdl-best-practices.html
 
 ---
-*Feature research for: WDL workflow execution UI, CLI registry management, browser-based WDL upload (flowy v2.1)*
-*Researched: 2026-04-07*
+*Feature research for: Managed File Library — flowy v2.2*
+*Researched: 2026-04-09*

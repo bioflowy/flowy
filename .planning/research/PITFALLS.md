@@ -1,223 +1,211 @@
 # Pitfalls Research
 
-**Domain:** Adding workflow execution UI, CLI registry commands, and browser WDL upload to flowy v2.1
-**Researched:** 2026-04-07
-**Confidence:** HIGH (based on direct codebase inspection of all integration points, ADR 0001, and cross-milestone retrospective lessons)
+**Domain:** Managed file library added to existing WDL workflow engine (Go + SQLite + S3/MinIO + React)
+**Researched:** 2026-04-09
+**Confidence:** HIGH — based on direct codebase inspection plus domain analysis
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: File Inputs Need Upload-Then-Reference, Not Inline Data
+### Pitfall 1: Non-Atomic Output File Registration (Race Between State Write and File Insert)
 
 **What goes wrong:**
-The browser form collects a WDL `File`-typed input. The developer stores the browser `File` object and passes its local path string (e.g., `"C:\Users\alice\data.bam"`) or a data URL to the `InputsJSON` of `POST /projects/{slug}/workflows`. The server receives the path but the daemon has no access to the user's local machine — it tries to resolve the path on the shared filesystem and fails with "file not found" or silently passes an empty file to the container.
+The run goroutine in `dispatch.go` calls `UpdateRunOutputs` and then `UpdateRunState(COMPLETED)` as two separate, non-transactional writes. If auto-registration of output files is inserted between them — or after them — a crash, panic, or goroutine cancellation leaves the run COMPLETED in the DB with no managed file records. A client polling the run sees COMPLETED but the Files tab is empty. Re-running registration has no idempotent path.
 
 **Why it happens:**
-Every other WDL primitive (String, Int, Float, Boolean) serialises cleanly into JSON and round-trips through `InputsJSON` without issue. The `File` type looks like a string in JSON — it is a string containing a path. The distinction between "a path that exists on the server's filesystem" and "a path that existed on the user's browser machine" is invisible until the daemon tries to localize the file and finds nothing.
-
-ADR 0001 explicitly removed heuristic file staging from the CLI client because the client cannot reliably detect File-typed inputs. The browser UI faces the same constraint: it must upload first and substitute the resulting server-side path before submitting.
+The current pattern in `runWorkflow` (dispatch.go lines 277–295) runs `UpdateRunOutputs`, writes `outputs.json` to storage, then calls `UpdateRunState(COMPLETED)`. Developers naturally append `RegisterOutputFiles(...)` at the end of the success branch. But that fourth step is outside any transaction and runs after the state is already COMPLETED. On partial failure the system is permanently inconsistent.
 
 **How to avoid:**
-Implement a two-step flow for `File` inputs:
-1. Upload the file to the server via a dedicated endpoint (e.g., `POST /projects/{slug}/uploads`) that stores it under `base_dir/runs/{run_id}/inputs/` and returns the server-side absolute path.
-2. Pre-generate the run UUID client-side (the submit request already supports `run_id` in `api.SubmitRequest`) so the staging path is deterministic before submission.
-3. Substitute the returned server-side path into the inputs map before calling `POST /projects/{slug}/workflows`.
+Add a single atomic `CompleteRun(ctx, runID, outputsJSON string, files []ManagedFileInput) error` method to the `Store` interface. The `SQLiteStore` implementation wraps all three mutations — `UPDATE runs SET outputs_json`, `INSERT OR IGNORE INTO managed_files (one row per file)`, and `UPDATE runs SET state = 'COMPLETED'` — in a single `BEGIN TRANSACTION ... COMMIT` using the single-writer pool (`SQLiteStore.writer`).
 
-Alternatively, for the MVP scope where the server uses local storage, stage the file at a well-known location and pass its absolute path. For S3 backends, the upload endpoint must put the file into S3 and return the `s3://bucket/prefix/...` URI.
+Important constraint: the `Server` struct holds `store.Store` (the interface), not `*sqlite.SQLiteStore`. The concrete `WriterDB()` method on `SQLiteStore` is not accessible from the server. Calling individual Store methods in sequence does NOT provide atomicity. The only correct design is to express atomicity as a single new interface method.
 
-**Warning signs:**
-- `File`-typed inputs are treated identically to `String` inputs in the form submission code
-- The run is submitted but the daemon log shows "no such file or directory" for every File input
-- No upload endpoint exists before the execution UI phase ships
-
-**Phase to address:**
-Phase that implements the execution UI dynamic input form — do not build the `File` input widget until the upload endpoint exists. Block `File` widget on upload infrastructure.
-
----
-
-### Pitfall 2: WDL Input Schema Must Be Fetched from the Registry, Not Inferred Client-Side
-
-**What goes wrong:**
-The developer builds the dynamic form by fetching the WDL source string from `GET /projects/{slug}/registry/{name}?digest=...` and parsing it in the browser using a regex or ad-hoc string scan. The parser misses optional inputs (those declared with `?`), defaults (inputs with `= expression`), and compound types (Array, Map, Struct). The form shows the wrong fields, marks required inputs as optional, or omits inputs entirely.
-
-**Why it happens:**
-The WDL content is available as a plain string from the existing registry pull endpoint. Writing a quick regex to extract `input { ... }` blocks seems faster than adding a backend endpoint. But WDL's grammar for declarations is non-trivial: types can nest (e.g., `Array[Map[String, File]]?`), default expressions can span multiple lines, and struct members are not inline. The Go WDL parser already handles all of this correctly.
-
-**How to avoid:**
-Add a backend endpoint (e.g., `GET /projects/{slug}/registry/{name}/inputs?digest=...`) that parses the WDL using the existing Go parser, walks `doc.Workflows[0].Inputs` (and `doc.Tasks[0].Inputs` for tools), and returns a structured JSON schema per input:
-
-```json
-[
-  { "name": "sample_name", "type": "String", "optional": false, "has_default": false },
-  { "name": "reference",   "type": "File",   "optional": false, "has_default": false },
-  { "name": "threads",     "type": "Int",    "optional": true,  "has_default": true  }
-]
+Concretely:
+```
+BEGIN TRANSACTION
+  UPDATE runs SET outputs_json = ?, updated_at = now() WHERE id = ?
+  INSERT OR IGNORE INTO managed_files ... (one row per File/Directory output)
+  UPDATE runs SET state = 'COMPLETED', updated_at = now() WHERE id = ?
+COMMIT
 ```
 
-This reuses `wdl/parser.Parse` and `ast.Decl.Type` / `ast.Decl.Expr` — no new parsing logic is needed. The frontend receives a flat schema and renders the correct widget per type.
-
 **Warning signs:**
-- The frontend imports a WDL parsing library or does string matching on WDL content
-- Input forms appear correct for the simplest WDL but fail on workflows with optional inputs or default expressions
-- Struct or Map inputs appear as plain text fields instead of JSON editors
+- Files tab is empty on completed runs during integration testing.
+- Run state is COMPLETED but `managed_files` table has zero rows for that run.
+- Test teardown introduces random sleep and intermittent failures appear.
+- `runWorkflow` calls `store.UpdateRunOutputs`, then a separate file insert function, then `store.UpdateRunState` — three separate store method calls.
 
 **Phase to address:**
-Phase that implements the dynamic input form — add the `/inputs` endpoint before building the form component.
+Phase that implements `runWorkflow` completion hook — the `CompleteRun` atomic method must be added to the `Store` interface here, not retrofitted later.
 
 ---
 
-### Pitfall 3: Poll-Based Status Runs Forever if TanStack Query Refetch Is Not Gated on Terminal State
+### Pitfall 2: Path Traversal in Server Local-Path Import
 
 **What goes wrong:**
-The developer uses TanStack Query's `refetchInterval` option to poll `GET /projects/{slug}/runs/{id}/status` every N seconds. The interval runs indefinitely, including after the run reaches `COMPLETED`, `FAILED`, or `ABORTED`. Every open run detail tab keeps polling the server indefinitely, creating unnecessary load and triggering re-renders on stale data.
+The "import from server local path" feature accepts a user-supplied path (e.g. `/data/samples/reads.fastq`). If the server blindly calls `os.Open(userPath)` or `s.backend.DownloadFile(userPath)`, a malicious executor role user can supply `../../../../etc/passwd` or any absolute path the server process can read. The existing upload handler already validates against `BaseDir` prefix (`handlers_uploads.go` lines 47–50), but that protection does not carry over to a new import-from-path endpoint if it is written separately.
 
 **Why it happens:**
-`refetchInterval: 3000` is the obvious one-liner for polling. Stopping the interval requires passing a function that checks the query data and returns `false` once a terminal state is seen. Developers copy the simple number form from examples and skip the conditional.
+Developers treat server local-path import as "just open a file on disk," copy the happy path from `DownloadFile`, and forget to reapply the prefix-confinement guard. The existing `handleFileDownload` uses a weaker `strings.Contains(filePath, "..")` check (line 665) that stops relative traversal but permits absolute paths outside allowed directories.
 
 **How to avoid:**
-Pass a function to `refetchInterval` that inspects the query data:
+Define an explicit "allowed import root" (config field, e.g. `ImportRoot`). On every local-path import request:
+1. `filepath.Clean` the user path.
+2. Assert it has `filepath.Clean(cfg.ImportRoot) + "/"` prefix.
+3. Return 400 if the assertion fails — do not log the attempted path in error responses (information leak).
 
-```typescript
-const TERMINAL_STATES = new Set(['COMPLETED', 'FAILED', 'ABORTED'])
-
-useQuery({
-  queryKey: ['projects', slug, 'runs', id, 'status'],
-  queryFn: () => apiClient.get(`/projects/${slug}/runs/${id}/status`),
-  refetchInterval: (query) => {
-    const state = (query.state.data as StatusResponse | undefined)?.state
-    return state && TERMINAL_STATES.has(state) ? false : 3000
-  },
-})
-```
-
-Also gate the `useRunOutputs` query on `run.state === 'COMPLETED'` — this pattern already exists in `RunDetailPage.tsx` and must be followed consistently in all new polling code.
-
-The existing `useRuns` hook (run list) already refetches on window focus (TanStack Query default). For the run detail page, suppress window-focus refetch after terminal state: `refetchOnWindowFocus: false` once the run is in a terminal state.
+Reuse the same guard pattern already in `handleUpload`.
 
 **Warning signs:**
-- `refetchInterval` is set to a number literal (e.g., `3000`) without a conditional
-- The network tab shows continuous polling calls for runs showing `COMPLETED`
-- Closing and reopening a run detail tab triggers a new burst of poll requests for old runs
+- Handler uses `os.Open(r.URL.Query().Get("path"))` directly without prefix check.
+- Integration test with `path=../../etc/passwd` returns 200 instead of 400.
+- Absolute paths outside `BaseDir` are accepted.
 
 **Phase to address:**
-Phase that implements run status monitoring UI — write the conditional `refetchInterval` before connecting the polling query. Verify by running a workflow to completion and confirming the network tab shows no further polls after `COMPLETED`.
+Phase implementing file import endpoint. Must be in the security review checklist for that phase.
 
 ---
 
-### Pitfall 4: CLI Registry Commands Need Authentication — Credential Storage Must Be Designed First
+### Pitfall 3: Template Injection in Label Expression Evaluation
 
 **What goes wrong:**
-The CLI `registry push/pull/list` commands talk to the same `/projects/{slug}/registry` REST endpoints. The developer adds a `--token` flag and hardcodes it into request headers. Users must pass `--token <jwt>` on every command, which is unusable for interactive use. Alternatively, the developer stores the token in the config file under `client.token` — but this puts a long-lived JWT into a plaintext config file, which leaks credentials if the config is checked into version control.
+Label templates like `${fastq%%.fastq*}.bam` must be evaluated as shell-style parameter expansions against workflow input values, not as Go `text/template` or `html/template` strings. If a developer reaches for `text/template` because it already does `${...}` substitution, a label value containing `{{range .}}...{{end}}` or `{{.Method}}` causes template execution to call arbitrary Go methods on the data object — a code injection vector. Even `fmt.Sprintf` with user-controlled format strings is dangerous.
 
 **Why it happens:**
-The existing CLI client (`internal/client`) has no authentication layer — all prior CLI commands either hit auth-disabled routes or were designed before JWT was added. Adding registry commands to the CLI means these commands hit JWT-protected endpoints for the first time. The developer reaches for the simplest fix (flag or config field) without thinking through the credential lifecycle.
+Shell `${var%%suffix}` syntax looks like a mini-template language. The obvious Go implementation is `text/template`. Developers who are not fluent in shell parameter expansion operators (`%`, `%%`, `#`, `##`) reach for a general template engine.
 
 **How to avoid:**
-Add a `flowy login` command that calls `POST /auth/login` and writes the token to a separate credentials file (e.g., `~/.flowy/credentials.yaml`), not `./flowy.yaml`. All registry commands load the token from the credentials file if present, with `--token` as an override for scripting and CI.
-
-The credentials file location should follow `$FLOWY_CREDENTIALS_FILE` env var or default to `~/.flowy/credentials.yaml`. Write the file with mode 0600. Document that `./flowy.yaml` should never contain a token field.
-
-Extend `internal/client.Client` to carry an optional token and inject `Authorization: Bearer <token>` on all requests. Registry commands pass the loaded token to `client.New`.
+Implement a dedicated, narrow shell-parameter-expansion evaluator that supports only the operators required by the spec: `${var}`, `${var%suffix}`, `${var%%suffix}`, `${var#prefix}`, `${var##prefix}`. This is ~50 lines of Go with a small lexer that reads `${...}` spans and dispatches on the operator character. The evaluator takes a `map[string]string` of input names to string-rendered values. It never calls `os/exec`, never interprets `$(...)`, and never dereferences method chains. Unit-test it with adversarial inputs like `${x}; rm -rf /`.
 
 **Warning signs:**
-- The `--token` flag appears on `flowy registry push` and every subsequent subcommand
-- `flowy.yaml` adds a `client.token` or `auth.token` field
-- The credentials file lives under the working directory (readable by project collaborators)
-- Registry commands silently receive 401 and return cryptic errors because no token is loaded
+- Label evaluation imports `"text/template"` or `"html/template"`.
+- Evaluation path calls `os.Expand` with the user expression as a `${}` template (Go's `os.Expand` does not support `%%` operators so callers try to pre-process).
+- Label value containing `{{` causes a panic or unexpected output.
 
 **Phase to address:**
-Phase that implements CLI registry commands — implement `flowy login` and credential loading first, before any `registry` subcommand.
+Phase implementing parameter_meta parsing and label template expansion. The evaluator must have its own unit test file before the feature is wired up.
 
 ---
 
-### Pitfall 5: Browser Upload Sends Content as JSON String — Requires Text Reading, Not Binary
+### Pitfall 4: S3 File Size Requires HeadObject — Not Available on Current Backend Interface
 
 **What goes wrong:**
-The browser upload component reads the selected file using `FileReader.readAsArrayBuffer` (the default for general file uploads) and sends the raw bytes in the request body. The server expects `RegistryPushRequest.Content` as a UTF-8 text string (JSON field). The request fails with a JSON decode error or, worse, the binary buffer is silently coerced to a string containing garbage bytes that the WDL parser rejects.
-
-A related mistake: the developer uses `<input type="file">` with `accept="*"` and the user selects a binary file (`.bam`, `.fastq`). The server receives binary content in a field designed for WDL text, the parser returns 422, but there is no user-facing explanation that WDL text is required.
+The `managed_files` table needs a `size` column. For local-filesystem files, `os.Stat(path).Size()` is trivial. For S3-registered files, there is no `Stat` or `HeadObject` method on the current `Backend` interface (13 methods; none return metadata). A developer who adds a `managed_files` row with `size = 0` or skips size entirely ships a silent correctness bug: the Files tab shows 0 bytes for all S3-originated files.
 
 **Why it happens:**
-The `RegistryPushRequest` passes WDL content as a plain JSON string. WDL files are UTF-8 text, so `FileReader.readAsText` is the correct API — but developers often default to `readAsArrayBuffer` for "file upload" tasks and then try to encode the result. The browser file upload pattern learned from image or binary file upload scenarios is wrong for text content.
+The `Backend` interface was designed for data movement (upload/download), not metadata retrieval. S3Backend internally uses `GetObject` (which returns `ContentLength` in the response header) but that is not surfaced. Adding `Stat` to the interface seems like scope creep during the feature phase, so it gets deferred and the size field is left empty.
 
 **How to avoid:**
-Read the file as text before submitting:
-```typescript
-const content = await file.text()  // or FileReader.readAsText
-await apiClient.post(`/projects/${slug}/registry`, { name, content })
-```
+Add a `Stat(path string) (FileInfo, error)` method to the `Backend` interface in the same phase that introduces managed files. `FileInfo` is a small struct: `{Size int64, ModTime time.Time}`. `LocalBackend` implements it with `os.Stat`. `S3Backend` implements it with `HeadObject` (AWS SDK v2: `s3.HeadObjectInput{Bucket, Key}`). This is the correct time to extend the interface — before managed_files rows are written — because retrofitting requires a data migration to backfill sizes.
 
-Validate file extension client-side: only accept `.wdl` files. Show a clear error if the user selects a non-WDL file. The server will reject non-parseable content with 422, but client-side validation gives a better error message before the round-trip.
+Note: `S3APIClient` interface currently only has `PutObject`, `GetObject`, and `ListObjectsV2`. `HeadObject` must also be added to the `S3APIClient` interface.
 
 **Warning signs:**
-- The upload component uses `readAsArrayBuffer` or `URL.createObjectURL`
-- The file input `accept` attribute allows all file types
-- `422 Unprocessable Entity` is the first error users see when they accidentally select a binary file
+- `managed_files` migration adds `size INTEGER NOT NULL DEFAULT 0` — the DEFAULT 0 is a smell that size will not be populated.
+- S3 file registration code calls `UploadFile` but not `Stat`.
+- All S3-sourced files show 0 bytes in UI.
 
 **Phase to address:**
-Phase that implements browser WDL upload — validate file type and use `file.text()` in the upload handler component.
+Phase introducing the `managed_files` table migration. The `Backend.Stat` method must be added in the same commit before the first `INSERT INTO managed_files` is written.
 
 ---
 
-### Pitfall 6: `handleOutputs` Returns 409 for Non-Completed Runs — Breaks Polling Flow If Misused
+### Pitfall 5: Duplicate File Registration on Retry or Re-Registration
 
 **What goes wrong:**
-The existing `handleOutputs` handler returns `409 Conflict` if the run is not yet `COMPLETED`. If the developer creates a polling hook that fetches status and outputs in the same query (or calls the outputs endpoint on every poll tick regardless of status), TanStack Query receives the 409, interprets it as an error via `ApiError`, shows an error state, and stops retrying. The user sees "Error" instead of a loading indicator while the run is still active.
+If the run goroutine is retried (e.g., server restart with PENDING run recovery) or a user manually triggers re-registration of outputs, `INSERT INTO managed_files` fails on a UNIQUE constraint (path + project_id) or silently creates duplicate rows. Depending on which happens, the Files tab shows duplicates or the registration fails silently and no files are shown.
 
 **Why it happens:**
-The status endpoint and the outputs endpoint are separate. Polling outputs before the run completes is an anti-pattern but easy to trigger if the developer combines both concerns in a single polling loop or adds an optimistic outputs fetch "just in case" the run completes quickly.
+The managed file model has an obvious uniqueness invariant — one row per (project, path) — but the migration may forget to enforce it, or the INSERT uses plain `INSERT` instead of `INSERT OR IGNORE` / `INSERT OR REPLACE` / `ON CONFLICT DO UPDATE`.
 
 **How to avoid:**
-Follow the pattern already established in `RunDetailPage.tsx`:
-```typescript
-const { data: outputsData } = useRunOutputs(
-  slug ?? '',
-  run?.state === 'COMPLETED' ? (id ?? '') : ''
-)
-```
-The empty string `enabled` guard prevents the outputs query from firing until `COMPLETED`. In all new execution UI code, apply the same gate. Do not call the outputs endpoint until the status poll confirms `COMPLETED`.
+The migration must include `UNIQUE (project_id, path)`. Registration code must use `INSERT OR IGNORE INTO managed_files ...` semantics (idempotent: silently skip if same path already registered for this project). Registration triggered by run completion must be idempotent by design. Add a test that calls the registration function twice for the same run and asserts exactly one row exists.
 
 **Warning signs:**
-- `useRunOutputs` is called with the run ID unconditionally
-- The network tab shows `GET .../outputs` requests returning 409 while the run is `RUNNING`
-- The run detail page shows an error state for active runs
+- Migration lacks UNIQUE constraint on `(project_id, path)`.
+- Test with two identical registrations produces two rows.
+- Server-restart recovery test shows doubled entries.
 
 **Phase to address:**
-Phase that implements run status monitoring UI — enforce the outputs-gating pattern from the start. Verify via manual test: start a run, open the detail page while it is running, confirm no 409 error state appears.
+Phase implementing `managed_files` migration and `CreateManagedFile` store method.
 
 ---
 
-### Pitfall 7: `flowy registry push` Must Read File Content Locally — Do Not Pass the Path to the Server
+### Pitfall 6: WDL Files Without parameter_meta Treated as Errors Instead of Graceful Fallback
 
 **What goes wrong:**
-The CLI `flowy registry push my-workflow:latest ./workflow.wdl` sends the local file path as `Content` in the `RegistryPushRequest` JSON body. The server receives a path string, tries to classify it as WDL content by parsing it, the Go parser fails to parse a filesystem path as WDL syntax, and the server returns `422 Unprocessable Entity`. Alternatively, the developer adds a `Path` field to `RegistryPushRequest` and server-side file reading — but the server cannot access the CLI user's local filesystem (especially in distributed or remote deployments).
+The existing `extractInputs` function in `handlers_registry.go` (lines 354–373) reads `doc.Workflows[0].Inputs` without touching `ParamMeta`. If the new code that extracts `type` and `label` hints from `ParamMeta` uses `paramMeta["reads"].(map[string]any)["type"].(string)` with unchecked type assertions on a WDL file where `parameter_meta` is absent or uses a different value structure (string hint instead of object hint), it panics. All 41,483 LOC of existing WDL runs break.
 
 **Why it happens:**
-The existing `flowy run ./my.wdl` and `flowy submit ./my.wdl` commands pass the file path as `WDLPath` in the request body — the server reads the file from the shared filesystem. Developers naturally follow this pattern for registry push. But the shared filesystem assumption breaks down for remote CLI users and contradicts the content-addressed registry model: the server should receive immutable content, not a mutable path reference.
+`ParamMeta` is `map[string]any` (ast.go line 79). Existing conformance WDL files use `parameter_meta { infile: { help: "..." } }` — the value is a map. But the WDL spec also allows scalar string hints: `parameter_meta { reads: "FASTQ input" }`. A type assertion on a string value as `map[string]any` panics. The developer tests against their new-style WDL files only.
+
+The real conformance test case `ex_paramter_meta_task.wdl` uses `parameter_meta { infile: { help: "..." }, lines_only: { help: "..." }, region: { help: "...", suggestions: [...] } }` — object hints with `help` and `suggestions` but no `type` or `label` fields. This must continue to work correctly.
 
 **How to avoid:**
-In `flowy registry push`, read the WDL file content locally before making the API call:
+The `extractInputs` function must use safe type-switch extraction, never direct type assertions:
 ```go
-content, err := os.ReadFile(wdlFilePath)
-if err != nil {
-    fmt.Fprintf(stderr, "error: reading WDL file %q: %v\n", wdlFilePath, err)
-    return 1
-}
-req := api.RegistryPushRequest{
-    Name:    name,
-    Content: string(content),
+func paramMetaString(paramMeta map[string]any, inputName, field string) string {
+    if paramMeta == nil { return "" }
+    entry, ok := paramMeta[inputName]
+    if !ok { return "" }
+    m, ok := entry.(map[string]any)
+    if !ok { return "" }  // scalar hint — ignore gracefully
+    s, _ := m[field].(string)
+    return s
 }
 ```
-The server-side `handleRegistryPush` already expects raw content and handles classification and digest computation. Do not modify `RegistryPushRequest` to add a `Path` field.
+Any missing key or wrong type returns empty string, never panics. The feature degrades gracefully: inputs without hints use filename as label and no type filter. Add a conformance test asserting `ex_paramter_meta_task.wdl` (which has old-style hints with `help` but no `type`/`label`) still works correctly after changes.
 
 **Warning signs:**
-- The push command sends the file path string as the `content` field value
-- The server returns `422 Unprocessable Entity` with a WDL parse error on valid WDL files
-- `RegistryPushRequest` gets a `Path` or `WDLPath` field added to it
+- Code contains `paramMeta["key"].(map[string]any)` without a comma-ok check.
+- Test suite only uses newly-written WDL files with the new hint format.
+- Running the inputs endpoint against the existing conformance WDL files produces a 500.
 
 **Phase to address:**
-Phase that implements CLI registry commands — read file content locally in the push handler before constructing the API request. Add a test that sends real WDL content and verifies `201 Created`.
+Phase implementing `parameter_meta` parsing for type/label hints in the inputs introspection endpoint.
+
+---
+
+### Pitfall 7: Large outputs_json Walking — O(n) File Detection Without AST
+
+**What goes wrong:**
+Auto-registration of output files requires finding all `File` and `Directory` typed values in `outputs_json`. The naive implementation is to unmarshal the JSON blob, walk the full value tree recursively, and collect string values for keys where the WDL output declaration type is `File` or `Directory`. This requires re-parsing the WDL source at run completion time to get type information — which requires fetching the registry version content from the DB and parsing it — adding latency and complexity to the critical completion path.
+
+**Why it happens:**
+At the point `runWorkflow` calls the registration hook, the `*ast.Document` is still in memory (it was used to execute the workflow). Developers either do not realize this, or the document is discarded before the completion hook is called (e.g., if the hook is implemented as a separate function that only receives `runID` and `outputsJSON`).
+
+**How to avoid:**
+Pass the `*ast.Document` (or a pre-extracted `map[string]types.Type` of output names to WDL types) directly to the registration hook. The document is already in scope in `runWorkflow` at the point outputs are available. Extracting output types from the in-memory AST (e.g., `doc.Workflows[0].Outputs`) costs zero I/O and zero re-parsing. Do not re-fetch from the registry or re-parse WDL at completion time.
+
+**Warning signs:**
+- Registration hook signature is `func(ctx, runID, outputsJSON string)` with no document reference.
+- Completion path calls `store.GetRegistryVersion` or `parser.Parse` inside `runWorkflow`.
+- Run completion latency grows with WDL source size.
+
+**Phase to address:**
+Phase implementing output file auto-registration hook in `dispatch.go`.
+
+---
+
+### Pitfall 8: outputs_json Contains File Paths as Plain Strings — Type Cannot Be Inferred from JSON Alone
+
+**What goes wrong:**
+`ValueToInterface` in `wdl/values/convert.go` serializes both `FileValue` and `StringValue` as plain Go `string`. The `outputs_json` blob stored in the DB looks like `{"workflow.output_bam": "/path/to/file.bam", "workflow.sample_name": "NA12878"}` — both values are JSON strings. Without the WDL output declaration types, auto-registration cannot distinguish which strings are file paths and which are plain strings. If the implementation guesses by heuristic (e.g., "strings containing `/` are files"), it will register non-file outputs as managed files.
+
+**Why it happens:**
+The serialization format was designed for human readability and API responses, not for machine type-reconstruction. This is intentional and correct; the type information lives in the WDL AST, not in the JSON. `DirectoryValue` is also serialized as a plain string by `ValueToInterface` (convert.go line 25).
+
+**How to avoid:**
+Always correlate `outputs_json` values against `doc.Workflows[0].Outputs` (or `doc.Tasks[0].Outputs`) to determine which outputs are `File` or `Directory` typed before inserting into `managed_files`. Never use path heuristics. For `Array[File]` outputs, the JSON value is a `[]interface{}` where each element is a string; these elements must each be registered individually.
+
+**Warning signs:**
+- Registration logic does not import or reference the WDL AST package.
+- Registration uses `strings.HasPrefix(v, "/")` or similar heuristic.
+- `Array[File]` outputs register as a single entry (the JSON array representation) instead of N file entries.
+
+**Phase to address:**
+Phase implementing output file auto-registration hook.
 
 ---
 
@@ -225,13 +213,13 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| `refetchInterval: 3000` (number literal) without terminal state check | Fast to implement | Continuous server polls after run completes; wasted compute and DB reads indefinitely | Never — always check terminal state |
-| Treating `File` inputs identically to `String` inputs in the form | No upload infrastructure needed for MVP | Daemon cannot access browser-local paths; runs silently fail on every File-typed input | Never — must upload before submit |
-| Parsing WDL input schema with regex in the browser | Avoids new backend endpoint | Misses optional inputs, compound types, struct definitions; form shows wrong fields | Never for production — acceptable only as a throwaway prototype to sketch the UI |
-| Storing JWT in `client.token` in `flowy.yaml` | Zero new code for credential storage | Token in plaintext project config, shared with collaborators if committed | Never for shared environments; acceptable for fully isolated single-user local dev only |
-| Single endpoint for both WDL text push and binary file staging | Simpler API surface | JSON string cannot carry binary data without base64 inflation; breaks `RegistryPushRequest` contract | Never — keep registry (WDL text) and file staging (binary) endpoints separate |
-| Omitting `run_id` pre-generation in browser | Simpler client code | Cannot stage File inputs into `runs/{run_id}/inputs/` before submit; no deterministic staging path | Never when File inputs must be supported |
-| `--token` flag on every registry command instead of `flowy login` | Avoids session management | Unusable interactively; token expires silently; users paste tokens from docs | Acceptable only for scripting/CI where token is injected via environment variable |
+| Store file size as 0 for S3 files initially | Skips Backend interface extension | Requires data migration to backfill; shows wrong sizes forever until fixed | Never — add `Backend.Stat` in same phase |
+| `INSERT INTO managed_files` without UNIQUE constraint | Simpler migration | Duplicate rows on retry; no idempotent recovery path | Never |
+| Re-parse WDL at run completion to detect File outputs | Decouples registration from dispatch | Adds latency; re-fetch from DB; failure if registry version deleted | Never — pass AST reference |
+| Skip `ImportRoot` config; use `BaseDir` as upload root only | No config change | Local-path import has no confinement; path traversal risk | Never for server local-path import |
+| Use Go `text/template` for label expansion | Familiar API | Template injection; `{{.Method}}` calls arbitrary Go methods | Never |
+| Label = filename fallback when `parameter_meta` absent | Graceful degradation; zero breaking changes | N/A — this is the correct default | Always |
+| Add atomicity via three separate store method calls instead of one atomic method | No Store interface change | Three separate writes are not atomic; crash between any two leaves DB inconsistent | Never — add `CompleteRun` to Store interface |
 
 ---
 
@@ -239,15 +227,13 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `POST /projects/{slug}/registry` (browser upload) | Reading file as `ArrayBuffer` and sending binary | Read file as text (`file.text()`) since WDL is UTF-8 text; send as JSON string in `content` field |
-| `POST /projects/{slug}/workflows` from UI | Passing raw browser File object path as `File`-typed input | Upload file first via staging endpoint, receive server-side path, substitute path in inputs map before submit |
-| TanStack Query + status polling | `refetchInterval: 3000` number literal | `refetchInterval: (query) => TERMINAL_STATES.has(state) ? false : 3000` |
-| `GET /projects/{slug}/runs/{id}/outputs` | Calling before run is `COMPLETED` | Gate on `run.state === 'COMPLETED'` as `enabled` condition — follow `RunDetailPage.tsx` pattern |
-| CLI registry `push` | Passing file path string as `content` field | `os.ReadFile` locally; send string content in request body |
-| CLI registry `pull` | Writing JSON response body to stdout | Extract `content` field from response; write to `name_digest.wdl` file; `--output -` for stdout |
-| `flowy login` token storage | Writing to `./flowy.yaml` | Write to `~/.flowy/credentials.yaml` with mode 0600 |
-| Project-scoped registry endpoints | Forgetting `slug` URL segment when building URL in new client methods | Use a consistent URL builder in `internal/client`; add tests that verify the URL path |
-| `client.New(serverURL)` for auth-protected routes | Calling without auth header | Extend `client.Client` to carry a token; inject `Authorization: Bearer <token>` on all requests to JWT-protected endpoints |
+| S3Backend file size | Using `ContentLength` from `GetObjectOutput` (requires downloading the object) | Add `HeadObject` to `S3APIClient` interface; implement `Backend.Stat` via `HeadObject` |
+| SQLite single-writer | Separate `ExecContext` calls for outputs + file insert + state update | Add `CompleteRun` method to `Store` interface; implement with `BEGIN TRANSACTION ... COMMIT` in SQLiteStore using the `writer` pool |
+| Store interface vs. concrete type | Calling `SQLiteStore.WriterDB()` from the server to begin a transaction | The server holds `store.Store` (interface), not the concrete type; atomicity must be expressed as a Store interface method, not via raw DB access from the server layer |
+| MinIO HeadObject | MinIO responds identically to AWS S3 for HeadObject; no special case | Verify with MinIO testcontainer integration test |
+| `outputs_json` type detection | File values are plain strings; no `"__type": "File"` annotation | Must use WDL AST output declarations as the authoritative type source |
+| Browser upload → managed file | `handleUpload` returns a server-local/S3-key path; managed file record must be created after upload, not just on run completion | Add optional `RegisterFile` call in upload handler or make it a separate explicit step |
+| `Array[File]` in outputs_json | JSON array serialized as `[]interface{}`; each element is a string path | Walk array, register each element individually |
 
 ---
 
@@ -255,10 +241,11 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Polling all open run detail tabs simultaneously | N × 3s polls when N tabs are open; DB read pressure | Stop polling on tab blur via Page Visibility API, or gate on tab being visible | >5 concurrent open run tabs |
-| Fetching full run list to resolve a single run ID | Slow load for projects with many runs (existing pattern in `RunDetailPage`) | Add `GET /projects/{slug}/runs/{id}` single-run endpoint to avoid fetching all runs | >100 runs in a project |
-| No debounce on file input change in browser upload dialog | Rapid file selection triggers multiple simultaneous push requests | Disable submit button after first click; use mutation `isPending` state to prevent re-submission | User clicks upload button multiple times |
-| Large WDL files as JSON string body | 1MB+ request; server-side JSON parse allocates full string in RAM | Client-side size warning above 500KB; the WDL parser is the practical ceiling (~5MB before parse becomes slow) | WDL files >1MB (rare but possible with deeply nested struct definitions) |
+| Full `managed_files` table scan for project | Files tab slow to load | Add `INDEX ON managed_files(project_id)` in migration | ~10K files per project |
+| No pagination on Files tab API | GET /projects/{slug}/files returns all rows; large JSON payload | Add `LIMIT`/`OFFSET` or cursor pagination from day one | ~1K files |
+| Synchronous S3 `HeadObject` per file during scatter output registration | Large scatter (100 shards × 10 File outputs) = 1000 sequential HeadObject calls at run completion | Accept size from upload return value where available; batch or parallelize HeadObject calls | ~100 File outputs per run |
+| Walking deeply nested JSON for Array[Array[File]] | Unbounded recursion | Pre-flatten outputs using AST type info before registration; no recursive JSON walking | Nested array types |
+| Re-parsing WDL source at completion | Latency proportional to WDL size | Pass `*ast.Document` in-memory to registration hook | Every run completion |
 
 ---
 
@@ -266,10 +253,12 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Storing JWT in `./flowy.yaml` or committed config | Token leak to version control or collaborators | Store credentials in `~/.flowy/credentials.yaml` with mode 0600; document `.gitignore` for credentials file |
-| No validation on browser-uploaded WDL file type | User accidentally uploads a binary file; stored until parse error; confusing 422 response | Validate `file.name.endsWith('.wdl')` client-side before reading; reject non-WDL files with a clear message |
-| File staging endpoint accepts arbitrary filenames from client | Path traversal via `../../../etc/passwd` in `filename` parameter | Strip directory components from uploaded filenames: `filepath.Base(clientFilename)`; the existing `handleFileDownload` has `..` check but a new staging endpoint needs the same guard |
-| Displaying raw WDL content with `dangerouslySetInnerHTML` | XSS if WDL source contains `<script>` tags (unlikely but possible) | Use the existing `WDLSourceViewer` component which renders into a React-escaped `<pre>` block; never use `dangerouslySetInnerHTML` for WDL content |
+| No `ImportRoot` confinement on server local-path import | Executor-role user reads `/etc/passwd`, private keys, other project data | Require `ImportRoot` config; assert `filepath.Clean(path)` has `filepath.Clean(ImportRoot)+"/"` prefix; return 400 on failure |
+| Label template expression evaluated with `os/exec` or shell | Arbitrary command execution on server | Implement pure Go shell-expansion evaluator; never spawn subprocess for label expansion |
+| Returning attempted traversal path in 400 error response | Information leak: attacker learns which paths exist | Return generic "invalid path" message; log internally only |
+| Managed file path stored without canonicalization | Two entries for `/data/./reads.fastq` and `/data/reads.fastq`; UNIQUE fails to deduplicate | `filepath.Clean` all paths before INSERT |
+| S3 import accepts paths from any bucket | User imports file from a path in a different project or external bucket | Validate that imported S3 URI is within `cfg.Storage.Bucket` + `cfg.Storage.Prefix` |
+| Presigned S3 URLs exposed in managed file API response | Credentials embedded in URLs leak in browser history/logs | This project uses server-proxied downloads (existing ADR); do not add presigned URLs |
 
 ---
 
@@ -277,28 +266,27 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No visual distinction between required and optional WDL inputs | Users omit optional inputs and see confusing submission errors | Mark optional inputs with `(optional)` label suffix; omit empty optional fields from `InputsJSON` on submit |
-| Array/Map/Struct inputs rendered as raw JSON textarea with no guidance | Users enter `[item1, item2]` (invalid JSON); form accepts it and run fails at server | Show placeholder with valid JSON example; validate JSON on blur; highlight parse errors inline before submission |
-| No submit button protection on workflow execution | Users double-click Run and submit two identical jobs | Disable submit button immediately on first click; show inline spinner; re-enable only on terminal state or API error |
-| No feedback after browser WDL upload — user does not know the entry name or version | User re-uploads the same file thinking the first upload failed | Show a toast with entry name, digest shorthand, and a link to the new registry entry on success |
-| Run list does not auto-refresh when active runs exist | Users cannot see a running job complete without manually refreshing | Apply conditional `refetchInterval` on the run list: poll while any run is non-terminal, stop when all runs are in terminal state |
-| CLI `flowy registry list` outputs raw JSON by default | Humans scan JSON for entry names; poor interactive experience | Default to human-readable table; `--json` flag for machine-readable output |
+| File picker shows all managed files regardless of type | User scrolls past irrelevant files when workflow expects `fastq` | Filter by `type` from parameter_meta; include "All files" fallback when no type hint |
+| No manual path fallback in file picker | Users with files not yet in library cannot run workflows | Always keep "Enter path manually" escape hatch (stated requirement) |
+| Label defaults to full S3 key path | Keys like `runs/abc123/tasks/align_0/output.bam` are unreadable | Default label = `filepath.Base(path)` (basename); override with template if parameter_meta provides one |
+| Import from S3 path accepts any bucket path | User accidentally imports files from external location | Validate S3 URI is within deployment bucket+prefix |
+| No indication of how many files were registered after run completes | User does not know if file registration succeeded | Add `registered_files` count to run detail API response or show count in run outputs section |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Execution UI — submit:** Run submitted and `run_id` returned — verify the run appears in the run list and its status progresses beyond `PENDING`
-- [ ] **Execution UI — File inputs:** File input widget present in the form — verify the selected file is uploaded first and the daemon log shows no "file not found" error for File-typed inputs
-- [ ] **Execution UI — polling:** Status badge shows `COMPLETED` — verify the network tab shows no further polling requests after reaching a terminal state
-- [ ] **Execution UI — outputs:** Run `COMPLETED` — verify the outputs section populates with values and file output links are clickable and download the correct file
-- [ ] **Execution UI — optional inputs:** Form rendered — verify inputs with WDL default expressions appear with `(optional)` label and can be left blank
-- [ ] **CLI registry push:** `flowy registry push name:tag ./workflow.wdl` returns success — verify `flowy registry pull name:tag` returns valid WDL starting with `version` or `workflow`
-- [ ] **CLI registry pull:** Pull succeeds — verify output file is written to disk (not just JSON response logged)
-- [ ] **CLI registry list:** List succeeds — verify human-readable table output (not JSON) is the default
-- [ ] **Browser WDL upload:** Upload dialog shows success — verify the new entry appears in the registry list immediately without a manual page refresh
-- [ ] **Auth (CLI):** `flowy login` writes credentials — verify `~/.flowy/credentials.yaml` exists with mode 0600; verify subsequent `flowy registry list` calls succeed without `--token`
-- [ ] **Auth (CLI) — expiry:** Token expires — verify registry commands fail with a human-readable "authentication required — run flowy login" message, not a raw `{"error":"..."}` JSON body
+- [ ] **Auto-registration atomicity:** Verify registration runs inside the same `CompleteRun` transaction as `UpdateRunState(COMPLETED)` — not after it. Three separate Store calls is not atomic.
+- [ ] **S3 file size:** Verify that managed_files rows for S3-originated files have non-zero `size` values in integration tests with MinIO.
+- [ ] **parameter_meta graceful fallback:** Verify the existing conformance WDL files (`ex_paramter_meta_task.wdl`, `person_struct_task.wdl`) still return correct inputs from `GET /registry/{name}/inputs` after the new parsing is added.
+- [ ] **Path traversal:** Verify that `POST /projects/{slug}/files/import?path=../../etc/passwd` returns 400, not 200.
+- [ ] **Label template safety:** Verify that a label template containing `{{.SomeMethod}}` or `;rm -rf /` evaluates to a safe literal string, not executed code.
+- [ ] **Duplicate registration:** Verify that running registration twice for the same run yields exactly one `managed_files` row per output file.
+- [ ] **Directory type:** Verify that `Directory`-typed WDL outputs are also registered (not just `File`); `ValueToInterface` returns a plain string for both.
+- [ ] **Array[File] outputs:** Verify that `Array[File]` output values have each element registered individually, not the JSON array as a single entry.
+- [ ] **File picker type filter:** Verify that when parameter_meta provides `type: "bam"`, the file picker shows only managed files with matching type annotation.
+- [ ] **Backend.Stat interface:** Verify both `LocalBackend` and `S3Backend` implement the new `Stat` method; verify compile-time interface assertion passes.
+- [ ] **Store.CompleteRun interface:** Verify the new method is defined on `store.Store` (not just `SQLiteStore`); verify the mock/stub used in server unit tests also implements it.
 
 ---
 
@@ -306,12 +294,11 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| File inputs as browser-local paths (runs fail silently) | HIGH | Add file staging endpoint (backend), add run ID pre-generation to form (frontend), refactor File widget to two-step upload-then-submit — backend and frontend must ship together |
-| WDL schema parsed client-side with regex | MEDIUM | Add `/inputs` backend endpoint (clean addition, no DB changes), replace client-side regex with API call — contained to the form component |
-| Polling never stops on terminal state | LOW | One-line fix in the `refetchInterval` callback; no API changes needed |
-| JWT stored in `flowy.yaml` | MEDIUM | Add credentials file, add `flowy login` command, update all registry commands to read from credentials file — no API changes; all CLI users must re-authenticate |
-| Registry push sends path instead of content | LOW | One-line fix in CLI: replace path argument with `os.ReadFile(path)` call; add test |
-| 409 from outputs endpoint breaks run detail page | LOW | Gate `useRunOutputs` on `state === 'COMPLETED'`; one-line change to query `enabled` condition |
+| Non-atomic registration (files missing for completed runs) | HIGH | Write a one-time admin endpoint or script that re-reads `outputs_json` for all COMPLETED runs, re-extracts File paths by correlating against registry WDL source, and inserts missing `managed_files` rows with `INSERT OR IGNORE` |
+| Path traversal exploit discovered post-ship | HIGH | Audit server access logs; rotate any credentials readable by server process; patch handler with prefix check; redeploy |
+| Duplicate file rows from missing UNIQUE constraint | MEDIUM | `DELETE FROM managed_files WHERE rowid NOT IN (SELECT MIN(rowid) FROM managed_files GROUP BY project_id, path)`; add `CREATE UNIQUE INDEX` in a new migration |
+| Wrong file sizes (all zero) for S3 files | MEDIUM | Add `Backend.Stat` with `HeadObject`; write backfill script that HeadObjects each S3-originated managed file and runs `UPDATE managed_files SET size = ? WHERE id = ?` |
+| Label template injection (text/template used) | HIGH | Remove `text/template` import; replace with narrow evaluator; audit any label values stored in DB that were generated by the unsafe evaluator |
 
 ---
 
@@ -319,31 +306,33 @@ Phase that implements CLI registry commands — read file content locally in the
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| File inputs as browser-local paths | Phase implementing File upload infrastructure (before or combined with execution UI) | Run a workflow with a `File` input from browser; confirm daemon log shows no "file not found" |
-| WDL schema inferred client-side | Phase implementing dynamic input form — add `/inputs` endpoint before the form component | Render form for a workflow with optional and Array-typed inputs; confirm all inputs appear with correct types |
-| Polling never stops on terminal state | Phase implementing run status monitoring UI | Observe network tab after run reaches `COMPLETED`; confirm no further polling |
-| Outputs 409 breaks run detail | Phase implementing run status monitoring UI | Open run detail while run is `RUNNING`; confirm no error state, only loading indicator |
-| CLI auth missing (`flowy login` not built first) | Phase implementing CLI registry commands | `flowy registry list --project demo` after `flowy login`; confirm no `--token` flag required |
-| Browser upload reads file as binary | Phase implementing browser WDL upload | Upload a real `.wdl` file; confirm server returns `201 Created` and entry appears in registry list |
-| Push sends path not content | Phase implementing CLI registry commands | `flowy registry push test:latest ./test.wdl` followed by `flowy registry pull test:latest`; verify pulled content matches original file |
+| Non-atomic output file registration | Phase: auto-register workflow outputs on completion | Integration test: kill server mid-registration; restart; assert no partial state |
+| Path traversal in local-path import | Phase: file import endpoint | Test: `path=../../etc/passwd` returns 400 |
+| Template injection in label expressions | Phase: parameter_meta parsing + label template expansion | Test: adversarial template with `{{` and `;rm` produces safe literal string |
+| S3 size missing (no Backend.Stat) | Phase: managed_files migration + Backend interface extension | Test: S3 import shows correct byte count matching MinIO object size |
+| Duplicate file registration | Phase: managed_files migration + CreateManagedFile store method | Test: double-register same run; assert 1 row per output file |
+| parameter_meta backwards compatibility | Phase: inputs introspection + parameter_meta hints | Test: `GET /inputs` against all existing conformance WDL files returns 200 with correct schema |
+| O(n) output walking without AST | Phase: auto-register workflow outputs | Code review gate: registration hook must accept `*ast.Document` or equivalent type map |
+| File/String ambiguity in outputs_json | Phase: auto-register workflow outputs | Test: workflow with mixed File + String outputs registers only File-typed values |
+| Store interface atomicity gap | Phase: managed_files migration + auto-registration | Code review gate: no three-separate-Store-calls pattern; `CompleteRun` must exist on `store.Store` interface |
 
 ---
 
 ## Sources
 
-- `/home/uehara/flowy/.planning/PROJECT.md` — current milestone scope and key decisions
-- `/home/uehara/flowy/.planning/RETROSPECTIVE.md` — cross-milestone lessons (v1.0 through v2.0)
-- `/home/uehara/flowy/docs/adr/0001-remove-heuristic-file-staging-from-client.md` — File input staging decision
-- `/home/uehara/flowy/internal/api/types.go` — RegistryPushRequest contract (Content field, not Path)
-- `/home/uehara/flowy/internal/server/handlers.go` — handleOutputs 409 behavior, handleListRuns pattern
-- `/home/uehara/flowy/internal/server/handlers_registry.go` — server-side push/pull/list handlers
-- `/home/uehara/flowy/internal/client/client.go` — existing client (no auth layer)
-- `/home/uehara/flowy/cmd/flowy/main.go` — existing CLI structure (no registry commands, no auth)
-- `/home/uehara/flowy/web/src/features/runs/RunDetailPage.tsx` — outputs gating pattern (correct existing implementation)
-- `/home/uehara/flowy/web/src/features/runs/useRuns.ts` — existing query hooks
-- `/home/uehara/flowy/web/src/lib/apiClient.ts` — apiClient (always sends Bearer token from authStore)
-- `/home/uehara/flowy/.planning/milestones/v2.0-MILESTONE-AUDIT.md` — tech debt items carried forward from v2.0
+- Direct codebase inspection: `/home/uehara/flowy/internal/server/dispatch.go` (runWorkflow completion sequence — UpdateRunOutputs then UpdateRunState as separate writes)
+- Direct codebase inspection: `/home/uehara/flowy/internal/server/server.go` (Server.store field is `store.Store` interface, not concrete `*sqlite.SQLiteStore` — WriterDB() is inaccessible from server layer)
+- Direct codebase inspection: `/home/uehara/flowy/internal/server/handlers_uploads.go` (existing prefix-confinement path traversal guard)
+- Direct codebase inspection: `/home/uehara/flowy/internal/server/handlers.go` (handleFileDownload weak `..` check at line 665 — insufficient for absolute path traversal)
+- Direct codebase inspection: `/home/uehara/flowy/internal/storage/backend.go` (Backend interface — 13 methods, no Stat)
+- Direct codebase inspection: `/home/uehara/flowy/internal/storage/s3.go` (S3APIClient interface — PutObject/GetObject/ListObjectsV2 only; no HeadObject)
+- Direct codebase inspection: `/home/uehara/flowy/internal/store/sqlite/sqlite.go` (SQLiteStore.WriterDB() returns writer pool; single-writer constraint; not accessible via store.Store interface)
+- Direct codebase inspection: `/home/uehara/flowy/internal/store/store.go` (Store interface — no transaction method, no CompleteRun method)
+- Direct codebase inspection: `/home/uehara/flowy/wdl/ast/ast.go` (ParamMeta map[string]any — both scalar and object values are valid per parser)
+- Direct codebase inspection: `/home/uehara/flowy/wdl/parser/parser.go` (parseMetaValue — scalar string and map both accepted)
+- Direct codebase inspection: `/home/uehara/flowy/wdl/values/convert.go` (ValueToInterface — FileValue and StringValue both serialize as Go string; DirectoryValue also serializes as string at line 25; no type tag in JSON output)
+- Direct codebase inspection: `/home/uehara/flowy/conformance-tests/flowy-data/.../ex_paramter_meta_task.wdl` (existing parameter_meta with `help` and `suggestions` fields — no type/label; must not break)
 
 ---
-*Pitfalls research for: flowy v2.1 — workflow execution UI, CLI registry commands, browser WDL upload*
-*Researched: 2026-04-07*
+*Pitfalls research for: Managed File Library feature (v2.2) on flowy WDL engine*
+*Researched: 2026-04-09*

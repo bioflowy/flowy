@@ -1694,3 +1694,231 @@ See the original v1.0 research in git history for full rationale on these choice
 
 *Stack research for: flowy v2.1 Job Execution & Registry CLI + v2.0 React Web UI + v1.3 user auth + v1.2 S3 + v1.1 distributed server + v1.0 core*
 *Researched: 2026-04-07*
+
+---
+
+## v2.2 Additions: Managed File Library
+
+This section covers NEW capabilities needed for the v2.2 milestone. The entire existing stack (Go backend v1.0–v2.1, React frontend v2.0–v2.1) is unchanged — this section lists only the incremental additions and integration points.
+
+**Scope:** Project-scoped managed file library with metadata (size, date, path, type, label), file type annotation via WDL `parameter_meta`, file import from browser upload / S3 path / server local path, auto-register workflow output files on run completion, and file picker in `RunWorkflowDialog`.
+
+---
+
+### New Go-Side Additions
+
+#### File Size and Metadata
+
+**Recommendation:** Use `os.Stat` (stdlib). No new Go library needed.
+
+`os.Stat(path).Size()` returns `int64` bytes. `os.Stat(path).ModTime()` returns `time.Time`. Both are used at file registration time to populate the `project_files` table. This covers local files and uploaded files (which are written to disk by the existing `UploadFileStream` call before `handleUpload` returns).
+
+For S3-backed paths, the S3 `HeadObject` API returns `ContentLength *int64` in the response. The existing `S3APIClient` interface does not currently expose `HeadObject` — this method needs to be added to the interface when the S3 import path is implemented. No new external library is needed; this is an AWS SDK v2 call already in the dependency tree.
+
+**Confidence:** HIGH — `os.Stat` is stable stdlib; AWS SDK HeadObject is in existing `github.com/aws/aws-sdk-go-v2/service/s3` dependency.
+
+---
+
+#### MIME / File Type Detection
+
+**Recommendation:** Do NOT detect MIME type automatically. Store the WDL-semantic `file_type` string from `parameter_meta` (e.g., `"fastq"`, `"bam"`, `"vcf"`). For browser uploads with no `parameter_meta` context, leave `file_type` empty and let the user set it via the import dialog.
+
+**Rationale:**
+- `net/http.DetectContentType` knows ~20 MIME types and cannot distinguish `fastq` from `txt` or `bam` from generic binary — it provides no bioinformatics value.
+- `gabriel-vasile/mimetype` (v1.4.13, pure Go, no CGO) detects ~1000+ types and correctly identifies GZIP, BAM, CRAM by magic numbers. However, a BAM file is still `application/x-bam` — this is not the same semantic type as the WDL `"bam"` annotation in `parameter_meta`.
+- The file type system in v2.2 is a **user-facing annotation** for file picker filtering, not a technical MIME classification. Using `parameter_meta`-sourced strings avoids a mismatch between WDL semantics and MIME semantics.
+
+**Conditional addition:** If MIME detection is desired for file-browser display (e.g., to show an icon), add `github.com/gabriel-vasile/mimetype@v1.4.13` at phase implementation time. It is pure Go (no CGO conflict with `modernc.org/sqlite`), MIT licensed, and actively maintained.
+
+---
+
+#### Label Template Expansion
+
+**Recommendation:** Implement a custom Go function for `%%` and `%` suffix stripping before adding `mvdan.cc/sh/v3`.
+
+The `parameter_meta` label template format (e.g., `"${fastq%%.fastq*}.bam"`) uses two shell parameter expansion operators: `%%` (longest suffix removal) and `%` (shortest suffix removal). `mvdan.cc/sh/v3/shell.Expand` explicitly does NOT support these operators. The `mvdan.cc/sh/v3/expand` subpackage supports them but requires constructing a full AST node (`syntax.Word`) from the template string, which adds non-trivial complexity.
+
+A custom implementation using `strings.LastIndex` / `filepath.Ext` covers the common bioinformatics use cases in ~20 lines:
+
+```go
+// ApplySuffixStrip implements ${var%pattern} (shortest) and ${var%%pattern} (longest).
+// pattern may end with * to match any suffix.
+func ApplySuffixStrip(value, pattern string, longest bool) string { ... }
+```
+
+**Add `mvdan.cc/sh/v3@v3.13.1` only if:**
+- Templates use constructs beyond `%%`/`%` suffix removal (e.g., `${#var}`, `${var/pattern/replace}`)
+- The implementation of the custom function proves buggy in testing
+
+**Confidence:** MEDIUM — `mvdan.cc/sh/v3` shell.Expand confirmed to not support `%%` via official docs; expand package behavior confirmed from pkg.go.dev; custom approach is well-understood Go.
+
+---
+
+#### New SQLite Migration
+
+**Add migration file:** `internal/store/sqlite/migrations/00009_project_files.sql`
+
+Follow existing pattern (goose Up/Down, TEXT PRIMARY KEY UUIDs, DATETIME with `datetime('now')` defaults).
+
+```sql
+-- +goose Up
+CREATE TABLE IF NOT EXISTS project_files (
+    id          TEXT     PRIMARY KEY,
+    project_id  TEXT     NOT NULL REFERENCES projects(id),
+    path        TEXT     NOT NULL,
+    label       TEXT     NOT NULL DEFAULT '',
+    file_type   TEXT     NOT NULL DEFAULT '',
+    size_bytes  INTEGER  NOT NULL DEFAULT 0,
+    source      TEXT     NOT NULL DEFAULT 'upload',
+    run_id      TEXT     REFERENCES runs(id),
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_files_type    ON project_files(project_id, file_type);
+CREATE INDEX IF NOT EXISTS idx_project_files_run     ON project_files(run_id);
+
+-- +goose Down
+DROP TABLE IF EXISTS project_files;
+```
+
+**Schema design notes:**
+- `path`: server-accessible path (local absolute or `s3://bucket/key`). Consistent with `UploadResponse.Path`.
+- `label`: defaults to `filepath.Base(path)` at insert time; label template expansion overwrites it post-insert.
+- `file_type`: free-form string matching `parameter_meta` `type` key values. No enum — WDL `type` values are user-defined and domain-specific.
+- `source`: advisory enum string `'upload' | 's3' | 'local' | 'run_output'`. Not a FK — the `run_id` FK provides the authoritative link for `run_output` entries.
+- `size_bytes`: SQLite INTEGER stores up to 8-byte signed integers (~9.2 EB max); sufficient for any file.
+- No `mime_type` column — MIME is not stored; `file_type` carries the WDL-semantic annotation.
+- Composite index `(project_id, file_type)` enables file picker "filter by type" query without a full table scan.
+
+**Confidence:** HIGH — follows established goose migration patterns in this codebase.
+
+---
+
+#### Store Interface Extensions
+
+Add to `internal/store/store.go` Store interface:
+
+```go
+// Project file operations
+CreateProjectFile(ctx context.Context, f *ProjectFile) error
+ListProjectFiles(ctx context.Context, projectID string) ([]ProjectFile, error)
+ListProjectFilesByType(ctx context.Context, projectID, fileType string) ([]ProjectFile, error)
+GetProjectFile(ctx context.Context, id string) (*ProjectFile, error)
+DeleteProjectFile(ctx context.Context, id string) error
+```
+
+New `ProjectFile` struct in `store.go`:
+
+```go
+type ProjectFile struct {
+    ID        string
+    ProjectID string
+    Path      string
+    Label     string
+    FileType  string
+    SizeBytes int64
+    Source    string
+    RunID     string  // empty when Source != "run_output"
+    CreatedAt time.Time
+    UpdatedAt time.Time
+}
+```
+
+---
+
+### New Frontend Addition
+
+#### Tabs Component
+
+**Recommendation:** Add `@radix-ui/react-tabs@^1.1.13` via `npx shadcn@latest add tabs`.
+
+This is the only new npm package. All other UI needs (file table, search input, upload dialog, file picker dialog) are met by existing components.
+
+```bash
+# From web/ directory
+npx shadcn@latest add tabs
+```
+
+This command:
+1. Adds `@radix-ui/react-tabs` to `package.json` (peer dep of the shadcn tabs component)
+2. Copies `web/src/components/ui/tabs.tsx` into the project
+
+Usage in `ProjectDetailPage.tsx`:
+
+```typescript
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+
+// Wrap existing Members section and new Files section:
+<Tabs defaultValue="members">
+  <TabsList>
+    <TabsTrigger value="members">Members</TabsTrigger>
+    <TabsTrigger value="files">Files</TabsTrigger>
+  </TabsList>
+  <TabsContent value="members">{ /* existing members table */ }</TabsContent>
+  <TabsContent value="files">{ /* new FilesTab component */ }</TabsContent>
+</Tabs>
+```
+
+**Confidence:** HIGH — `@radix-ui/react-tabs@1.1.13` current version confirmed on npmjs.com; shadcn/ui Tabs install documented at ui.shadcn.com; consistent with all other `@radix-ui/*` packages in the project.
+
+---
+
+#### No New Libraries for File Table, File Picker, or Upload
+
+| UI Concern | Approach | Existing Component |
+|------------|----------|-------------------|
+| Files tab table | `Table`, `TableHead`, `TableBody`, `TableRow`, `TableCell` | Already in `web/src/components/ui/table.tsx` |
+| File picker dialog | `Dialog`, `DialogContent`, `DialogHeader` | Already in `web/src/components/ui/dialog.tsx` |
+| Search/filter in picker | `<Input>` + `Array.prototype.filter()` | Already in `web/src/components/ui/input.tsx` |
+| File size display | `Intl.NumberFormat` or a 3-line helper | stdlib JS |
+| Upload in import dialog | Existing `fetch` with `FormData` (same pattern as `PushWDLDialog`) | `web/src/lib/apiClient.ts` |
+| S3/local path import | `apiClient.post` with JSON body | `web/src/lib/apiClient.ts` |
+
+**TanStack Table is NOT needed.** The file library is a simple paginated list with one search field and one type filter. Client-side `Array.filter()` over a TanStack Query result is fast enough at typical file library sizes (<10,000 files per project). TanStack Table would add 50+ lines of boilerplate for no benefit here.
+
+**react-dropzone is NOT needed.** `PushWDLDialog` already demonstrates the `<input type="file">` + `FileReader` + `FormData` pattern; use the same approach.
+
+---
+
+### Integration Points
+
+1. **`handlers_uploads.go`**: After `backend.UploadFileStream` succeeds, `os.Stat` the written path, derive `label = filepath.Base(path)`, call `store.CreateProjectFile`. No change to HTTP response shape.
+
+2. **`dispatch.go` (run completion)**: After `UpdateRunOutputs`, iterate output values for `File`/`Directory` typed outputs, call `store.CreateProjectFile` for each with `source = "run_output"` and `run_id` set.
+
+3. **`handlers_registry.go` `extractInputs`**: Extend to read `paramMeta[inputName]` (type `map[string]any`) and extract `"type"` key as string into a new `FileType string` field on `RegistryInputItem`. Parser already stores nested objects — no parser changes needed.
+
+4. **New handler file `handlers_files.go`**: `GET /projects/{slug}/files` and `POST /projects/{slug}/files` (manual S3/local import). Follow the exact routing + RBAC middleware pattern used by `handlers_projects.go` and `handlers_registry.go`.
+
+5. **`RunWorkflowDialog.tsx`**: For `File`-typed inputs, render a "Pick from Library" button alongside the existing text input. Button opens a Dialog with the file list fetched from `/projects/{slug}/files?type={fileType}`. On selection, populate the text input with the file's `path`. Manual text entry remains as fallback.
+
+6. **New `useFiles.ts`**: TanStack Query hooks (`useProjectFiles`, `useCreateProjectFile`, `useDeleteProjectFile`). Mirror the pattern from `useProjects.ts`.
+
+---
+
+### Installation Summary
+
+```bash
+# Go: no new dependencies in default implementation
+# (conditional additions noted above)
+
+# Frontend (from web/ directory):
+npx shadcn@latest add tabs
+# Installs: @radix-ui/react-tabs, copies web/src/components/ui/tabs.tsx
+```
+
+---
+
+### Version Compatibility
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `@radix-ui/react-tabs@^1.1.13` | React 19, Tailwind CSS v4, shadcn/ui current | All other `@radix-ui/*` in this project are at v1.x; no known conflicts |
+| `gabriel-vasile/mimetype@v1.4.13` (conditional) | Go 1.24, CGO-free | Pure Go; no CGO conflict with `modernc.org/sqlite` |
+| `mvdan.cc/sh/v3@v3.13.1` (conditional) | Go 1.24 | Pure Go; no known dep conflicts |
+
+---
+
+*Stack research for: flowy v2.2 Managed File Library*
+*Researched: 2026-04-09*
