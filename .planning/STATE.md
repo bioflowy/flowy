@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: Managed File Library
-status: verifying
-stopped_at: Phase 39 context gathered
-last_updated: "2026-04-19T05:41:48.326Z"
-last_activity: 2026-04-13
+status: milestone_complete
+stopped_at: Milestone archived
+last_updated: "2026-04-19T07:15:00.000Z"
+last_activity: 2026-04-19
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
   percent: 100
 ---
 
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-09 for v2.2 milestone)
+See: .planning/PROJECT.md (updated 2026-04-19 after v2.2 milestone)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** Phase 38 — File Library REST API
+**Current focus:** define the next milestone
 
 ## Current Position
 
-Phase: 38 (File Library REST API) — VERIFYING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-04-13
+Milestone: v2.2 Managed File Library — SHIPPED
+Phase range: 37-40
+Status: Milestone archived; waiting for next milestone definition
+Last activity: 2026-04-19
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 0 (this milestone)
+- Total plans completed: 8 (this milestone)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -44,12 +44,15 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 37 | 2 | — | — |
+| 38 | 2 | — | — |
+| 39 | 2 | — | — |
+| 40 | 2 | — | — |
 
 **Recent Trend:**
 
-- Last 5 plans: —
-- Trend: —
+- Last 5 plans: 38-02, 39-01, 39-02, 40-01, 40-02
+- Trend: steady
 
 *Updated after each plan completion*
 
@@ -63,20 +66,21 @@ Recent decisions affecting current work:
 
 - [v2.1]: File inputs as server-path text fields — browser file picker deferred to v2.2; uploads endpoint ready
 - [v2.2 research]: CompleteRun must be a single SQLite transaction wrapping output registration + state transition
-- [v2.2 research]: S3APIClient needs HeadObject in Phase 37 or S3 file sizes will be 0 permanently
+- [v2.2 phase 39]: Managed file auto-registration must follow declared WDL output types, not JSON string heuristics
+- [v2.2 phase 40]: File picker keeps manual path entry as fallback while filtering library choices by `parameter_meta.type`
+- [v2.2 review]: Registry input metadata must resolve immutable digests directly; push auto-assigns `latest`
 
 ### Pending Todos
 
-None.
+None. Start `/gsd-new-milestone` when ready to define the next requirement set.
 
 ### Blockers/Concerns
 
-- Phase 38 and Phase 39 can proceed in parallel after Phase 37 completes; Phase 40 blocks on both.
-- FileValue/StringValue JSON ambiguity: auto-registration must use WDL type declarations, not path heuristics.
-- parameter_meta backward compat: all type assertions must use comma-ok checks (see ex_paramter_meta_task.wdl).
+- ESLint cannot run until the repo adds an `eslint.config.js` for ESLint v9.
+- No formal `v2.2` milestone audit file was generated; milestone was archived after manual verification and targeted automated test runs.
 
 ## Session Continuity
 
-Last activity: 2026-04-13
-Stopped at: Phase 39 context gathered
-Resume file: .planning/phases/39-workflow-completion-hook-and-type-annotation/39-CONTEXT.md
+Last activity: 2026-04-19
+Stopped at: Milestone archived
+Resume file: .planning/ROADMAP.md

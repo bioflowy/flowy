@@ -16,7 +16,16 @@ workflow test_wf {
     input {
         String name
         Int count
+        File reads
         Boolean? verbose
+    }
+    parameter_meta {
+        name: {
+            help: "display name"
+        }
+        reads: {
+            type: "fastq"
+        }
     }
     output {
         String result = name
@@ -107,8 +116,8 @@ func TestRegistryInputs(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	if len(resp.Inputs) != 3 {
-		t.Fatalf("expected 3 inputs, got %d: %+v", len(resp.Inputs), resp.Inputs)
+	if len(resp.Inputs) != 4 {
+		t.Fatalf("expected 4 inputs, got %d: %+v", len(resp.Inputs), resp.Inputs)
 	}
 
 	byName := make(map[string]api.RegistryInputItem, len(resp.Inputs))
@@ -140,6 +149,23 @@ func TestRegistryInputs(t *testing.T) {
 	if countItem.Optional {
 		t.Error("count.Optional: expected false")
 	}
+	if countItem.FileType != nil {
+		t.Fatalf("count.FileType: expected nil, got %q", *countItem.FileType)
+	}
+
+	readsItem, ok := byName["reads"]
+	if !ok {
+		t.Fatal("expected input 'reads' in response")
+	}
+	if readsItem.Type != "File" {
+		t.Errorf("reads.Type: got %q, want %q", readsItem.Type, "File")
+	}
+	if readsItem.FileType == nil {
+		t.Fatal("reads.FileType: expected non-nil")
+	}
+	if *readsItem.FileType != "fastq" {
+		t.Errorf("reads.FileType: got %q, want %q", *readsItem.FileType, "fastq")
+	}
 
 	verboseItem, ok := byName["verbose"]
 	if !ok {
@@ -150,6 +176,9 @@ func TestRegistryInputs(t *testing.T) {
 	}
 	if verboseItem.Default != nil {
 		t.Errorf("verbose.Default: expected nil, got %q", *verboseItem.Default)
+	}
+	if verboseItem.FileType != nil {
+		t.Fatalf("verbose.FileType: expected nil, got %q", *verboseItem.FileType)
 	}
 }
 
@@ -202,6 +231,68 @@ func TestRegistryInputs_WithDefaults(t *testing.T) {
 	}
 	if *num.Default != "42" {
 		t.Errorf("num.Default: got %q, want %q", *num.Default, "42")
+	}
+}
+
+func TestRegistryInputs_WithDigestQuery(t *testing.T) {
+	srv, _, projSlug, adminToken, cleanup := registryInputsSetup(t)
+	defer cleanup()
+
+	pushW := doAuthRequest(t, srv, "POST",
+		"/projects/"+projSlug+"/registry",
+		api.RegistryPushRequest{Name: "digest-workflow", Content: wdlWithInputs},
+		adminToken,
+	)
+	if pushW.Code != http.StatusCreated && pushW.Code != http.StatusOK {
+		t.Fatalf("push: expected 200/201, got %d (body: %s)", pushW.Code, pushW.Body.String())
+	}
+
+	var pushResp api.RegistryPushResponse
+	if err := json.NewDecoder(pushW.Body).Decode(&pushResp); err != nil {
+		t.Fatalf("decode push response: %v", err)
+	}
+
+	w := doAuthRequest(t, srv, "GET",
+		"/projects/"+projSlug+"/registry/digest-workflow/inputs?digest="+pushResp.Digest,
+		nil, adminToken,
+	)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp api.RegistryInputsResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Inputs) != 4 {
+		t.Fatalf("expected 4 inputs, got %d: %+v", len(resp.Inputs), resp.Inputs)
+	}
+}
+
+func TestRegistryInputs_TagDigestFallback(t *testing.T) {
+	srv, _, projSlug, adminToken, cleanup := registryInputsSetup(t)
+	defer cleanup()
+
+	pushW := doAuthRequest(t, srv, "POST",
+		"/projects/"+projSlug+"/registry",
+		api.RegistryPushRequest{Name: "fallback-workflow", Content: wdlWithInputs},
+		adminToken,
+	)
+	if pushW.Code != http.StatusCreated && pushW.Code != http.StatusOK {
+		t.Fatalf("push: expected 200/201, got %d (body: %s)", pushW.Code, pushW.Body.String())
+	}
+
+	var pushResp api.RegistryPushResponse
+	if err := json.NewDecoder(pushW.Body).Decode(&pushResp); err != nil {
+		t.Fatalf("decode push response: %v", err)
+	}
+
+	w := doAuthRequest(t, srv, "GET",
+		"/projects/"+projSlug+"/registry/fallback-workflow/inputs?tag="+pushResp.Digest,
+		nil, adminToken,
+	)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }
 
@@ -275,6 +366,21 @@ func TestRegistryInputs_MissingTagParam(t *testing.T) {
 	}
 	if errResp.Error == "" {
 		t.Error("expected non-empty error message")
+	}
+}
+
+func TestRegistryInputs_TagAndDigestBothSpecified(t *testing.T) {
+	srv, _, projSlug, adminToken, cleanup := registryInputsSetup(t)
+	defer cleanup()
+
+	pushAndTagEntry(t, srv, projSlug, "my-wf", wdlEmptyInputs, "latest", adminToken)
+
+	w := doAuthRequest(t, srv, "GET",
+		"/projects/"+projSlug+"/registry/my-wf/inputs?tag=latest&digest=sha256:abc",
+		nil, adminToken,
+	)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (body: %s)", w.Code, w.Body.String())
 	}
 }
 

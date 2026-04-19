@@ -2,7 +2,7 @@
 
 ## What This Is
 
-WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as four binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), `flowy-daemon` (Docker task executor), and `flowy-ui` (web management UI). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution with CLI and browser clients, run provenance tracking, a browser-based management interface for users, projects, registry, and run output browsing, and full browser-based workflow execution with dynamic input forms and poll-based status monitoring.
+WDL (Workflow Description Language) 1.2 workflow engine implemented in Go. Parses WDL 1.2 source files, type-checks them, and executes tasks via Docker containers with scatter parallelism and conditional support. Ships as four binaries: `flowy` (client CLI), `flowy-server` (REST API + DAG scheduler), `flowy-daemon` (Docker task executor), and `flowy-ui` (web management UI). Supports local single-host execution, distributed multi-host execution via shared filesystem, and S3/MinIO object storage backends for cloud-native deployment. Provides project-based multi-user access control with JWT authentication and role-based permissions, a Docker-registry-style WDL tool/workflow registry with content-hash versioning and mutable tags, registry-based workflow execution with CLI and browser clients, run provenance tracking, a project-scoped managed file library with browser/S3/server-path import, and a browser-based management interface for users, projects, registry, files, and run output browsing. Browser workflow execution supports dynamic input forms, managed-file selection for `File` inputs, and poll-based status monitoring.
 
 ## Core Value
 
@@ -55,16 +55,16 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ Poll-based run status monitoring with auto-stop on terminal state — v2.1
 - ✓ Browser workflow execution with dynamic input form (String, Int, Float, Boolean, File, JSON) — v2.1
 - ✓ RunWorkflowDialog submission → RunDetailPage navigation with polling — v2.1
+- ✓ Managed file library with project-scoped File/Directory tracking, import, and record-only deletion — v2.2
+- ✓ Automatic registration of workflow File/Directory outputs with `parameter_meta.type` propagation — v2.2
+- ✓ Browser file picker for `File` inputs with managed-file filtering and manual path fallback — v2.2
 
 ### Active
 
-- [ ] Managed file library with project-scoped File/Directory tracking (size, creation date, path, type, label)
-- [ ] File label: defaults to filename; derived via shell-style template in parameter_meta (e.g. `label: "${fastq%%.fastq*}.bam"`)
-- [ ] File type annotation via WDL parameter_meta (e.g. `parameter_meta { reads: { type: "fastq" } }`)
-- [ ] File import: browser upload (reuse /uploads endpoint), S3/MinIO path, server local path
-- [ ] Auto-register all File/Directory workflow outputs as managed files on run completion
-- [ ] File picker in RunWorkflowDialog for File-typed inputs (filter by type from parameter_meta; manual path fallback)
-- [ ] "Files" tab in project detail page (browse, import, view metadata)
+- [ ] File label templates derived from WDL `parameter_meta` without invoking a system shell
+- [ ] Search/filter in the Files tab for larger project libraries
+- [ ] Source badges and run provenance links in managed-file views
+- [ ] Pagination and bulk-management affordances for large file libraries
 
 ### Out of Scope
 
@@ -79,28 +79,20 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - OAuth2/LDAP/SSO authentication — simple username/password sufficient for now
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
-- Browser file picker for File-typed workflow inputs — uploads endpoint built (v2.1) but not wired; users supply server-accessible paths (s3://, absolute) directly; deferred to v2.2+
 
-## Current Milestone: v2.2 Managed File Library
+## Next Milestone Goals
 
-**Goal:** Introduce a project-scoped managed file library so workflow inputs and outputs are tracked centrally, enabling file-picker-based workflow execution.
-
-**Target features:**
-- Managed file library (File + Directory, project-scoped) with metadata: size, creation date, path, type, label
-- File label: defaults to filename; auto-derived via shell-style parameter_meta template expressions
-- File type annotation via WDL parameter_meta (e.g. `parameter_meta { reads: { type: "fastq" } }`)
-- Import: browser upload, S3/MinIO path, server local path
-- Auto-register all File/Directory workflow outputs as managed files on run completion
-- File picker in RunWorkflowDialog (filter by type; manual path fallback)
-- "Files" tab in project detail page
+- Decide whether file-label templating is valuable enough for a dedicated milestone or should remain deferred
+- Improve managed-file usability with search/filter, provenance surfacing, and better large-library UX
+- Continue reducing browser/server friction around file-oriented execution flows without weakening RBAC or storage safety boundaries
 
 ## Current State
 
-Shipped v2.1 with 41,483 LOC Go + 9,193 LOC TypeScript/React. Six milestones complete (v1.0–v2.1). 533 Go tests, 158 frontend tests across 22 files.
+Shipped v2.2 with 43,239 LOC Go + 9,829 LOC TypeScript/React. Seven milestones complete (v1.0-v2.2). The codebase currently contains 564 Go tests and 162 frontend tests.
 
-v2.1 delivered: input schema introspection endpoint enabling dynamic browser forms; server-side file upload endpoint; `flowy login` with secure JWT credential storage (0600/0700 permissions); `flowy registry` subcommands (push/list/pull/tag/delete-tag/delete) with automatic credential loading; PushWDLDialog for browser-based WDL upload with FileReader and role gating; `usePollingRuns` hook with TERMINAL_STATES for 3s auto-polling with pulsing dot indicators; RunWorkflowDialog with dynamic zod schema and per-type input controls (String/Int/Float/Boolean/File/JSON) wired to the inputs endpoint; and full submission → RunDetailPage navigation flow.
+v2.2 delivered: managed-file persistence and REST APIs; browser, S3, and guarded server-path imports; automatic registration of workflow `File` and `Directory` outputs on completion; `parameter_meta.type` propagation into managed-file records and browser input metadata; a Files tab with import and delete flows; a managed-file picker in `RunWorkflowDialog`; import-time `file_type` support; and digest-aware registry input resolution with automatic `latest` tagging on registry push.
 
-**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution via CLI and browser, run provenance tracking, browser management UI (users/projects/registry/file browsing), browser workflow execution with dynamic input forms, poll-based run monitoring, and CLI registry management.
+**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution via CLI and browser, run provenance tracking, project-scoped managed-file tracking, browser management UI (users/projects/registry/files), browser workflow execution with dynamic input forms and managed-file selection, poll-based run monitoring, and CLI registry management.
 
 ## Context
 
@@ -152,9 +144,13 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | Project-scoped user list for AddMemberDialog | Avoids relaxing global user list to non-admins | ✓ Good — proper security boundary |
 | ~/.flowy/credentials.yaml with 0600/0700 | Secure per-user JWT storage for CLI; follows SSH convention | ✓ Good — no credential leaks in shared environments |
 | Dynamic zod schema from server input list | Form validation built at runtime from /inputs endpoint response | ✓ Good — schema always matches WDL source |
-| File inputs as server-path text fields (v2.1) | Browser file picker deferred; users supply s3:// or absolute paths | ✓ Good — consistent with ADR 0001; uploads endpoint ready for v2.2 |
+| File inputs as server-path text fields (v2.1) | Browser file picker deferred; users supply `s3://` or absolute paths | ✓ Good — consistent with ADR 0001; uploads endpoint ready for v2.2 |
 | usePollingRuns returns 5000ms for undefined data | Ensures new runs appear without manual refresh after submit | ✓ Good — intentional deviation; minor SC4 edge case accepted |
 | TERMINAL_STATES exported from useRuns.ts | Single source of truth for stopped-state detection across all polling consumers | ✓ Good — no divergence between RunsPage, RunDetailPage, usePollingRuns |
+| Managed-file rows are record-only metadata | Avoid accidental data loss when users remove library entries | ✓ Good — safe default for shared storage |
+| `CompleteRun(...)` wraps run completion + managed-file registration | Prevents outputs and run state from drifting under partial failure | ✓ Good — atomic completion semantics |
+| File picker keeps manual path fallback | Managed-file library improves UX without blocking external or unmanaged paths | ✓ Good — practical migration path |
+| Registry push auto-tags `latest` and `/inputs` accepts digest lookup | Browser selection remains stable when the chosen version is represented by an immutable digest | ✓ Good — smoother registry UX |
 
 ## Evolution
 
@@ -174,4 +170,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-09 after v2.1 milestone*
+*Last updated: 2026-04-19 after v2.2 milestone*

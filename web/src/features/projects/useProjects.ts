@@ -19,6 +19,15 @@ export interface MemberResponse {
   updated_at: string
 }
 
+export interface ManagedFileResponse {
+  id: string
+  path: string
+  file_type: string
+  label: string
+  size: number
+  created_at: string
+}
+
 export function useProjects() {
   return useQuery<ProjectResponse[]>({
     queryKey: ['projects'],
@@ -100,5 +109,63 @@ export function useProjectUsers(slug: string) {
     queryKey: ['projects', slug, 'users'],
     queryFn: () => apiClient.get(`/projects/${slug}/users`),
     enabled: !!slug,
+  })
+}
+
+export function useManagedFiles(slug: string) {
+  return useQuery<ManagedFileResponse[]>({
+    queryKey: ['projects', slug, 'files'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ files: ManagedFileResponse[] }>(`/projects/${slug}/files`)
+      return response.files
+    },
+    enabled: !!slug,
+  })
+}
+
+export function useDeleteManagedFile(slug: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/projects/${slug}/files/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', slug, 'files'] }),
+  })
+}
+
+type ImportManagedFileInput =
+  | { file: File; uri?: never; fileType?: string }
+  | { uri: string; file?: never; fileType?: string }
+
+export function useImportManagedFile(slug: string) {
+  const queryClient = useQueryClient()
+  return useMutation<ManagedFileResponse, Error, ImportManagedFileInput>({
+    mutationFn: async (input) => {
+      if ('file' in input) {
+        if (!input.file) {
+          throw new Error('file is required')
+        }
+        const body = new FormData()
+        body.append('file', input.file)
+        if (input.fileType && input.fileType.trim() !== '') {
+          body.append('file_type', input.fileType.trim())
+        }
+        const response = await apiClient.postForm<{ file: ManagedFileResponse }>(
+          `/projects/${slug}/files`,
+          body
+        )
+        return response.file
+      }
+
+      const response = await apiClient.post<{ file: ManagedFileResponse }>(
+        `/projects/${slug}/files`,
+        {
+          uri: input.uri,
+          ...(input.fileType && input.fileType.trim() !== ''
+            ? { file_type: input.fileType.trim() }
+            : {}),
+        }
+      )
+      return response.file
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', slug, 'files'] }),
   })
 }

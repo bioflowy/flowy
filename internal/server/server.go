@@ -129,8 +129,8 @@ func (s *Server) newRouter() *chi.Mux {
 		// Project routes (JWT-protected).
 		r.Route("/projects", func(r chi.Router) {
 			r.Use(JWTMiddleware(s.jwtSecret))
-			r.Post("/", s.handleCreateProject)  // any authenticated user
-			r.Get("/", s.handleListProjects)    // filtered to membership
+			r.Post("/", s.handleCreateProject) // any authenticated user
+			r.Get("/", s.handleListProjects)   // filtered to membership
 
 			r.Route("/{slug}", func(r chi.Router) {
 				r.Use(s.projectContext)
@@ -185,6 +185,9 @@ func (s *Server) newRouter() *chi.Mux {
 
 				// File uploads
 				r.With(s.projectRoleRequired("executor")).Post("/uploads", s.handleUpload)
+				r.With(s.projectRoleRequired("viewer")).Get("/files", s.handleListFiles)
+				r.With(s.projectRoleRequired("executor")).Post("/files", s.handleImportFile)
+				r.With(s.projectRoleRequired("executor")).Delete("/files/{id}", s.handleDeleteFile)
 			})
 		})
 

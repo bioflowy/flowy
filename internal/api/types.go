@@ -327,6 +327,7 @@ type RegistryInputItem struct {
 	Type     string  `json:"type"`
 	Optional bool    `json:"optional"`
 	Default  *string `json:"default"`
+	FileType *string `json:"file_type"`
 }
 
 // RegistryInputsResponse is the response body for GET /projects/{slug}/registry/{name}/inputs.
@@ -339,6 +340,33 @@ type UploadResponse struct {
 	// Path is the server-accessible absolute path where the uploaded file is stored.
 	// Clients use this path as a File-typed workflow input value.
 	Path string `json:"path"`
+}
+
+// ManagedFileResponse is a single file entry in library responses.
+type ManagedFileResponse struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	FileType  string `json:"file_type"`
+	Label     string `json:"label"`
+	Size      int64  `json:"size"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ListManagedFilesResponse is the response body for GET /projects/{slug}/files.
+type ListManagedFilesResponse struct {
+	Files []ManagedFileResponse `json:"files"`
+}
+
+// ImportFileRequest is the JSON request body for POST /projects/{slug}/files
+// when importing by URI or server-local path.
+type ImportFileRequest struct {
+	URI      string `json:"uri"`
+	FileType string `json:"file_type,omitempty"`
+}
+
+// ImportFileResponse is the response body for POST /projects/{slug}/files.
+type ImportFileResponse struct {
+	File ManagedFileResponse `json:"file"`
 }
 
 // ProvenanceSummaryResponse is a single item in the provenance list response.

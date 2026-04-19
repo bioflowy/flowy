@@ -1,5 +1,20 @@
 # Milestones
 
+## v2.2 Managed File Library (Shipped: 2026-04-19)
+
+**Phases completed:** 4 phases, 8 plans | Go: 43,239 LOC | TS: 9,829 LOC | 564 Go tests | 162 frontend tests | 11 days
+
+**Key accomplishments:**
+
+- Project-scoped managed file persistence with `managed_files` schema, store CRUD, and atomic `CompleteRun(...)` support
+- Managed-file REST API for list/import/delete, including browser upload, S3 URI import, and guarded server-path import via `ImportRoot`
+- Automatic registration of workflow `File` and `Directory` outputs, including array outputs and `parameter_meta.type` propagation
+- Browser Files tab with import dialog, delete flow, and managed-file metadata rendering in project detail pages
+- `RunWorkflowDialog` now uses a managed-file picker for `File` inputs, filtered by `parameter_meta.type`, while preserving manual path fallback
+- Registry input lookup accepts digest-based selection and registry push auto-assigns `latest`, eliminating 404s when the UI selects immutable digests
+
+---
+
 ## v2.1 Job Execution & Registry CLI (Shipped: 2026-04-09)
 
 **Phases completed:** 5 phases, 10 plans | Go: 41,483 LOC | TS: 9,193 LOC | 533 Go tests | 3 days

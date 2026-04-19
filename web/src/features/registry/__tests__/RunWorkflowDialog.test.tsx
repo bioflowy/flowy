@@ -8,6 +8,10 @@ vi.mock('@/features/registry/useRegistry', () => ({
   useRunWorkflow: vi.fn(),
 }))
 
+vi.mock('@/features/projects/useProjects', () => ({
+  useManagedFiles: vi.fn(),
+}))
+
 // Mock toast
 vi.mock('sonner', () => ({
   toast: {
@@ -23,20 +27,40 @@ vi.mock('react-router', () => ({
 }))
 
 import { useRegistryInputs, useRunWorkflow } from '@/features/registry/useRegistry'
+import { useManagedFiles } from '@/features/projects/useProjects'
 import { ApiError } from '@/lib/apiClient'
 import { toast } from 'sonner'
 import { RunWorkflowDialog } from '@/features/registry/RunWorkflowDialog'
 
 const mockInputs = {
   inputs: [
-    { name: 'name', type: 'String', optional: false, default: null },
-    { name: 'count', type: 'Int', optional: true, default: '5' },
-    { name: 'threshold', type: 'Float', optional: false, default: null },
-    { name: 'verbose', type: 'Boolean', optional: false, default: 'false' },
-    { name: 'input_file', type: 'File', optional: false, default: null },
-    { name: 'tags', type: 'Array[String]', optional: true, default: null },
+    { name: 'name', type: 'String', optional: false, default: null, file_type: null },
+    { name: 'count', type: 'Int', optional: true, default: '5', file_type: null },
+    { name: 'threshold', type: 'Float', optional: false, default: null, file_type: null },
+    { name: 'verbose', type: 'Boolean', optional: false, default: 'false', file_type: null },
+    { name: 'input_file', type: 'File', optional: false, default: null, file_type: 'fastq' },
+    { name: 'tags', type: 'Array[String]', optional: true, default: null, file_type: null },
   ],
 }
+
+const mockManagedFiles = [
+  {
+    id: 'file-1',
+    path: '/managed/reads.fastq.gz',
+    label: 'reads.fastq.gz',
+    file_type: 'fastq',
+    size: 100,
+    created_at: '2026-04-01T00:00:00Z',
+  },
+  {
+    id: 'file-2',
+    path: '/managed/report.txt',
+    label: 'report.txt',
+    file_type: 'report',
+    size: 100,
+    created_at: '2026-04-01T00:00:00Z',
+  },
+]
 
 const mockVersions = [
   {
@@ -72,6 +96,11 @@ function setupMocks({
     mutateAsync,
     isPending,
   } as unknown as ReturnType<typeof useRunWorkflow>)
+
+  vi.mocked(useManagedFiles).mockReturnValue({
+    data: mockManagedFiles,
+    isLoading: false,
+  } as unknown as ReturnType<typeof useManagedFiles>)
 }
 
 const defaultProps = {
@@ -190,6 +219,15 @@ describe('RunWorkflowDialog', () => {
       const tooltipItems = screen.getAllByText(/Enter a server-accessible path/i)
       expect(tooltipItems.length).toBeGreaterThan(0)
     })
+  })
+
+  it('shows managed file picker guidance for File inputs', () => {
+    render(<RunWorkflowDialog {...defaultProps} />)
+
+    expect(screen.getByLabelText('Managed file picker for input_file')).toBeInTheDocument()
+    expect(
+      screen.getByText('Pick from the project file library or enter a manual path. Showing only files tagged "fastq".')
+    ).toBeInTheDocument()
   })
 
   it('calls POST /projects/{slug}/workflows on submit with correct payload', async () => {

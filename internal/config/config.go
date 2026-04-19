@@ -77,6 +77,10 @@ type Config struct {
 	Storage StorageConfig `yaml:"storage"`
 	Auth    AuthConfig    `yaml:"auth"`
 	CORS    CORSConfig    `yaml:"cors"`
+
+	// ImportRoot is the directory root for server-local file imports.
+	// If empty, local path import is disabled.
+	ImportRoot string `yaml:"import_root"`
 }
 
 // ServerConfig holds configuration for the flowy-server binary.

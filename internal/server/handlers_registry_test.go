@@ -78,9 +78,9 @@ func createRegistryTestProject(t *testing.T, st *sqlite.SQLiteStore, userID stri
 	now := time.Now().UTC()
 	projID := uuid.New().String()
 	proj := &store.Project{
-		ID:       projID,
-		Slug:     "test-project-" + projID[:8],
-		IsActive: true,
+		ID:        projID,
+		Slug:      "test-project-" + projID[:8],
+		IsActive:  true,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -170,6 +170,39 @@ func TestRegistryPush_Idempotent(t *testing.T) {
 
 	if resp1.Digest != resp2.Digest {
 		t.Errorf("digest mismatch: first %q, second %q", resp1.Digest, resp2.Digest)
+	}
+}
+
+func TestRegistryPush_AssignsLatestTagAutomatically(t *testing.T) {
+	srv, st, cleanup := newAuthTestServer(t)
+	defer cleanup()
+
+	createTestUser(t, st, "user-1", "alice", "pass", "executor")
+	token := issueTestToken(t, "user-1", "alice", "executor")
+	proj := createRegistryTestProject(t, st, "user-1")
+
+	w := doAuthRequest(t, srv, "POST", "/projects/"+proj.Slug+"/registry", api.RegistryPushRequest{
+		Name:    "my-tool",
+		Content: sampleToolWDL,
+	}, token)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("push: expected 201, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	wPull := doAuthRequest(t, srv, "GET", "/projects/"+proj.Slug+"/registry/my-tool?tag=latest", nil, token)
+	if wPull.Code != http.StatusOK {
+		t.Fatalf("pull latest: expected 200, got %d (body: %s)", wPull.Code, wPull.Body.String())
+	}
+
+	versions, err := st.ListRegistryVersions(context.Background(), proj.ID, "my-tool")
+	if err != nil {
+		t.Fatalf("ListRegistryVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(versions))
+	}
+	if len(versions[0].Tags) != 1 || versions[0].Tags[0] != "latest" {
+		t.Fatalf("expected automatic latest tag, got %v", versions[0].Tags)
 	}
 }
 
@@ -689,8 +722,8 @@ func TestRegistryList(t *testing.T) {
 	if wfB.VersionCount != 1 {
 		t.Errorf("wf-b version_count: got %d, want 1", wfB.VersionCount)
 	}
-	if wfB.Tags == nil || len(wfB.Tags) != 0 {
-		t.Errorf("wf-b tags: got %v, want []", wfB.Tags)
+	if len(wfB.Tags) != 1 || wfB.Tags[0] != "latest" {
+		t.Errorf("wf-b tags: got %v, want [latest]", wfB.Tags)
 	}
 }
 
@@ -740,8 +773,8 @@ func TestRegistryListVersions(t *testing.T) {
 	if tagged == nil {
 		t.Fatal("second version not found in versions list")
 	}
-	if len(tagged.Tags) != 1 || tagged.Tags[0] != "v2" {
-		t.Errorf("second version tags: got %v, want [v2]", tagged.Tags)
+	if len(tagged.Tags) != 2 || tagged.Tags[0] != "latest" || tagged.Tags[1] != "v2" {
+		t.Errorf("second version tags: got %v, want [latest v2]", tagged.Tags)
 	}
 }
 
@@ -809,4 +842,3 @@ func TestRegistryDelete_Forbidden(t *testing.T) {
 		t.Fatalf("expected 403, got %d (body: %s)", wDel.Code, wDel.Body.String())
 	}
 }
-

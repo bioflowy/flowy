@@ -7,6 +7,7 @@ vi.mock('@/lib/apiClient', () => ({
   apiClient: {
     get: vi.fn(),
     post: vi.fn(),
+    postForm: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
     patch: vi.fn(),
@@ -24,6 +25,7 @@ import {
   useAddMember,
   useUpdateMember,
   useRemoveMember,
+  useImportManagedFile,
 } from '../useProjects'
 
 function createWrapper() {
@@ -221,5 +223,63 @@ describe('useRemoveMember', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(apiClient.delete).toHaveBeenCalledWith('/projects/my-project/members/alice')
+  })
+})
+
+describe('useImportManagedFile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('posts multipart upload with optional file_type', async () => {
+    vi.mocked(apiClient.postForm).mockResolvedValue({
+      file: {
+        id: 'file-1',
+        path: '/tmp/reads.fastq.gz',
+        file_type: 'fastq',
+        label: 'reads.fastq.gz',
+        size: 42,
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    })
+
+    const { result } = renderHook(() => useImportManagedFile('my-project'), { wrapper: createWrapper() })
+    const file = new File(['acgt'], 'reads.fastq.gz')
+
+    result.current.mutate({ file, fileType: 'fastq' })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(apiClient.postForm).toHaveBeenCalledWith(
+      '/projects/my-project/files',
+      expect.any(FormData)
+    )
+    const formData = vi.mocked(apiClient.postForm).mock.calls[0][1]
+    expect(formData.get('file')).toBe(file)
+    expect(formData.get('file_type')).toBe('fastq')
+  })
+
+  it('posts JSON import with optional file_type', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      file: {
+        id: 'file-1',
+        path: 's3://bucket/reads.fastq.gz',
+        file_type: 'fastq',
+        label: 'reads.fastq.gz',
+        size: 42,
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    })
+
+    const { result } = renderHook(() => useImportManagedFile('my-project'), { wrapper: createWrapper() })
+
+    result.current.mutate({ uri: 's3://bucket/reads.fastq.gz', fileType: 'fastq' })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(apiClient.post).toHaveBeenCalledWith('/projects/my-project/files', {
+      uri: 's3://bucket/reads.fastq.gz',
+      file_type: 'fastq',
+    })
   })
 })

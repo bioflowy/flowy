@@ -10,6 +10,7 @@ import {
   useRegistryInputs,
   useRunWorkflow,
 } from '@/features/registry/useRegistry'
+import { useManagedFiles } from '@/features/projects/useProjects'
 import type { RegistryVersionResponse } from '@/features/registry/useRegistry'
 import { ApiError } from '@/lib/apiClient'
 import { Button } from '@/components/ui/button'
@@ -82,6 +83,14 @@ function isComplexType(type: string): boolean {
   return type.startsWith('Array') || type.startsWith('Map') || type.startsWith('Struct')
 }
 
+function filterManagedFiles(
+  files: { id: string; path: string; label: string; file_type: string }[],
+  requiredType: string | null
+) {
+  if (!requiredType) return files
+  return files.filter((file) => file.file_type === requiredType)
+}
+
 export function RunWorkflowDialog({
   open,
   onOpenChange,
@@ -91,6 +100,7 @@ export function RunWorkflowDialog({
 }: RunWorkflowDialogProps) {
   const navigate = useNavigate()
   const runWorkflow = useRunWorkflow(slug)
+  const { data: managedFiles, isLoading: managedFilesLoading } = useManagedFiles(slug)
 
   const defaultTag = useMemo(() => getDefaultTag(versions), [versions])
   const [selectedTag, setSelectedTag] = useState(defaultTag)
@@ -379,12 +389,52 @@ export function RunWorkflowDialog({
                                   value={field.value as string | number}
                                 />
                               ) : input.type === 'File' ? (
-                                <Input
-                                  type="text"
-                                  placeholder="e.g., s3://bucket/path or /absolute/path"
-                                  {...field}
-                                  value={field.value as string}
-                                />
+                                <div className="space-y-2">
+                                  <Select
+                                    value={
+                                      filterManagedFiles(managedFiles ?? [], input.file_type)
+                                        .some((file) => file.path === field.value)
+                                        ? (field.value as string)
+                                        : undefined
+                                    }
+                                    onValueChange={(value) => field.onChange(value)}
+                                  >
+                                    <SelectTrigger aria-label={`Managed file picker for ${input.name}`}>
+                                      <SelectValue
+                                        placeholder={
+                                          managedFilesLoading
+                                            ? 'Loading managed files...'
+                                            : 'Select a managed file'
+                                        }
+                                      />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {filterManagedFiles(managedFiles ?? [], input.file_type).length === 0 ? (
+                                        <SelectItem value="__none__" disabled>
+                                          No matching managed files
+                                        </SelectItem>
+                                      ) : (
+                                        filterManagedFiles(managedFiles ?? [], input.file_type).map((file) => (
+                                          <SelectItem key={file.id} value={file.path}>
+                                            {file.label}
+                                          </SelectItem>
+                                        ))
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+                                  <Input
+                                    type="text"
+                                    placeholder="e.g., s3://bucket/path or /absolute/path"
+                                    {...field}
+                                    value={field.value as string}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Pick from the project file library or enter a manual path.
+                                    {input.file_type
+                                      ? ` Showing only files tagged "${input.file_type}".`
+                                      : ''}
+                                  </p>
+                                </div>
                               ) : (
                                 <Input
                                   type="text"

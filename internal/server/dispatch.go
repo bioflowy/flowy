@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/bioflowy/flowy/internal/store"
 	"github.com/bioflowy/flowy/wdl/ast"
 	"github.com/bioflowy/flowy/wdl/task"
@@ -263,32 +265,35 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 			}
 		}
 	} else {
-		// Write run-level outputs with "workflowName.outputName" keys.
-		if outputs != nil {
-			jsonOutputs := make(map[string]interface{}, len(outputs))
-			for k, v := range outputs {
-				jsonOutputs[wfName+"."+k] = values.ValueToInterface(v)
-			}
-			data, marshalErr := json.MarshalIndent(jsonOutputs, "", "  ")
-			if marshalErr != nil {
-				log.Printf("runWorkflow %s: marshal outputs: %v", runID, marshalErr)
-			} else {
-				// Save outputs to DB first (works in both local and S3 mode).
-				if err := s.store.UpdateRunOutputs(context.Background(), runID, string(data)); err != nil {
-					log.Printf("runWorkflow %s: UpdateRunOutputs: %v", runID, err)
-				}
-				// Also write outputs.json file as non-fatal backward compat (local mode).
-				outPath := filepath.Join(execRoot, "outputs.json")
-				if writeErr := s.backend.UploadFile(outPath, data); writeErr != nil {
-					log.Printf("runWorkflow %s: write outputs.json: %v", runID, writeErr)
-				}
-			}
-		}
-
 		// Success: only set COMPLETED if context is still valid (not aborted).
 		if ctx.Err() == nil {
-			if err := s.store.UpdateRunState(context.Background(), runID, store.RunCompleted); err != nil {
-				log.Printf("runWorkflow %s: UpdateRunState COMPLETED: %v", runID, err)
+			run, getRunErr := s.store.GetRun(context.Background(), runID)
+			if getRunErr != nil {
+				log.Printf("runWorkflow %s: GetRun: %v", runID, getRunErr)
+				_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+				s.cleanupRun(runID)
+				return
+			}
+
+			outputsJSON, files, buildErr := buildWorkflowCompletionRecord(run.ProjectID, runID, wfName, doc.Workflows[0], outputs)
+			if buildErr != nil {
+				log.Printf("runWorkflow %s: build completion record: %v", runID, buildErr)
+				_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+				s.cleanupRun(runID)
+				return
+			}
+
+			if err := s.store.CompleteRun(context.Background(), runID, run.ProjectID, outputsJSON, files); err != nil {
+				log.Printf("runWorkflow %s: CompleteRun: %v", runID, err)
+				_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
+				s.cleanupRun(runID)
+				return
+			}
+
+			// Keep outputs.json for backward compatibility with local-mode tooling.
+			outPath := filepath.Join(execRoot, "outputs.json")
+			if writeErr := s.backend.UploadFile(outPath, []byte(outputsJSON)); writeErr != nil {
+				log.Printf("runWorkflow %s: write outputs.json: %v", runID, writeErr)
 			}
 			if touchErr := s.store.TouchProvenanceUpdatedAt(context.Background(), runID); touchErr != nil {
 				log.Printf("runWorkflow %s: TouchProvenanceUpdatedAt: %v", runID, touchErr)
@@ -353,3 +358,147 @@ func (s *Server) cleanupRun(runID string) {
 	s.mu.Unlock()
 }
 
+func buildWorkflowCompletionRecord(
+	projectID string,
+	runID string,
+	workflowName string,
+	wf *ast.Workflow,
+	outputs map[string]values.Value,
+) (string, []store.ManagedFile, error) {
+	jsonOutputs := make(map[string]interface{}, len(outputs))
+	for k, v := range outputs {
+		jsonOutputs[workflowName+"."+k] = values.ValueToInterface(v)
+	}
+
+	data, err := json.MarshalIndent(jsonOutputs, "", "  ")
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal outputs: %w", err)
+	}
+
+	files, err := collectManagedFilesForWorkflowOutputs(projectID, runID, wf, outputs)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return string(data), files, nil
+}
+
+func collectManagedFilesForWorkflowOutputs(
+	projectID string,
+	runID string,
+	wf *ast.Workflow,
+	outputs map[string]values.Value,
+) ([]store.ManagedFile, error) {
+	if projectID == "" || wf == nil || len(outputs) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[string]struct{})
+	files := make([]store.ManagedFile, 0)
+	for _, decl := range wf.Outputs {
+		value, ok := outputs[decl.Name]
+		if !ok {
+			continue
+		}
+		fileType := parameterMetaType(wf.ParamMeta, decl.Name)
+		var declaredType string
+		if fileType != nil {
+			declaredType = *fileType
+		}
+		next, err := collectManagedFilesForValue(projectID, runID, decl.Name, decl.Type, value, declaredType, seen)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, next...)
+	}
+	return files, nil
+}
+
+func collectManagedFilesForValue(
+	projectID string,
+	runID string,
+	outputName string,
+	declType types.Type,
+	value values.Value,
+	fileType string,
+	seen map[string]struct{},
+) ([]store.ManagedFile, error) {
+	switch t := declType.(type) {
+	case types.FileType:
+		return managedFileForPathValue(projectID, runID, outputName, value, fileType, seen)
+	case types.DirectoryType:
+		return managedFileForPathValue(projectID, runID, outputName, value, fileType, seen)
+	case types.ArrayType:
+		if !isManagedPathType(t.ItemType) {
+			return nil, nil
+		}
+		arrayValue, ok := value.(values.ArrayValue)
+		if !ok {
+			return nil, fmt.Errorf("output %q declared %s but got %T", outputName, declType.TypeName(), value)
+		}
+
+		files := make([]store.ManagedFile, 0, len(arrayValue.Items))
+		for _, item := range arrayValue.Items {
+			next, err := collectManagedFilesForValue(projectID, runID, outputName, t.ItemType, item, fileType, seen)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, next...)
+		}
+		return files, nil
+	default:
+		return nil, nil
+	}
+}
+
+func managedFileForPathValue(
+	projectID string,
+	runID string,
+	outputName string,
+	value values.Value,
+	fileType string,
+	seen map[string]struct{},
+) ([]store.ManagedFile, error) {
+	path, present, err := pathFromManagedValue(outputName, value)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, nil
+	}
+	if _, ok := seen[path]; ok {
+		return nil, nil
+	}
+	seen[path] = struct{}{}
+	runIDCopy := runID
+	return []store.ManagedFile{{
+		ID:        uuid.New().String(),
+		ProjectID: projectID,
+		RunID:     &runIDCopy,
+		Path:      path,
+		FileType:  fileType,
+		Label:     filepath.Base(path),
+	}}, nil
+}
+
+func pathFromManagedValue(outputName string, value values.Value) (string, bool, error) {
+	switch v := value.(type) {
+	case values.FileValue:
+		return v.Value, true, nil
+	case values.DirectoryValue:
+		return v.Value, true, nil
+	case values.NullValue:
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf("output %q expected File/Directory-compatible value but got %T", outputName, value)
+	}
+}
+
+func isManagedPathType(t types.Type) bool {
+	switch t.(type) {
+	case types.FileType, types.DirectoryType:
+		return true
+	default:
+		return false
+	}
+}

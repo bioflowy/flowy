@@ -24,6 +24,16 @@ func doMultipartUpload(
 	srv *server.Server,
 	path, fieldName, fileName, fileContent, token string,
 ) *httptest.ResponseRecorder {
+	return doMultipartUploadWithFields(t, srv, path, fieldName, fileName, fileContent, nil, token)
+}
+
+func doMultipartUploadWithFields(
+	t *testing.T,
+	srv *server.Server,
+	path, fieldName, fileName, fileContent string,
+	extraFields map[string]string,
+	token string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -34,6 +44,11 @@ func doMultipartUpload(
 	}
 	if _, err := io.WriteString(part, fileContent); err != nil {
 		t.Fatalf("write part: %v", err)
+	}
+	for key, value := range extraFields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("WriteField %q: %v", key, err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close writer: %v", err)

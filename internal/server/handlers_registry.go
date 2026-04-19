@@ -92,6 +92,16 @@ func (s *Server) handleRegistryPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	entry, err := s.store.GetRegistryEntry(r.Context(), proj.ID, req.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load registry entry")
+		return
+	}
+	if err := s.store.UpsertRegistryTag(r.Context(), entry.ID, "latest", version.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to assign latest tag")
+		return
+	}
+
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
@@ -318,8 +328,8 @@ func (s *Server) handleRegistryDeleteTag(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleRegistryInputs handles GET /projects/{slug}/registry/{name}/inputs?tag=<tag>.
-// Returns the declared inputs for the WDL workflow or task stored under the given tag.
+// handleRegistryInputs handles GET /projects/{slug}/registry/{name}/inputs?tag=<tag> or ?digest=<digest>.
+// Returns the declared inputs for the WDL workflow or task stored under the selected version.
 // Accessible by project viewers.
 func (s *Server) handleRegistryInputs(w http.ResponseWriter, r *http.Request) {
 	proj := projectFromContext(r.Context())
@@ -330,18 +340,44 @@ func (s *Server) handleRegistryInputs(w http.ResponseWriter, r *http.Request) {
 
 	name := chi.URLParam(r, "name")
 	tag := r.URL.Query().Get("tag")
-	if tag == "" {
-		writeError(w, http.StatusBadRequest, "must specify ?tag= query parameter")
+	digest := r.URL.Query().Get("digest")
+	if tag == "" && digest == "" {
+		writeError(w, http.StatusBadRequest, "must specify ?tag= or ?digest= query parameter")
+		return
+	}
+	if tag != "" && digest != "" {
+		writeError(w, http.StatusBadRequest, "specify either ?tag= or ?digest=, not both")
 		return
 	}
 
-	v, _, err := s.store.GetRegistryVersionByTag(r.Context(), proj.ID, name, tag)
-	if err != nil {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("tag %q not found for entry %q", tag, name))
-		return
+	var vContent string
+	if digest != "" {
+		v, _, err := s.store.GetRegistryVersionByDigest(r.Context(), proj.ID, name, digest)
+		if err != nil {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("digest %q not found for entry %q", digest, name))
+			return
+		}
+		vContent = v.WDLContent
+	} else {
+		v, _, err := s.store.GetRegistryVersionByTag(r.Context(), proj.ID, name, tag)
+		if err != nil {
+			if strings.HasPrefix(tag, "sha256:") {
+				v, _, err = s.store.GetRegistryVersionByDigest(r.Context(), proj.ID, name, tag)
+				if err != nil {
+					writeError(w, http.StatusNotFound, fmt.Sprintf("digest %q not found for entry %q", tag, name))
+					return
+				}
+				vContent = v.WDLContent
+			} else {
+				writeError(w, http.StatusNotFound, fmt.Sprintf("tag %q not found for entry %q", tag, name))
+				return
+			}
+		} else {
+			vContent = v.WDLContent
+		}
 	}
 
-	doc, err := parser.Parse(name, []byte(v.WDLContent))
+	doc, err := parser.Parse(name, []byte(vContent))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "WDL parse error")
 		return
@@ -354,10 +390,13 @@ func (s *Server) handleRegistryInputs(w http.ResponseWriter, r *http.Request) {
 // extractInputs extracts the declared input list from the first workflow or task in doc.
 func extractInputs(doc *ast.Document) []api.RegistryInputItem {
 	var decls []*ast.Decl
+	var paramMeta map[string]any
 	if len(doc.Workflows) > 0 {
 		decls = doc.Workflows[0].Inputs
+		paramMeta = doc.Workflows[0].ParamMeta
 	} else if len(doc.Tasks) > 0 {
 		decls = doc.Tasks[0].Inputs
+		paramMeta = doc.Tasks[0].ParamMeta
 	}
 
 	items := make([]api.RegistryInputItem, 0, len(decls))
@@ -367,9 +406,29 @@ func extractInputs(doc *ast.Document) []api.RegistryInputItem {
 			Type:     d.Type.TypeName(),
 			Optional: d.Type.IsOptional(),
 			Default:  declDefaultString(d.Expr),
+			FileType: parameterMetaType(paramMeta, d.Name),
 		})
 	}
 	return items
+}
+
+func parameterMetaType(paramMeta map[string]any, name string) *string {
+	if len(paramMeta) == 0 {
+		return nil
+	}
+	rawField, ok := paramMeta[name]
+	if !ok {
+		return nil
+	}
+	fieldMap, ok := rawField.(map[string]any)
+	if !ok {
+		return nil
+	}
+	value, ok := fieldMap["type"].(string)
+	if !ok || value == "" {
+		return nil
+	}
+	return &value
 }
 
 // declDefaultString converts a simple literal AST expression to its string representation.

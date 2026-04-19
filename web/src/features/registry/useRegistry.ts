@@ -106,6 +106,7 @@ export interface RegistryInputItem {
   type: string
   optional: boolean
   default: string | null
+  file_type: string | null
 }
 
 export interface RegistryInputsResponse {
@@ -113,9 +114,12 @@ export interface RegistryInputsResponse {
 }
 
 export function useRegistryInputs(slug: string, name: string, tag: string) {
+  const query = tag.startsWith('sha256:')
+    ? `digest=${encodeURIComponent(tag)}`
+    : `tag=${encodeURIComponent(tag)}`
   return useQuery<RegistryInputsResponse>({
     queryKey: ['projects', slug, 'registry', name, 'inputs', tag],
-    queryFn: () => apiClient.get(`/projects/${slug}/registry/${name}/inputs?tag=${encodeURIComponent(tag)}`),
+    queryFn: () => apiClient.get(`/projects/${slug}/registry/${name}/inputs?${query}`),
     enabled: !!slug && !!name && !!tag,
   })
 }

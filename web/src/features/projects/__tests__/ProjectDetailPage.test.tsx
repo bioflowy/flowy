@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import React from 'react'
 
 vi.mock('@/features/projects/useProjects', () => ({
@@ -9,6 +10,8 @@ vi.mock('@/features/projects/useProjects', () => ({
   useDeleteProject: vi.fn(),
   useUpdateMember: vi.fn(),
   useRemoveMember: vi.fn(),
+  useManagedFiles: vi.fn(),
+  useDeleteManagedFile: vi.fn(),
 }))
 
 vi.mock('@/store/authStore', () => ({
@@ -31,6 +34,11 @@ vi.mock('@/features/projects/AddMemberDialog', () => ({
     open ? <div data-testid="add-member-dialog">AddMemberDialog</div> : null,
 }))
 
+vi.mock('@/features/projects/ImportFileDialog', () => ({
+  ImportFileDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="import-file-dialog">ImportFileDialog</div> : null,
+}))
+
 import {
   useProjectDetail,
   useProjectMembers,
@@ -38,6 +46,8 @@ import {
   useDeleteProject,
   useUpdateMember,
   useRemoveMember,
+  useManagedFiles,
+  useDeleteManagedFile,
 } from '@/features/projects/useProjects'
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
@@ -69,7 +79,20 @@ const mockMembers = [
   },
 ]
 
+const mockFiles = [
+  {
+    id: 'file-1',
+    path: '/data/reads.fastq.gz',
+    file_type: 'fastq',
+    label: 'reads.fastq.gz',
+    size: 2048,
+    created_at: '2024-03-20T00:00:00Z',
+  },
+]
+
 describe('ProjectDetailPage', () => {
+  const user = userEvent.setup()
+
   beforeEach(() => {
     vi.clearAllMocks()
 
@@ -102,6 +125,16 @@ describe('ProjectDetailPage', () => {
       mutateAsync: vi.fn(),
       isPending: false,
     } as unknown as ReturnType<typeof useRemoveMember>)
+
+    vi.mocked(useManagedFiles).mockReturnValue({
+      data: mockFiles,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useManagedFiles>)
+
+    vi.mocked(useDeleteManagedFile).mockReturnValue({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteManagedFile>)
 
     vi.mocked(useProjectStore).mockImplementation(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,5 +224,18 @@ describe('ProjectDetailPage', () => {
 
     const skeletons = document.querySelectorAll('[data-testid="skeleton-row"]')
     expect(skeletons.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('renders managed files when Files tab is selected', async () => {
+    vi.mocked(useAuthStore).mockReturnValue('alice' as ReturnType<typeof useAuthStore>)
+
+    render(<ProjectDetailPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Files' }))
+
+    expect(screen.getByText('/data/reads.fastq.gz')).toBeInTheDocument()
+    expect(screen.getByText('fastq')).toBeInTheDocument()
+    expect(screen.getByText('2.0 KB')).toBeInTheDocument()
+    expect(screen.getByText('Import File')).toBeInTheDocument()
   })
 })
