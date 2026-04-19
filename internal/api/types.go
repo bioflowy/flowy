@@ -344,12 +344,14 @@ type UploadResponse struct {
 
 // ManagedFileResponse is a single file entry in library responses.
 type ManagedFileResponse struct {
-	ID        string `json:"id"`
-	Path      string `json:"path"`
-	FileType  string `json:"file_type"`
-	Label     string `json:"label"`
-	Size      int64  `json:"size"`
-	CreatedAt string `json:"created_at"`
+	ID         string  `json:"id"`
+	Path       string  `json:"path"`
+	FileType   string  `json:"file_type"`
+	Label      string  `json:"label"`
+	SourceType string  `json:"source_type"`
+	RunID      *string `json:"run_id,omitempty"`
+	Size       int64   `json:"size"`
+	CreatedAt  string  `json:"created_at"`
 }
 
 // ListManagedFilesResponse is the response body for GET /projects/{slug}/files.

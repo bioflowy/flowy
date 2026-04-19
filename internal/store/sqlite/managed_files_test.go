@@ -12,13 +12,14 @@ import (
 // runID may be nil for manually imported files.
 func newManagedFile(projectID string, runID *string) *store.ManagedFile {
 	return &store.ManagedFile{
-		ID:        uuid.New().String(),
-		ProjectID: projectID,
-		RunID:     runID,
-		Path:      "/data/sample.fastq",
-		FileType:  "fastq",
-		Label:     "sample.fastq",
-		Size:      1024,
+		ID:         uuid.New().String(),
+		ProjectID:  projectID,
+		RunID:      runID,
+		Path:       "/data/sample.fastq",
+		FileType:   "fastq",
+		Label:      "sample.fastq",
+		SourceType: "import",
+		Size:       1024,
 	}
 }
 
@@ -47,7 +48,7 @@ func TestManagedFileSchema(t *testing.T) {
 	if len(colSet) == 0 {
 		t.Fatal("managed_files table does not exist or has no columns")
 	}
-	for _, required := range []string{"id", "project_id", "run_id", "path", "file_type", "label", "size", "created_at"} {
+	for _, required := range []string{"id", "project_id", "run_id", "path", "file_type", "label", "source_type", "size", "created_at"} {
 		if !colSet[required] {
 			t.Errorf("managed_files table missing column %q", required)
 		}
@@ -114,6 +115,9 @@ func TestManagedFileCRUD_RoundTrip(t *testing.T) {
 	}
 	if got.Label != f.Label {
 		t.Errorf("Label: got %q, want %q", got.Label, f.Label)
+	}
+	if got.SourceType != f.SourceType {
+		t.Errorf("SourceType: got %q, want %q", got.SourceType, f.SourceType)
 	}
 	if got.Size != f.Size {
 		t.Errorf("Size: got %d, want %d", got.Size, f.Size)
@@ -308,22 +312,24 @@ func TestCompleteRun_WithFiles(t *testing.T) {
 	runID := r.ID
 	files := []store.ManagedFile{
 		{
-			ID:        uuid.New().String(),
-			ProjectID: p.ID,
-			RunID:     &runID,
-			Path:      "/data/output1.bam",
-			FileType:  "bam",
-			Label:     "output1.bam",
-			Size:      2048,
+			ID:         uuid.New().String(),
+			ProjectID:  p.ID,
+			RunID:      &runID,
+			Path:       "/data/output1.bam",
+			FileType:   "bam",
+			Label:      "output1.bam",
+			SourceType: "workflow",
+			Size:       2048,
 		},
 		{
-			ID:        uuid.New().String(),
-			ProjectID: p.ID,
-			RunID:     &runID,
-			Path:      "/data/output2.bam",
-			FileType:  "bam",
-			Label:     "output2.bam",
-			Size:      4096,
+			ID:         uuid.New().String(),
+			ProjectID:  p.ID,
+			RunID:      &runID,
+			Path:       "/data/output2.bam",
+			FileType:   "bam",
+			Label:      "output2.bam",
+			SourceType: "workflow",
+			Size:       4096,
 		},
 	}
 
@@ -376,22 +382,24 @@ func TestCompleteRun_Atomicity(t *testing.T) {
 	// Two files with the same ID — the second insert will violate the PK constraint.
 	files := []store.ManagedFile{
 		{
-			ID:        dupID,
-			ProjectID: p.ID,
-			RunID:     &runID,
-			Path:      "/data/output1.bam",
-			FileType:  "bam",
-			Label:     "output1.bam",
-			Size:      2048,
+			ID:         dupID,
+			ProjectID:  p.ID,
+			RunID:      &runID,
+			Path:       "/data/output1.bam",
+			FileType:   "bam",
+			Label:      "output1.bam",
+			SourceType: "workflow",
+			Size:       2048,
 		},
 		{
-			ID:        dupID, // duplicate PK — will cause insert to fail
-			ProjectID: p.ID,
-			RunID:     &runID,
-			Path:      "/data/output2.bam",
-			FileType:  "bam",
-			Label:     "output2.bam",
-			Size:      4096,
+			ID:         dupID, // duplicate PK — will cause insert to fail
+			ProjectID:  p.ID,
+			RunID:      &runID,
+			Path:       "/data/output2.bam",
+			FileType:   "bam",
+			Label:      "output2.bam",
+			SourceType: "workflow",
+			Size:       4096,
 		},
 	}
 

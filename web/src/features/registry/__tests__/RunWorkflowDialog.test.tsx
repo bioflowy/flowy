@@ -49,6 +49,8 @@ const mockManagedFiles = [
     path: '/managed/reads.fastq.gz',
     label: 'reads.fastq.gz',
     file_type: 'fastq',
+    source_type: 'workflow',
+    run_id: 'run-1',
     size: 100,
     created_at: '2026-04-01T00:00:00Z',
   },
@@ -57,6 +59,7 @@ const mockManagedFiles = [
     path: '/managed/report.txt',
     label: 'report.txt',
     file_type: 'report',
+    source_type: 'import',
     size: 100,
     created_at: '2026-04-01T00:00:00Z',
   },
@@ -228,6 +231,18 @@ describe('RunWorkflowDialog', () => {
     expect(
       screen.getByText('Pick from the project file library or enter a manual path. Showing only files tagged "fastq".')
     ).toBeInTheDocument()
+  })
+
+  it('renders selected managed file label-first with path context', async () => {
+    render(<RunWorkflowDialog {...defaultProps} />)
+
+    await user.type(
+      screen.getByPlaceholderText('e.g., s3://bucket/path or /absolute/path'),
+      '/managed/reads.fastq.gz'
+    )
+
+    expect(screen.getByText('reads.fastq.gz')).toBeInTheDocument()
+    expect(screen.getByText('/managed/reads.fastq.gz')).toBeInTheDocument()
   })
 
   it('calls POST /projects/{slug}/workflows on submit with correct payload', async () => {

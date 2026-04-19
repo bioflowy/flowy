@@ -84,7 +84,7 @@ function isComplexType(type: string): boolean {
 }
 
 function filterManagedFiles(
-  files: { id: string; path: string; label: string; file_type: string }[],
+  files: { id: string; path: string; label: string; file_type: string; source_type: string; run_id?: string }[],
   requiredType: string | null
 ) {
   if (!requiredType) return files
@@ -390,38 +390,66 @@ export function RunWorkflowDialog({
                                 />
                               ) : input.type === 'File' ? (
                                 <div className="space-y-2">
+                                  {(() => {
+                                    const availableFiles = filterManagedFiles(
+                                      managedFiles ?? [],
+                                      input.file_type
+                                    )
+                                    const selectedManagedFile = availableFiles.find(
+                                      (file) => file.path === field.value
+                                    )
+
+                                    return (
                                   <Select
                                     value={
-                                      filterManagedFiles(managedFiles ?? [], input.file_type)
-                                        .some((file) => file.path === field.value)
-                                        ? (field.value as string)
-                                        : undefined
+                                      typeof field.value === 'string' &&
+                                      availableFiles.some((file) => file.path === field.value)
+                                        ? field.value
+                                        : ''
                                     }
                                     onValueChange={(value) => field.onChange(value)}
                                   >
                                     <SelectTrigger aria-label={`Managed file picker for ${input.name}`}>
-                                      <SelectValue
-                                        placeholder={
-                                          managedFilesLoading
-                                            ? 'Loading managed files...'
-                                            : 'Select a managed file'
-                                        }
-                                      />
+                                      {selectedManagedFile ? (
+                                        <div className="flex min-w-0 flex-col items-start text-left">
+                                          <span className="w-full truncate">
+                                            {selectedManagedFile.label}
+                                          </span>
+                                          <span className="w-full truncate text-xs text-muted-foreground">
+                                            {selectedManagedFile.path}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <SelectValue
+                                          placeholder={
+                                            managedFilesLoading
+                                              ? 'Loading managed files...'
+                                              : 'Select a managed file'
+                                          }
+                                        />
+                                      )}
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {filterManagedFiles(managedFiles ?? [], input.file_type).length === 0 ? (
+                                      {availableFiles.length === 0 ? (
                                         <SelectItem value="__none__" disabled>
                                           No matching managed files
                                         </SelectItem>
                                       ) : (
-                                        filterManagedFiles(managedFiles ?? [], input.file_type).map((file) => (
+                                        availableFiles.map((file) => (
                                           <SelectItem key={file.id} value={file.path}>
-                                            {file.label}
+                                            <div className="flex min-w-0 flex-col items-start">
+                                              <span className="w-full truncate">{file.label}</span>
+                                              <span className="w-full truncate text-xs text-muted-foreground">
+                                                {file.path}
+                                              </span>
+                                            </div>
                                           </SelectItem>
                                         ))
                                       )}
                                     </SelectContent>
                                   </Select>
+                                    )
+                                  })()}
                                   <Input
                                     type="text"
                                     placeholder="e.g., s3://bucket/path or /absolute/path"

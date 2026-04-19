@@ -85,6 +85,8 @@ const mockFiles = [
     path: '/data/reads.fastq.gz',
     file_type: 'fastq',
     label: 'reads.fastq.gz',
+    source_type: 'workflow',
+    run_id: 'run-123',
     size: 2048,
     created_at: '2024-03-20T00:00:00Z',
   },
@@ -237,5 +239,29 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByText('fastq')).toBeInTheDocument()
     expect(screen.getByText('2.0 KB')).toBeInTheDocument()
     expect(screen.getByText('Import File')).toBeInTheDocument()
+    expect(screen.getByText('Workflow')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View run' })).toBeInTheDocument()
+  })
+
+  it('filters managed files by search text', async () => {
+    vi.mocked(useAuthStore).mockReturnValue('alice' as ReturnType<typeof useAuthStore>)
+
+    render(<ProjectDetailPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Files' }))
+    await user.type(screen.getByPlaceholderText('Filter by label, path, or type'), 'missing')
+
+    expect(screen.getByText('No files match the current filters.')).toBeInTheDocument()
+  })
+
+  it('navigates to the originating run from the Files tab', async () => {
+    vi.mocked(useAuthStore).mockReturnValue('alice' as ReturnType<typeof useAuthStore>)
+
+    render(<ProjectDetailPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Files' }))
+    await user.click(screen.getByRole('button', { name: 'View run' }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/projects/test-project/runs/run-123')
   })
 })

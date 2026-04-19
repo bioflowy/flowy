@@ -24,6 +24,8 @@ export interface ManagedFileResponse {
   path: string
   file_type: string
   label: string
+  source_type: string
+  run_id?: string
   size: number
   created_at: string
 }

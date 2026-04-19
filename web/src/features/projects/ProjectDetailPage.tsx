@@ -19,6 +19,8 @@ import { ImportFileDialog } from '@/features/projects/ImportFileDialog'
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import {
   Table,
@@ -82,6 +84,39 @@ function formatFileSize(size: number): string {
   return `${rounded} ${units[unitIndex]}`
 }
 
+function fileSourceLabel(sourceType: string): string {
+  switch (sourceType) {
+    case 'workflow':
+      return 'Workflow'
+    case 'upload':
+      return 'Upload'
+    case 'import':
+      return 'Import'
+    default:
+      return 'Unknown'
+  }
+}
+
+function filterManagedFiles(
+  files: ManagedFileResponse[],
+  search: string,
+  fileType: string
+): ManagedFileResponse[] {
+  const normalizedSearch = search.trim().toLowerCase()
+  return files.filter((file) => {
+    if (fileType !== 'all' && file.file_type !== fileType) {
+      return false
+    }
+    if (normalizedSearch === '') {
+      return true
+    }
+    return [file.label, file.path, file.file_type]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedSearch)
+  })
+}
+
 type ProjectTab = 'members' | 'files'
 
 export function ProjectDetailPage() {
@@ -110,6 +145,8 @@ export function ProjectDetailPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [removeMember, setRemoveMember] = useState<MemberResponse | null>(null)
   const [removeFile, setRemoveFile] = useState<ManagedFileResponse | null>(null)
+  const [fileSearch, setFileSearch] = useState('')
+  const [fileTypeFilter, setFileTypeFilter] = useState('all')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editDescOpen, setEditDescOpen] = useState(false)
   const [editDesc, setEditDesc] = useState('')
@@ -117,6 +154,11 @@ export function ProjectDetailPage() {
   const [isRemovingFile, setIsRemovingFile] = useState(false)
   const [isDeletingProject, setIsDeletingProject] = useState(false)
   const [isSavingDesc, setIsSavingDesc] = useState(false)
+
+  const fileTypeOptions = Array.from(
+    new Set((files ?? []).map((file) => file.file_type).filter((value) => value !== ''))
+  ).sort()
+  const filteredFiles = filterManagedFiles(files ?? [], fileSearch, fileTypeFilter)
 
   async function handleRoleChange(member: MemberResponse, newRole: string) {
     try {
@@ -372,11 +414,33 @@ export function ProjectDetailPage() {
             </div>
 
             <div className="mt-4">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={fileSearch}
+                  onChange={(e) => setFileSearch(e.target.value)}
+                  placeholder="Filter by label, path, or type"
+                  className="sm:max-w-sm"
+                />
+                <Select value={fileTypeFilter} onValueChange={setFileTypeFilter}>
+                  <SelectTrigger className="sm:w-48">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {fileTypeOptions.map((fileType) => (
+                      <SelectItem key={fileType} value={fileType}>
+                        {fileType}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Path</TableHead>
+                    <TableHead>File</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -393,6 +457,9 @@ export function ProjectDetailPage() {
                           <div className="h-4 w-20 animate-pulse rounded bg-muted" />
                         </TableCell>
                         <TableCell>
+                          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                        </TableCell>
+                        <TableCell>
                           <div className="h-4 w-16 animate-pulse rounded bg-muted" />
                         </TableCell>
                         <TableCell>
@@ -403,15 +470,41 @@ export function ProjectDetailPage() {
                     ))
                   ) : !files || files.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         No files in this project yet.
                       </TableCell>
                     </TableRow>
+                  ) : filteredFiles.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No files match the current filters.
+                      </TableCell>
+                    </TableRow>
                   ) : (
-                    files.map((file) => (
+                    filteredFiles.map((file) => (
                       <TableRow key={file.id}>
-                        <TableCell className="font-mono text-xs">{file.path}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium">{file.label}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{file.path}</p>
+                          </div>
+                        </TableCell>
                         <TableCell>{file.file_type || '\u2014'}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-1">
+                            <Badge variant="outline">{fileSourceLabel(file.source_type)}</Badge>
+                            {file.run_id ? (
+                              <Button
+                                type="button"
+                                variant="link"
+                                className="h-auto p-0 text-xs"
+                                onClick={() => navigate(`/projects/${slug}/runs/${file.run_id}`)}
+                              >
+                                View run
+                              </Button>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell>{formatFileSize(file.size)}</TableCell>
                         <TableCell>{formatDate(file.created_at)}</TableCell>
                         <TableCell>

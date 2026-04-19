@@ -412,25 +412,6 @@ func extractInputs(doc *ast.Document) []api.RegistryInputItem {
 	return items
 }
 
-func parameterMetaType(paramMeta map[string]any, name string) *string {
-	if len(paramMeta) == 0 {
-		return nil
-	}
-	rawField, ok := paramMeta[name]
-	if !ok {
-		return nil
-	}
-	fieldMap, ok := rawField.(map[string]any)
-	if !ok {
-		return nil
-	}
-	value, ok := fieldMap["type"].(string)
-	if !ok || value == "" {
-		return nil
-	}
-	return &value
-}
-
 // declDefaultString converts a simple literal AST expression to its string representation.
 // Returns nil for complex or nil expressions (interpolated strings, function calls, etc.).
 func declDefaultString(e ast.Expr) *string {

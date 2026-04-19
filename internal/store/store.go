@@ -121,13 +121,13 @@ type RegistryVersionListItem struct {
 // Run holds metadata for a submitted workflow run.
 type Run struct {
 	ID             string
-	ProjectID      string   // Empty when auth is disabled; set to project UUID when auth is enabled
+	ProjectID      string // Empty when auth is disabled; set to project UUID when auth is enabled
 	WDLPath        string
-	RegistryRef    string   // User-provided ref, e.g. "align-reads:prod"; empty for file-path runs
-	RegistryDigest string   // Resolved digest at submission time, e.g. "sha256:abc..."; empty for file-path runs
+	RegistryRef    string // User-provided ref, e.g. "align-reads:prod"; empty for file-path runs
+	RegistryDigest string // Resolved digest at submission time, e.g. "sha256:abc..."; empty for file-path runs
 	InputsJSON     string
 	State          RunState
-	OutputsJSON    string   // JSON-encoded run outputs; empty until set by UpdateRunOutputs
+	OutputsJSON    string // JSON-encoded run outputs; empty until set by UpdateRunOutputs
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -181,30 +181,31 @@ type ProvenanceSummary struct {
 // ProvenanceDetail is the full provenance record returned by GetProvenance.
 // It joins provenance with runs, users, and registry_entries.
 type ProvenanceDetail struct {
-	RunID              string
-	RegistryRef        string
-	RegistryDigest     string
-	Username           string
-	RunState           string
-	InputsJSON         string
-	OutputsJSON        string
-	RegistryEntryName  string
-	RegistryEntryKind  string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	RunID             string
+	RegistryRef       string
+	RegistryDigest    string
+	Username          string
+	RunState          string
+	InputsJSON        string
+	OutputsJSON       string
+	RegistryEntryName string
+	RegistryEntryKind string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // ManagedFile represents a file tracked in the project library.
 // RunID is nil for manually imported files that have no originating run.
 type ManagedFile struct {
-	ID        string
-	ProjectID string
-	RunID     *string // nil for manually imported files
-	Path      string
-	FileType  string
-	Label     string
-	Size      int64
-	CreatedAt time.Time
+	ID         string
+	ProjectID  string
+	RunID      *string // nil for manually imported files
+	Path       string
+	FileType   string
+	Label      string
+	SourceType string
+	Size       int64
+	CreatedAt  time.Time
 }
 
 // Store is the persistence abstraction for runs and tasks.

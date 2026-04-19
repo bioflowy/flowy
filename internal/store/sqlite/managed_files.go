@@ -13,9 +13,9 @@ import (
 // All SQL parameters use ? placeholders to prevent SQL injection.
 func (s *SQLiteStore) CreateManagedFile(ctx context.Context, f *store.ManagedFile) error {
 	_, err := s.writer.ExecContext(ctx,
-		`INSERT INTO managed_files (id, project_id, run_id, path, file_type, label, size)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		f.ID, f.ProjectID, f.RunID, f.Path, f.FileType, f.Label, f.Size,
+		`INSERT INTO managed_files (id, project_id, run_id, path, file_type, label, source_type, size)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ID, f.ProjectID, f.RunID, f.Path, f.FileType, f.Label, f.SourceType, f.Size,
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite: CreateManagedFile: %w", err)
@@ -27,7 +27,7 @@ func (s *SQLiteStore) CreateManagedFile(ctx context.Context, f *store.ManagedFil
 // created_at DESC (newest first). Returns a non-nil empty slice when no records exist.
 func (s *SQLiteStore) ListManagedFiles(ctx context.Context, projectID string) ([]store.ManagedFile, error) {
 	rows, err := s.reader.QueryContext(ctx,
-		`SELECT id, project_id, run_id, path, file_type, label, size, created_at
+		`SELECT id, project_id, run_id, path, file_type, label, source_type, size, created_at
 		 FROM managed_files
 		 WHERE project_id = ?
 		 ORDER BY created_at DESC`,
@@ -56,7 +56,7 @@ func (s *SQLiteStore) ListManagedFiles(ctx context.Context, projectID string) ([
 // Returns a wrapped error if no record is found.
 func (s *SQLiteStore) GetManagedFileByID(ctx context.Context, id string) (*store.ManagedFile, error) {
 	row := s.reader.QueryRowContext(ctx,
-		`SELECT id, project_id, run_id, path, file_type, label, size, created_at
+		`SELECT id, project_id, run_id, path, file_type, label, source_type, size, created_at
 		 FROM managed_files
 		 WHERE id = ?`,
 		id,
@@ -109,9 +109,9 @@ func (s *SQLiteStore) CompleteRun(ctx context.Context, runID string, projectID s
 	for i := range files {
 		f := &files[i]
 		_, err = tx.ExecContext(ctx,
-			`INSERT INTO managed_files (id, project_id, run_id, path, file_type, label, size)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			f.ID, f.ProjectID, f.RunID, f.Path, f.FileType, f.Label, f.Size,
+			`INSERT INTO managed_files (id, project_id, run_id, path, file_type, label, source_type, size)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			f.ID, f.ProjectID, f.RunID, f.Path, f.FileType, f.Label, f.SourceType, f.Size,
 		)
 		if err != nil {
 			return fmt.Errorf("sqlite: CompleteRun insert managed file %q: %w", f.ID, err)
@@ -125,14 +125,14 @@ func (s *SQLiteStore) CompleteRun(ctx context.Context, runID string, projectID s
 }
 
 // scanManagedFile scans a single ManagedFile from a *sql.Row.
-// Expects columns: id, project_id, run_id, path, file_type, label, size, created_at
+// Expects columns: id, project_id, run_id, path, file_type, label, source_type, size, created_at
 func scanManagedFile(row *sql.Row) (*store.ManagedFile, error) {
 	var f store.ManagedFile
 	var runID sql.NullString
 	var createdAtStr string
 	err := row.Scan(
 		&f.ID, &f.ProjectID, &runID,
-		&f.Path, &f.FileType, &f.Label, &f.Size,
+		&f.Path, &f.FileType, &f.Label, &f.SourceType, &f.Size,
 		&createdAtStr,
 	)
 	if err != nil {
@@ -146,14 +146,14 @@ func scanManagedFile(row *sql.Row) (*store.ManagedFile, error) {
 }
 
 // scanManagedFileRows scans a single ManagedFile from *sql.Rows.
-// Expects columns: id, project_id, run_id, path, file_type, label, size, created_at
+// Expects columns: id, project_id, run_id, path, file_type, label, source_type, size, created_at
 func scanManagedFileRows(rows *sql.Rows) (*store.ManagedFile, error) {
 	var f store.ManagedFile
 	var runID sql.NullString
 	var createdAtStr string
 	err := rows.Scan(
 		&f.ID, &f.ProjectID, &runID,
-		&f.Path, &f.FileType, &f.Label, &f.Size,
+		&f.Path, &f.FileType, &f.Label, &f.SourceType, &f.Size,
 		&createdAtStr,
 	)
 	if err != nil {

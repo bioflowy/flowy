@@ -275,7 +275,7 @@ func (s *Server) runWorkflow(ctx context.Context, runID string, doc *ast.Documen
 				return
 			}
 
-			outputsJSON, files, buildErr := buildWorkflowCompletionRecord(run.ProjectID, runID, wfName, doc.Workflows[0], outputs)
+			outputsJSON, files, buildErr := buildWorkflowCompletionRecord(run.ProjectID, runID, wfName, doc.Workflows[0], inputs, outputs)
 			if buildErr != nil {
 				log.Printf("runWorkflow %s: build completion record: %v", runID, buildErr)
 				_ = s.store.UpdateRunState(context.Background(), runID, store.RunFailed)
@@ -363,6 +363,7 @@ func buildWorkflowCompletionRecord(
 	runID string,
 	workflowName string,
 	wf *ast.Workflow,
+	inputs map[string]interface{},
 	outputs map[string]values.Value,
 ) (string, []store.ManagedFile, error) {
 	jsonOutputs := make(map[string]interface{}, len(outputs))
@@ -375,7 +376,7 @@ func buildWorkflowCompletionRecord(
 		return "", nil, fmt.Errorf("marshal outputs: %w", err)
 	}
 
-	files, err := collectManagedFilesForWorkflowOutputs(projectID, runID, wf, outputs)
+	files, err := collectManagedFilesForWorkflowOutputs(projectID, runID, wf, inputs, outputs)
 	if err != nil {
 		return "", nil, err
 	}
@@ -387,6 +388,7 @@ func collectManagedFilesForWorkflowOutputs(
 	projectID string,
 	runID string,
 	wf *ast.Workflow,
+	inputs map[string]interface{},
 	outputs map[string]values.Value,
 ) ([]store.ManagedFile, error) {
 	if projectID == "" || wf == nil || len(outputs) == 0 {
@@ -401,11 +403,12 @@ func collectManagedFilesForWorkflowOutputs(
 			continue
 		}
 		fileType := parameterMetaType(wf.ParamMeta, decl.Name)
+		labelTemplate := parameterMetaLabel(wf.ParamMeta, decl.Name)
 		var declaredType string
 		if fileType != nil {
 			declaredType = *fileType
 		}
-		next, err := collectManagedFilesForValue(projectID, runID, decl.Name, decl.Type, value, declaredType, seen)
+		next, err := collectManagedFilesForValue(projectID, runID, decl.Name, decl.Type, value, declaredType, labelTemplate, wf, inputs, seen)
 		if err != nil {
 			return nil, err
 		}
@@ -421,13 +424,16 @@ func collectManagedFilesForValue(
 	declType types.Type,
 	value values.Value,
 	fileType string,
+	labelTemplate *string,
+	wf *ast.Workflow,
+	inputs map[string]interface{},
 	seen map[string]struct{},
 ) ([]store.ManagedFile, error) {
 	switch t := declType.(type) {
 	case types.FileType:
-		return managedFileForPathValue(projectID, runID, outputName, value, fileType, seen)
+		return managedFileForPathValue(projectID, runID, outputName, value, fileType, labelTemplate, wf, inputs, seen)
 	case types.DirectoryType:
-		return managedFileForPathValue(projectID, runID, outputName, value, fileType, seen)
+		return managedFileForPathValue(projectID, runID, outputName, value, fileType, labelTemplate, wf, inputs, seen)
 	case types.ArrayType:
 		if !isManagedPathType(t.ItemType) {
 			return nil, nil
@@ -439,7 +445,7 @@ func collectManagedFilesForValue(
 
 		files := make([]store.ManagedFile, 0, len(arrayValue.Items))
 		for _, item := range arrayValue.Items {
-			next, err := collectManagedFilesForValue(projectID, runID, outputName, t.ItemType, item, fileType, seen)
+			next, err := collectManagedFilesForValue(projectID, runID, outputName, t.ItemType, item, fileType, labelTemplate, wf, inputs, seen)
 			if err != nil {
 				return nil, err
 			}
@@ -457,6 +463,9 @@ func managedFileForPathValue(
 	outputName string,
 	value values.Value,
 	fileType string,
+	labelTemplate *string,
+	wf *ast.Workflow,
+	inputs map[string]interface{},
 	seen map[string]struct{},
 ) ([]store.ManagedFile, error) {
 	path, present, err := pathFromManagedValue(outputName, value)
@@ -472,12 +481,13 @@ func managedFileForPathValue(
 	seen[path] = struct{}{}
 	runIDCopy := runID
 	return []store.ManagedFile{{
-		ID:        uuid.New().String(),
-		ProjectID: projectID,
-		RunID:     &runIDCopy,
-		Path:      path,
-		FileType:  fileType,
-		Label:     filepath.Base(path),
+		ID:         uuid.New().String(),
+		ProjectID:  projectID,
+		RunID:      &runIDCopy,
+		Path:       path,
+		FileType:   fileType,
+		Label:      managedFileLabelForPath(path, labelTemplate, wf, inputs),
+		SourceType: "workflow",
 	}}, nil
 }
 

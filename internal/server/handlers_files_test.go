@@ -147,12 +147,13 @@ func createManagedFileRecord(t *testing.T, st *sqlite.SQLiteStore, projectID, pa
 	t.Helper()
 
 	mf := &store.ManagedFile{
-		ID:        uuid.New().String(),
-		ProjectID: projectID,
-		Path:      path,
-		Label:     label,
-		FileType:  fileType,
-		Size:      size,
+		ID:         uuid.New().String(),
+		ProjectID:  projectID,
+		Path:       path,
+		Label:      label,
+		FileType:   fileType,
+		SourceType: "import",
+		Size:       size,
 	}
 	if err := st.CreateManagedFile(context.Background(), mf); err != nil {
 		t.Fatalf("CreateManagedFile: %v", err)
@@ -215,6 +216,9 @@ func TestHandleListFiles_AuthAndFields(t *testing.T) {
 	got := resp.Files[0]
 	if got.ID != mf.ID || got.Path != mf.Path || got.FileType != mf.FileType || got.Label != mf.Label || got.Size != mf.Size {
 		t.Fatalf("unexpected file response: %+v", got)
+	}
+	if got.SourceType != "import" {
+		t.Fatalf("unexpected source_type: %+v", got)
 	}
 	if got.CreatedAt == "" {
 		t.Fatal("expected created_at")
@@ -307,6 +311,9 @@ func TestHandleImportFile_BrowserUpload(t *testing.T) {
 	if resp.File.FileType != "fastq" {
 		t.Fatalf("file_type: got %q", resp.File.FileType)
 	}
+	if resp.File.SourceType != "upload" {
+		t.Fatalf("source_type: got %q", resp.File.SourceType)
+	}
 	if !strings.Contains(resp.File.Path, "/projects/"+slug+"/uploads/") || !strings.HasSuffix(resp.File.Path, "/reads.fastq") {
 		t.Fatalf("unexpected path: %q", resp.File.Path)
 	}
@@ -324,6 +331,9 @@ func TestHandleImportFile_BrowserUpload(t *testing.T) {
 	}
 	if files[0].FileType != "fastq" {
 		t.Fatalf("stored file_type: got %q", files[0].FileType)
+	}
+	if files[0].SourceType != "upload" {
+		t.Fatalf("stored source_type: got %q", files[0].SourceType)
 	}
 }
 
@@ -370,6 +380,9 @@ func TestHandleImportFile_S3URI(t *testing.T) {
 	if resp.File.FileType != "bam" {
 		t.Fatalf("file_type: got %q", resp.File.FileType)
 	}
+	if resp.File.SourceType != "import" {
+		t.Fatalf("source_type: got %q", resp.File.SourceType)
+	}
 
 	proj, err := st.GetProjectBySlug(context.Background(), slug)
 	if err != nil {
@@ -384,6 +397,9 @@ func TestHandleImportFile_S3URI(t *testing.T) {
 	}
 	if files[0].FileType != "bam" {
 		t.Fatalf("stored file_type: got %q", files[0].FileType)
+	}
+	if files[0].SourceType != "import" {
+		t.Fatalf("stored source_type: got %q", files[0].SourceType)
 	}
 }
 
@@ -428,6 +444,9 @@ func TestHandleImportFile_LocalPath(t *testing.T) {
 	if resp.File.FileType != "fastq" {
 		t.Fatalf("file_type: got %q", resp.File.FileType)
 	}
+	if resp.File.SourceType != "import" {
+		t.Fatalf("source_type: got %q", resp.File.SourceType)
+	}
 
 	proj, err := st.GetProjectBySlug(context.Background(), slug)
 	if err != nil {
@@ -442,6 +461,9 @@ func TestHandleImportFile_LocalPath(t *testing.T) {
 	}
 	if files[0].FileType != "fastq" {
 		t.Fatalf("stored file_type: got %q", files[0].FileType)
+	}
+	if files[0].SourceType != "import" {
+		t.Fatalf("stored source_type: got %q", files[0].SourceType)
 	}
 }
 

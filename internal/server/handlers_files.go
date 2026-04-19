@@ -20,12 +20,14 @@ import (
 
 func managedFileToResponse(f *store.ManagedFile) api.ManagedFileResponse {
 	return api.ManagedFileResponse{
-		ID:        f.ID,
-		Path:      f.Path,
-		FileType:  f.FileType,
-		Label:     f.Label,
-		Size:      f.Size,
-		CreatedAt: f.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:         f.ID,
+		Path:       f.Path,
+		FileType:   f.FileType,
+		Label:      f.Label,
+		SourceType: f.SourceType,
+		RunID:      f.RunID,
+		Size:       f.Size,
+		CreatedAt:  f.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }
 
@@ -128,7 +130,7 @@ func (s *Server) handleImportFileBrowser(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	mf, err := s.createManagedFileRecord(r.Context(), proj.ID, storagePath, filename, fileType, size)
+	mf, err := s.createManagedFileRecord(r.Context(), proj.ID, storagePath, filename, fileType, "upload", size)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create managed file: %v", err))
 		return
@@ -173,7 +175,7 @@ func (s *Server) handleImportS3URI(w http.ResponseWriter, r *http.Request, proj 
 		return
 	}
 
-	mf, err := s.createManagedFileRecord(r.Context(), proj.ID, uri, filepath.Base(key), fileType, size)
+	mf, err := s.createManagedFileRecord(r.Context(), proj.ID, uri, filepath.Base(key), fileType, "import", size)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create managed file: %v", err))
 		return
@@ -213,7 +215,7 @@ func (s *Server) handleImportLocalPath(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	mf, err := s.createManagedFileRecord(r.Context(), proj.ID, targetPath, filepath.Base(targetPath), fileType, size)
+	mf, err := s.createManagedFileRecord(r.Context(), proj.ID, targetPath, filepath.Base(targetPath), fileType, "import", size)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create managed file: %v", err))
 		return
@@ -228,15 +230,17 @@ func (s *Server) createManagedFileRecord(
 	path string,
 	label string,
 	fileType string,
+	sourceType string,
 	size int64,
 ) (*store.ManagedFile, error) {
 	mf := &store.ManagedFile{
-		ID:        uuid.New().String(),
-		ProjectID: projectID,
-		Path:      path,
-		FileType:  fileType,
-		Label:     label,
-		Size:      size,
+		ID:         uuid.New().String(),
+		ProjectID:  projectID,
+		Path:       path,
+		FileType:   fileType,
+		Label:      label,
+		SourceType: sourceType,
+		Size:       size,
 	}
 	if err := s.store.CreateManagedFile(ctx, mf); err != nil {
 		return nil, err
