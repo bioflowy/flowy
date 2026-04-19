@@ -1,42 +1,42 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.2
-milestone_name: Managed File Library
-status: milestone_complete
-stopped_at: Milestone archived
-last_updated: "2026-04-19T07:15:00.000Z"
+milestone: v2.3
+milestone_name: Managed File Labels & UX
+status: roadmap_defined
+stopped_at: Ready to plan Phase 41
+last_updated: "2026-04-19T08:05:00.000Z"
 last_activity: 2026-04-19
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 6
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-19 after v2.2 milestone)
+See: .planning/PROJECT.md (updated 2026-04-19 after starting v2.3 milestone)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** define the next milestone
+**Current focus:** v2.3 roadmap definition
 
 ## Current Position
 
-Milestone: v2.2 Managed File Library — SHIPPED
-Phase range: 37-40
-Status: Milestone archived; waiting for next milestone definition
+Phase: 41 (Label Template Engine) — NOT STARTED
+Plan: —
+Status: Milestone defined; roadmap ready for planning
 Last activity: 2026-04-19
 
-Progress: [██████████] 100%
+Progress: [----------] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8 (this milestone)
+- Total plans completed: 0 (this milestone)
 - Average duration: — (no data yet)
 - Total execution time: —
 
@@ -44,15 +44,14 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 37 | 2 | — | — |
-| 38 | 2 | — | — |
-| 39 | 2 | — | — |
-| 40 | 2 | — | — |
+| 41 | 0 | — | — |
+| 42 | 0 | — | — |
+| 43 | 0 | — | — |
 
 **Recent Trend:**
 
-- Last 5 plans: 38-02, 39-01, 39-02, 40-01, 40-02
-- Trend: steady
+- Last 5 plans: —
+- Trend: milestone initialization
 
 *Updated after each plan completion*
 
@@ -69,18 +68,20 @@ Recent decisions affecting current work:
 - [v2.2 phase 39]: Managed file auto-registration must follow declared WDL output types, not JSON string heuristics
 - [v2.2 phase 40]: File picker keeps manual path entry as fallback while filtering library choices by `parameter_meta.type`
 - [v2.2 review]: Registry input metadata must resolve immutable digests directly; push auto-assigns `latest`
+- [v2.3 scope]: label templates remain pure-Go only; no shell execution or broad POSIX compatibility in this milestone
 
 ### Pending Todos
 
-None. Start `/gsd-new-milestone` when ready to define the next requirement set.
+None. Next step is `/gsd-plan-phase 41`.
 
 ### Blockers/Concerns
 
 - ESLint cannot run until the repo adds an `eslint.config.js` for ESLint v9.
 - No formal `v2.2` milestone audit file was generated; milestone was archived after manual verification and targeted automated test runs.
+- Label-template scope is intentionally narrow to avoid coupling milestone success to full shell semantics.
 
 ## Session Continuity
 
 Last activity: 2026-04-19
-Stopped at: Milestone archived
+Stopped at: Ready to plan Phase 41
 Resume file: .planning/ROADMAP.md

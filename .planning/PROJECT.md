@@ -61,10 +61,11 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 
 ### Active
 
-- [ ] File label templates derived from WDL `parameter_meta` without invoking a system shell
-- [ ] Search/filter in the Files tab for larger project libraries
+- [ ] Shell-style managed-file label templates for workflow outputs via `parameter_meta.label`
+- [ ] Safe pure-Go label evaluation for `${var}`, `${var%suffix}`, `${var%%suffix}`, `${var#prefix}`, and `${var##prefix}`
+- [ ] Search/filter in the Files tab by label, type, and path
 - [ ] Source badges and run provenance links in managed-file views
-- [ ] Pagination and bulk-management affordances for large file libraries
+- [ ] Managed file picker shows human-readable labels prominently alongside the underlying path
 
 ### Out of Scope
 
@@ -80,11 +81,15 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
 
-## Next Milestone Goals
+## Current Milestone: v2.3 Managed File Labels & UX
 
-- Decide whether file-label templating is valuable enough for a dedicated milestone or should remain deferred
-- Improve managed-file usability with search/filter, provenance surfacing, and better large-library UX
-- Continue reducing browser/server friction around file-oriented execution flows without weakening RBAC or storage safety boundaries
+**Goal:** Make managed files human-readable and easier to trace by adding safe label templates and targeted library UX improvements.
+
+**Target features:**
+- Shell-style output label templates via `parameter_meta.label`, evaluated without invoking a shell
+- Files tab search/filter by label, type, and path
+- Source badges and run provenance links for workflow-generated files
+- Label-first managed-file picker presentation while keeping the underlying path visible
 
 ## Current State
 
@@ -170,4 +175,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after v2.2 milestone*
+*Last updated: 2026-04-19 after starting v2.3 milestone*
