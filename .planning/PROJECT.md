@@ -58,14 +58,17 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - ✓ Managed file library with project-scoped File/Directory tracking, import, and record-only deletion — v2.2
 - ✓ Automatic registration of workflow File/Directory outputs with `parameter_meta.type` propagation — v2.2
 - ✓ Browser file picker for `File` inputs with managed-file filtering and manual path fallback — v2.2
+- ✓ Shell-style managed-file label templates for workflow outputs via `parameter_meta.label` — v2.3
+- ✓ Safe pure-Go label evaluation for `${var}`, `${var%suffix}`, `${var%%suffix}`, `${var#prefix}`, and `${var##prefix}` — v2.3
+- ✓ Search/filter in the Files tab by label, type, and path — v2.3
+- ✓ Source badges and run provenance links in managed-file views — v2.3
+- ✓ Managed file picker shows human-readable labels prominently alongside the underlying path — v2.3
 
 ### Active
 
-- [ ] Shell-style managed-file label templates for workflow outputs via `parameter_meta.label`
-- [ ] Safe pure-Go label evaluation for `${var}`, `${var%suffix}`, `${var%%suffix}`, `${var#prefix}`, and `${var##prefix}`
-- [ ] Search/filter in the Files tab by label, type, and path
-- [ ] Source badges and run provenance links in managed-file views
-- [ ] Managed file picker shows human-readable labels prominently alongside the underlying path
+- [ ] Manual label editing for imported files
+- [ ] Pagination and bulk actions for large file libraries
+- [ ] Broader label-template compatibility beyond the currently supported prefix/suffix trimming operators
 
 ### Out of Scope
 
@@ -81,23 +84,22 @@ WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に�
 - gRPC API — REST is standard in bioinformatics tooling
 - Kubernetes integration — enormous scope; Docker per node sufficient for HPC
 
-## Current Milestone: v2.3 Managed File Labels & UX
+## Next Milestone Goals
 
-**Goal:** Make managed files human-readable and easier to trace by adding safe label templates and targeted library UX improvements.
+The next milestone has not been defined yet. Current candidate follow-ups are:
 
-**Target features:**
-- Shell-style output label templates via `parameter_meta.label`, evaluated without invoking a shell
-- Files tab search/filter by label, type, and path
-- Source badges and run provenance links for workflow-generated files
-- Label-first managed-file picker presentation while keeping the underlying path visible
+- Manual label editing for imported files
+- Pagination and bulk actions for larger file libraries
+- Broader label-template compatibility beyond the narrow safe subset shipped in v2.3
+- Any roadmap additions discovered during the next milestone definition pass
 
 ## Current State
 
-Shipped v2.2 with 43,239 LOC Go + 9,829 LOC TypeScript/React. Seven milestones complete (v1.0-v2.2). The codebase currently contains 564 Go tests and 162 frontend tests.
+Shipped v2.3 with 43,591 LOC Go + 9,995 LOC TypeScript/React. Eight milestones complete (v1.0-v2.3). The codebase currently contains 566 Go tests and 165 frontend tests.
 
-v2.2 delivered: managed-file persistence and REST APIs; browser, S3, and guarded server-path imports; automatic registration of workflow `File` and `Directory` outputs on completion; `parameter_meta.type` propagation into managed-file records and browser input metadata; a Files tab with import and delete flows; a managed-file picker in `RunWorkflowDialog`; import-time `file_type` support; and digest-aware registry input resolution with automatic `latest` tagging on registry push.
+v2.3 delivered: pure-Go `parameter_meta.label` evaluation for workflow-generated managed files; safe fallback behavior for invalid or unsupported label templates; explicit managed-file provenance via `source_type` and workflow `run_id`; source badges and run links in the Files tab; client-side search/filter by label, type, and path; and label-first managed-file picker rendering while preserving path-based execution semantics and manual path fallback.
 
-**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution via CLI and browser, run provenance tracking, project-scoped managed-file tracking, browser management UI (users/projects/registry/files), browser workflow execution with dynamic input forms and managed-file selection, poll-based run monitoring, and CLI registry management.
+**Capabilities:** Full WDL 1.2 parse → typecheck → evaluate → execute pipeline, distributed server/daemon/client architecture, S3/MinIO storage backends, JWT authentication, project-scoped RBAC (admin/executor/viewer), content-addressed WDL registry with tags, registry-based execution via CLI and browser, run provenance tracking, project-scoped managed-file tracking with human-readable labels and provenance metadata, browser management UI (users/projects/registry/files), browser workflow execution with dynamic input forms and managed-file selection, poll-based run monitoring, and CLI registry management.
 
 ## Context
 
@@ -156,6 +158,9 @@ Reference implementation: `../miniwdl` (Python, ~20k lines).
 | `CompleteRun(...)` wraps run completion + managed-file registration | Prevents outputs and run state from drifting under partial failure | ✓ Good — atomic completion semantics |
 | File picker keeps manual path fallback | Managed-file library improves UX without blocking external or unmanaged paths | ✓ Good — practical migration path |
 | Registry push auto-tags `latest` and `/inputs` accepts digest lookup | Browser selection remains stable when the chosen version is represented by an immutable digest | ✓ Good — smoother registry UX |
+| `parameter_meta.label` stays pure-Go and narrowly scoped | Human-readable managed-file labels are useful, but shell execution would expand the attack surface too far | ✓ Good — safer output labeling |
+| Managed-file provenance uses explicit `source_type` + optional `run_id` | UI should not infer origin from path conventions | ✓ Good — clear source semantics |
+| Files tab filtering remains client-side | Current library sizes do not justify pagination or server-side query complexity yet | ✓ Good — simpler UX with acceptable scale |
 
 ## Evolution
 
@@ -175,4 +180,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-19 after starting v2.3 milestone*
+*Last updated: 2026-04-19 after shipping v2.3 milestone*

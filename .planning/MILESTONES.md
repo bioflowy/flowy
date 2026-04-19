@@ -1,5 +1,20 @@
 # Milestones
 
+## v2.3 Managed File Labels & UX (Shipped: 2026-04-19)
+
+**Phases completed:** 3 phases, 6 plans | Go: 43,591 LOC | TS: 9,995 LOC | 566 Go tests | 165 frontend tests | 1 day
+
+**Key accomplishments:**
+
+- Safe pure-Go `parameter_meta.label` evaluation for workflow-generated managed-file labels, including fallback behavior for invalid or missing template inputs
+- Workflow output auto-registration now stores human-readable labels derived from workflow input values instead of always defaulting to the basename
+- Managed-file persistence and API responses now expose explicit provenance via `source_type` and optional `run_id`
+- Files tab now shows source badges, conditional run links, and client-side search/type filtering for faster file discovery
+- `RunWorkflowDialog` now renders managed files label-first while preserving path-based execution semantics and manual path fallback
+- Added a Japanese verification guide for the milestone in `docs/v2.3-verification-guide.md`
+
+---
+
 ## v2.2 Managed File Library (Shipped: 2026-04-19)
 
 **Phases completed:** 4 phases, 8 plans | Go: 43,239 LOC | TS: 9,829 LOC | 564 Go tests | 162 frontend tests | 11 days

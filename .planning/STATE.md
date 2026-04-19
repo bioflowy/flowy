@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Managed File Labels & UX
-status: all_phases_complete
-stopped_at: Ready for milestone verification and closeout
-last_updated: "2026-04-19T07:26:00.000Z"
+status: milestone_archived
+stopped_at: Ready to start the next milestone
+last_updated: "2026-04-19T07:55:00.000Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 3
@@ -18,16 +18,16 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-19 after starting v2.3 milestone)
+See: .planning/PROJECT.md (updated 2026-04-19 after shipping v2.3 milestone)
 
 **Core value:** WDL 1.2で記述されたワークフローをDockerコンテナ上で正確に実行できること
-**Current focus:** v2.3 implementation complete; awaiting milestone closeout
+**Current focus:** v2.3 shipped; awaiting next milestone definition
 
 ## Current Position
 
-Phase: 43 (Search and Picker Label Polish) — COMPLETE
-Plan: 43-02
-Status: All milestone phases implemented and verified
+Phase: v2.3 milestone archived
+Plan: —
+Status: Milestone shipped and archived; next step is defining the next milestone
 Last activity: 2026-04-19
 
 Progress: [##########] 100%
@@ -72,17 +72,17 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Review milestone outcomes and run `/gsd-complete-milestone` when ready to archive v2.3.
+- Run `/gsd-new-milestone` to define the next milestone requirements and roadmap.
 
 ### Blockers/Concerns
 
 - ESLint cannot run until the repo adds an `eslint.config.js` for ESLint v9.
-- No formal `v2.2` milestone audit file was generated; milestone was archived after manual verification and targeted automated test runs.
 - Label-template scope is intentionally narrow to avoid coupling milestone success to full shell semantics.
 - `npx prettier` did not complete in this sandboxed environment; frontend verification used Vitest only.
+- v2.3 audit result is `tech_debt`, not `passed`, because REQUIREMENTS/VALIDATION traceability was normalized late during closeout.
 
 ## Session Continuity
 
 Last activity: 2026-04-19
-Stopped at: Ready for milestone verification and closeout
+Stopped at: Ready to start the next milestone
 Resume file: .planning/ROADMAP.md
